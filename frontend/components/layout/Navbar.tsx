@@ -4,10 +4,11 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { Menu, X, Swords, Sparkles, MessageCircle, BarChart3 } from 'lucide-react';
+import { Menu, X, Swords, Sparkles, MessageCircle, BarChart3, Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
+  { href: '/agents', label: 'Agents', icon: Bot },
   { href: '/mint', label: 'Mint NFT', icon: Sparkles },
   { href: '/battle', label: 'Battle', icon: Swords },
   { href: '/chat', label: 'Agent Chat', icon: MessageCircle },
