@@ -2,20 +2,20 @@
 
 import { motion } from 'framer-motion';
 import {
-  Copy, ExternalLink, Trophy, Gamepad2, TrendingUp,
-  Zap, Bot, Shield, Target, BarChart3
+  Copy, ExternalLink, Trophy, Swords, TrendingUp,
+  Zap, Bot, Shield, Target, BarChart3, Sparkles
 } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { GAMES } from '@/lib/constants';
+import { ELEMENTS } from '@/lib/constants';
 
 function shortenAddr(addr: string) {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
 const MOCK_STATS = {
-  totalGames: 147,
+  totalBattles: 147,
   wins: 89,
   winRate: 60.5,
   avaxEarned: 12.847,
@@ -23,28 +23,29 @@ const MOCK_STATS = {
   bestStreak: 8,
 };
 
+const MOCK_WARRIORS = [
+  { tokenId: 12, element: 0, attack: 78, defense: 65, speed: 82, specialPower: 34, level: 5, powerScore: 634, wins: 23, losses: 9 },
+  { tokenId: 47, element: 3, attack: 55, defense: 91, speed: 44, specialPower: 42, level: 3, powerScore: 553, wins: 14, losses: 11 },
+  { tokenId: 103, element: 6, attack: 92, defense: 48, speed: 77, specialPower: 28, level: 7, powerScore: 666, wins: 31, losses: 12 },
+];
+
 const MOCK_HISTORY = [
-  { date: '2026-02-26', gameType: 2, opponent: '0xab12...ef34', stake: '0.5', result: 'win', txHash: '0xabc...' },
-  { date: '2026-02-26', gameType: 4, opponent: '0xcd56...gh78', stake: '1.0', result: 'loss', txHash: '0xdef...' },
-  { date: '2026-02-25', gameType: 0, opponent: '0xij90...kl12', stake: '0.1', result: 'win', txHash: '0xghi...' },
-  { date: '2026-02-25', gameType: 5, opponent: '0xmn34...op56', stake: '0.25', result: 'draw', txHash: '0xjkl...' },
-  { date: '2026-02-24', gameType: 6, opponent: '0xqr78...st90', stake: '2.0', result: 'win', txHash: '0xmno...' },
-  { date: '2026-02-24', gameType: 1, opponent: '0xuv12...wx34', stake: '0.5', result: 'win', txHash: '0xpqr...' },
-  { date: '2026-02-23', gameType: 3, opponent: '0xyz56...ab78', stake: '0.1', result: 'loss', txHash: '0xstu...' },
-  { date: '2026-02-23', gameType: 2, opponent: '0xcd90...ef12', stake: '1.0', result: 'win', txHash: '0xvwx...' },
+  { date: '2026-02-26', myNft: 12, opponentNft: 88, opponent: '0xab12...ef34', stake: '0.5', result: 'win' as const, myElement: 0, opElement: 2 },
+  { date: '2026-02-26', myNft: 47, opponentNft: 201, opponent: '0xcd56...gh78', stake: '1.0', result: 'loss' as const, myElement: 3, opElement: 1 },
+  { date: '2026-02-25', myNft: 103, opponentNft: 55, opponent: '0xij90...kl12', stake: '0.1', result: 'win' as const, myElement: 6, opElement: 7 },
+  { date: '2026-02-25', myNft: 12, opponentNft: 140, opponent: '0xmn34...op56', stake: '0.25', result: 'win' as const, myElement: 0, opElement: 2 },
+  { date: '2026-02-24', myNft: 47, opponentNft: 67, opponent: '0xqr78...st90', stake: '2.0', result: 'loss' as const, myElement: 3, opElement: 0 },
+  { date: '2026-02-24', myNft: 103, opponentNft: 310, opponent: '0xuv12...wx34', stake: '0.5', result: 'win' as const, myElement: 6, opElement: 7 },
 ];
 
-const GAME_DISTRIBUTION = [
-  { name: 'Coin Flip', count: 32, color: 'bg-yellow-500' },
-  { name: 'Dice Duel', count: 25, color: 'bg-red-500' },
-  { name: 'RPS', count: 28, color: 'bg-blue-500' },
-  { name: 'Number Guess', count: 18, color: 'bg-emerald-500' },
-  { name: 'Dragon Tiger', count: 20, color: 'bg-purple-500' },
-  { name: 'Elemental', count: 14, color: 'bg-cyan-500' },
-  { name: 'Crash Dice', count: 10, color: 'bg-pink-500' },
-];
+const ELEMENT_DISTRIBUTION = ELEMENTS.map((el, i) => ({
+  name: el.name,
+  emoji: el.emoji,
+  count: [32, 18, 14, 25, 10, 20, 28, 12][i],
+  color: `bg-gradient-to-r ${el.color}`,
+}));
 
-const maxCount = Math.max(...GAME_DISTRIBUTION.map((g) => g.count));
+const maxCount = Math.max(...ELEMENT_DISTRIBUTION.map((g) => g.count));
 
 export default function ProfilePage() {
   const params = useParams();
@@ -75,7 +76,7 @@ export default function ProfilePage() {
 
         <div className="text-center md:text-left">
           <h1 className="text-2xl md:text-3xl font-display font-bold text-white mb-2">
-            Player Profile
+            Warrior Profile
           </h1>
           <div className="flex items-center gap-2">
             <span className="font-mono text-arena-cyan text-lg">{shortenAddr(address)}</span>
@@ -105,7 +106,7 @@ export default function ProfilePage() {
         className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-12"
       >
         {[
-          { icon: Gamepad2, label: 'Total Games', value: MOCK_STATS.totalGames, color: 'text-arena-cyan' },
+          { icon: Swords, label: 'Total Battles', value: MOCK_STATS.totalBattles, color: 'text-arena-cyan' },
           { icon: Trophy, label: 'Wins', value: MOCK_STATS.wins, color: 'text-arena-green' },
           { icon: TrendingUp, label: 'Win Rate', value: `${MOCK_STATS.winRate}%`, color: 'text-arena-purple' },
           { icon: Zap, label: 'AVAX Earned', value: MOCK_STATS.avaxEarned, color: 'text-arena-gold' },
@@ -120,8 +121,9 @@ export default function ProfilePage() {
         ))}
       </motion.div>
 
+      {/* Warriors Collection + AI Agent */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
-        {/* Favorite Games Chart */}
+        {/* My Warriors */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -129,31 +131,41 @@ export default function ProfilePage() {
           className="glass-card p-6 rounded-2xl"
         >
           <div className="flex items-center gap-2 mb-6">
-            <BarChart3 className="w-5 h-5 text-arena-cyan" />
-            <h2 className="text-lg font-display font-bold text-white">Favorite Games</h2>
+            <Sparkles className="w-5 h-5 text-arena-cyan" />
+            <h2 className="text-lg font-display font-bold text-white">My Warriors</h2>
+            <span className="ml-auto text-sm text-white/40">{MOCK_WARRIORS.length} NFTs</span>
           </div>
           <div className="space-y-3">
-            {GAME_DISTRIBUTION.map((game, i) => (
-              <div key={i}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-white/70">{game.name}</span>
-                  <span className="font-mono text-white/50">{game.count}</span>
+            {MOCK_WARRIORS.map((w) => {
+              const el = ELEMENTS[w.element];
+              return (
+                <div key={w.tokenId} className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-arena-cyan/30 transition-colors">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{el.emoji}</span>
+                      <span className="text-white font-semibold text-sm">#{w.tokenId}</span>
+                      <span className="text-white/40 text-xs">{el.name}</span>
+                    </div>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-arena-gold/20 text-arena-gold border border-arena-gold/30">
+                      Lv.{w.level}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+                    <div><span className="text-white/40">ATK</span> <span className="text-red-400 font-mono">{w.attack}</span></div>
+                    <div><span className="text-white/40">DEF</span> <span className="text-blue-400 font-mono">{w.defense}</span></div>
+                    <div><span className="text-white/40">SPD</span> <span className="text-green-400 font-mono">{w.speed}</span></div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-white/40">Power: <span className="text-arena-cyan font-mono font-bold">{w.powerScore}</span></span>
+                    <span className="text-white/40">{w.wins}W / {w.losses}L</span>
+                  </div>
                 </div>
-                <div className="progress-bar">
-                  <motion.div
-                    className={cn('progress-bar-fill', game.color)}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(game.count / maxCount) * 100}%` }}
-                    transition={{ delay: 0.3 + i * 0.05, duration: 0.6 }}
-                    style={{ background: undefined }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </motion.div>
 
-        {/* AI Agent Info */}
+        {/* AI Agent Info + Element Distribution */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -187,10 +199,10 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="stat-card">
               <div className="text-lg font-bold font-mono text-arena-cyan">62</div>
-              <div className="text-xs text-white/40">Agent Games</div>
+              <div className="text-xs text-white/40">Agent Battles</div>
             </div>
             <div className="stat-card">
               <div className="text-lg font-bold font-mono text-arena-green">67.7%</div>
@@ -201,10 +213,36 @@ export default function ProfilePage() {
               <div className="text-xs text-white/40">Agent Profit</div>
             </div>
           </div>
+
+          {/* Element Battle Distribution */}
+          <div className="border-t border-white/5 pt-6">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 className="w-4 h-4 text-arena-cyan" />
+              <h3 className="text-sm font-display font-bold text-white">Battle Element Distribution</h3>
+            </div>
+            <div className="space-y-2">
+              {ELEMENT_DISTRIBUTION.map((el, i) => (
+                <div key={i}>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-white/70">{el.emoji} {el.name}</span>
+                    <span className="font-mono text-white/50">{el.count}</span>
+                  </div>
+                  <div className="progress-bar">
+                    <motion.div
+                      className="progress-bar-fill bg-gradient-to-r from-arena-cyan to-arena-purple"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(el.count / maxCount) * 100}%` }}
+                      transition={{ delay: 0.3 + i * 0.05, duration: 0.6 }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </motion.div>
       </div>
 
-      {/* Game History */}
+      {/* Battle History */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -212,7 +250,7 @@ export default function ProfilePage() {
         className="glass-card rounded-2xl overflow-hidden"
       >
         <div className="p-6 border-b border-white/5">
-          <h2 className="text-xl font-display font-bold text-white">Game History</h2>
+          <h2 className="text-xl font-display font-bold text-white">Battle History</h2>
         </div>
 
         <div className="overflow-x-auto">
@@ -220,49 +258,45 @@ export default function ProfilePage() {
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Game</th>
+                <th>My Warrior</th>
+                <th>VS</th>
                 <th>Opponent</th>
                 <th className="text-right">Stake</th>
                 <th className="text-center">Result</th>
-                <th className="text-right">TX</th>
               </tr>
             </thead>
             <tbody>
-              {MOCK_HISTORY.map((game, i) => (
+              {MOCK_HISTORY.map((battle, i) => (
                 <motion.tr
                   key={i}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.5 + i * 0.05 }}
                 >
-                  <td className="text-white/50 text-sm">{game.date}</td>
+                  <td className="text-white/50 text-sm">{battle.date}</td>
                   <td>
                     <span className="flex items-center gap-2">
-                      <span>{GAMES[game.gameType]?.emoji}</span>
-                      <span className="text-white text-sm">{GAMES[game.gameType]?.name}</span>
+                      <span>{ELEMENTS[battle.myElement].emoji}</span>
+                      <span className="text-white text-sm">#{battle.myNft}</span>
                     </span>
                   </td>
-                  <td className="font-mono text-sm text-arena-cyan">{game.opponent}</td>
-                  <td className="text-right font-mono text-white">{game.stake} AVAX</td>
+                  <td className="text-white/20 text-center">vs</td>
+                  <td>
+                    <span className="flex items-center gap-2">
+                      <span>{ELEMENTS[battle.opElement].emoji}</span>
+                      <span className="text-white/60 text-sm">#{battle.opponentNft}</span>
+                      <span className="font-mono text-xs text-white/30">{battle.opponent}</span>
+                    </span>
+                  </td>
+                  <td className="text-right font-mono text-white">{battle.stake} AVAX</td>
                   <td className="text-center">
                     <span className={cn(
                       'px-3 py-1 rounded-full text-xs font-bold uppercase',
-                      game.result === 'win' && 'bg-arena-green/20 text-arena-green border border-arena-green/30',
-                      game.result === 'loss' && 'bg-arena-red/20 text-arena-red border border-arena-red/30',
-                      game.result === 'draw' && 'bg-arena-gold/20 text-arena-gold border border-arena-gold/30'
+                      battle.result === 'win' && 'bg-arena-green/20 text-arena-green border border-arena-green/30',
+                      battle.result === 'loss' && 'bg-arena-red/20 text-arena-red border border-arena-red/30',
                     )}>
-                      {game.result}
+                      {battle.result}
                     </span>
-                  </td>
-                  <td className="text-right">
-                    <a
-                      href={`https://snowtrace.io/tx/${game.txHash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-white/30 hover:text-arena-cyan transition-colors"
-                    >
-                      <ExternalLink className="w-4 h-4 inline" />
-                    </a>
                   </td>
                 </motion.tr>
               ))}

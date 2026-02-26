@@ -1,8 +1,17 @@
 import { ethers } from 'ethers';
 import * as dotenv from 'dotenv';
-import { playGameAutonomously, createAndJoinGame, claimGameReward } from './on-chain-executor';
-import { GameState, Strategy } from './decision-engine';
-import { GAME_ENGINE_ABI } from './abis';
+import {
+  mintWarrior,
+  getMyWarriors,
+  getWarriorStats,
+  getOpenBattles,
+  getBattleDetails,
+  createBattle,
+  joinBattle,
+  postChatMessage,
+  sleep,
+} from './on-chain-executor';
+import { decideBattle, BattleState, Strategy, ELEMENT_NAMES } from './decision-engine';
 
 dotenv.config();
 
@@ -12,15 +21,16 @@ dotenv.config();
 
 export interface AgentConfig {
   strategy: Strategy;
-  maxGamesPerDay: number;
-  maxStakePerGame: string; // in AVAX
-  stopLossLimit: string;   // in AVAX  (cumulative loss that triggers shutdown)
-  preferredGameTypes: string[];
-  sessionDuration: number; // hours
+  maxBattlesPerDay: number;
+  maxStakePerBattle: string; // in AVAX
+  stopLossLimit: string;     // in AVAX (cumulative loss that triggers shutdown)
+  preferredElements: number[]; // element numbers the agent favors (0=Fire,1=Water,2=Earth,3=Wind,4=Ice)
+  sessionDuration: number;   // hours
+  chatFrequency: number;     // post to chat every N battles
 }
 
 interface AgentStats {
-  gamesPlayed: number;
+  battlesPlayed: number;
   wins: number;
   losses: number;
   draws: number;
@@ -31,7 +41,9 @@ interface AgentStats {
 // Constants
 // ---------------------------------------------------------------------------
 
-const POLL_INTERVAL_MS = 10_000; // 10 seconds between game cycles
+const POLL_INTERVAL_MS = 15_000;            // 15 seconds between battle cycles
+const BATTLE_RESOLUTION_POLL_MS = 10_000;   // 10 seconds between resolution polls
+const BATTLE_RESOLUTION_TIMEOUT_MS = 10 * 60 * 1_000; // 10 minutes
 
 // ---------------------------------------------------------------------------
 // AgentLoop class
@@ -41,7 +53,7 @@ export class AgentLoop {
   private config: AgentConfig;
   private running: boolean = false;
   private stats: AgentStats = {
-    gamesPlayed: 0,
+    battlesPlayed: 0,
     wins: 0,
     losses: 0,
     draws: 0,
@@ -60,8 +72,8 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
 
   /**
-   * Start the autonomous play loop.  Resolves when the session ends
-   * (either by duration, stop-loss, game cap, or an explicit stop() call).
+   * Start the autonomous battle loop. Resolves when the session ends
+   * (either by duration, stop-loss, battle cap, or an explicit stop() call).
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -73,17 +85,24 @@ export class AgentLoop {
     this.stopRequested = false;
     this.sessionStartTime = Date.now();
 
-    const sessionEndMs = this.sessionStartTime + this.config.sessionDuration * 60 * 60 * 1_000;
+    const sessionEndMs =
+      this.sessionStartTime + this.config.sessionDuration * 60 * 60 * 1_000;
 
     console.log('[agent-loop] Session started.');
     console.log(`[agent-loop] Strategy: ${this.config.strategy}`);
-    console.log(`[agent-loop] Max games/day: ${this.config.maxGamesPerDay}`);
-    console.log(`[agent-loop] Max stake/game: ${this.config.maxStakePerGame} AVAX`);
+    console.log(`[agent-loop] Max battles/day: ${this.config.maxBattlesPerDay}`);
+    console.log(`[agent-loop] Max stake/battle: ${this.config.maxStakePerBattle} AVAX`);
     console.log(`[agent-loop] Stop-loss limit: ${this.config.stopLossLimit} AVAX`);
-    console.log(`[agent-loop] Preferred types: ${this.config.preferredGameTypes.join(', ')}`);
+    console.log(
+      `[agent-loop] Preferred elements: ${this.config.preferredElements.map((e) => ELEMENT_NAMES[e] ?? e).join(', ')}`,
+    );
     console.log(`[agent-loop] Session duration: ${this.config.sessionDuration}h`);
+    console.log(`[agent-loop] Chat frequency: every ${this.config.chatFrequency} battles`);
 
     try {
+      // --- Ensure agent has at least one warrior ---
+      await this.ensureWarrior();
+
       while (!this.stopRequested) {
         // --- Guard: session duration ---
         if (Date.now() >= sessionEndMs) {
@@ -91,35 +110,32 @@ export class AgentLoop {
           break;
         }
 
-        // --- Guard: daily game cap ---
-        if (this.stats.gamesPlayed >= this.config.maxGamesPerDay) {
-          console.log('[agent-loop] Daily game cap reached. Stopping.');
+        // --- Guard: daily battle cap ---
+        if (this.stats.battlesPlayed >= this.config.maxBattlesPerDay) {
+          console.log('[agent-loop] Daily battle cap reached. Stopping.');
           break;
         }
 
         // --- Guard: stop-loss ---
         const stopLossWei = ethers.parseEther(this.config.stopLossLimit);
-        if (this.profitWei < 0n && (-this.profitWei) >= stopLossWei) {
+        if (this.profitWei < 0n && -this.profitWei >= stopLossWei) {
           console.log(
             `[agent-loop] Stop-loss triggered (loss=${ethers.formatEther(-this.profitWei)} AVAX). Stopping.`,
           );
           break;
         }
 
-        // --- Pick a game type ---
-        const gameType = this.pickGameType();
-
-        // --- Play one game cycle ---
+        // --- Run one battle cycle ---
         try {
-          await this.playOneCycle(gameType);
+          await this.battleCycle();
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          console.error(`[agent-loop] Error during game cycle: ${msg}`);
+          console.error(`[agent-loop] Error during battle cycle: ${msg}`);
         }
 
         // --- Cooldown ---
         if (!this.stopRequested) {
-          await this.sleep(POLL_INTERVAL_MS);
+          await sleep(POLL_INTERVAL_MS);
         }
       }
     } finally {
@@ -152,123 +168,257 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
 
   /**
-   * Run a single game from creation through play to reward claim.
+   * Ensure the agent owns at least one warrior. If not, mint one.
    */
-  private async playOneCycle(gameType: string): Promise<void> {
-    const stake = this.config.maxStakePerGame;
-    const stakeWei = ethers.parseEther(stake);
+  private async ensureWarrior(): Promise<void> {
+    console.log('[agent-loop] Checking if agent has warriors...');
+    const warriors = await getMyWarriors();
 
-    console.log(`[agent-loop] --- Game cycle #${this.stats.gamesPlayed + 1} ---`);
-    console.log(`[agent-loop] Type=${gameType}  Stake=${stake} AVAX`);
-
-    // 1. Create (and implicitly join) a new game
-    const gameId = await createAndJoinGame(gameType, stake);
-
-    // 2. Build the game-state object for the AI
-    const gameState: GameState = {
-      gameId,
-      gameType: gameType as GameState['gameType'],
-      opponentHistory: [],
-      myWinRate: this.stats.gamesPlayed > 0
-        ? this.stats.wins / this.stats.gamesPlayed
-        : 0.5,
-      currentStake: stake,
-      roundNumber: 1,
-    };
-
-    // 3. Play autonomously (commit & reveal)
-    const result = await playGameAutonomously(gameId, this.config.strategy, gameState);
-    console.log(
-      `[agent-loop] Played move=${result.move} commit=${result.commitTxHash} reveal=${result.revealTxHash}`,
-    );
-
-    // 4. Determine outcome by reading on-chain state
-    const outcome = await this.resolveOutcome(gameId);
-
-    // 5. If we won, claim the reward
-    if (outcome === 'win') {
-      try {
-        await claimGameReward(gameId);
-        // Net profit = opponent's stake (we get our own back + theirs)
-        this.profitWei += stakeWei;
-        this.stats.wins += 1;
-        console.log(`[agent-loop] game=${gameId} result=WIN +${stake} AVAX`);
-      } catch (claimErr: unknown) {
-        const msg = claimErr instanceof Error ? claimErr.message : String(claimErr);
-        console.error(`[agent-loop] game=${gameId} failed to claim reward: ${msg}`);
-        // Still count as a win even if claim TX reverts (e.g. already claimed)
-        this.profitWei += stakeWei;
-        this.stats.wins += 1;
-      }
-    } else if (outcome === 'loss') {
-      this.profitWei -= stakeWei;
-      this.stats.losses += 1;
-      console.log(`[agent-loop] game=${gameId} result=LOSS -${stake} AVAX`);
+    if (warriors.length === 0) {
+      console.log('[agent-loop] No warriors found. Minting initial warrior...');
+      const tokenId = await mintWarrior();
+      console.log(`[agent-loop] Initial warrior minted: token #${tokenId}`);
     } else {
-      // Draw - stake returned, net zero
-      this.stats.draws += 1;
-      console.log(`[agent-loop] game=${gameId} result=DRAW`);
+      console.log(`[agent-loop] Agent owns ${warriors.length} warrior(s): [${warriors.join(', ')}]`);
     }
-
-    this.stats.gamesPlayed += 1;
-    this.logStats();
   }
 
   /**
-   * Read the on-chain game struct to determine if we won, lost, or drew.
+   * Run a single battle cycle: gather state, decide, execute, await resolution.
    */
-  private async resolveOutcome(gameId: number): Promise<'win' | 'loss' | 'draw'> {
+  private async battleCycle(): Promise<void> {
+    console.log(`[agent-loop] --- Battle cycle #${this.stats.battlesPlayed + 1} ---`);
+
+    // 1. Build current battle state
+    const battleState = await this.buildBattleState();
+
+    if (battleState.myWarriors.length === 0) {
+      console.log('[agent-loop] No warriors available. Minting a new one...');
+      await mintWarrior();
+      return; // Re-enter loop to pick up new warrior next cycle
+    }
+
+    // 2. Ask the decision engine what to do
+    const decision = await decideBattle(this.config.strategy, battleState);
+    console.log(
+      `[agent-loop] Decision: action=${decision.action} warrior=#${decision.warriorTokenId} ` +
+        `confidence=${decision.confidence.toFixed(2)} reason="${decision.reasoning}"`,
+    );
+
+    // 3. Execute the decision
+    if (decision.action === 'wait') {
+      console.log('[agent-loop] Decision is to wait. Skipping this cycle.');
+      return;
+    }
+
+    let battleId: number;
+    let stakeAmount: string;
+
+    if (decision.action === 'join' && decision.battleId !== undefined) {
+      // Join an existing battle
+      const battleDetails = await getBattleDetails(decision.battleId);
+      stakeAmount = battleDetails.stake;
+
+      // Enforce max stake
+      const stakeWei = ethers.parseEther(stakeAmount);
+      const maxStakeWei = ethers.parseEther(this.config.maxStakePerBattle);
+      if (stakeWei > maxStakeWei) {
+        console.log(
+          `[agent-loop] Battle #${decision.battleId} stake (${stakeAmount} AVAX) exceeds max ` +
+            `(${this.config.maxStakePerBattle} AVAX). Skipping.`,
+        );
+        return;
+      }
+
+      await joinBattle(decision.battleId, decision.warriorTokenId, stakeAmount);
+      battleId = decision.battleId;
+    } else {
+      // Create a new battle
+      stakeAmount = decision.stakeAmount ?? this.config.maxStakePerBattle;
+
+      // Enforce max stake
+      const stakeWei = ethers.parseEther(stakeAmount);
+      const maxStakeWei = ethers.parseEther(this.config.maxStakePerBattle);
+      if (stakeWei > maxStakeWei) {
+        stakeAmount = this.config.maxStakePerBattle;
+      }
+
+      battleId = await createBattle(decision.warriorTokenId, stakeAmount);
+    }
+
+    // 4. Wait for the battle to resolve
+    console.log(`[agent-loop] Waiting for battle #${battleId} to resolve...`);
+    const outcome = await this.waitForBattleResolution(battleId);
+
+    // 5. Record result
+    const stakeWei = ethers.parseEther(stakeAmount);
+
+    if (outcome === 'win') {
+      this.profitWei += stakeWei;
+      this.stats.wins += 1;
+      console.log(`[agent-loop] Battle #${battleId} result=WIN +${stakeAmount} AVAX`);
+    } else if (outcome === 'loss') {
+      this.profitWei -= stakeWei;
+      this.stats.losses += 1;
+      console.log(`[agent-loop] Battle #${battleId} result=LOSS -${stakeAmount} AVAX`);
+    } else {
+      this.stats.draws += 1;
+      console.log(`[agent-loop] Battle #${battleId} result=DRAW (no change)`);
+    }
+
+    this.stats.battlesPlayed += 1;
+    this.logStats();
+
+    // 6. Optionally post results to chat
+    if (
+      this.config.chatFrequency > 0 &&
+      this.stats.battlesPlayed % this.config.chatFrequency === 0
+    ) {
+      await this.postBattleResultToChat(battleId, outcome, stakeAmount);
+    }
+  }
+
+  /**
+   * Build a BattleState object for the decision engine by querying on-chain data.
+   */
+  private async buildBattleState(): Promise<BattleState> {
+    // Get agent's warriors and their stats
+    const warriorIds = await getMyWarriors();
+    const myWarriors: BattleState['myWarriors'] = [];
+
+    for (const tokenId of warriorIds) {
+      try {
+        const stats = await getWarriorStats(tokenId);
+        const totalBattles = Number(stats.battleWins) + Number(stats.battleLosses);
+        const winRate = totalBattles > 0 ? Number(stats.battleWins) / totalBattles : 0.5;
+
+        myWarriors.push({
+          tokenId,
+          element: stats.element,
+          powerScore: Number(stats.powerScore),
+          level: stats.level,
+          winRate,
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[agent-loop] Failed to get stats for warrior #${tokenId}: ${msg}`);
+      }
+    }
+
+    // Get open battles and their details
+    const openBattleIds = await getOpenBattles();
+    const availableBattles: BattleState['availableBattles'] = [];
+
+    // Get agent wallet address to filter out own battles
+    const agentKey = process.env.AGENT_PRIVATE_KEY;
+    const agentAddress = agentKey ? new ethers.Wallet(agentKey).address.toLowerCase() : '';
+
+    for (const bid of openBattleIds) {
+      try {
+        const details = await getBattleDetails(bid);
+
+        // Skip our own battles (we created them, can't join them)
+        if (details.player1.toLowerCase() === agentAddress) {
+          continue;
+        }
+
+        // Get the opponent's warrior element and power score
+        const opponentStats = await getWarriorStats(details.nft1);
+
+        availableBattles.push({
+          battleId: bid,
+          opponentElement: opponentStats.element,
+          opponentPowerScore: Number(opponentStats.powerScore),
+          stake: details.stake,
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[agent-loop] Failed to get details for battle #${bid}: ${msg}`);
+      }
+    }
+
+    // Get current balance
     const rpcUrl = process.env.AVAX_RPC_URL ?? 'https://api.avax-test.network/ext/bc/C/rpc';
     const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const address = process.env.GAME_ENGINE_ADDRESS;
-    if (!address) {
-      throw new Error('GAME_ENGINE_ADDRESS is not set.');
+    let currentBalance = '0';
+    if (agentKey) {
+      const wallet = new ethers.Wallet(agentKey, provider);
+      const balanceWei = await provider.getBalance(wallet.address);
+      currentBalance = ethers.formatEther(balanceWei);
     }
-    const gameEngine = new ethers.Contract(address, GAME_ENGINE_ABI, provider);
 
+    return {
+      availableBattles,
+      myWarriors,
+      currentBalance,
+    };
+  }
+
+  /**
+   * Poll the battle contract until the battle is resolved, then determine outcome.
+   */
+  private async waitForBattleResolution(
+    battleId: number,
+  ): Promise<'win' | 'loss' | 'draw'> {
     const agentKey = process.env.AGENT_PRIVATE_KEY;
     if (!agentKey) {
       throw new Error('AGENT_PRIVATE_KEY is not set.');
     }
     const agentAddress = new ethers.Wallet(agentKey).address;
 
-    // Poll until the game has a winner or is resolved (state >= 4 means resolved)
-    const deadline = Date.now() + 5 * 60 * 1_000; // 5 min timeout
+    const deadline = Date.now() + BATTLE_RESOLUTION_TIMEOUT_MS;
+
     while (Date.now() < deadline) {
       try {
-        const gameData = await gameEngine.games(gameId);
-        const state = Number(gameData[5]);    // state enum
-        const winner: string = gameData[6];   // winner address
+        const details = await getBattleDetails(battleId);
 
-        // state >= 4 typically means "Resolved"
-        if (state >= 4) {
-          if (winner === ethers.ZeroAddress) {
+        if (details.resolved) {
+          if (details.winner === ethers.ZeroAddress) {
             return 'draw';
           }
-          return winner.toLowerCase() === agentAddress.toLowerCase() ? 'win' : 'loss';
+          return details.winner.toLowerCase() === agentAddress.toLowerCase()
+            ? 'win'
+            : 'loss';
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[agent-loop] game=${gameId} outcome poll error: ${msg}`);
+        console.warn(`[agent-loop] Battle #${battleId} resolution poll error: ${msg}`);
       }
 
-      await this.sleep(5_000);
+      await sleep(BATTLE_RESOLUTION_POLL_MS);
     }
 
-    // If we timed out assume a draw (stake may be reclaimable separately)
-    console.warn(`[agent-loop] game=${gameId} timed out resolving outcome; assuming draw.`);
+    // Timed out - assume draw (stake may be reclaimable separately)
+    console.warn(
+      `[agent-loop] Battle #${battleId} timed out waiting for resolution; assuming draw.`,
+    );
     return 'draw';
   }
 
   /**
-   * Randomly pick a game type from the configured preferences.
+   * Post a battle result message to the on-chain agent chat.
    */
-  private pickGameType(): string {
-    const types = this.config.preferredGameTypes;
-    if (types.length === 0) {
-      return 'RPS'; // sensible default
+  private async postBattleResultToChat(
+    battleId: number,
+    outcome: 'win' | 'loss' | 'draw',
+    stakeAmount: string,
+  ): Promise<void> {
+    try {
+      const stats = this.getStats();
+      const emoji =
+        outcome === 'win' ? 'Victory' : outcome === 'loss' ? 'Defeat' : 'Draw';
+      const content =
+        `${emoji} in Battle #${battleId}! Stake: ${stakeAmount} AVAX. ` +
+        `Record: ${stats.wins}W/${stats.losses}L/${stats.draws}D | ` +
+        `Profit: ${stats.profit} AVAX | Strategy: ${this.config.strategy}`;
+
+      // Category 1 = BattleResult
+      await postChatMessage(content, 1);
+      console.log('[agent-loop] Battle result posted to chat.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[agent-loop] Failed to post chat message: ${msg}`);
     }
-    return types[Math.floor(Math.random() * types.length)];
   }
 
   /**
@@ -277,14 +427,7 @@ export class AgentLoop {
   private logStats(): void {
     const s = this.getStats();
     console.log(
-      `[agent-loop] Stats: played=${s.gamesPlayed} W=${s.wins} L=${s.losses} D=${s.draws} profit=${s.profit} AVAX`,
+      `[agent-loop] Stats: battles=${s.battlesPlayed} W=${s.wins} L=${s.losses} D=${s.draws} profit=${s.profit} AVAX`,
     );
-  }
-
-  /**
-   * Async sleep helper.
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

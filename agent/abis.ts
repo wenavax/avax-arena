@@ -1,72 +1,45 @@
 // Minimal ABI fragments for the contracts used by the AI agent.
-// Only the function signatures actually called are included.
 
-export const GAME_ENGINE_ABI = [
-  // Create a new game of the given type with a stake (payable)
-  // GameType enum values (uint8):
-  //   0 = CoinFlip, 1 = DiceRoll, 2 = RPS, 3 = NumberGuess,
-  //   4 = DragonTiger, 5 = ElementalClash, 6 = CrashDice
-  'function createGame(uint8 gameType) external payable returns (uint256 gameId)',
+export const ARENA_WARRIOR_ABI = [
+  'function mint() external payable returns (uint256)',
+  'function getWarrior(uint256 tokenId) external view returns (tuple(uint8 attack, uint8 defense, uint8 speed, uint8 element, uint8 specialPower, uint8 level, uint256 experience, uint256 battleWins, uint256 battleLosses, uint256 powerScore))',
+  'function getWarriorsByOwner(address owner) external view returns (uint256[])',
+  'function getWarriorPowerScore(uint256 tokenId) external view returns (uint256)',
+  'function ownerOf(uint256 tokenId) external view returns (address)',
+  'function totalSupply() external view returns (uint256)',
+  'event WarriorMinted(uint256 indexed tokenId, address indexed owner, uint8 attack, uint8 defense, uint8 speed, uint8 element, uint8 specialPower, uint256 powerScore)',
+] as const;
 
-  // Join an existing game by gameId (payable, must match stake)
-  'function joinGame(uint256 gameId) external payable',
+export const BATTLE_ENGINE_ABI = [
+  'function createBattle(uint256 tokenId) external payable returns (uint256)',
+  'function joinBattle(uint256 battleId, uint256 tokenId) external payable',
+  'function cancelBattle(uint256 battleId) external',
+  'function getOpenBattles() external view returns (uint256[])',
+  'function getBattle(uint256 battleId) external view returns (tuple(uint256 id, address player1, address player2, uint256 nft1, uint256 nft2, uint256 stake, address winner, bool resolved, uint256 createdAt, uint256 resolvedAt))',
+  'function getBattleHistory(address player) external view returns (uint256[])',
+  'function battleCounter() external view returns (uint256)',
+  'event BattleCreated(uint256 indexed battleId, address indexed player1, uint256 nft1, uint256 stake)',
+  'event BattleResolved(uint256 indexed battleId, address indexed winner, uint256 prize)',
+] as const;
 
-  // Commit a hashed move during the commit phase
-  'function commitMove(uint256 gameId, bytes32 commitHash) external',
-
-  // Reveal the move and salt used to produce the earlier commit hash
-  'function revealMove(uint256 gameId, uint8 move, bytes32 salt) external',
-
-  // Claim the reward after a game has been resolved
-  'function claimReward(uint256 gameId) external',
-
-  // View: retrieve full game struct by id
-  'function games(uint256 gameId) external view returns (uint256 id, uint8 gameType, address player1, address player2, uint256 stake, uint8 state, address winner)',
-
-  // View: total number of games ever created
-  'function gameCounter() external view returns (uint256)',
+export const AGENT_CHAT_ABI = [
+  'function postMessage(string content, uint256 parentId, uint8 category) external returns (uint256)',
+  'function likeMessage(uint256 messageId) external',
+  'function getMessage(uint256 messageId) external view returns (tuple(uint256 id, address author, string content, uint256 timestamp, uint256 parentId, uint256 likes, uint256 replyCount, string agentName, uint8 category))',
+  'function getThreadIds(uint256 offset, uint256 limit) external view returns (uint256[])',
+  'function getThreadCount() external view returns (uint256)',
 ] as const;
 
 export const AGENT_REGISTRY_ABI = [
-  // Register this wallet as an AI agent with a chosen strategy label
-  'function registerAgent(string calldata strategy) external',
-
-  // Register an agent wallet with name and strategy type (wallet management)
-  'function registerAgent(address wallet, string calldata name, uint8 strategyType) external',
-
-  // Owner grants a session key that can act on behalf of the agent
-  'function grantSessionKey(address sessionKey, uint256 expiry) external',
-
-  // Grant a session key with duration in seconds (wallet management)
+  'function registerAgent(address wallet, string calldata name, uint8 strategyType) external returns (uint256)',
   'function grantSessionKey(uint256 duration) external',
-
-  // View: check whether an address is an authorized agent (or session key)
   'function isAgentAuthorized(address agent) external view returns (bool)',
-
-  // Update the strategy label stored on-chain for this agent
-  'function updateStrategy(string calldata newStrategy) external',
-
-  // View: look up agent data by wallet address
-  'function getAgentByWallet(address wallet) external view returns (uint256 id, address walletAddr, string name, uint8 strategyType, bool active)',
-
-  // Fund the agent's on-chain balance (payable)
+  'function getAgentByWallet(address wallet) external view returns (tuple(uint256 id, address owner, address agentWallet, string name, uint8 strategy, uint256 wins, uint256 losses, uint256 totalGames, uint256 totalTxGenerated, uint256 createdAt, bool active, uint256 sessionKeyExpiry, uint256 dailySpendLimit, uint256 dailySpent, uint256 lastSpendReset, uint256 maxStakePerGame, uint256 totalDeposited, uint256 profitWithdrawn))',
   'function fundAgent() external payable',
-
-  // Withdraw funds from the agent's on-chain balance
   'function withdrawFromAgent(uint256 _amount) external',
-
-  // Set daily spend limit and max stake per game for the agent
   'function setSpendLimits(uint256 _dailyLimit, uint256 _maxStakePerGame) external',
-
-  // Check and record a spend action against the agent's limits
   'function checkAndRecordSpend(address _wallet, uint256 _amount) external',
-
-  // Emergency stop: deactivate the agent immediately
   'function emergencyStop() external',
-
-  // Reactivate a previously stopped agent
   'function reactivateAgent() external',
-
-  // View: get the on-chain balance for a given agent
   'function getAgentBalance(uint256 _agentId) external view returns (uint256)',
 ] as const;

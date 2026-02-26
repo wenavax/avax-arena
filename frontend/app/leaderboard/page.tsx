@@ -9,11 +9,11 @@ const MOCK_PLAYERS = Array.from({ length: 20 }, (_, i) => ({
   rank: i + 1,
   address: `0x${(Math.random().toString(16).slice(2) + '0'.repeat(40)).slice(0, 40)}`,
   wins: Math.floor(Math.random() * 200) + (20 - i) * 10,
-  totalGames: Math.floor(Math.random() * 300) + (20 - i) * 15,
+  totalBattles: Math.floor(Math.random() * 300) + (20 - i) * 15,
   arenaEarned: Math.floor(Math.random() * 5000) + (20 - i) * 200,
 }))
   .sort((a, b) => b.wins - a.wins)
-  .map((p, i) => ({ ...p, rank: i + 1, winRate: Math.round((p.wins / p.totalGames) * 100) }));
+  .map((p, i) => ({ ...p, rank: i + 1, winRate: Math.round((p.wins / p.totalBattles) * 100) }));
 
 const SEASONS = [
   { id: 1, label: 'Season 1', active: true },
@@ -144,7 +144,7 @@ export default function LeaderboardPage() {
       >
         {[
           { icon: Users, label: 'Total Players', value: '2,847', color: 'text-arena-cyan' },
-          { icon: Gamepad2, label: 'Games Played', value: '18,293', color: 'text-arena-purple' },
+          { icon: Gamepad2, label: 'Battles Fought', value: '18,293', color: 'text-arena-purple' },
           { icon: TrendingUp, label: 'Avg Win Rate', value: '48.7%', color: 'text-arena-green' },
           { icon: Trophy, label: 'ARENA Distributed', value: '125,000', color: 'text-arena-gold' },
         ].map((stat, i) => (
@@ -174,7 +174,7 @@ export default function LeaderboardPage() {
                 <th className="w-16">Rank</th>
                 <th>Player</th>
                 <th className="text-right">Wins</th>
-                <th className="text-right">Games</th>
+                <th className="text-right">Battles</th>
                 <th className="text-right">Win Rate</th>
                 <th className="text-right">ARENA Earned</th>
               </tr>
@@ -212,7 +212,7 @@ export default function LeaderboardPage() {
                     </div>
                   </td>
                   <td className="text-right font-mono font-bold text-white">{player.wins}</td>
-                  <td className="text-right font-mono text-white/60">{player.totalGames}</td>
+                  <td className="text-right font-mono text-white/60">{player.totalBattles}</td>
                   <td className="text-right">
                     <span className={cn(
                       'font-mono font-semibold',

@@ -27,47 +27,7 @@ const arenaTokenAddress = await arenaToken.getAddress();
 console.log("ArenaToken deployed to:", arenaTokenAddress);
 
 // ---------------------------------------------------------------------------
-// 2. Leaderboard (no constructor args)
-// ---------------------------------------------------------------------------
-console.log("\n--- Deploying Leaderboard ---");
-const Leaderboard = await ethers.getContractFactory("Leaderboard");
-const leaderboard = await Leaderboard.deploy();
-await leaderboard.waitForDeployment();
-const leaderboardAddress = await leaderboard.getAddress();
-console.log("Leaderboard deployed to:", leaderboardAddress);
-
-// ---------------------------------------------------------------------------
-// 3. RewardVault (constructor: arenaToken address)
-// ---------------------------------------------------------------------------
-console.log("\n--- Deploying RewardVault ---");
-const RewardVault = await ethers.getContractFactory("RewardVault");
-const rewardVault = await RewardVault.deploy(arenaTokenAddress);
-await rewardVault.waitForDeployment();
-const rewardVaultAddress = await rewardVault.getAddress();
-console.log("RewardVault deployed to:", rewardVaultAddress);
-
-// ---------------------------------------------------------------------------
-// 4. GameEngine (constructor: rewardVault address, leaderboard address)
-// ---------------------------------------------------------------------------
-console.log("\n--- Deploying GameEngine ---");
-const GameEngine = await ethers.getContractFactory("GameEngine");
-const gameEngine = await GameEngine.deploy(rewardVaultAddress, leaderboardAddress);
-await gameEngine.waitForDeployment();
-const gameEngineAddress = await gameEngine.getAddress();
-console.log("GameEngine deployed to:", gameEngineAddress);
-
-// ---------------------------------------------------------------------------
-// 5. Tournament (no constructor args, Ownable)
-// ---------------------------------------------------------------------------
-console.log("\n--- Deploying Tournament ---");
-const Tournament = await ethers.getContractFactory("Tournament");
-const tournament = await Tournament.deploy();
-await tournament.waitForDeployment();
-const tournamentAddress = await tournament.getAddress();
-console.log("Tournament deployed to:", tournamentAddress);
-
-// ---------------------------------------------------------------------------
-// 6. AgentRegistry (no constructor args)
+// 2. AgentRegistry (no constructor args)
 // ---------------------------------------------------------------------------
 console.log("\n--- Deploying AgentRegistry ---");
 const AgentRegistry = await ethers.getContractFactory("AgentRegistry");
@@ -77,40 +37,89 @@ const agentRegistryAddress = await agentRegistry.getAddress();
 console.log("AgentRegistry deployed to:", agentRegistryAddress);
 
 // ---------------------------------------------------------------------------
-// 7. GameRegistry (no constructor args, registers 4 default game types)
+// 3. ArenaWarrior (no constructor args — ERC-721 NFT)
 // ---------------------------------------------------------------------------
-console.log("\n--- Deploying GameRegistry ---");
-const GameRegistry = await ethers.getContractFactory("GameRegistry");
-const gameRegistry = await GameRegistry.deploy();
-await gameRegistry.waitForDeployment();
-const gameRegistryAddress = await gameRegistry.getAddress();
-console.log("GameRegistry deployed to:", gameRegistryAddress);
+console.log("\n--- Deploying ArenaWarrior ---");
+const ArenaWarrior = await ethers.getContractFactory("ArenaWarrior");
+const arenaWarrior = await ArenaWarrior.deploy();
+await arenaWarrior.waitForDeployment();
+const arenaWarriorAddress = await arenaWarrior.getAddress();
+console.log("ArenaWarrior deployed to:", arenaWarriorAddress);
 
 // ---------------------------------------------------------------------------
-// Set Permissions
+// 4. BattleEngine (constructor: arenaWarrior address, feeRecipient address)
 // ---------------------------------------------------------------------------
-console.log("\n--- Setting Permissions ---");
+console.log("\n--- Deploying BattleEngine ---");
+const BattleEngine = await ethers.getContractFactory("BattleEngine");
+const battleEngine = await BattleEngine.deploy(
+  arenaWarriorAddress,
+  deployer.address
+);
+await battleEngine.waitForDeployment();
+const battleEngineAddress = await battleEngine.getAddress();
+console.log("BattleEngine deployed to:", battleEngineAddress);
 
-// ArenaToken: authorise GameEngine and Tournament to mint rewards
-console.log("Setting ArenaToken.setGameEngine...");
-const tx1 = await arenaToken.setGameEngine(gameEngineAddress);
+// ---------------------------------------------------------------------------
+// 5. AgentChat (constructor: agentRegistry address)
+// ---------------------------------------------------------------------------
+console.log("\n--- Deploying AgentChat ---");
+const AgentChat = await ethers.getContractFactory("AgentChat");
+const agentChat = await AgentChat.deploy(agentRegistryAddress);
+await agentChat.waitForDeployment();
+const agentChatAddress = await agentChat.getAddress();
+console.log("AgentChat deployed to:", agentChatAddress);
+
+// ---------------------------------------------------------------------------
+// 6. Leaderboard (no constructor args)
+// ---------------------------------------------------------------------------
+console.log("\n--- Deploying Leaderboard ---");
+const Leaderboard = await ethers.getContractFactory("Leaderboard");
+const leaderboard = await Leaderboard.deploy();
+await leaderboard.waitForDeployment();
+const leaderboardAddress = await leaderboard.getAddress();
+console.log("Leaderboard deployed to:", leaderboardAddress);
+
+// ---------------------------------------------------------------------------
+// 7. RewardVault (constructor: arenaToken address)
+// ---------------------------------------------------------------------------
+console.log("\n--- Deploying RewardVault ---");
+const RewardVault = await ethers.getContractFactory("RewardVault");
+const rewardVault = await RewardVault.deploy(arenaTokenAddress);
+await rewardVault.waitForDeployment();
+const rewardVaultAddress = await rewardVault.getAddress();
+console.log("RewardVault deployed to:", rewardVaultAddress);
+
+// ---------------------------------------------------------------------------
+// Post-Deployment Configuration
+// ---------------------------------------------------------------------------
+console.log("\n--- Configuring contracts ---");
+
+// ArenaWarrior: authorize BattleEngine to record battle results
+console.log("Setting ArenaWarrior.setBattleContract(BattleEngine)...");
+const tx1 = await arenaWarrior.setBattleContract(battleEngineAddress);
 await tx1.wait();
 
-console.log("Setting ArenaToken.setTournament...");
-const tx2 = await arenaToken.setTournament(tournamentAddress);
+// BattleEngine: set ArenaWarrior NFT contract
+console.log("Setting BattleEngine.setArenaWarrior(ArenaWarrior)...");
+const tx2 = await battleEngine.setArenaWarrior(arenaWarriorAddress);
 await tx2.wait();
 
-// Leaderboard: authorise GameEngine to update scores
-console.log("Setting Leaderboard.setGameEngine...");
-const tx3 = await leaderboard.setGameEngine(gameEngineAddress);
+// BattleEngine: set fee recipient to deployer
+console.log("Setting BattleEngine.setFeeRecipient(deployer)...");
+const tx3 = await battleEngine.setFeeRecipient(deployer.address);
 await tx3.wait();
 
-// AgentRegistry: authorise GameEngine to record game results
-console.log("Setting AgentRegistry.setAuthorizedCaller(gameEngine, true)...");
-const tx4 = await agentRegistry.setAuthorizedCaller(gameEngineAddress, true);
+// AgentChat: set agent registry
+console.log("Setting AgentChat.setAgentRegistry(AgentRegistry)...");
+const tx4 = await agentChat.setAgentRegistry(agentRegistryAddress);
 await tx4.wait();
 
-console.log("All permissions set successfully.");
+// AgentRegistry: authorize BattleEngine to record game results
+console.log("Setting AgentRegistry.setAuthorizedCaller(BattleEngine, true)...");
+const tx5 = await agentRegistry.setAuthorizedCaller(battleEngineAddress, true);
+await tx5.wait();
+
+console.log("All post-deployment configuration complete.");
 
 // ---------------------------------------------------------------------------
 // Log all addresses
@@ -119,12 +128,12 @@ console.log("\n========================================");
 console.log("Deployment Summary");
 console.log("========================================");
 console.log("ArenaToken:    ", arenaTokenAddress);
+console.log("AgentRegistry: ", agentRegistryAddress);
+console.log("ArenaWarrior:  ", arenaWarriorAddress);
+console.log("BattleEngine:  ", battleEngineAddress);
+console.log("AgentChat:     ", agentChatAddress);
 console.log("Leaderboard:   ", leaderboardAddress);
 console.log("RewardVault:   ", rewardVaultAddress);
-console.log("GameEngine:    ", gameEngineAddress);
-console.log("Tournament:    ", tournamentAddress);
-console.log("AgentRegistry: ", agentRegistryAddress);
-console.log("GameRegistry:  ", gameRegistryAddress);
 console.log("========================================\n");
 
 // ---------------------------------------------------------------------------
@@ -137,21 +146,21 @@ const addresses = {
   deployedAt: new Date().toISOString(),
   contracts: {
     ArenaToken: arenaTokenAddress,
+    AgentRegistry: agentRegistryAddress,
+    ArenaWarrior: arenaWarriorAddress,
+    BattleEngine: battleEngineAddress,
+    AgentChat: agentChatAddress,
     Leaderboard: leaderboardAddress,
     RewardVault: rewardVaultAddress,
-    GameEngine: gameEngineAddress,
-    Tournament: tournamentAddress,
-    AgentRegistry: agentRegistryAddress,
-    GameRegistry: gameRegistryAddress,
   },
   constructorArgs: {
     ArenaToken: [],
+    AgentRegistry: [],
+    ArenaWarrior: [],
+    BattleEngine: [arenaWarriorAddress, deployer.address],
+    AgentChat: [agentRegistryAddress],
     Leaderboard: [],
     RewardVault: [arenaTokenAddress],
-    GameEngine: [rewardVaultAddress, leaderboardAddress],
-    Tournament: [],
-    AgentRegistry: [],
-    GameRegistry: [],
   },
 };
 

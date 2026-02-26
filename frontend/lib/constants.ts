@@ -1,100 +1,40 @@
-export const GAMES = [
-  {
-    id: 0,
-    slug: 'coin-flip',
-    name: 'Coin Flip',
-    emoji: '\u{1FA99}',
-    description: 'Heads or Tails - classic 50/50 duel',
-    color: 'from-yellow-500 to-amber-600',
-    glowColor: 'rgba(255, 215, 0, 0.3)',
-    bgGradient: 'from-yellow-500/10 to-amber-600/5',
-    moveRange: [1, 2] as const,
-    moveLabels: ['Heads', 'Tails'],
-  },
-  {
-    id: 1,
-    slug: 'dice-duel',
-    name: 'Dice Duel',
-    emoji: '\u{1F3B2}',
-    description: 'Roll the dice - highest number wins',
-    color: 'from-red-500 to-orange-600',
-    glowColor: 'rgba(255, 68, 0, 0.3)',
-    bgGradient: 'from-red-500/10 to-orange-600/5',
-    moveRange: [1, 6] as const,
-    moveLabels: ['1', '2', '3', '4', '5', '6'],
-  },
-  {
-    id: 2,
-    slug: 'rps',
-    name: 'Rock Paper Scissors',
-    emoji: '\u270A',
-    description: 'The timeless battle of wits',
-    color: 'from-blue-500 to-indigo-600',
-    glowColor: 'rgba(99, 102, 241, 0.3)',
-    bgGradient: 'from-blue-500/10 to-indigo-600/5',
-    moveRange: [1, 3] as const,
-    moveLabels: ['Rock', 'Paper', 'Scissors'],
-  },
-  {
-    id: 3,
-    slug: 'number-guess',
-    name: 'Number Guess',
-    emoji: '\u{1F522}',
-    description: 'Pick a number 1-100, highest wins',
-    color: 'from-emerald-500 to-teal-600',
-    glowColor: 'rgba(0, 255, 136, 0.3)',
-    bgGradient: 'from-emerald-500/10 to-teal-600/5',
-    moveRange: [1, 100] as const,
-    moveLabels: [],
-  },
-  {
-    id: 4,
-    slug: 'dragon-tiger',
-    name: 'Dragon Tiger',
-    emoji: '\u{1F409}',
-    description: 'Card duel - draw the highest card',
-    color: 'from-purple-500 to-fuchsia-600',
-    glowColor: 'rgba(168, 85, 247, 0.3)',
-    bgGradient: 'from-purple-500/10 to-fuchsia-600/5',
-    moveRange: [1, 13] as const,
-    moveLabels: ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'],
-  },
-  {
-    id: 5,
-    slug: 'elemental-clash',
-    name: 'Elemental Clash',
-    emoji: '\u26A1',
-    description: '5-element battle royale',
-    color: 'from-cyan-500 to-blue-600',
-    glowColor: 'rgba(0, 240, 255, 0.3)',
-    bgGradient: 'from-cyan-500/10 to-blue-600/5',
-    moveRange: [1, 5] as const,
-    moveLabels: ['Fire \u{1F525}', 'Water \u{1F4A7}', 'Wind \u{1F32A}\uFE0F', 'Ice \u2744\uFE0F', 'Earth \u{1F30D}'],
-  },
-  {
-    id: 6,
-    slug: 'crash-dice',
-    name: 'Crash Dice',
-    emoji: '\u{1F480}',
-    description: 'D20 death roll - highest wins',
-    color: 'from-pink-500 to-rose-600',
-    glowColor: 'rgba(255, 45, 135, 0.3)',
-    bgGradient: 'from-pink-500/10 to-rose-600/5',
-    moveRange: [1, 20] as const,
-    moveLabels: [],
-  },
-];
+export const ELEMENTS = [
+  { id: 0, name: 'Fire', emoji: '🔥', color: 'from-red-500 to-orange-600', glowColor: 'rgba(255, 68, 0, 0.3)', bgGradient: 'from-red-500/10 to-orange-600/5' },
+  { id: 1, name: 'Water', emoji: '💧', color: 'from-blue-500 to-cyan-600', glowColor: 'rgba(0, 150, 255, 0.3)', bgGradient: 'from-blue-500/10 to-cyan-600/5' },
+  { id: 2, name: 'Wind', emoji: '🌪️', color: 'from-green-500 to-emerald-600', glowColor: 'rgba(0, 255, 136, 0.3)', bgGradient: 'from-green-500/10 to-emerald-600/5' },
+  { id: 3, name: 'Ice', emoji: '❄️', color: 'from-cyan-400 to-blue-500', glowColor: 'rgba(0, 240, 255, 0.3)', bgGradient: 'from-cyan-400/10 to-blue-500/5' },
+  { id: 4, name: 'Earth', emoji: '🌍', color: 'from-amber-600 to-yellow-700', glowColor: 'rgba(180, 120, 0, 0.3)', bgGradient: 'from-amber-600/10 to-yellow-700/5' },
+  { id: 5, name: 'Thunder', emoji: '⚡', color: 'from-yellow-400 to-purple-600', glowColor: 'rgba(255, 215, 0, 0.3)', bgGradient: 'from-yellow-400/10 to-purple-600/5' },
+  { id: 6, name: 'Shadow', emoji: '🌑', color: 'from-purple-700 to-gray-900', glowColor: 'rgba(100, 0, 150, 0.3)', bgGradient: 'from-purple-700/10 to-gray-900/5' },
+  { id: 7, name: 'Light', emoji: '✨', color: 'from-yellow-200 to-white', glowColor: 'rgba(255, 255, 200, 0.3)', bgGradient: 'from-yellow-200/10 to-white/5' },
+] as const;
 
-export type Game = (typeof GAMES)[number];
+export type Element = (typeof ELEMENTS)[number];
+
+export const ELEMENT_ADVANTAGES: Record<number, number> = {
+  0: 2, // Fire beats Wind
+  2: 3, // Wind beats Ice
+  3: 1, // Ice beats Water
+  1: 0, // Water beats Fire
+  4: 5, // Earth beats Thunder
+  5: 6, // Thunder beats Shadow
+  6: 7, // Shadow beats Light
+  7: 4, // Light beats Earth
+};
+
+export const MINT_PRICE = '0.01'; // AVAX
+export const MIN_BATTLE_STAKE = '0.005'; // AVAX
+export const PLATFORM_FEE_PERCENT = 2.5;
 
 export const CONTRACT_ADDRESSES = {
-  gameEngine: '',
-  arenaToken: '',
+  arenaWarrior: '',
+  battleEngine: '',
   agentRegistry: '',
+  agentChat: '',
+  arenaToken: '',
   tournament: '',
   leaderboard: '',
   rewardVault: '',
-  gameRegistry: '',
 };
 
 export const AVALANCHE_CHAIN_ID = 43114;
