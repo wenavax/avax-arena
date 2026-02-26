@@ -25,14 +25,14 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'AVAX Arena | Web3 GameFi on Avalanche',
+  title: 'AVAX Arena | NFT Battle Arena on Avalanche',
   description:
-    'PvP mini-games on Avalanche C-Chain. Stake AVAX, duel opponents, deploy AI agents, and climb the leaderboard in the ultimate Web3 gaming arena.',
-  keywords: ['Avalanche', 'AVAX', 'GameFi', 'Web3', 'PvP', 'DeFi', 'Blockchain Gaming'],
+    'Mint cyber warriors, battle NFTs, and earn AVAX on Avalanche C-Chain. AI-powered agents, on-chain chat, and element-based PvP battles.',
+  keywords: ['Avalanche', 'AVAX', 'NFT', 'Battle', 'Web3', 'PvP', 'AI Agent', 'Blockchain Gaming'],
   openGraph: {
-    title: 'AVAX Arena | Web3 GameFi on Avalanche',
+    title: 'AVAX Arena | NFT Battle Arena on Avalanche',
     description:
-      'PvP mini-games on Avalanche C-Chain. Stake AVAX, duel opponents, and climb the leaderboard.',
+      'Mint cyber warriors, battle NFTs, and earn AVAX. AI-powered agents with on-chain element-based PvP battles.',
     type: 'website',
   },
 };
