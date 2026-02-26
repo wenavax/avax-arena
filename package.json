@@ -1,0 +1,46 @@
+{
+  "name": "avax-arena",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:fuji": "hardhat run scripts/deploy.ts --network fuji",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network avalanche",
+    "verify:fuji": "hardhat run scripts/verify.ts --network fuji",
+    "verify:mainnet": "hardhat run scripts/verify.ts --network avalanche"
+  },
+  "keywords": [
+    "gamefi",
+    "avalanche",
+    "ai-agent",
+    "web3"
+  ],
+  "author": "AVAX Arena Team",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^4.0.5",
+    "@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.3",
+    "@nomicfoundation/hardhat-mocha": "^3.0.11",
+    "@nomicfoundation/hardhat-network-helpers": "^3.0.4",
+    "@nomicfoundation/hardhat-toolbox": "^7.0.0",
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.3",
+    "@nomicfoundation/hardhat-verify": "^3.0.11",
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^25.3.2",
+    "chai": "^6.2.2",
+    "hardhat": "^3.1.10",
+    "mocha": "^11.7.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0",
+    "dotenv": "^17.3.1",
+    "ethers": "^6.16.0",
+    "openai": "^6.25.0"
+  }
+}
