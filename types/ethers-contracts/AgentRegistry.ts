@@ -6,55 +6,81 @@ import type { TypedContractEvent, TypedDeferredTopicFilter, TypedEventLog, Typed
   
 export declare namespace AgentRegistry {
       
-    export type AgentStruct = {id: BigNumberish, owner: AddressLike, agentWallet: AddressLike, name: string, strategy: BigNumberish, wins: BigNumberish, losses: BigNumberish, totalGames: BigNumberish, totalTxGenerated: BigNumberish, createdAt: BigNumberish, active: boolean, sessionKeyExpiry: BigNumberish}
+    export type AgentStruct = {id: BigNumberish, owner: AddressLike, agentWallet: AddressLike, name: string, strategy: BigNumberish, wins: BigNumberish, losses: BigNumberish, totalGames: BigNumberish, totalTxGenerated: BigNumberish, createdAt: BigNumberish, active: boolean, sessionKeyExpiry: BigNumberish, dailySpendLimit: BigNumberish, dailySpent: BigNumberish, lastSpendReset: BigNumberish, maxStakePerGame: BigNumberish, totalDeposited: BigNumberish, profitWithdrawn: BigNumberish}
 
-    export type AgentStructOutput = [id: bigint, owner: string, agentWallet: string, name: string, strategy: bigint, wins: bigint, losses: bigint, totalGames: bigint, totalTxGenerated: bigint, createdAt: bigint, active: boolean, sessionKeyExpiry: bigint] & {id: bigint, owner: string, agentWallet: string, name: string, strategy: bigint, wins: bigint, losses: bigint, totalGames: bigint, totalTxGenerated: bigint, createdAt: bigint, active: boolean, sessionKeyExpiry: bigint }
+    export type AgentStructOutput = [id: bigint, owner: string, agentWallet: string, name: string, strategy: bigint, wins: bigint, losses: bigint, totalGames: bigint, totalTxGenerated: bigint, createdAt: bigint, active: boolean, sessionKeyExpiry: bigint, dailySpendLimit: bigint, dailySpent: bigint, lastSpendReset: bigint, maxStakePerGame: bigint, totalDeposited: bigint, profitWithdrawn: bigint] & {id: bigint, owner: string, agentWallet: string, name: string, strategy: bigint, wins: bigint, losses: bigint, totalGames: bigint, totalTxGenerated: bigint, createdAt: bigint, active: boolean, sessionKeyExpiry: bigint, dailySpendLimit: bigint, dailySpent: bigint, lastSpendReset: bigint, maxStakePerGame: bigint, totalDeposited: bigint, profitWithdrawn: bigint }
   
     }
 
   export interface AgentRegistryInterface extends Interface {
-    getFunction(nameOrSignature: "agentCount" | "agents" | "authorizedCallers" | "getAgent" | "getAgentByWallet" | "getMyAgent" | "grantSessionKey" | "isAgentAuthorized" | "owner" | "ownerToAgent" | "recordGameResult" | "registerAgent" | "renounceOwnership" | "setAuthorizedCaller" | "transferOwnership" | "updateStrategy" | "walletToAgent"): FunctionFragment;
+    getFunction(nameOrSignature: "agentCount" | "agents" | "authorizedCallers" | "checkAndRecordSpend" | "emergencyStop" | "fundAgent" | "getAgent" | "getAgentBalance" | "getAgentByWallet" | "getMyAgent" | "grantSessionKey" | "isAgentAuthorized" | "owner" | "ownerToAgent" | "reactivateAgent" | "recordGameResult" | "registerAgent" | "renounceOwnership" | "setAuthorizedCaller" | "setSpendLimits" | "transferOwnership" | "updateStrategy" | "walletToAgent" | "withdrawFromAgent"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "AgentRegistered" | "AgentStatsUpdated" | "OwnershipTransferred" | "SessionKeyGranted" | "StrategyUpdated"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "AgentFunded" | "AgentRegistered" | "AgentStatsUpdated" | "AgentWithdrawn" | "EmergencyStop" | "OwnershipTransferred" | "SessionKeyGranted" | "SpendLimitUpdated" | "StrategyUpdated"): EventFragment;
 
     encodeFunctionData(functionFragment: 'agentCount', values?: undefined): string;
 encodeFunctionData(functionFragment: 'agents', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'authorizedCallers', values: [AddressLike]): string;
+encodeFunctionData(functionFragment: 'checkAndRecordSpend', values: [AddressLike, BigNumberish]): string;
+encodeFunctionData(functionFragment: 'emergencyStop', values?: undefined): string;
+encodeFunctionData(functionFragment: 'fundAgent', values?: undefined): string;
 encodeFunctionData(functionFragment: 'getAgent', values: [BigNumberish]): string;
+encodeFunctionData(functionFragment: 'getAgentBalance', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'getAgentByWallet', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'getMyAgent', values?: undefined): string;
 encodeFunctionData(functionFragment: 'grantSessionKey', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'isAgentAuthorized', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'owner', values?: undefined): string;
 encodeFunctionData(functionFragment: 'ownerToAgent', values: [AddressLike]): string;
+encodeFunctionData(functionFragment: 'reactivateAgent', values?: undefined): string;
 encodeFunctionData(functionFragment: 'recordGameResult', values: [AddressLike, boolean]): string;
 encodeFunctionData(functionFragment: 'registerAgent', values: [AddressLike, string, BigNumberish]): string;
 encodeFunctionData(functionFragment: 'renounceOwnership', values?: undefined): string;
 encodeFunctionData(functionFragment: 'setAuthorizedCaller', values: [AddressLike, boolean]): string;
+encodeFunctionData(functionFragment: 'setSpendLimits', values: [BigNumberish, BigNumberish]): string;
 encodeFunctionData(functionFragment: 'transferOwnership', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'updateStrategy', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'walletToAgent', values: [AddressLike]): string;
+encodeFunctionData(functionFragment: 'withdrawFromAgent', values: [BigNumberish]): string;
 
     decodeFunctionResult(functionFragment: 'agentCount', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'agents', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'authorizedCallers', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'checkAndRecordSpend', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'emergencyStop', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'fundAgent', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getAgent', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'getAgentBalance', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getAgentByWallet', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getMyAgent', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'grantSessionKey', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'isAgentAuthorized', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'owner', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'ownerToAgent', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'reactivateAgent', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'recordGameResult', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'registerAgent', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'renounceOwnership', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'setAuthorizedCaller', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'setSpendLimits', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'transferOwnership', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'updateStrategy', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'walletToAgent', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'withdrawFromAgent', data: BytesLike): Result;
   }
 
   
+    export namespace AgentFundedEvent {
+      export type InputTuple = [agentId: BigNumberish, amount: BigNumberish];
+      export type OutputTuple = [agentId: bigint, amount: bigint];
+      export interface OutputObject {agentId: bigint, amount: bigint };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
     export namespace AgentRegisteredEvent {
       export type InputTuple = [agentId: BigNumberish, owner: AddressLike, agentWallet: AddressLike, name: string, strategy: BigNumberish];
       export type OutputTuple = [agentId: bigint, owner: string, agentWallet: string, name: string, strategy: bigint];
@@ -79,6 +105,30 @@ decodeFunctionResult(functionFragment: 'walletToAgent', data: BytesLike): Result
 
   
 
+    export namespace AgentWithdrawnEvent {
+      export type InputTuple = [agentId: BigNumberish, to: AddressLike, amount: BigNumberish];
+      export type OutputTuple = [agentId: bigint, to: string, amount: bigint];
+      export interface OutputObject {agentId: bigint, to: string, amount: bigint };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace EmergencyStopEvent {
+      export type InputTuple = [agentId: BigNumberish];
+      export type OutputTuple = [agentId: bigint];
+      export interface OutputObject {agentId: bigint };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
     export namespace OwnershipTransferredEvent {
       export type InputTuple = [previousOwner: AddressLike, newOwner: AddressLike];
       export type OutputTuple = [previousOwner: string, newOwner: string];
@@ -95,6 +145,18 @@ decodeFunctionResult(functionFragment: 'walletToAgent', data: BytesLike): Result
       export type InputTuple = [agentId: BigNumberish, expiry: BigNumberish];
       export type OutputTuple = [agentId: bigint, expiry: bigint];
       export interface OutputObject {agentId: bigint, expiry: bigint };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace SpendLimitUpdatedEvent {
+      export type InputTuple = [agentId: BigNumberish, dailyLimit: BigNumberish, maxStakePerGame: BigNumberish];
+      export type OutputTuple = [agentId: bigint, dailyLimit: bigint, maxStakePerGame: bigint];
+      export interface OutputObject {agentId: bigint, dailyLimit: bigint, maxStakePerGame: bigint };
       export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
       export type Filter = TypedDeferredTopicFilter<Event>
       export type Log = TypedEventLog<Event>
@@ -159,7 +221,7 @@ decodeFunctionResult(functionFragment: 'walletToAgent', data: BytesLike): Result
     
     agents: TypedContractMethod<
       [arg0: BigNumberish, ],
-      [[bigint, string, string, string, bigint, bigint, bigint, bigint, bigint, bigint, boolean, bigint] & {id: bigint, owner: string, agentWallet: string, name: string, strategy: bigint, wins: bigint, losses: bigint, totalGames: bigint, totalTxGenerated: bigint, createdAt: bigint, active: boolean, sessionKeyExpiry: bigint }],
+      [[bigint, string, string, string, bigint, bigint, bigint, bigint, bigint, bigint, boolean, bigint, bigint, bigint, bigint, bigint, bigint, bigint] & {id: bigint, owner: string, agentWallet: string, name: string, strategy: bigint, wins: bigint, losses: bigint, totalGames: bigint, totalTxGenerated: bigint, createdAt: bigint, active: boolean, sessionKeyExpiry: bigint, dailySpendLimit: bigint, dailySpent: bigint, lastSpendReset: bigint, maxStakePerGame: bigint, totalDeposited: bigint, profitWithdrawn: bigint }],
       'view'
     >
     
@@ -173,9 +235,41 @@ decodeFunctionResult(functionFragment: 'walletToAgent', data: BytesLike): Result
     
 
     
+    checkAndRecordSpend: TypedContractMethod<
+      [_wallet: AddressLike, _amount: BigNumberish, ],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
+    emergencyStop: TypedContractMethod<
+      [],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
+    fundAgent: TypedContractMethod<
+      [],
+      [void],
+      'payable'
+    >
+    
+
+    
     getAgent: TypedContractMethod<
       [_agentId: BigNumberish, ],
       [AgentRegistry.AgentStructOutput],
+      'view'
+    >
+    
+
+    
+    getAgentBalance: TypedContractMethod<
+      [_agentId: BigNumberish, ],
+      [bigint],
       'view'
     >
     
@@ -229,6 +323,14 @@ decodeFunctionResult(functionFragment: 'walletToAgent', data: BytesLike): Result
     
 
     
+    reactivateAgent: TypedContractMethod<
+      [],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
     recordGameResult: TypedContractMethod<
       [_agentWallet: AddressLike, _won: boolean, ],
       [void],
@@ -261,6 +363,14 @@ decodeFunctionResult(functionFragment: 'walletToAgent', data: BytesLike): Result
     
 
     
+    setSpendLimits: TypedContractMethod<
+      [_dailyLimit: BigNumberish, _maxStakePerGame: BigNumberish, ],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
     transferOwnership: TypedContractMethod<
       [newOwner: AddressLike, ],
       [void],
@@ -284,6 +394,14 @@ decodeFunctionResult(functionFragment: 'walletToAgent', data: BytesLike): Result
     >
     
 
+    
+    withdrawFromAgent: TypedContractMethod<
+      [_amount: BigNumberish, ],
+      [void],
+      'nonpayable'
+    >
+    
+
 
     getFunction<T extends ContractMethod = ContractMethod>(key: string | FunctionFragment): T;
 
@@ -294,7 +412,7 @@ decodeFunctionResult(functionFragment: 'walletToAgent', data: BytesLike): Result
     >;
 getFunction(nameOrSignature: 'agents'): TypedContractMethod<
       [arg0: BigNumberish, ],
-      [[bigint, string, string, string, bigint, bigint, bigint, bigint, bigint, bigint, boolean, bigint] & {id: bigint, owner: string, agentWallet: string, name: string, strategy: bigint, wins: bigint, losses: bigint, totalGames: bigint, totalTxGenerated: bigint, createdAt: bigint, active: boolean, sessionKeyExpiry: bigint }],
+      [[bigint, string, string, string, bigint, bigint, bigint, bigint, bigint, bigint, boolean, bigint, bigint, bigint, bigint, bigint, bigint, bigint] & {id: bigint, owner: string, agentWallet: string, name: string, strategy: bigint, wins: bigint, losses: bigint, totalGames: bigint, totalTxGenerated: bigint, createdAt: bigint, active: boolean, sessionKeyExpiry: bigint, dailySpendLimit: bigint, dailySpent: bigint, lastSpendReset: bigint, maxStakePerGame: bigint, totalDeposited: bigint, profitWithdrawn: bigint }],
       'view'
     >;
 getFunction(nameOrSignature: 'authorizedCallers'): TypedContractMethod<
@@ -302,9 +420,29 @@ getFunction(nameOrSignature: 'authorizedCallers'): TypedContractMethod<
       [boolean],
       'view'
     >;
+getFunction(nameOrSignature: 'checkAndRecordSpend'): TypedContractMethod<
+      [_wallet: AddressLike, _amount: BigNumberish, ],
+      [void],
+      'nonpayable'
+    >;
+getFunction(nameOrSignature: 'emergencyStop'): TypedContractMethod<
+      [],
+      [void],
+      'nonpayable'
+    >;
+getFunction(nameOrSignature: 'fundAgent'): TypedContractMethod<
+      [],
+      [void],
+      'payable'
+    >;
 getFunction(nameOrSignature: 'getAgent'): TypedContractMethod<
       [_agentId: BigNumberish, ],
       [AgentRegistry.AgentStructOutput],
+      'view'
+    >;
+getFunction(nameOrSignature: 'getAgentBalance'): TypedContractMethod<
+      [_agentId: BigNumberish, ],
+      [bigint],
       'view'
     >;
 getFunction(nameOrSignature: 'getAgentByWallet'): TypedContractMethod<
@@ -337,6 +475,11 @@ getFunction(nameOrSignature: 'ownerToAgent'): TypedContractMethod<
       [bigint],
       'view'
     >;
+getFunction(nameOrSignature: 'reactivateAgent'): TypedContractMethod<
+      [],
+      [void],
+      'nonpayable'
+    >;
 getFunction(nameOrSignature: 'recordGameResult'): TypedContractMethod<
       [_agentWallet: AddressLike, _won: boolean, ],
       [void],
@@ -357,6 +500,11 @@ getFunction(nameOrSignature: 'setAuthorizedCaller'): TypedContractMethod<
       [void],
       'nonpayable'
     >;
+getFunction(nameOrSignature: 'setSpendLimits'): TypedContractMethod<
+      [_dailyLimit: BigNumberish, _maxStakePerGame: BigNumberish, ],
+      [void],
+      'nonpayable'
+    >;
 getFunction(nameOrSignature: 'transferOwnership'): TypedContractMethod<
       [newOwner: AddressLike, ],
       [void],
@@ -372,15 +520,28 @@ getFunction(nameOrSignature: 'walletToAgent'): TypedContractMethod<
       [bigint],
       'view'
     >;
+getFunction(nameOrSignature: 'withdrawFromAgent'): TypedContractMethod<
+      [_amount: BigNumberish, ],
+      [void],
+      'nonpayable'
+    >;
 
-    getEvent(key: 'AgentRegistered'): TypedContractEvent<AgentRegisteredEvent.InputTuple, AgentRegisteredEvent.OutputTuple, AgentRegisteredEvent.OutputObject>;
+    getEvent(key: 'AgentFunded'): TypedContractEvent<AgentFundedEvent.InputTuple, AgentFundedEvent.OutputTuple, AgentFundedEvent.OutputObject>;
+getEvent(key: 'AgentRegistered'): TypedContractEvent<AgentRegisteredEvent.InputTuple, AgentRegisteredEvent.OutputTuple, AgentRegisteredEvent.OutputObject>;
 getEvent(key: 'AgentStatsUpdated'): TypedContractEvent<AgentStatsUpdatedEvent.InputTuple, AgentStatsUpdatedEvent.OutputTuple, AgentStatsUpdatedEvent.OutputObject>;
+getEvent(key: 'AgentWithdrawn'): TypedContractEvent<AgentWithdrawnEvent.InputTuple, AgentWithdrawnEvent.OutputTuple, AgentWithdrawnEvent.OutputObject>;
+getEvent(key: 'EmergencyStop'): TypedContractEvent<EmergencyStopEvent.InputTuple, EmergencyStopEvent.OutputTuple, EmergencyStopEvent.OutputObject>;
 getEvent(key: 'OwnershipTransferred'): TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
 getEvent(key: 'SessionKeyGranted'): TypedContractEvent<SessionKeyGrantedEvent.InputTuple, SessionKeyGrantedEvent.OutputTuple, SessionKeyGrantedEvent.OutputObject>;
+getEvent(key: 'SpendLimitUpdated'): TypedContractEvent<SpendLimitUpdatedEvent.InputTuple, SpendLimitUpdatedEvent.OutputTuple, SpendLimitUpdatedEvent.OutputObject>;
 getEvent(key: 'StrategyUpdated'): TypedContractEvent<StrategyUpdatedEvent.InputTuple, StrategyUpdatedEvent.OutputTuple, StrategyUpdatedEvent.OutputObject>;
 
     filters: {
       
+      'AgentFunded(uint256,uint256)': TypedContractEvent<AgentFundedEvent.InputTuple, AgentFundedEvent.OutputTuple, AgentFundedEvent.OutputObject>;
+      AgentFunded: TypedContractEvent<AgentFundedEvent.InputTuple, AgentFundedEvent.OutputTuple, AgentFundedEvent.OutputObject>;
+    
+
       'AgentRegistered(uint256,address,address,string,uint8)': TypedContractEvent<AgentRegisteredEvent.InputTuple, AgentRegisteredEvent.OutputTuple, AgentRegisteredEvent.OutputObject>;
       AgentRegistered: TypedContractEvent<AgentRegisteredEvent.InputTuple, AgentRegisteredEvent.OutputTuple, AgentRegisteredEvent.OutputObject>;
     
@@ -389,12 +550,24 @@ getEvent(key: 'StrategyUpdated'): TypedContractEvent<StrategyUpdatedEvent.InputT
       AgentStatsUpdated: TypedContractEvent<AgentStatsUpdatedEvent.InputTuple, AgentStatsUpdatedEvent.OutputTuple, AgentStatsUpdatedEvent.OutputObject>;
     
 
+      'AgentWithdrawn(uint256,address,uint256)': TypedContractEvent<AgentWithdrawnEvent.InputTuple, AgentWithdrawnEvent.OutputTuple, AgentWithdrawnEvent.OutputObject>;
+      AgentWithdrawn: TypedContractEvent<AgentWithdrawnEvent.InputTuple, AgentWithdrawnEvent.OutputTuple, AgentWithdrawnEvent.OutputObject>;
+    
+
+      'EmergencyStop(uint256)': TypedContractEvent<EmergencyStopEvent.InputTuple, EmergencyStopEvent.OutputTuple, EmergencyStopEvent.OutputObject>;
+      EmergencyStop: TypedContractEvent<EmergencyStopEvent.InputTuple, EmergencyStopEvent.OutputTuple, EmergencyStopEvent.OutputObject>;
+    
+
       'OwnershipTransferred(address,address)': TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
       OwnershipTransferred: TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
     
 
       'SessionKeyGranted(uint256,uint256)': TypedContractEvent<SessionKeyGrantedEvent.InputTuple, SessionKeyGrantedEvent.OutputTuple, SessionKeyGrantedEvent.OutputObject>;
       SessionKeyGranted: TypedContractEvent<SessionKeyGrantedEvent.InputTuple, SessionKeyGrantedEvent.OutputTuple, SessionKeyGrantedEvent.OutputObject>;
+    
+
+      'SpendLimitUpdated(uint256,uint256,uint256)': TypedContractEvent<SpendLimitUpdatedEvent.InputTuple, SpendLimitUpdatedEvent.OutputTuple, SpendLimitUpdatedEvent.OutputObject>;
+      SpendLimitUpdated: TypedContractEvent<SpendLimitUpdatedEvent.InputTuple, SpendLimitUpdatedEvent.OutputTuple, SpendLimitUpdatedEvent.OutputObject>;
     
 
       'StrategyUpdated(uint256,uint8,uint8)': TypedContractEvent<StrategyUpdatedEvent.InputTuple, StrategyUpdatedEvent.OutputTuple, StrategyUpdatedEvent.OutputObject>;
