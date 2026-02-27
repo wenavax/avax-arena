@@ -13,7 +13,7 @@ export declare namespace BattleEngine {
     }
 
   export interface BattleEngineInterface extends Interface {
-    getFunction(nameOrSignature: "ATTACK_WEIGHT" | "BASIS_POINTS" | "BATTLE_TIMEOUT" | "DEFENSE_WEIGHT" | "ELEMENT_EARTH" | "ELEMENT_FIRE" | "ELEMENT_ICE" | "ELEMENT_LIGHT" | "ELEMENT_SHADOW" | "ELEMENT_THUNDER" | "ELEMENT_WATER" | "ELEMENT_WIND" | "FEE_BASIS_POINTS" | "LOSS_EXPERIENCE" | "MIN_STAKE" | "SPECIAL_WEIGHT" | "SPEED_WEIGHT" | "WIN_EXPERIENCE" | "accumulatedFees" | "arenaWarrior" | "battleCounter" | "battles" | "cancelBattle" | "claimTimeout" | "createBattle" | "feeRecipient" | "getBattle" | "getBattleHistory" | "getOpenBattles" | "joinBattle" | "owner" | "renounceOwnership" | "setArenaWarrior" | "setFeeRecipient" | "transferOwnership" | "withdrawFees"): FunctionFragment;
+    getFunction(nameOrSignature: "ATTACK_WEIGHT" | "BASIS_POINTS" | "BATTLE_TIMEOUT" | "DEFENSE_WEIGHT" | "ELEMENT_EARTH" | "ELEMENT_FIRE" | "ELEMENT_ICE" | "ELEMENT_LIGHT" | "ELEMENT_SHADOW" | "ELEMENT_THUNDER" | "ELEMENT_WATER" | "ELEMENT_WIND" | "FEE_BASIS_POINTS" | "LOSS_EXPERIENCE" | "MIN_STAKE" | "SPECIAL_WEIGHT" | "SPEED_WEIGHT" | "WIN_EXPERIENCE" | "accumulatedFees" | "arenaWarrior" | "battleCounter" | "battles" | "cancelBattle" | "claimTimeout" | "createBattle" | "feeRecipient" | "getBattle" | "getBattleHistory" | "getOpenBattleCount" | "getOpenBattles" | "joinBattle" | "owner" | "renounceOwnership" | "setArenaWarrior" | "setFeeRecipient" | "transferOwnership" | "withdrawFees"): FunctionFragment;
 
     getEvent(nameOrSignatureOrTopic: "BattleCancelled" | "BattleCreated" | "BattleJoined" | "BattleResolved" | "OwnershipTransferred"): EventFragment;
 
@@ -45,7 +45,8 @@ encodeFunctionData(functionFragment: 'createBattle', values: [BigNumberish]): st
 encodeFunctionData(functionFragment: 'feeRecipient', values?: undefined): string;
 encodeFunctionData(functionFragment: 'getBattle', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'getBattleHistory', values: [AddressLike]): string;
-encodeFunctionData(functionFragment: 'getOpenBattles', values?: undefined): string;
+encodeFunctionData(functionFragment: 'getOpenBattleCount', values?: undefined): string;
+encodeFunctionData(functionFragment: 'getOpenBattles', values: [BigNumberish, BigNumberish]): string;
 encodeFunctionData(functionFragment: 'joinBattle', values: [BigNumberish, BigNumberish]): string;
 encodeFunctionData(functionFragment: 'owner', values?: undefined): string;
 encodeFunctionData(functionFragment: 'renounceOwnership', values?: undefined): string;
@@ -82,6 +83,7 @@ decodeFunctionResult(functionFragment: 'createBattle', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'feeRecipient', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getBattle', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getBattleHistory', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'getOpenBattleCount', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getOpenBattles', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'joinBattle', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'owner', data: BytesLike): Result;
@@ -411,8 +413,16 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
     
 
     
-    getOpenBattles: TypedContractMethod<
+    getOpenBattleCount: TypedContractMethod<
       [],
+      [bigint],
+      'view'
+    >
+    
+
+    
+    getOpenBattles: TypedContractMethod<
+      [offset: BigNumberish, limit: BigNumberish, ],
       [bigint[]],
       'view'
     >
@@ -617,8 +627,13 @@ getFunction(nameOrSignature: 'getBattleHistory'): TypedContractMethod<
       [bigint[]],
       'view'
     >;
-getFunction(nameOrSignature: 'getOpenBattles'): TypedContractMethod<
+getFunction(nameOrSignature: 'getOpenBattleCount'): TypedContractMethod<
       [],
+      [bigint],
+      'view'
+    >;
+getFunction(nameOrSignature: 'getOpenBattles'): TypedContractMethod<
+      [offset: BigNumberish, limit: BigNumberish, ],
       [bigint[]],
       'view'
     >;

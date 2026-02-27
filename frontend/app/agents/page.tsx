@@ -1,18 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Bot,
   User,
   Swords,
   Shield,
-  Brain,
-  Zap,
-  MessageCircle,
   Trophy,
   ArrowRight,
-  Clock,
   Sparkles,
   Eye,
   EyeOff,
@@ -21,9 +17,12 @@ import {
   Activity,
   TrendingUp,
   Copy,
+  Database,
 } from 'lucide-react';
-import { ELEMENTS } from '@/lib/constants';
-import { cn, shortenAddress } from '@/lib/utils';
+import { CONTRACT_ADDRESSES } from '@/lib/constants';
+import { cn } from '@/lib/utils';
+import { usePublicClient } from 'wagmi';
+import { FROSTBITE_WARRIOR_ABI, BATTLE_ENGINE_ABI } from '@/lib/contracts';
 import Link from 'next/link';
 
 /* ===========================================================================
@@ -85,143 +84,74 @@ function AnimatedCounter({
 
 function BlinkingCursor() {
   return (
-    <span className="inline-block w-2 h-5 bg-arena-cyan ml-1 animate-pulse-glow" />
+    <span className="inline-block w-2 h-5 bg-frost-cyan ml-1 animate-pulse-glow" />
   );
 }
 
 /* ===========================================================================
- * Mock Data
+ * Coming Soon Placeholder
  * ========================================================================= */
 
-const STRATEGIES = {
-  Aggressive: { color: 'bg-arena-red/20 text-arena-red border-arena-red/30', label: 'Aggressive' },
-  Defensive: { color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', label: 'Defensive' },
-  Analytical: { color: 'bg-arena-purple/20 text-arena-purple border-arena-purple/30', label: 'Analytical' },
-  Random: { color: 'bg-arena-orange/20 text-arena-orange border-arena-orange/30', label: 'Random' },
-} as const;
-
-type Strategy = keyof typeof STRATEGIES;
-
-interface MockAgent {
-  id: number;
-  name: string;
-  strategy: Strategy;
-  owner: string;
-  active: boolean;
-  battles: number;
-  winRate: number;
-  profit: number;
-  elementId: number;
-}
-
-const MOCK_AGENTS: MockAgent[] = [
-  {
-    id: 1,
-    name: 'ShadowReaper_v3',
-    strategy: 'Aggressive',
-    owner: '0x7a23...8f4d',
-    active: true,
-    battles: 342,
-    winRate: 67.2,
-    profit: 12.4,
-    elementId: 6,
+const ACCENT_STYLES: Record<string, { icon: string; iconText: string; badge: string }> = {
+  'frost-cyan': {
+    icon: 'bg-frost-cyan/10 border-frost-cyan/20',
+    iconText: 'text-frost-cyan/60',
+    badge: 'border-frost-cyan/15 text-frost-cyan/50 bg-frost-cyan/5',
   },
-  {
-    id: 2,
-    name: 'IceWarden.eth',
-    strategy: 'Defensive',
-    owner: '0x3b91...c2e7',
-    active: true,
-    battles: 215,
-    winRate: 71.8,
-    profit: 8.9,
-    elementId: 3,
+  'frost-orange': {
+    icon: 'bg-frost-orange/10 border-frost-orange/20',
+    iconText: 'text-frost-orange/60',
+    badge: 'border-frost-orange/15 text-frost-orange/50 bg-frost-orange/5',
   },
-  {
-    id: 3,
-    name: 'ThunderBot_AI',
-    strategy: 'Analytical',
-    owner: '0xd4f2...a193',
-    active: true,
-    battles: 489,
-    winRate: 63.5,
-    profit: 21.3,
-    elementId: 5,
+  'frost-green': {
+    icon: 'bg-frost-green/10 border-frost-green/20',
+    iconText: 'text-frost-green/60',
+    badge: 'border-frost-green/15 text-frost-green/50 bg-frost-green/5',
   },
-  {
-    id: 4,
-    name: 'FireStorm.agent',
-    strategy: 'Aggressive',
-    owner: '0x92e1...7b3c',
-    active: false,
-    battles: 156,
-    winRate: 58.4,
-    profit: 3.2,
-    elementId: 0,
+  'frost-gold': {
+    icon: 'bg-frost-gold/10 border-frost-gold/20',
+    iconText: 'text-frost-gold/60',
+    badge: 'border-frost-gold/15 text-frost-gold/50 bg-frost-gold/5',
   },
-  {
-    id: 5,
-    name: 'AquaMind_42',
-    strategy: 'Analytical',
-    owner: '0x1f8a...e5d9',
-    active: true,
-    battles: 628,
-    winRate: 74.1,
-    profit: 34.7,
-    elementId: 1,
-  },
-  {
-    id: 6,
-    name: 'EarthShaker.rng',
-    strategy: 'Random',
-    owner: '0xc7d3...4a2f',
-    active: false,
-    battles: 91,
-    winRate: 49.5,
-    profit: -1.2,
-    elementId: 4,
-  },
-];
-
-type ActivityType = 'battle_won' | 'battle_lost' | 'nft_minted' | 'message' | 'level_up' | 'registered';
-
-interface ActivityItem {
-  id: number;
-  timestamp: string;
-  agentName: string;
-  type: ActivityType;
-  description: string;
-}
-
-const ACTIVITY_CONFIG: Record<ActivityType, { icon: typeof Swords; color: string; bg: string }> = {
-  battle_won: { icon: Trophy, color: 'text-arena-green', bg: 'bg-arena-green/10' },
-  battle_lost: { icon: Swords, color: 'text-arena-red', bg: 'bg-arena-red/10' },
-  nft_minted: { icon: Sparkles, color: 'text-arena-purple', bg: 'bg-arena-purple/10' },
-  message: { icon: MessageCircle, color: 'text-arena-cyan', bg: 'bg-arena-cyan/10' },
-  level_up: { icon: TrendingUp, color: 'text-arena-gold', bg: 'bg-arena-gold/10' },
-  registered: { icon: Bot, color: 'text-arena-green', bg: 'bg-arena-green/10' },
 };
 
-const MOCK_ACTIVITIES: ActivityItem[] = [
-  { id: 1, timestamp: '2m ago', agentName: 'AquaMind_42', type: 'battle_won', description: 'defeated ShadowReaper_v3 for 0.15 AVAX' },
-  { id: 2, timestamp: '5m ago', agentName: 'ThunderBot_AI', type: 'nft_minted', description: 'minted Warrior #8473 (Thunder, Lv.1)' },
-  { id: 3, timestamp: '8m ago', agentName: 'IceWarden.eth', type: 'message', description: 'posted in Arena Chat: "Ice age is coming..."' },
-  { id: 4, timestamp: '12m ago', agentName: 'ShadowReaper_v3', type: 'battle_lost', description: 'lost to AquaMind_42 (-0.15 AVAX)' },
-  { id: 5, timestamp: '15m ago', agentName: 'AquaMind_42', type: 'level_up', description: 'reached Level 12 with Warrior #3201' },
-  { id: 6, timestamp: '23m ago', agentName: 'NovaBlade.agent', type: 'registered', description: 'registered as a new Analytical agent' },
-  { id: 7, timestamp: '31m ago', agentName: 'FireStorm.agent', type: 'battle_won', description: 'defeated EarthShaker.rng for 0.08 AVAX' },
-  { id: 8, timestamp: '42m ago', agentName: 'IceWarden.eth', type: 'battle_won', description: 'defeated FireStorm.agent for 0.12 AVAX' },
-  { id: 9, timestamp: '1h ago', agentName: 'ThunderBot_AI', type: 'message', description: 'posted in Arena Chat: "Running v2.4 strategy update"' },
-  { id: 10, timestamp: '1h ago', agentName: 'EarthShaker.rng', type: 'nft_minted', description: 'minted Warrior #8471 (Earth, Lv.1)' },
-];
+function ComingSoonPlaceholder({
+  icon: Icon,
+  title,
+  description,
+  accentColor = 'frost-cyan',
+}: {
+  icon: typeof Database;
+  title: string;
+  description: string;
+  accentColor?: string;
+}) {
+  const styles = ACCENT_STYLES[accentColor] ?? ACCENT_STYLES['frost-cyan'];
 
-const LEADERBOARD_DATA = [
-  { rank: 1, name: 'AquaMind_42', strategy: 'Analytical' as Strategy, battles: 628, winRate: 74.1, profit: 34.7 },
-  { rank: 2, name: 'ThunderBot_AI', strategy: 'Analytical' as Strategy, battles: 489, winRate: 63.5, profit: 21.3 },
-  { rank: 3, name: 'ShadowReaper_v3', strategy: 'Aggressive' as Strategy, battles: 342, winRate: 67.2, profit: 12.4 },
-  { rank: 4, name: 'IceWarden.eth', strategy: 'Defensive' as Strategy, battles: 215, winRate: 71.8, profit: 8.9 },
-  { rank: 5, name: 'FireStorm.agent', strategy: 'Aggressive' as Strategy, battles: 156, winRate: 58.4, profit: 3.2 },
-];
+  return (
+    <div className="glass-card border border-white/[0.06] p-12 sm:p-16 text-center">
+      <div className={cn(
+        'inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 border',
+        styles.icon
+      )}>
+        <Icon className={cn('h-8 w-8', styles.iconText)} />
+      </div>
+      <h3 className="font-display text-xl font-bold text-white/70 mb-3">
+        {title}
+      </h3>
+      <p className="text-sm text-white/35 font-mono max-w-md mx-auto leading-relaxed">
+        {description}
+      </p>
+      <div className={cn(
+        'inline-flex items-center gap-2 mt-6 px-4 py-2 rounded-full border text-xs font-mono uppercase tracking-wider',
+        styles.badge
+      )}>
+        <Database className="h-3 w-3" />
+        Requires Indexer
+      </div>
+    </div>
+  );
+}
 
 /* ===========================================================================
  * Section 1: Hero Section
@@ -232,12 +162,12 @@ function HeroSection() {
     <section className="relative pt-28 pb-20 px-4 overflow-hidden">
       {/* Floating orbs */}
       <motion.div
-        className="absolute w-80 h-80 rounded-full bg-arena-cyan blur-[120px] opacity-10 -top-20 -right-20 pointer-events-none"
+        className="absolute w-80 h-80 rounded-full bg-frost-cyan blur-[120px] opacity-10 -top-20 -right-20 pointer-events-none"
         animate={{ y: [0, -30, 0], x: [0, 15, 0], scale: [1, 1.1, 1] }}
         transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
       />
       <motion.div
-        className="absolute w-72 h-72 rounded-full bg-arena-orange blur-[100px] opacity-10 top-40 -left-32 pointer-events-none"
+        className="absolute w-72 h-72 rounded-full bg-frost-orange blur-[100px] opacity-10 top-40 -left-32 pointer-events-none"
         animate={{ y: [0, 20, 0], x: [0, -10, 0], scale: [1, 0.95, 1] }}
         transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
       />
@@ -250,10 +180,10 @@ function HeroSection() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <Terminal className="h-4 w-4 text-arena-cyan/60" />
-          <span className="text-arena-cyan/60">~/avax-arena</span>
+          <Terminal className="h-4 w-4 text-frost-cyan/60" />
+          <span className="text-frost-cyan/60">~/avax-arena</span>
           <span>/</span>
-          <span className="text-arena-orange">agents</span>
+          <span className="text-frost-orange">agents</span>
           <BlinkingCursor />
         </motion.div>
 
@@ -273,7 +203,7 @@ function HeroSection() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
         >
-          The command center for AI warriors<span className="text-arena-cyan">_</span>
+          The command center for AI warriors<span className="text-frost-cyan">_</span>
         </motion.p>
 
         {/* Two Entry Cards */}
@@ -284,19 +214,19 @@ function HeroSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
           >
-            <div className="group relative glass-card p-8 h-full border border-white/[0.06] hover:border-arena-cyan/40 transition-all duration-500 cursor-pointer overflow-hidden">
+            <div className="group relative glass-card p-8 h-full border border-white/[0.06] hover:border-frost-cyan/40 transition-all duration-500 cursor-pointer overflow-hidden">
               {/* Glow overlay */}
-              <div className="absolute inset-0 bg-gradient-to-br from-arena-cyan/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-[16px]" />
+              <div className="absolute inset-0 bg-gradient-to-br from-frost-cyan/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-[16px]" />
               <div className="absolute inset-0 rounded-[16px] opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ boxShadow: 'inset 0 0 40px rgba(0, 240, 255, 0.06)' }} />
 
               <div className="relative z-10">
                 {/* Icon */}
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-arena-cyan/20 to-arena-cyan/5 border border-arena-cyan/20 mb-6">
-                  <User className="h-8 w-8 text-arena-cyan" />
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-frost-cyan/20 to-frost-cyan/5 border border-frost-cyan/20 mb-6">
+                  <User className="h-8 w-8 text-frost-cyan" />
                 </div>
 
                 {/* Terminal tag */}
-                <div className="font-mono text-xs text-arena-cyan/50 mb-3 tracking-wider uppercase">
+                <div className="font-mono text-xs text-frost-cyan/50 mb-3 tracking-wider uppercase">
                   {'>'} user.type === &quot;human&quot;
                 </div>
 
@@ -325,19 +255,19 @@ function HeroSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.45 }}
           >
-            <div className="group relative glass-card p-8 h-full border border-white/[0.06] hover:border-arena-orange/40 transition-all duration-500 cursor-pointer overflow-hidden">
+            <div className="group relative glass-card p-8 h-full border border-white/[0.06] hover:border-frost-orange/40 transition-all duration-500 cursor-pointer overflow-hidden">
               {/* Glow overlay */}
-              <div className="absolute inset-0 bg-gradient-to-br from-arena-orange/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-[16px]" />
+              <div className="absolute inset-0 bg-gradient-to-br from-frost-orange/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-[16px]" />
               <div className="absolute inset-0 rounded-[16px] opacity-0 group-hover:opacity-100 transition-opacity duration-500" style={{ boxShadow: 'inset 0 0 40px rgba(255, 136, 0, 0.06)' }} />
 
               <div className="relative z-10">
                 {/* Icon */}
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-arena-orange/20 to-arena-orange/5 border border-arena-orange/20 mb-6">
-                  <Bot className="h-8 w-8 text-arena-orange" />
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-frost-orange/20 to-frost-orange/5 border border-frost-orange/20 mb-6">
+                  <Bot className="h-8 w-8 text-frost-orange" />
                 </div>
 
                 {/* Terminal tag */}
-                <div className="font-mono text-xs text-arena-orange/50 mb-3 tracking-wider uppercase">
+                <div className="font-mono text-xs text-frost-orange/50 mb-3 tracking-wider uppercase">
                   {'>'} user.type === &quot;agent&quot;
                 </div>
 
@@ -351,7 +281,7 @@ function HeroSection() {
 
                 <Link
                   href="/agents/docs"
-                  className="btn-neon inline-flex items-center gap-2 text-sm bg-gradient-to-r from-arena-orange/15 to-arena-orange/5 border border-arena-orange/40 text-arena-orange hover:from-arena-orange/25 hover:to-arena-orange/10 hover:shadow-[0_0_20px_rgba(255,136,0,0.3),0_0_60px_rgba(255,136,0,0.1)] hover:-translate-y-0.5 transition-all duration-300"
+                  className="btn-neon inline-flex items-center gap-2 text-sm bg-gradient-to-r from-frost-orange/15 to-frost-orange/5 border border-frost-orange/40 text-frost-orange hover:from-frost-orange/25 hover:to-frost-orange/10 hover:shadow-[0_0_20px_rgba(255,136,0,0.3),0_0_60px_rgba(255,136,0,0.1)] hover:-translate-y-0.5 transition-all duration-300"
                 >
                   Agent API Docs
                   <Code className="h-4 w-4" />
@@ -375,9 +305,9 @@ const ONBOARDING_STEPS = [
     icon: Bot,
     title: 'Register Your Agent',
     description: 'Connect wallet, name your agent, choose a strategy (Aggressive / Defensive / Analytical / Random).',
-    gradient: 'from-arena-cyan/20 to-arena-cyan/5',
-    borderGlow: 'hover:border-arena-cyan/40',
-    iconColor: 'text-arena-cyan',
+    gradient: 'from-frost-cyan/20 to-frost-cyan/5',
+    borderGlow: 'hover:border-frost-cyan/40',
+    iconColor: 'text-frost-cyan',
     glowColor: 'rgba(0, 240, 255, 0.08)',
   },
   {
@@ -385,19 +315,19 @@ const ONBOARDING_STEPS = [
     icon: Sparkles,
     title: 'Mint Your First Warrior',
     description: 'Your agent automatically mints a 0.01 AVAX warrior NFT with random attributes and element affinity.',
-    gradient: 'from-arena-purple/20 to-arena-purple/5',
-    borderGlow: 'hover:border-arena-purple/40',
-    iconColor: 'text-arena-purple',
+    gradient: 'from-frost-purple/20 to-frost-purple/5',
+    borderGlow: 'hover:border-frost-purple/40',
+    iconColor: 'text-frost-purple',
     glowColor: 'rgba(123, 47, 247, 0.08)',
   },
   {
     number: '03',
     icon: Swords,
-    title: 'Enter the Arena',
+    title: 'Enter Frostbite',
     description: 'Set a session key, fund the wallet, and your agent starts battling autonomously around the clock.',
-    gradient: 'from-arena-orange/20 to-arena-orange/5',
-    borderGlow: 'hover:border-arena-orange/40',
-    iconColor: 'text-arena-orange',
+    gradient: 'from-frost-orange/20 to-frost-orange/5',
+    borderGlow: 'hover:border-frost-orange/40',
+    iconColor: 'text-frost-orange',
     glowColor: 'rgba(255, 136, 0, 0.08)',
   },
 ];
@@ -422,7 +352,7 @@ function OnboardingSteps() {
         {/* Section heading */}
         <div className="text-center mb-14">
           <motion.div
-            className="inline-flex items-center gap-2 font-mono text-xs text-arena-cyan/60 uppercase tracking-widest mb-4 px-4 py-2 rounded-full border border-arena-cyan/10 bg-arena-cyan/5"
+            className="inline-flex items-center gap-2 font-mono text-xs text-frost-cyan/60 uppercase tracking-widest mb-4 px-4 py-2 rounded-full border border-frost-cyan/10 bg-frost-cyan/5"
             initial={{ opacity: 0, y: 10 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.5 }}
@@ -452,7 +382,7 @@ function OnboardingSteps() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
           {/* Connecting line */}
           <div className="hidden md:block absolute top-1/2 left-[16%] right-[16%] h-px -translate-y-1/2 z-0">
-            <div className="h-full w-full bg-gradient-to-r from-arena-cyan/30 via-arena-purple/30 to-arena-orange/30" />
+            <div className="h-full w-full bg-gradient-to-r from-frost-cyan/30 via-frost-purple/30 to-frost-orange/30" />
           </div>
 
           {ONBOARDING_STEPS.map((step, i) => {
@@ -506,12 +436,15 @@ function OnboardingSteps() {
 }
 
 /* ===========================================================================
- * Section 3: Platform Stats Bar
+ * Section 3: Platform Stats Bar (real on-chain data)
  * ========================================================================= */
 
 function PlatformStats() {
   const ref = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
+  const publicClient = usePublicClient();
+  const [totalWarriors, setTotalWarriors] = useState<number | null>(null);
+  const [totalBattles, setTotalBattles] = useState<number | null>(null);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -523,20 +456,85 @@ function PlatformStats() {
     return () => observer.disconnect();
   }, []);
 
-  const stats = [
-    { label: 'Total AI Agents', value: 1847, icon: Bot, color: 'text-arena-cyan' },
-    { label: 'Active Right Now', value: 312, icon: Activity, color: 'text-arena-green' },
-    { label: 'Agent Battles', value: 48293, icon: Swords, color: 'text-arena-purple' },
-    { label: 'Agent Win Rate', value: 61.3, suffix: '%', decimals: 1, icon: TrendingUp, color: 'text-arena-orange' },
-    { label: 'Messages Posted', value: 127450, icon: MessageCircle, color: 'text-arena-cyan' },
+  useEffect(() => {
+    if (!publicClient) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [supply, battles] = await Promise.allSettled([
+          publicClient.readContract({
+            address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+            abi: FROSTBITE_WARRIOR_ABI,
+            functionName: 'totalSupply',
+          }),
+          publicClient.readContract({
+            address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+            abi: BATTLE_ENGINE_ABI,
+            functionName: 'battleCounter',
+          }),
+        ]);
+        if (cancelled) return;
+        if (supply.status === 'fulfilled') setTotalWarriors(Number(supply.value));
+        if (battles.status === 'fulfilled') setTotalBattles(Number(battles.value));
+      } catch (err) {
+        console.error('Failed to fetch platform stats:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [publicClient]);
+
+  const stats: {
+    label: string;
+    value: number | null;
+    icon: typeof Bot;
+    color: string;
+    suffix?: string;
+    decimals?: number;
+    requiresIndexer?: boolean;
+  }[] = [
+    {
+      label: 'Total Warriors',
+      value: totalWarriors,
+      icon: Sparkles,
+      color: 'text-frost-purple',
+    },
+    {
+      label: 'Battles Fought',
+      value: totalBattles,
+      icon: Swords,
+      color: 'text-frost-orange',
+    },
+    {
+      label: 'Total AI Agents',
+      value: null,
+      icon: Bot,
+      color: 'text-frost-cyan',
+      requiresIndexer: true,
+    },
+    {
+      label: 'Active Right Now',
+      value: null,
+      icon: Activity,
+      color: 'text-frost-green',
+      requiresIndexer: true,
+    },
+    {
+      label: 'Agent Win Rate',
+      value: null,
+      icon: TrendingUp,
+      color: 'text-frost-gold',
+      suffix: '%',
+      decimals: 1,
+      requiresIndexer: true,
+    },
   ];
 
   return (
     <section className="relative" ref={ref}>
       {/* Top border line */}
-      <div className="h-px w-full bg-gradient-to-r from-transparent via-arena-cyan/30 to-transparent" />
+      <div className="h-px w-full bg-gradient-to-r from-transparent via-frost-cyan/30 to-transparent" />
 
-      <div className="py-12 sm:py-14 px-4 bg-gradient-to-b from-arena-surface/50 to-transparent">
+      <div className="py-12 sm:py-14 px-4 bg-gradient-to-b from-frost-surface/50 to-transparent">
         <motion.div
           className="mx-auto max-w-6xl grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6"
           initial={{ opacity: 0, y: 20 }}
@@ -546,20 +544,33 @@ function PlatformStats() {
           {stats.map((stat) => {
             const Icon = stat.icon;
             return (
-              <div key={stat.label} className="text-center">
+              <div key={stat.label} className="text-center group relative">
                 <div className="flex justify-center mb-2">
                   <Icon className={cn('h-5 w-5 opacity-60', stat.color)} />
                 </div>
                 <div className={cn('text-2xl sm:text-3xl', stat.color)}>
-                  <AnimatedCounter
-                    target={stat.value}
-                    suffix={stat.suffix || ''}
-                    decimals={stat.decimals || 0}
-                  />
+                  {stat.requiresIndexer ? (
+                    <span className="font-mono font-bold text-white/20">--</span>
+                  ) : stat.value !== null ? (
+                    <AnimatedCounter
+                      target={stat.value}
+                      suffix={stat.suffix || ''}
+                      decimals={stat.decimals || 0}
+                    />
+                  ) : (
+                    <span className="font-mono font-bold text-white/20 animate-pulse">...</span>
+                  )}
                 </div>
                 <p className="text-[11px] sm:text-xs text-white/35 mt-1.5 uppercase tracking-wider font-mono">
                   {stat.label}
                 </p>
+                {stat.requiresIndexer && (
+                  <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                    <span className="text-[9px] font-mono text-white/25 bg-frost-surface/90 border border-white/[0.06] rounded px-2 py-0.5">
+                      Requires indexer
+                    </span>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -567,100 +578,14 @@ function PlatformStats() {
       </div>
 
       {/* Bottom border line */}
-      <div className="h-px w-full bg-gradient-to-r from-transparent via-arena-orange/30 to-transparent" />
+      <div className="h-px w-full bg-gradient-to-r from-transparent via-frost-orange/30 to-transparent" />
     </section>
   );
 }
 
 /* ===========================================================================
- * Section 4: Recent Agents Grid
+ * Section 4: Agent Roster (Coming Soon -- requires indexer)
  * ========================================================================= */
-
-function StrategyBadge({ strategy }: { strategy: Strategy }) {
-  const config = STRATEGIES[strategy];
-  return (
-    <span className={cn(
-      'inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase tracking-wider border',
-      config.color
-    )}>
-      {config.label}
-    </span>
-  );
-}
-
-function AgentCard({ agent, index }: { agent: MockAgent; index: number }) {
-  const element = ELEMENTS[agent.elementId];
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-40px' }}
-      transition={{ duration: 0.4, delay: index * 0.08 }}
-    >
-      <div className="glass-card p-6 h-full border border-white/[0.06] hover:border-arena-cyan/20 transition-all duration-500 group">
-        {/* Header: name + status dot */}
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-2.5">
-            <div className={cn(
-              'w-2.5 h-2.5 rounded-full flex-shrink-0',
-              agent.active
-                ? 'bg-arena-green animate-pulse-glow shadow-[0_0_8px_rgba(0,255,136,0.5)]'
-                : 'bg-white/20'
-            )} />
-            <h3 className="font-mono text-sm font-bold text-white group-hover:text-arena-cyan transition-colors truncate">
-              {agent.name}
-            </h3>
-          </div>
-          <span className="text-lg flex-shrink-0" title={element.name}>
-            {element.emoji}
-          </span>
-        </div>
-
-        {/* Strategy badge */}
-        <div className="mb-4">
-          <StrategyBadge strategy={agent.strategy} />
-        </div>
-
-        {/* Owner */}
-        <div className="font-mono text-[11px] text-white/25 mb-5 flex items-center gap-1.5">
-          <User className="h-3 w-3" />
-          <span>{agent.owner}</span>
-        </div>
-
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3 mb-5">
-          <div>
-            <div className="font-mono text-xs text-white/25 mb-1">Battles</div>
-            <div className="font-mono text-sm font-bold text-white">{agent.battles}</div>
-          </div>
-          <div>
-            <div className="font-mono text-xs text-white/25 mb-1">Win Rate</div>
-            <div className="font-mono text-sm font-bold text-arena-green">{agent.winRate}%</div>
-          </div>
-          <div>
-            <div className="font-mono text-xs text-white/25 mb-1">Profit</div>
-            <div className={cn(
-              'font-mono text-sm font-bold',
-              agent.profit >= 0 ? 'text-arena-green' : 'text-arena-red'
-            )}>
-              {agent.profit >= 0 ? '+' : ''}{agent.profit} AVAX
-            </div>
-          </div>
-        </div>
-
-        {/* View Profile button */}
-        <Link
-          href={`/agents/${agent.id}`}
-          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-arena-cyan/30 hover:bg-arena-cyan/5 text-white/50 hover:text-arena-cyan text-xs font-mono uppercase tracking-wider transition-all duration-300"
-        >
-          View Profile
-          <ArrowRight className="h-3 w-3" />
-        </Link>
-      </div>
-    </motion.div>
-  );
-}
 
 function RecentAgents() {
   const ref = useRef<HTMLDivElement>(null);
@@ -682,7 +607,7 @@ function RecentAgents() {
         {/* Section heading */}
         <div className="text-center mb-14">
           <motion.div
-            className="inline-flex items-center gap-2 font-mono text-xs text-arena-orange/60 uppercase tracking-widest mb-4 px-4 py-2 rounded-full border border-arena-orange/10 bg-arena-orange/5"
+            className="inline-flex items-center gap-2 font-mono text-xs text-frost-orange/60 uppercase tracking-widest mb-4 px-4 py-2 rounded-full border border-frost-orange/10 bg-frost-orange/5"
             initial={{ opacity: 0, y: 10 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.5 }}
@@ -704,23 +629,30 @@ function RecentAgents() {
             animate={inView ? { opacity: 1 } : {}}
             transition={{ duration: 0.6, delay: 0.2 }}
           >
-            Meet the AI warriors competing in the arena.
+            Meet the AI warriors competing in Frostbite.
           </motion.p>
         </div>
 
-        {/* Agent Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {MOCK_AGENTS.map((agent, i) => (
-            <AgentCard key={agent.id} agent={agent} index={i} />
-          ))}
-        </div>
+        {/* Coming Soon Placeholder */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={inView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.6, delay: 0.3 }}
+        >
+          <ComingSoonPlaceholder
+            icon={Bot}
+            title="Agent Roster Coming Soon"
+            description="The agent roster requires an on-chain indexer to aggregate all registered agents. The AgentRegistry contract only supports lookup by wallet address -- a subgraph or indexer is needed to enumerate and display all agents."
+            accentColor="frost-orange"
+          />
+        </motion.div>
       </div>
     </section>
   );
 }
 
 /* ===========================================================================
- * Section 5: Live Activity Feed
+ * Section 5: Live Activity Feed (Coming Soon -- requires indexer)
  * ========================================================================= */
 
 function LiveActivityFeed() {
@@ -743,12 +675,12 @@ function LiveActivityFeed() {
         {/* Section heading */}
         <div className="text-center mb-14">
           <motion.div
-            className="inline-flex items-center gap-2 font-mono text-xs text-arena-green/60 uppercase tracking-widest mb-4 px-4 py-2 rounded-full border border-arena-green/10 bg-arena-green/5"
+            className="inline-flex items-center gap-2 font-mono text-xs text-frost-green/60 uppercase tracking-widest mb-4 px-4 py-2 rounded-full border border-frost-green/10 bg-frost-green/5"
             initial={{ opacity: 0, y: 10 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.5 }}
           >
-            <div className="w-2 h-2 rounded-full bg-arena-green animate-pulse-glow" />
+            <div className="w-2 h-2 rounded-full bg-frost-green animate-pulse-glow" />
             Live Feed
           </motion.div>
           <motion.h2
@@ -761,65 +693,18 @@ function LiveActivityFeed() {
           </motion.h2>
         </div>
 
-        {/* Activity List */}
+        {/* Coming Soon Placeholder */}
         <motion.div
-          className="glass-card border border-white/[0.06] overflow-hidden"
           initial={{ opacity: 0, y: 20 }}
           animate={inView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.6, delay: 0.2 }}
         >
-          {/* Terminal header bar */}
-          <div className="flex items-center gap-2 px-5 py-3 border-b border-white/[0.06] bg-white/[0.02]">
-            <div className="flex gap-1.5">
-              <div className="w-3 h-3 rounded-full bg-arena-red/60" />
-              <div className="w-3 h-3 rounded-full bg-arena-orange/60" />
-              <div className="w-3 h-3 rounded-full bg-arena-green/60" />
-            </div>
-            <span className="font-mono text-[11px] text-white/30 ml-2">agent-activity.log</span>
-            <div className="ml-auto flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-arena-green animate-pulse-glow" />
-              <span className="font-mono text-[10px] text-arena-green/60 uppercase">streaming</span>
-            </div>
-          </div>
-
-          {/* Activity items */}
-          <div className="max-h-[480px] overflow-y-auto">
-            {MOCK_ACTIVITIES.map((activity, i) => {
-              const config = ACTIVITY_CONFIG[activity.type];
-              const Icon = config.icon;
-              return (
-                <motion.div
-                  key={activity.id}
-                  className="flex items-start gap-3 px-5 py-3.5 border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={inView ? { opacity: 1, x: 0 } : {}}
-                  transition={{ duration: 0.3, delay: 0.05 * i + 0.3 }}
-                >
-                  {/* Timestamp */}
-                  <div className="flex items-center gap-1.5 flex-shrink-0 w-20">
-                    <Clock className="h-3 w-3 text-white/20" />
-                    <span className="font-mono text-[11px] text-white/25">{activity.timestamp}</span>
-                  </div>
-
-                  {/* Icon */}
-                  <div className={cn(
-                    'flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center',
-                    config.bg
-                  )}>
-                    <Icon className={cn('h-3.5 w-3.5', config.color)} />
-                  </div>
-
-                  {/* Content */}
-                  <div className="min-w-0 flex-1">
-                    <span className="font-mono text-sm">
-                      <span className="text-arena-cyan font-semibold">{activity.agentName}</span>
-                      <span className="text-white/40 ml-2">{activity.description}</span>
-                    </span>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
+          <ComingSoonPlaceholder
+            icon={Activity}
+            title="Live Activity Feed Coming Soon"
+            description="Real-time agent activity (battles, mints, messages, level-ups) requires an event indexer or subgraph to aggregate on-chain events across all contracts into a unified feed."
+            accentColor="frost-green"
+          />
         </motion.div>
       </div>
     </section>
@@ -827,7 +712,7 @@ function LiveActivityFeed() {
 }
 
 /* ===========================================================================
- * Section 6: Agent Leaderboard Preview
+ * Section 6: Agent Leaderboard Preview (Coming Soon -- requires indexer)
  * ========================================================================= */
 
 function LeaderboardPreview() {
@@ -844,16 +729,13 @@ function LeaderboardPreview() {
     return () => observer.disconnect();
   }, []);
 
-  const rankColors = ['text-arena-gold', 'text-white/70', 'text-arena-orange/70', 'text-white/40', 'text-white/40'];
-  const rankBg = ['bg-arena-gold/10', 'bg-white/5', 'bg-arena-orange/5', 'bg-white/[0.02]', 'bg-white/[0.02]'];
-
   return (
     <section className="relative py-20 sm:py-28 px-4" ref={ref}>
       <div className="mx-auto max-w-4xl">
         {/* Section heading */}
         <div className="text-center mb-14">
           <motion.div
-            className="inline-flex items-center gap-2 font-mono text-xs text-arena-gold/60 uppercase tracking-widest mb-4 px-4 py-2 rounded-full border border-arena-gold/10 bg-arena-gold/5"
+            className="inline-flex items-center gap-2 font-mono text-xs text-frost-gold/60 uppercase tracking-widest mb-4 px-4 py-2 rounded-full border border-frost-gold/10 bg-frost-gold/5"
             initial={{ opacity: 0, y: 10 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.5 }}
@@ -871,87 +753,18 @@ function LeaderboardPreview() {
           </motion.h2>
         </div>
 
-        {/* Leaderboard Table */}
+        {/* Coming Soon Placeholder */}
         <motion.div
-          className="glass-card border border-white/[0.06] overflow-hidden"
           initial={{ opacity: 0, y: 20 }}
           animate={inView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.6, delay: 0.2 }}
         >
-          {/* Table Header */}
-          <div className="grid grid-cols-12 gap-2 px-5 py-3.5 border-b border-white/[0.06] bg-white/[0.02]">
-            <div className="col-span-1 font-mono text-[10px] text-white/30 uppercase tracking-wider">#</div>
-            <div className="col-span-4 font-mono text-[10px] text-white/30 uppercase tracking-wider">Agent</div>
-            <div className="col-span-2 font-mono text-[10px] text-white/30 uppercase tracking-wider">Strategy</div>
-            <div className="col-span-2 font-mono text-[10px] text-white/30 uppercase tracking-wider text-right">Battles</div>
-            <div className="col-span-1 font-mono text-[10px] text-white/30 uppercase tracking-wider text-right">Win%</div>
-            <div className="col-span-2 font-mono text-[10px] text-white/30 uppercase tracking-wider text-right">Profit</div>
-          </div>
-
-          {/* Table Rows */}
-          {LEADERBOARD_DATA.map((entry, i) => (
-            <motion.div
-              key={entry.rank}
-              className="grid grid-cols-12 gap-2 px-5 py-3.5 border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors items-center"
-              initial={{ opacity: 0, x: -10 }}
-              animate={inView ? { opacity: 1, x: 0 } : {}}
-              transition={{ duration: 0.3, delay: 0.08 * i + 0.3 }}
-            >
-              {/* Rank */}
-              <div className="col-span-1">
-                <span className={cn(
-                  'inline-flex items-center justify-center w-7 h-7 rounded-lg font-mono text-xs font-bold',
-                  rankColors[i],
-                  rankBg[i]
-                )}>
-                  {entry.rank}
-                </span>
-              </div>
-
-              {/* Name */}
-              <div className="col-span-4">
-                <span className="font-mono text-sm font-semibold text-white hover:text-arena-cyan transition-colors cursor-pointer">
-                  {entry.name}
-                </span>
-              </div>
-
-              {/* Strategy */}
-              <div className="col-span-2">
-                <StrategyBadge strategy={entry.strategy} />
-              </div>
-
-              {/* Battles */}
-              <div className="col-span-2 text-right">
-                <span className="font-mono text-sm text-white/60">{entry.battles}</span>
-              </div>
-
-              {/* Win Rate */}
-              <div className="col-span-1 text-right">
-                <span className="font-mono text-sm text-arena-green font-semibold">{entry.winRate}%</span>
-              </div>
-
-              {/* Profit */}
-              <div className="col-span-2 text-right">
-                <span className={cn(
-                  'font-mono text-sm font-semibold',
-                  entry.profit >= 0 ? 'text-arena-green' : 'text-arena-red'
-                )}>
-                  {entry.profit >= 0 ? '+' : ''}{entry.profit} AVAX
-                </span>
-              </div>
-            </motion.div>
-          ))}
-
-          {/* View Full Leaderboard */}
-          <div className="px-5 py-4 bg-white/[0.01]">
-            <Link
-              href="/leaderboard"
-              className="inline-flex items-center gap-2 font-mono text-xs text-arena-cyan/60 hover:text-arena-cyan uppercase tracking-wider transition-colors"
-            >
-              View Full Leaderboard
-              <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
+          <ComingSoonPlaceholder
+            icon={Trophy}
+            title="Agent Leaderboard Coming Soon"
+            description="Ranking agents by win rate, profit, and battle count requires an indexer to track and aggregate individual agent performance across all battles on-chain."
+            accentColor="frost-gold"
+          />
         </motion.div>
       </div>
     </section>
@@ -1015,13 +828,13 @@ function DeveloperSection() {
   return (
     <section className="relative py-20 sm:py-28 px-4" ref={ref}>
       {/* Top border line */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-arena-purple/30 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-frost-purple/30 to-transparent" />
 
       <div className="mx-auto max-w-5xl">
         {/* Section heading */}
         <div className="text-center mb-14">
           <motion.div
-            className="inline-flex items-center gap-2 font-mono text-xs text-arena-purple/60 uppercase tracking-widest mb-4 px-4 py-2 rounded-full border border-arena-purple/10 bg-arena-purple/5"
+            className="inline-flex items-center gap-2 font-mono text-xs text-frost-purple/60 uppercase tracking-widest mb-4 px-4 py-2 rounded-full border border-frost-purple/10 bg-frost-purple/5"
             initial={{ opacity: 0, y: 10 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.5 }}
@@ -1043,7 +856,7 @@ function DeveloperSection() {
             animate={inView ? { opacity: 1 } : {}}
             transition={{ duration: 0.6, delay: 0.2 }}
           >
-            Integrate your AI with AVAX Arena using our REST API. Register agents, mint warriors, and battle -- all programmatically.
+            Integrate your AI with Frostbite using our REST API. Register agents, mint warriors, and battle -- all programmatically.
           </motion.p>
         </div>
 
@@ -1058,13 +871,13 @@ function DeveloperSection() {
               {/* Terminal header */}
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.06] bg-white/[0.02]">
                 <div className="flex gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-arena-red/60" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-arena-orange/60" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-arena-green/60" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-frost-red/60" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-frost-orange/60" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-frost-green/60" />
                 </div>
                 <span className="font-mono text-[10px] text-white/30 ml-2">request.sh</span>
                 <div className="ml-auto">
-                  <span className="font-mono text-[10px] text-arena-cyan/40 px-2 py-0.5 rounded bg-arena-cyan/5 border border-arena-cyan/10">
+                  <span className="font-mono text-[10px] text-frost-cyan/40 px-2 py-0.5 rounded bg-frost-cyan/5 border border-frost-cyan/10">
                     POST
                   </span>
                 </div>
@@ -1080,9 +893,9 @@ function DeveloperSection() {
                           {i + 1}
                         </span>
                         <span className={cn(
-                          line.startsWith('POST') ? 'text-arena-green font-semibold' :
-                          line.startsWith('Content') || line.startsWith('Authorization') ? 'text-arena-orange' :
-                          line.includes('"') ? 'text-arena-cyan' :
+                          line.startsWith('POST') ? 'text-frost-green font-semibold' :
+                          line.startsWith('Content') || line.startsWith('Authorization') ? 'text-frost-orange' :
+                          line.includes('"') ? 'text-frost-cyan' :
                           line.includes('{') || line.includes('}') ? 'text-white/60' :
                           'text-white/40'
                         )}>
@@ -1106,13 +919,13 @@ function DeveloperSection() {
               {/* Terminal header */}
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.06] bg-white/[0.02]">
                 <div className="flex gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-arena-red/60" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-arena-orange/60" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-arena-green/60" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-frost-red/60" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-frost-orange/60" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-frost-green/60" />
                 </div>
                 <span className="font-mono text-[10px] text-white/30 ml-2">response.json</span>
                 <div className="ml-auto">
-                  <span className="font-mono text-[10px] text-arena-green/60 px-2 py-0.5 rounded bg-arena-green/5 border border-arena-green/10">
+                  <span className="font-mono text-[10px] text-frost-green/60 px-2 py-0.5 rounded bg-frost-green/5 border border-frost-green/10">
                     200 OK
                   </span>
                 </div>
@@ -1128,9 +941,9 @@ function DeveloperSection() {
                           {i + 1}
                         </span>
                         <span className={cn(
-                          line.includes('true') ? 'text-arena-green' :
-                          line.includes('"') && line.includes(':') ? 'text-arena-cyan' :
-                          line.includes('"') ? 'text-arena-orange' :
+                          line.includes('true') ? 'text-frost-green' :
+                          line.includes('"') && line.includes(':') ? 'text-frost-cyan' :
+                          line.includes('"') ? 'text-frost-orange' :
                           line.includes('{') || line.includes('}') ? 'text-white/60' :
                           'text-white/40'
                         )}>
@@ -1160,16 +973,16 @@ function DeveloperSection() {
                   Your API Key
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="font-mono text-sm px-4 py-2.5 rounded-xl bg-arena-bg/80 border border-white/[0.06] text-white/60 flex-1 min-w-0 overflow-hidden">
+                  <div className="font-mono text-sm px-4 py-2.5 rounded-xl bg-frost-bg/80 border border-white/[0.06] text-white/60 flex-1 min-w-0 overflow-hidden">
                     {showApiKey ? (
-                      <span className="text-arena-cyan">{maskedKey}</span>
+                      <span className="text-frost-cyan">{maskedKey}</span>
                     ) : (
                       <span className="text-white/30">{'*'.repeat(maskedKey.length)}</span>
                     )}
                   </div>
                   <button
                     onClick={() => setShowApiKey(!showApiKey)}
-                    className="flex-shrink-0 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-arena-cyan/30 text-white/40 hover:text-arena-cyan transition-all"
+                    className="flex-shrink-0 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-frost-cyan/30 text-white/40 hover:text-frost-cyan transition-all"
                     title={showApiKey ? 'Hide API key' : 'Show API key'}
                   >
                     {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -1179,8 +992,8 @@ function DeveloperSection() {
                     className={cn(
                       'flex-shrink-0 p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] transition-all',
                       copied
-                        ? 'border-arena-green/30 text-arena-green'
-                        : 'hover:border-arena-cyan/30 text-white/40 hover:text-arena-cyan'
+                        ? 'border-frost-green/30 text-frost-green'
+                        : 'hover:border-frost-cyan/30 text-white/40 hover:text-frost-cyan'
                     )}
                     title="Copy to clipboard"
                   >

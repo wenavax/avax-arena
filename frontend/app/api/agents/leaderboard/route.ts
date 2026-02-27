@@ -1,18 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getLeaderboard } from '@/lib/db-queries';
+
+function securityHeaders(): Record<string, string> {
+  return { 'X-Content-Type-Options': 'nosniff' };
+}
 
 // GET /api/agents/leaderboard
-// Top performing agents
 export async function GET(req: NextRequest) {
-  const agents = [
-    { rank: 1, name: 'AlphaBot', id: 'agent_001', strategy: 'Analytical', battles: 147, wins: 89, winRate: 60.5, profit: '5.8', favoriteElement: 0 },
-    { rank: 2, name: 'ShadowHunter', id: 'agent_002', strategy: 'Aggressive', battles: 203, wins: 118, winRate: 58.1, profit: '4.2', favoriteElement: 6 },
-    { rank: 3, name: 'QuantumBlade', id: 'agent_005', strategy: 'Defensive', battles: 178, wins: 101, winRate: 56.7, profit: '3.9', favoriteElement: 5 },
-    { rank: 4, name: 'NeuralKnight', id: 'agent_004', strategy: 'Analytical', battles: 132, wins: 74, winRate: 56.1, profit: '2.7', favoriteElement: 7 },
-    { rank: 5, name: 'TradeOracle', id: 'agent_003', strategy: 'Random', battles: 95, wins: 52, winRate: 54.7, profit: '1.5', favoriteElement: 1 },
-    { rank: 6, name: 'VaultMaster', id: 'agent_006', strategy: 'Defensive', battles: 88, wins: 47, winRate: 53.4, profit: '1.1', favoriteElement: 4 },
-    { rank: 7, name: 'IronFist', id: 'agent_008', strategy: 'Aggressive', battles: 156, wins: 82, winRate: 52.6, profit: '0.8', favoriteElement: 0 },
-    { rank: 8, name: 'CryptoSage', id: 'agent_009', strategy: 'Analytical', battles: 67, wins: 35, winRate: 52.2, profit: '0.4', favoriteElement: 3 },
-  ];
+  try {
+    const { searchParams } = new URL(req.url);
 
-  return NextResponse.json({ agents });
+    const rawLimit = parseInt(searchParams.get('limit') || '10', 10);
+    const rawOffset = parseInt(searchParams.get('offset') || '0', 10);
+
+    if (isNaN(rawLimit) || isNaN(rawOffset) || rawLimit < 1 || rawOffset < 0) {
+      return NextResponse.json(
+        { error: 'limit must be >= 1 and offset must be >= 0', code: 'INVALID_PAGINATION' },
+        { status: 400, headers: securityHeaders() }
+      );
+    }
+
+    const limit = Math.min(rawLimit, 50);
+    const offset = rawOffset;
+
+    const { agents: rawAgents, total } = getLeaderboard(limit, offset);
+
+    const agents = rawAgents.map((a, i) => ({
+      rank: offset + i + 1,
+      name: a.name,
+      id: a.id,
+      strategy: a.strategy_name,
+      battles: a.total_battles,
+      wins: a.wins,
+      winRate: a.win_rate,
+      profit: a.profit,
+      favoriteElement: a.element,
+      currentStreak: a.current_streak,
+      bestStreak: a.best_streak,
+    }));
+
+    const headers = {
+      ...securityHeaders(),
+      'Cache-Control': 'public, max-age=30',
+    };
+
+    return NextResponse.json(
+      {
+        agents,
+        pagination: { total, limit, offset },
+      },
+      { headers }
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Internal server error', code: 'INTERNAL_ERROR' },
+      { status: 500, headers: securityHeaders() }
+    );
+  }
 }

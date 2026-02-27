@@ -6,7 +6,7 @@ import type { TypedContractEvent, TypedDeferredTopicFilter, TypedEventLog, Typed
   
 
   export interface TournamentInterface extends Interface {
-    getFunction(nameOrSignature: "claimPrize" | "createTournament" | "endTournament" | "getPlayerScore" | "getTournamentPlayers" | "joinTournament" | "owner" | "renounceOwnership" | "submitScore" | "tournamentCount" | "tournaments" | "transferOwnership"): FunctionFragment;
+    getFunction(nameOrSignature: "claimPrize" | "createTournament" | "endTournament" | "getPlayerScore" | "getTournamentPlayers" | "hasJoined" | "joinTournament" | "owner" | "renounceOwnership" | "submitScore" | "tournamentCount" | "tournaments" | "transferOwnership"): FunctionFragment;
 
     getEvent(nameOrSignatureOrTopic: "OwnershipTransferred" | "PlayerJoined" | "PrizeClaimed" | "ScoreSubmitted" | "TournamentCreated"): EventFragment;
 
@@ -15,6 +15,7 @@ encodeFunctionData(functionFragment: 'createTournament', values: [string, BigNum
 encodeFunctionData(functionFragment: 'endTournament', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'getPlayerScore', values: [BigNumberish, AddressLike]): string;
 encodeFunctionData(functionFragment: 'getTournamentPlayers', values: [BigNumberish]): string;
+encodeFunctionData(functionFragment: 'hasJoined', values: [BigNumberish, AddressLike]): string;
 encodeFunctionData(functionFragment: 'joinTournament', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'owner', values?: undefined): string;
 encodeFunctionData(functionFragment: 'renounceOwnership', values?: undefined): string;
@@ -28,6 +29,7 @@ decodeFunctionResult(functionFragment: 'createTournament', data: BytesLike): Res
 decodeFunctionResult(functionFragment: 'endTournament', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getPlayerScore', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getTournamentPlayers', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'hasJoined', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'joinTournament', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'owner', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'renounceOwnership', data: BytesLike): Result;
@@ -172,6 +174,14 @@ decodeFunctionResult(functionFragment: 'transferOwnership', data: BytesLike): Re
     
 
     
+    hasJoined: TypedContractMethod<
+      [arg0: BigNumberish, arg1: AddressLike, ],
+      [boolean],
+      'view'
+    >
+    
+
+    
     joinTournament: TypedContractMethod<
       [_id: BigNumberish, ],
       [void],
@@ -253,6 +263,11 @@ getFunction(nameOrSignature: 'getPlayerScore'): TypedContractMethod<
 getFunction(nameOrSignature: 'getTournamentPlayers'): TypedContractMethod<
       [_id: BigNumberish, ],
       [string[]],
+      'view'
+    >;
+getFunction(nameOrSignature: 'hasJoined'): TypedContractMethod<
+      [arg0: BigNumberish, arg1: AddressLike, ],
+      [boolean],
       'view'
     >;
 getFunction(nameOrSignature: 'joinTournament'): TypedContractMethod<

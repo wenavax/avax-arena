@@ -21,8 +21,9 @@ import {
   Trophy,
   Skull,
 } from 'lucide-react';
+import Image from 'next/image';
 import { ELEMENTS, MINT_PRICE } from '@/lib/constants';
-import { ARENA_WARRIOR_ABI } from '@/lib/contracts';
+import { FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
 import {
   useAccount,
   useWriteContract,
@@ -157,19 +158,19 @@ function MysteryCard() {
       transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
     >
       {/* Outer glow */}
-      <div className="absolute -inset-1 bg-gradient-to-br from-arena-cyan via-arena-purple to-arena-pink rounded-2xl opacity-60 blur-lg animate-pulse-glow" />
+      <div className="absolute -inset-1 bg-gradient-to-br from-frost-cyan via-frost-purple to-frost-pink rounded-2xl opacity-60 blur-lg animate-pulse-glow" />
 
       {/* Card body */}
-      <div className="relative h-full w-full rounded-2xl bg-arena-card border border-white/10 flex flex-col items-center justify-center gap-6 overflow-hidden">
+      <div className="relative h-full w-full rounded-2xl bg-frost-card border border-white/10 flex flex-col items-center justify-center gap-6 overflow-hidden">
         {/* Animated mesh background */}
         <div className="absolute inset-0 opacity-20">
-          <div className="absolute top-0 left-0 w-40 h-40 bg-arena-cyan rounded-full filter blur-[80px] animate-float" />
+          <div className="absolute top-0 left-0 w-40 h-40 bg-frost-cyan rounded-full filter blur-[80px] animate-float" />
           <div
-            className="absolute bottom-0 right-0 w-40 h-40 bg-arena-purple rounded-full filter blur-[80px] animate-float"
+            className="absolute bottom-0 right-0 w-40 h-40 bg-frost-purple rounded-full filter blur-[80px] animate-float"
             style={{ animationDelay: '2s' }}
           />
           <div
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-arena-pink rounded-full filter blur-[60px] animate-float"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-frost-pink rounded-full filter blur-[60px] animate-float"
             style={{ animationDelay: '4s' }}
           />
         </div>
@@ -222,7 +223,7 @@ function MysteryCard() {
               delay: i * 0.4,
             }}
           >
-            <Sparkles className="w-4 h-4 text-arena-cyan/40" />
+            <Sparkles className="w-4 h-4 text-frost-cyan/40" />
           </motion.div>
         ))}
       </div>
@@ -237,9 +238,13 @@ function MysteryCard() {
 function WarriorCard({
   warrior,
   tokenId,
+  imageUrl,
+  isGeneratingImage,
 }: {
   warrior: WarriorStats;
   tokenId: number;
+  imageUrl?: string | null;
+  isGeneratingImage?: boolean;
 }) {
   const element = ELEMENTS[warrior.element] ?? ELEMENTS[0];
   const ElementIcon = ELEMENT_ICONS[warrior.element] ?? Sparkles;
@@ -264,7 +269,35 @@ function WarriorCard({
       />
 
       {/* Card body */}
-      <div className="relative rounded-2xl bg-arena-card/95 backdrop-blur-xl border border-white/10 p-6 space-y-5">
+      <div className="relative rounded-2xl bg-frost-card/95 backdrop-blur-xl border border-white/10 p-6 space-y-5">
+        {/* AI Generated Image */}
+        <motion.div
+          className="relative w-full aspect-square rounded-xl overflow-hidden bg-white/[0.02] border border-white/5"
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.3 }}
+        >
+          {imageUrl ? (
+            <Image
+              src={imageUrl}
+              alt={`Frostbite Warrior #${tokenId}`}
+              fill
+              className="object-cover"
+              unoptimized
+            />
+          ) : isGeneratingImage ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+              <Loader2 className="w-8 h-8 text-frost-cyan animate-spin" />
+              <p className="text-xs text-white/40 uppercase tracking-wider">Generating AI Art...</p>
+            </div>
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+              <span className="text-5xl">{element.emoji}</span>
+              <p className="text-xs text-white/30">#{tokenId}</p>
+            </div>
+          )}
+        </motion.div>
+
         {/* Header: Element badge + Token ID */}
         <div className="flex items-center justify-between">
           <motion.div
@@ -300,9 +333,9 @@ function WarriorCard({
           transition={{ delay: 0.5 }}
         >
           <p className="text-xs uppercase tracking-widest text-white/30 mb-1">Level</p>
-          <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full border border-arena-gold/30 bg-arena-gold/5">
-            <Sparkles className="w-3.5 h-3.5 text-arena-gold" />
-            <span className="font-display text-lg font-bold text-arena-gold text-glow-gold">
+          <div className="inline-flex items-center gap-2 px-4 py-1 rounded-full border border-frost-gold/30 bg-frost-gold/5">
+            <Sparkles className="w-3.5 h-3.5 text-frost-gold" />
+            <span className="font-display text-lg font-bold text-frost-gold text-glow-gold">
               {warrior.level}
             </span>
           </div>
@@ -363,15 +396,15 @@ function WarriorCard({
           transition={{ delay: 1.1 }}
         >
           <div className="flex items-center gap-2">
-            <Trophy className="w-4 h-4 text-arena-green" />
-            <span className="font-mono text-sm text-arena-green font-bold">
+            <Trophy className="w-4 h-4 text-frost-green" />
+            <span className="font-mono text-sm text-frost-green font-bold">
               {wins}W
             </span>
           </div>
           <div className="w-px h-4 bg-white/10" />
           <div className="flex items-center gap-2">
-            <Skull className="w-4 h-4 text-arena-red" />
-            <span className="font-mono text-sm text-arena-red font-bold">
+            <Skull className="w-4 h-4 text-frost-red" />
+            <span className="font-mono text-sm text-frost-red font-bold">
               {losses}L
             </span>
           </div>
@@ -393,8 +426,8 @@ function GalleryWarriorCard({
   index: number;
 }) {
   const { data: warriorData } = useReadContract({
-    address: CONTRACT_ADDRESSES.arenaWarrior as `0x${string}`,
-    abi: ARENA_WARRIOR_ABI,
+    address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+    abi: FROSTBITE_WARRIOR_ABI,
     functionName: 'getWarrior',
     args: [BigInt(tokenId)],
   });
@@ -434,7 +467,7 @@ function GalleryWarriorCard({
         }}
       />
 
-      <div className="relative bg-arena-card/80 backdrop-blur-lg border border-white/5 rounded-xl p-4 space-y-3">
+      <div className="relative bg-frost-card/80 backdrop-blur-lg border border-white/5 rounded-xl p-4 space-y-3">
         {/* Top row */}
         <div className="flex items-center justify-between">
           <div
@@ -494,6 +527,8 @@ export default function MintPage() {
   const { address, isConnected } = useAccount();
   const [mintedTokenId, setMintedTokenId] = useState<number | null>(null);
   const [showWarrior, setShowWarrior] = useState(false);
+  const [warriorImageUrl, setWarriorImageUrl] = useState<string | null>(null);
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
   /* ---- Contract Writes ---- */
   const {
@@ -510,14 +545,14 @@ export default function MintPage() {
 
   /* ---- Contract Reads ---- */
   const { data: totalSupply, refetch: refetchSupply } = useReadContract({
-    address: CONTRACT_ADDRESSES.arenaWarrior as `0x${string}`,
-    abi: ARENA_WARRIOR_ABI,
+    address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+    abi: FROSTBITE_WARRIOR_ABI,
     functionName: 'totalSupply',
   });
 
   const { data: ownedTokenIds, refetch: refetchOwned } = useReadContract({
-    address: CONTRACT_ADDRESSES.arenaWarrior as `0x${string}`,
-    abi: ARENA_WARRIOR_ABI,
+    address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+    abi: FROSTBITE_WARRIOR_ABI,
     functionName: 'getWarriorsByOwner',
     args: address ? [address] : undefined,
   });
@@ -529,8 +564,8 @@ export default function MintPage() {
   );
 
   const { data: warriorData, refetch: refetchWarrior } = useReadContract({
-    address: CONTRACT_ADDRESSES.arenaWarrior as `0x${string}`,
-    abi: ARENA_WARRIOR_ABI,
+    address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+    abi: FROSTBITE_WARRIOR_ABI,
     functionName: 'getWarrior',
     args: latestTokenId !== null ? [BigInt(latestTokenId)] : undefined,
   });
@@ -541,6 +576,7 @@ export default function MintPage() {
       const newTokenId = Number(totalSupply);
       setMintedTokenId(newTokenId);
       setShowWarrior(true);
+      setWarriorImageUrl(null);
       refetchSupply();
       refetchOwned();
       refetchWarrior();
@@ -548,33 +584,69 @@ export default function MintPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTxSuccess]);
 
-  /* ---- Mint Handler ---- */
-  function handleMint() {
-    if (!isConnected) return;
-    mint({
-      address: CONTRACT_ADDRESSES.arenaWarrior as `0x${string}`,
-      abi: ARENA_WARRIOR_ABI,
-      functionName: 'mint',
-      value: parseEther(MINT_PRICE),
-    });
-  }
-
   const isMinting = isMintPending || isTxConfirming;
   const warrior = warriorData as WarriorStats | undefined;
   const supply = totalSupply !== undefined ? Number(totalSupply) : '---';
   const tokenIds = (ownedTokenIds as bigint[] | undefined) ?? [];
 
+  /* ---- Generate AI image after warrior data is available ---- */
+  useEffect(() => {
+    if (!showWarrior || !warrior || mintedTokenId === null || warriorImageUrl || isGeneratingImage) return;
+
+    async function generateImage() {
+      setIsGeneratingImage(true);
+      try {
+        const res = await fetch('/api/metadata/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tokenId: mintedTokenId,
+            element: warrior!.element,
+            attack: warrior!.attack,
+            defense: warrior!.defense,
+            speed: warrior!.speed,
+            specialPower: warrior!.specialPower,
+            level: warrior!.level,
+          }),
+        });
+        const data = await res.json();
+        if (data.imageUrl) {
+          setWarriorImageUrl(data.imageUrl);
+        }
+      } catch (err) {
+        console.error('Image generation failed:', err);
+      } finally {
+        setIsGeneratingImage(false);
+      }
+    }
+
+    generateImage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWarrior, warrior, mintedTokenId]);
+
+  /* ---- Mint Handler ---- */
+  function handleMint() {
+    if (!isConnected) return;
+    mint({
+      address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+      abi: FROSTBITE_WARRIOR_ABI,
+      functionName: 'mint',
+      value: parseEther(MINT_PRICE),
+      chainId: 43113, // Avalanche Fuji
+    });
+  }
+
   return (
     <div className="min-h-screen relative">
       {/* Background orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-        <div className="orb w-80 h-80 bg-arena-purple top-20 -left-20" />
+        <div className="orb w-80 h-80 bg-frost-purple top-20 -left-20" />
         <div
-          className="orb w-96 h-96 bg-arena-cyan top-60 -right-32"
+          className="orb w-96 h-96 bg-frost-cyan top-60 -right-32"
           style={{ animationDelay: '2s' }}
         />
         <div
-          className="orb w-72 h-72 bg-arena-pink bottom-20 left-1/4"
+          className="orb w-72 h-72 bg-frost-pink bottom-20 left-1/4"
           style={{ animationDelay: '4s' }}
         />
       </div>
@@ -590,11 +662,11 @@ export default function MintPage() {
             transition={{ duration: 0.8 }}
           >
             <div className="flex items-center justify-center gap-3 mb-6">
-              <Sword className="w-8 h-8 text-arena-cyan" />
+              <Sword className="w-8 h-8 text-frost-cyan" />
               <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-black gradient-text">
-                MINT YOUR ARENA WARRIOR
+                MINT YOUR FROSTBITE WARRIOR
               </h1>
-              <Shield className="w-8 h-8 text-arena-pink" />
+              <Shield className="w-8 h-8 text-frost-pink" />
             </div>
 
             <p className="text-lg text-white/50 max-w-2xl mx-auto mb-4">
@@ -605,16 +677,16 @@ export default function MintPage() {
 
             {/* Mint price badge */}
             <motion.div
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full glass-card border-arena-cyan/20"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full glass-card border-frost-cyan/20"
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
               transition={{ delay: 0.3 }}
               style={{ transform: 'none' }} // prevent glass-card hover transform
               whileHover={{ scale: 1.05 }}
             >
-              <div className="w-2 h-2 rounded-full bg-arena-green animate-pulse" />
+              <div className="w-2 h-2 rounded-full bg-frost-green animate-pulse" />
               <span className="text-sm font-mono text-white/70">Mint Price:</span>
-              <span className="font-display text-lg font-bold text-arena-cyan text-glow-cyan">
+              <span className="font-display text-lg font-bold text-frost-cyan text-glow-cyan">
                 {MINT_PRICE} AVAX
               </span>
             </motion.div>
@@ -629,7 +701,7 @@ export default function MintPage() {
           >
             <Sparkles className="w-4 h-4" />
             <span className="font-mono">
-              Total Minted: <span className="text-arena-cyan font-bold">{String(supply)}</span>
+              Total Minted: <span className="text-frost-cyan font-bold">{String(supply)}</span>
             </span>
           </motion.div>
         </div>
@@ -655,7 +727,7 @@ export default function MintPage() {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                   >
-                    <WarriorCard warrior={warrior} tokenId={latestTokenId} />
+                    <WarriorCard warrior={warrior} tokenId={latestTokenId} imageUrl={warriorImageUrl} isGeneratingImage={isGeneratingImage} />
                   </motion.div>
                 ) : (
                   <motion.div
@@ -695,19 +767,19 @@ export default function MintPage() {
                       icon: Sparkles,
                       label: 'Element Affinity',
                       desc: 'One of 8 elements with combat advantages',
-                      color: 'text-arena-purple',
+                      color: 'text-frost-purple',
                     },
                     {
                       icon: Zap,
                       label: 'Special Power',
                       desc: 'Unique ability score for battle bonuses',
-                      color: 'text-arena-cyan',
+                      color: 'text-frost-cyan',
                     },
                     {
                       icon: Trophy,
                       label: 'Battle Ready',
-                      desc: 'Immediately usable in Arena PvP battles',
-                      color: 'text-arena-gold',
+                      desc: 'Immediately usable in Frostbite PvP battles',
+                      color: 'text-frost-gold',
                     },
                   ].map((item, i) => (
                     <motion.div
@@ -781,13 +853,13 @@ export default function MintPage() {
                     whileTap={!isMinting ? { scale: 0.98 } : {}}
                   >
                     {/* Button background */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-arena-cyan via-arena-purple to-arena-pink opacity-90 group-hover:opacity-100 transition-opacity" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-frost-cyan via-frost-purple to-frost-pink opacity-90 group-hover:opacity-100 transition-opacity" />
 
                     {/* Shimmer effect */}
                     <div className="absolute inset-0 shimmer" />
 
                     {/* Glow on hover */}
-                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-arena-cyan/20 via-arena-purple/20 to-arena-pink/20 blur-xl" />
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-frost-cyan/20 via-frost-purple/20 to-frost-pink/20 blur-xl" />
 
                     {/* Content */}
                     <span className="relative z-10 flex items-center justify-center gap-3 text-white">
@@ -811,14 +883,20 @@ export default function MintPage() {
                   <AnimatePresence>
                     {mintError && (
                       <motion.div
-                        className="p-3 rounded-lg bg-arena-red/10 border border-arena-red/20 text-arena-red text-sm text-center"
+                        className="p-3 rounded-lg bg-frost-red/10 border border-frost-red/20 text-frost-red text-sm text-center"
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
                       >
                         {mintError.message.includes('User rejected')
                           ? 'Transaction rejected by user'
-                          : 'Mint failed. Please try again.'}
+                          : mintError.message.includes('InsufficientPayment')
+                          ? 'Insufficient AVAX. Mint costs 0.01 AVAX.'
+                          : mintError.message.includes('insufficient funds')
+                          ? 'Not enough AVAX in your wallet.'
+                          : mintError.message.includes('chain')
+                          ? 'Please switch to Avalanche Fuji Testnet.'
+                          : `Mint failed: ${mintError.shortMessage || mintError.message}`}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -827,12 +905,12 @@ export default function MintPage() {
                   <AnimatePresence>
                     {isTxSuccess && (
                       <motion.div
-                        className="p-3 rounded-lg bg-arena-green/10 border border-arena-green/20 text-arena-green text-sm text-center font-medium"
+                        className="p-3 rounded-lg bg-frost-green/10 border border-frost-green/20 text-frost-green text-sm text-center font-medium"
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
                       >
-                        Warrior minted successfully! Welcome to the Arena.
+                        Warrior minted successfully! Welcome to Frostbite.
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -861,7 +939,7 @@ export default function MintPage() {
               </h2>
               <p className="text-white/40 text-sm">
                 You own{' '}
-                <span className="text-arena-cyan font-bold font-mono">
+                <span className="text-frost-cyan font-bold font-mono">
                   {tokenIds.length}
                 </span>{' '}
                 {tokenIds.length === 1 ? 'warrior' : 'warriors'}
@@ -899,7 +977,7 @@ export default function MintPage() {
                 No Warriors Yet
               </h3>
               <p className="text-sm text-white/30">
-                Mint your first warrior above to begin your Arena journey.
+                Mint your first warrior above to begin your Frostbite journey.
               </p>
             </motion.div>
           </div>

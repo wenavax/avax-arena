@@ -301,11 +301,35 @@ contract BattleEngine is Ownable, ReentrancyGuard {
     // -------------------------------------------------------------------------
 
     /**
-     * @notice Get all currently open (unjoin) battle IDs.
-     * @return An array of battle IDs that are waiting for an opponent.
+     * @notice Get a paginated slice of currently open (unjoined) battle IDs.
+     * @param offset The starting index in the openBattleIds array.
+     * @param limit  The maximum number of IDs to return.
+     * @return ids An array of battle IDs that are waiting for an opponent.
      */
-    function getOpenBattles() external view returns (uint256[] memory) {
-        return openBattleIds;
+    function getOpenBattles(uint256 offset, uint256 limit) external view returns (uint256[] memory ids) {
+        uint256 total = openBattleIds.length;
+        if (offset >= total) {
+            return new uint256[](0);
+        }
+
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+
+        uint256 count = end - offset;
+        ids = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            ids[i] = openBattleIds[offset + i];
+        }
+    }
+
+    /**
+     * @notice Return the total number of open battles (useful for pagination).
+     * @return The length of the openBattleIds array.
+     */
+    function getOpenBattleCount() external view returns (uint256) {
+        return openBattleIds.length;
     }
 
     /**
@@ -384,6 +408,7 @@ contract BattleEngine is Ownable, ReentrancyGuard {
             loserNft = battle.nft1;
         }
 
+        // --- Effects: all state changes BEFORE external calls ---
         battle.winner = winnerAddr;
         battle.resolved = true;
         battle.resolvedAt = block.timestamp;
@@ -395,11 +420,13 @@ contract BattleEngine is Ownable, ReentrancyGuard {
 
         accumulatedFees += fee;
 
+        // Emit event BEFORE external calls
+        emit BattleResolved(battleId, winnerAddr, loserAddr, payout);
+
+        // --- Interactions: external calls AFTER all state changes ---
         // Record battle results on the NFT contract
         arenaWarrior.recordBattle(winnerNft, true, WIN_EXPERIENCE);
         arenaWarrior.recordBattle(loserNft, false, LOSS_EXPERIENCE);
-
-        emit BattleResolved(battleId, winnerAddr, loserAddr, payout);
 
         // Transfer winnings to the winner
         (bool success, ) = winnerAddr.call{value: payout}("");

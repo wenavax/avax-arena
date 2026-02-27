@@ -13,9 +13,9 @@ export declare namespace ArenaWarrior {
     }
 
   export interface ArenaWarriorInterface extends Interface {
-    getFunction(nameOrSignature: "MINT_PRICE" | "WINS_PER_LEVEL" | "approve" | "balanceOf" | "battleContract" | "getApproved" | "getWarrior" | "getWarriorPowerScore" | "getWarriorsByOwner" | "isApprovedForAll" | "mint" | "name" | "owner" | "ownerOf" | "recordBattle" | "renounceOwnership" | "safeTransferFrom(address,address,uint256)" | "safeTransferFrom(address,address,uint256,bytes)" | "setApprovalForAll" | "setBattleContract" | "setTokenURI" | "supportsInterface" | "symbol" | "tokenByIndex" | "tokenOfOwnerByIndex" | "tokenURI" | "totalSupply" | "transferFrom" | "transferOwnership" | "withdraw"): FunctionFragment;
+    getFunction(nameOrSignature: "MINT_PRICE" | "WINS_PER_LEVEL" | "approve" | "balanceOf" | "battleContract" | "getApproved" | "getWarrior" | "getWarriorPowerScore" | "getWarriorsByOwner" | "isApprovedForAll" | "mint" | "name" | "owner" | "ownerOf" | "recordBattle" | "renounceOwnership" | "safeTransferFrom(address,address,uint256)" | "safeTransferFrom(address,address,uint256,bytes)" | "setApprovalForAll" | "setBaseURI" | "setBattleContract" | "setTokenURI" | "supportsInterface" | "symbol" | "tokenByIndex" | "tokenOfOwnerByIndex" | "tokenURI" | "totalSupply" | "transferFrom" | "transferOwnership" | "withdraw"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "Approval" | "ApprovalForAll" | "BattleRecorded" | "LevelUp" | "OwnershipTransferred" | "Transfer" | "WarriorMinted" | "WarriorURIUpdated"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "Approval" | "ApprovalForAll" | "BaseURIUpdated" | "BattleContractUpdated" | "BattleRecorded" | "LevelUp" | "OwnershipTransferred" | "Transfer" | "WarriorMinted" | "WarriorURIUpdated"): EventFragment;
 
     encodeFunctionData(functionFragment: 'MINT_PRICE', values?: undefined): string;
 encodeFunctionData(functionFragment: 'WINS_PER_LEVEL', values?: undefined): string;
@@ -36,6 +36,7 @@ encodeFunctionData(functionFragment: 'renounceOwnership', values?: undefined): s
 encodeFunctionData(functionFragment: 'safeTransferFrom(address,address,uint256)', values: [AddressLike, AddressLike, BigNumberish]): string;
 encodeFunctionData(functionFragment: 'safeTransferFrom(address,address,uint256,bytes)', values: [AddressLike, AddressLike, BigNumberish, BytesLike]): string;
 encodeFunctionData(functionFragment: 'setApprovalForAll', values: [AddressLike, boolean]): string;
+encodeFunctionData(functionFragment: 'setBaseURI', values: [string]): string;
 encodeFunctionData(functionFragment: 'setBattleContract', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'setTokenURI', values: [BigNumberish, string]): string;
 encodeFunctionData(functionFragment: 'supportsInterface', values: [BytesLike]): string;
@@ -67,6 +68,7 @@ decodeFunctionResult(functionFragment: 'renounceOwnership', data: BytesLike): Re
 decodeFunctionResult(functionFragment: 'safeTransferFrom(address,address,uint256)', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'safeTransferFrom(address,address,uint256,bytes)', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'setApprovalForAll', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'setBaseURI', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'setBattleContract', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'setTokenURI', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'supportsInterface', data: BytesLike): Result;
@@ -97,6 +99,30 @@ decodeFunctionResult(functionFragment: 'withdraw', data: BytesLike): Result;
       export type InputTuple = [owner: AddressLike, operator: AddressLike, approved: boolean];
       export type OutputTuple = [owner: string, operator: string, approved: boolean];
       export interface OutputObject {owner: string, operator: string, approved: boolean };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace BaseURIUpdatedEvent {
+      export type InputTuple = [newBaseURI: string];
+      export type OutputTuple = [newBaseURI: string];
+      export interface OutputObject {newBaseURI: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace BattleContractUpdatedEvent {
+      export type InputTuple = [newBattleContract: AddressLike];
+      export type OutputTuple = [newBattleContract: string];
+      export interface OutputObject {newBattleContract: string };
       export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
       export type Filter = TypedDeferredTopicFilter<Event>
       export type Log = TypedEventLog<Event>
@@ -363,6 +389,14 @@ decodeFunctionResult(functionFragment: 'withdraw', data: BytesLike): Result;
     
 
     
+    setBaseURI: TypedContractMethod<
+      [baseURI_: string, ],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
     setBattleContract: TypedContractMethod<
       [_battleContract: AddressLike, ],
       [void],
@@ -548,6 +582,11 @@ getFunction(nameOrSignature: 'setApprovalForAll'): TypedContractMethod<
       [void],
       'nonpayable'
     >;
+getFunction(nameOrSignature: 'setBaseURI'): TypedContractMethod<
+      [baseURI_: string, ],
+      [void],
+      'nonpayable'
+    >;
 getFunction(nameOrSignature: 'setBattleContract'): TypedContractMethod<
       [_battleContract: AddressLike, ],
       [void],
@@ -606,6 +645,8 @@ getFunction(nameOrSignature: 'withdraw'): TypedContractMethod<
 
     getEvent(key: 'Approval'): TypedContractEvent<ApprovalEvent.InputTuple, ApprovalEvent.OutputTuple, ApprovalEvent.OutputObject>;
 getEvent(key: 'ApprovalForAll'): TypedContractEvent<ApprovalForAllEvent.InputTuple, ApprovalForAllEvent.OutputTuple, ApprovalForAllEvent.OutputObject>;
+getEvent(key: 'BaseURIUpdated'): TypedContractEvent<BaseURIUpdatedEvent.InputTuple, BaseURIUpdatedEvent.OutputTuple, BaseURIUpdatedEvent.OutputObject>;
+getEvent(key: 'BattleContractUpdated'): TypedContractEvent<BattleContractUpdatedEvent.InputTuple, BattleContractUpdatedEvent.OutputTuple, BattleContractUpdatedEvent.OutputObject>;
 getEvent(key: 'BattleRecorded'): TypedContractEvent<BattleRecordedEvent.InputTuple, BattleRecordedEvent.OutputTuple, BattleRecordedEvent.OutputObject>;
 getEvent(key: 'LevelUp'): TypedContractEvent<LevelUpEvent.InputTuple, LevelUpEvent.OutputTuple, LevelUpEvent.OutputObject>;
 getEvent(key: 'OwnershipTransferred'): TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
@@ -621,6 +662,14 @@ getEvent(key: 'WarriorURIUpdated'): TypedContractEvent<WarriorURIUpdatedEvent.In
 
       'ApprovalForAll(address,address,bool)': TypedContractEvent<ApprovalForAllEvent.InputTuple, ApprovalForAllEvent.OutputTuple, ApprovalForAllEvent.OutputObject>;
       ApprovalForAll: TypedContractEvent<ApprovalForAllEvent.InputTuple, ApprovalForAllEvent.OutputTuple, ApprovalForAllEvent.OutputObject>;
+    
+
+      'BaseURIUpdated(string)': TypedContractEvent<BaseURIUpdatedEvent.InputTuple, BaseURIUpdatedEvent.OutputTuple, BaseURIUpdatedEvent.OutputObject>;
+      BaseURIUpdated: TypedContractEvent<BaseURIUpdatedEvent.InputTuple, BaseURIUpdatedEvent.OutputTuple, BaseURIUpdatedEvent.OutputObject>;
+    
+
+      'BattleContractUpdated(address)': TypedContractEvent<BattleContractUpdatedEvent.InputTuple, BattleContractUpdatedEvent.OutputTuple, BattleContractUpdatedEvent.OutputObject>;
+      BattleContractUpdated: TypedContractEvent<BattleContractUpdatedEvent.InputTuple, BattleContractUpdatedEvent.OutputTuple, BattleContractUpdatedEvent.OutputObject>;
     
 
       'BattleRecorded(uint256,bool,uint256,uint256)': TypedContractEvent<BattleRecordedEvent.InputTuple, BattleRecordedEvent.OutputTuple, BattleRecordedEvent.OutputObject>;

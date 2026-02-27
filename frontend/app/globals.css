@@ -5,17 +5,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&display=swap');
 
 :root {
-  --arena-bg: #0a0a0f;
-  --arena-surface: #12121a;
-  --arena-card: #1a1a2e;
-  --arena-border: #2a2a3e;
-  --arena-cyan: #00f0ff;
-  --arena-purple: #7b2ff7;
-  --arena-pink: #ff2d87;
-  --arena-green: #00ff88;
-  --arena-orange: #ff8800;
-  --arena-red: #ff3366;
-  --arena-gold: #ffd700;
+  --frost-bg: #0a0a0f;
+  --frost-surface: #12121a;
+  --frost-card: #1a1a2e;
+  --frost-border: #2a2a3e;
+  --frost-cyan: #00f0ff;
+  --frost-purple: #7b2ff7;
+  --frost-pink: #ff2d87;
+  --frost-green: #00ff88;
+  --frost-orange: #ff8800;
+  --frost-red: #ff3366;
+  --frost-gold: #ffd700;
 }
 
 * {
@@ -29,7 +29,7 @@ html {
 }
 
 body {
-  background-color: var(--arena-bg);
+  background-color: var(--frost-bg);
   color: #e0e0e0;
   font-family: 'Inter', system-ui, sans-serif;
   min-height: 100vh;
@@ -41,20 +41,20 @@ body {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--arena-bg);
+  background: var(--frost-bg);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--arena-border);
+  background: var(--frost-border);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--arena-cyan);
+  background: var(--frost-cyan);
 }
 
 /* Selection */
 ::selection {
   background: rgba(0, 240, 255, 0.2);
-  color: var(--arena-cyan);
+  color: var(--frost-cyan);
 }
 
 /* --- Glassmorphism --- */
@@ -84,7 +84,7 @@ body {
   /* Gradient Border */
   .gradient-border {
     position: relative;
-    background: var(--arena-card);
+    background: var(--frost-card);
     border-radius: 16px;
   }
   .gradient-border::before {
@@ -93,7 +93,7 @@ body {
     inset: -1px;
     border-radius: 17px;
     padding: 1px;
-    background: linear-gradient(135deg, var(--arena-cyan), var(--arena-purple), var(--arena-pink));
+    background: linear-gradient(135deg, var(--frost-cyan), var(--frost-purple), var(--frost-pink));
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
@@ -117,7 +117,7 @@ body {
   .btn-neon-cyan {
     background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(0, 240, 255, 0.05));
     border: 1px solid rgba(0, 240, 255, 0.4);
-    color: var(--arena-cyan);
+    color: var(--frost-cyan);
   }
   .btn-neon-cyan:hover {
     background: linear-gradient(135deg, rgba(0, 240, 255, 0.25), rgba(0, 240, 255, 0.1));
@@ -128,7 +128,7 @@ body {
   .btn-neon-purple {
     background: linear-gradient(135deg, rgba(123, 47, 247, 0.15), rgba(123, 47, 247, 0.05));
     border: 1px solid rgba(123, 47, 247, 0.4);
-    color: var(--arena-purple);
+    color: var(--frost-purple);
   }
   .btn-neon-purple:hover {
     background: linear-gradient(135deg, rgba(123, 47, 247, 0.25), rgba(123, 47, 247, 0.1));
@@ -139,7 +139,7 @@ body {
   .btn-neon-pink {
     background: linear-gradient(135deg, rgba(255, 45, 135, 0.15), rgba(255, 45, 135, 0.05));
     border: 1px solid rgba(255, 45, 135, 0.4);
-    color: var(--arena-pink);
+    color: var(--frost-pink);
   }
   .btn-neon-pink:hover {
     background: linear-gradient(135deg, rgba(255, 45, 135, 0.25), rgba(255, 45, 135, 0.1));
@@ -148,7 +148,7 @@ body {
   }
 
   .btn-primary {
-    background: linear-gradient(135deg, var(--arena-cyan), var(--arena-purple));
+    background: linear-gradient(135deg, var(--frost-cyan), var(--frost-purple));
     border: none;
     color: white;
     padding: 14px 36px;
@@ -194,7 +194,7 @@ body {
 
   /* Animated gradient text */
   .gradient-text {
-    background: linear-gradient(135deg, var(--arena-cyan), var(--arena-purple), var(--arena-pink));
+    background: linear-gradient(135deg, var(--frost-cyan), var(--frost-purple), var(--frost-pink));
     background-size: 200% 200%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -209,9 +209,9 @@ body {
     z-index: -1;
     opacity: 0.15;
     background:
-      radial-gradient(at 20% 30%, var(--arena-purple) 0px, transparent 50%),
-      radial-gradient(at 80% 20%, var(--arena-cyan) 0px, transparent 50%),
-      radial-gradient(at 50% 80%, var(--arena-pink) 0px, transparent 50%);
+      radial-gradient(at 20% 30%, var(--frost-purple) 0px, transparent 50%),
+      radial-gradient(at 80% 20%, var(--frost-cyan) 0px, transparent 50%),
+      radial-gradient(at 50% 80%, var(--frost-pink) 0px, transparent 50%);
     filter: blur(80px);
   }
 
@@ -339,7 +339,7 @@ body {
     position: absolute;
     width: 2px;
     height: 2px;
-    background: var(--arena-cyan);
+    background: var(--frost-cyan);
     border-radius: 50%;
     opacity: 0;
     animation: particle-rise 4s linear infinite;
@@ -378,24 +378,24 @@ body {
   /* Progress bar */
   .progress-bar {
     height: 4px;
-    background: var(--arena-border);
+    background: var(--frost-border);
     border-radius: 2px;
     overflow: hidden;
   }
   .progress-bar-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--arena-cyan), var(--arena-purple));
+    background: linear-gradient(90deg, var(--frost-cyan), var(--frost-purple));
     border-radius: 2px;
     transition: width 0.5s ease;
   }
 
   /* Table styles */
-  .arena-table {
+  .frost-table {
     width: 100%;
     border-collapse: separate;
     border-spacing: 0 8px;
   }
-  .arena-table th {
+  .frost-table th {
     padding: 12px 16px;
     text-align: left;
     font-size: 12px;
@@ -404,21 +404,21 @@ body {
     letter-spacing: 0.05em;
     color: rgba(255, 255, 255, 0.4);
   }
-  .arena-table td {
+  .frost-table td {
     padding: 16px;
     background: rgba(26, 26, 46, 0.4);
     border-top: 1px solid rgba(255, 255, 255, 0.04);
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   }
-  .arena-table td:first-child {
+  .frost-table td:first-child {
     border-left: 1px solid rgba(255, 255, 255, 0.04);
     border-radius: 12px 0 0 12px;
   }
-  .arena-table td:last-child {
+  .frost-table td:last-child {
     border-right: 1px solid rgba(255, 255, 255, 0.04);
     border-radius: 0 12px 12px 0;
   }
-  .arena-table tbody tr:hover td {
+  .frost-table tbody tr:hover td {
     background: rgba(0, 240, 255, 0.04);
     border-color: rgba(0, 240, 255, 0.1);
   }

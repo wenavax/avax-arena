@@ -13,9 +13,9 @@ interface ParticleConfig {
 }
 
 const PARTICLE_COLORS = [
-  'var(--arena-cyan)',
-  'var(--arena-purple)',
-  'var(--arena-pink)',
+  'var(--frost-cyan)',
+  'var(--frost-purple)',
+  'var(--frost-pink)',
 ];
 
 export function ParticleBackground() {
