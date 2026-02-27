@@ -22,18 +22,18 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-50 w-full">
       {/* Glassmorphism backdrop */}
-      <div className="absolute inset-0 bg-arena-bg/60 backdrop-blur-xl border-b border-white/[0.06]" />
+      <div className="absolute inset-0 bg-frost-bg/60 backdrop-blur-xl border-b border-white/[0.06]" />
 
       <nav className="relative mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 group">
-          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-arena-cyan to-arena-purple">
-            <span className="text-lg font-bold text-arena-bg">A</span>
-            <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-arena-cyan to-arena-purple opacity-0 blur-lg transition-opacity group-hover:opacity-60" />
+          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-frost-cyan to-frost-purple">
+            <span className="text-lg font-bold text-frost-bg">F</span>
+            <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-frost-cyan to-frost-purple opacity-0 blur-lg transition-opacity group-hover:opacity-60" />
           </div>
           <span className="font-display text-lg font-bold tracking-wider">
-            <span className="gradient-text">AVAX</span>
-            <span className="text-white/90 ml-1">Arena</span>
+            <span className="gradient-text">FROST</span>
+            <span className="text-white/90 ml-1">BITE</span>
           </span>
         </Link>
 
@@ -49,7 +49,7 @@ export function Navbar() {
                 className={cn(
                   'relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
                   isActive
-                    ? 'text-arena-cyan'
+                    ? 'text-frost-cyan'
                     : 'text-white/50 hover:text-white/80 hover:bg-white/[0.04]'
                 )}
               >
@@ -57,7 +57,7 @@ export function Navbar() {
                 {link.label}
                 {/* Active indicator glow */}
                 {isActive && (
-                  <span className="absolute inset-x-2 -bottom-[1px] h-[2px] bg-arena-cyan rounded-full shadow-[0_0_8px_rgba(0,240,255,0.6)]" />
+                  <span className="absolute inset-x-2 -bottom-[1px] h-[2px] bg-frost-cyan rounded-full shadow-[0_0_8px_rgba(0,240,255,0.6)]" />
                 )}
               </Link>
             );
@@ -99,7 +99,7 @@ export function Navbar() {
           mobileOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'
         )}
       >
-        <div className="bg-arena-bg/95 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 space-y-1">
+        <div className="bg-frost-bg/95 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 space-y-1">
           {NAV_LINKS.map((link) => {
             const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
             const Icon = link.icon;
@@ -111,7 +111,7 @@ export function Navbar() {
                 className={cn(
                   'flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors',
                   isActive
-                    ? 'text-arena-cyan bg-arena-cyan/[0.08]'
+                    ? 'text-frost-cyan bg-frost-cyan/[0.08]'
                     : 'text-white/50 hover:text-white/80 hover:bg-white/[0.04]'
                 )}
               >

@@ -137,13 +137,42 @@ contract Leaderboard is Ownable {
     }
 
     /**
-     * @notice Return all player addresses that participated in a season.
+     * @notice Return a paginated slice of player addresses that participated in a season.
      * @param _season Season number.
-     * @return Array of player addresses.
+     * @param _offset Starting index in the player list.
+     * @param _limit  Maximum number of addresses to return.
+     * @return players Array of player addresses.
      */
     function getSeasonPlayers(
+        uint256 _season,
+        uint256 _offset,
+        uint256 _limit
+    ) external view returns (address[] memory players) {
+        uint256 total = seasonPlayers[_season].length;
+        if (_offset >= total) {
+            return new address[](0);
+        }
+
+        uint256 end = _offset + _limit;
+        if (end > total) {
+            end = total;
+        }
+
+        uint256 count = end - _offset;
+        players = new address[](count);
+        for (uint256 i = 0; i < count; i++) {
+            players[i] = seasonPlayers[_season][_offset + i];
+        }
+    }
+
+    /**
+     * @notice Return the total number of players in a season (useful for pagination).
+     * @param _season Season number.
+     * @return The number of players.
+     */
+    function getSeasonPlayerCount(
         uint256 _season
-    ) external view returns (address[] memory) {
-        return seasonPlayers[_season];
+    ) external view returns (uint256) {
+        return seasonPlayers[_season].length;
     }
 }

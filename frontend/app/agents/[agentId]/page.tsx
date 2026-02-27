@@ -56,9 +56,9 @@ const STRATEGY_STYLES: Record<string, { bg: string; text: string; border: string
     border: 'border-red-500/30',
   },
   Analytical: {
-    bg: 'bg-arena-purple/15',
-    text: 'text-arena-purple',
-    border: 'border-arena-purple/30',
+    bg: 'bg-frost-purple/15',
+    text: 'text-frost-purple',
+    border: 'border-frost-purple/30',
   },
   Defensive: {
     bg: 'bg-blue-500/15',
@@ -66,14 +66,14 @@ const STRATEGY_STYLES: Record<string, { bg: string; text: string; border: string
     border: 'border-blue-500/30',
   },
   Balanced: {
-    bg: 'bg-arena-green/15',
-    text: 'text-arena-green',
-    border: 'border-arena-green/30',
+    bg: 'bg-frost-green/15',
+    text: 'text-frost-green',
+    border: 'border-frost-green/30',
   },
   Opportunist: {
-    bg: 'bg-arena-gold/15',
-    text: 'text-arena-gold',
-    border: 'border-arena-gold/30',
+    bg: 'bg-frost-gold/15',
+    text: 'text-frost-gold',
+    border: 'border-frost-gold/30',
   },
 };
 
@@ -159,10 +159,10 @@ interface ChatPost {
 }
 
 const CATEGORY_STYLES: Record<ChatCategory, { bg: string; text: string; border: string }> = {
-  General: { bg: 'bg-arena-cyan/10', text: 'text-arena-cyan', border: 'border-arena-cyan/30' },
-  Strategy: { bg: 'bg-arena-purple/10', text: 'text-arena-purple', border: 'border-arena-purple/30' },
-  Battle: { bg: 'bg-arena-red/10', text: 'text-arena-red', border: 'border-arena-red/30' },
-  Trading: { bg: 'bg-arena-gold/10', text: 'text-arena-gold', border: 'border-arena-gold/30' },
+  General: { bg: 'bg-frost-cyan/10', text: 'text-frost-cyan', border: 'border-frost-cyan/30' },
+  Strategy: { bg: 'bg-frost-purple/10', text: 'text-frost-purple', border: 'border-frost-purple/30' },
+  Battle: { bg: 'bg-frost-red/10', text: 'text-frost-red', border: 'border-frost-red/30' },
+  Trading: { bg: 'bg-frost-gold/10', text: 'text-frost-gold', border: 'border-frost-gold/30' },
 };
 
 const MOCK_CHAT_POSTS: ChatPost[] = [
@@ -185,10 +185,10 @@ const ACTIVITY_ICON: Record<ActivityType, typeof Swords> = {
 };
 
 const ACTIVITY_COLOR: Record<ActivityType, string> = {
-  battle: 'text-arena-red bg-arena-red/15 border-arena-red/30',
-  message: 'text-arena-cyan bg-arena-cyan/15 border-arena-cyan/30',
-  mint: 'text-arena-gold bg-arena-gold/15 border-arena-gold/30',
-  level_up: 'text-arena-green bg-arena-green/15 border-arena-green/30',
+  battle: 'text-frost-red bg-frost-red/15 border-frost-red/30',
+  message: 'text-frost-cyan bg-frost-cyan/15 border-frost-cyan/30',
+  mint: 'text-frost-gold bg-frost-gold/15 border-frost-gold/30',
+  level_up: 'text-frost-green bg-frost-green/15 border-frost-green/30',
 };
 
 /* ---------------------------------------------------------------------------
@@ -229,16 +229,16 @@ export default function AgentProfilePage() {
         <div className="flex flex-col md:flex-row items-center md:items-start gap-8">
           {/* Avatar */}
           <div className="relative flex-shrink-0">
-            <div className="w-28 h-28 rounded-full bg-gradient-to-br from-arena-cyan via-arena-purple to-arena-pink p-[3px]">
-              <div className="w-full h-full rounded-full bg-arena-surface flex items-center justify-center">
-                <Bot className="w-12 h-12 text-arena-cyan" />
+            <div className="w-28 h-28 rounded-full bg-gradient-to-br from-frost-cyan via-frost-purple to-frost-pink p-[3px]">
+              <div className="w-full h-full rounded-full bg-frost-surface flex items-center justify-center">
+                <Bot className="w-12 h-12 text-frost-cyan" />
               </div>
             </div>
             {/* Online dot */}
             <span
               className={cn(
-                'absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-arena-surface',
-                agent.isOnline ? 'bg-arena-green animate-pulse-glow' : 'bg-white/20',
+                'absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-frost-surface',
+                agent.isOnline ? 'bg-frost-green animate-pulse-glow' : 'bg-white/20',
               )}
             />
           </div>
@@ -267,10 +267,10 @@ export default function AgentProfilePage() {
                 <span
                   className={cn(
                     'w-2 h-2 rounded-full',
-                    agent.isOnline ? 'bg-arena-green' : 'bg-white/30',
+                    agent.isOnline ? 'bg-frost-green' : 'bg-white/30',
                   )}
                 />
-                <span className={agent.isOnline ? 'text-arena-green' : 'text-white/40'}>
+                <span className={agent.isOnline ? 'text-frost-green' : 'text-white/40'}>
                   {agent.isOnline ? 'Online' : 'Offline'}
                 </span>
               </span>
@@ -281,13 +281,13 @@ export default function AgentProfilePage() {
               {/* Owner */}
               <div className="flex items-center justify-center md:justify-start gap-2 text-sm">
                 <span className="text-white/40">Owner:</span>
-                <span className="font-mono text-arena-cyan">{shortenAddr(agent.ownerAddress)}</span>
+                <span className="font-mono text-frost-cyan">{shortenAddr(agent.ownerAddress)}</span>
                 <button
                   onClick={() => copyAddr(agent.ownerAddress, setCopiedOwner)}
                   className="p-1 rounded hover:bg-white/5 transition-colors"
                 >
                   {copiedOwner ? (
-                    <Check className="w-3.5 h-3.5 text-arena-green" />
+                    <Check className="w-3.5 h-3.5 text-frost-green" />
                   ) : (
                     <Copy className="w-3.5 h-3.5 text-white/30 hover:text-white/60" />
                   )}
@@ -297,13 +297,13 @@ export default function AgentProfilePage() {
               {/* Agent wallet */}
               <div className="flex items-center justify-center md:justify-start gap-2 text-sm">
                 <span className="text-white/40">Agent Wallet:</span>
-                <span className="font-mono text-arena-purple">{shortenAddr(agent.agentWalletAddress)}</span>
+                <span className="font-mono text-frost-purple">{shortenAddr(agent.agentWalletAddress)}</span>
                 <button
                   onClick={() => copyAddr(agent.agentWalletAddress, setCopiedWallet)}
                   className="p-1 rounded hover:bg-white/5 transition-colors"
                 >
                   {copiedWallet ? (
-                    <Check className="w-3.5 h-3.5 text-arena-green" />
+                    <Check className="w-3.5 h-3.5 text-frost-green" />
                   ) : (
                     <Copy className="w-3.5 h-3.5 text-white/30 hover:text-white/60" />
                   )}
@@ -342,12 +342,12 @@ export default function AgentProfilePage() {
         className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-12"
       >
         {[
-          { icon: Swords, label: 'Total Battles', value: stats.totalBattles, color: 'text-arena-cyan' },
-          { icon: Trophy, label: 'Win Rate', value: `${stats.winRate}%`, color: 'text-arena-green' },
-          { icon: Coins, label: 'Total Profit', value: `${stats.totalProfit} AVAX`, color: 'text-arena-gold' },
-          { icon: Shield, label: 'Warriors Owned', value: stats.warriorsOwned, color: 'text-arena-purple' },
-          { icon: MessageCircle, label: 'Messages Posted', value: stats.messagesPosted, color: 'text-arena-pink' },
-          { icon: Star, label: 'Current Level', value: stats.currentLevel, color: 'text-arena-orange' },
+          { icon: Swords, label: 'Total Battles', value: stats.totalBattles, color: 'text-frost-cyan' },
+          { icon: Trophy, label: 'Win Rate', value: `${stats.winRate}%`, color: 'text-frost-green' },
+          { icon: Coins, label: 'Total Profit', value: `${stats.totalProfit} AVAX`, color: 'text-frost-gold' },
+          { icon: Shield, label: 'Warriors Owned', value: stats.warriorsOwned, color: 'text-frost-purple' },
+          { icon: MessageCircle, label: 'Messages Posted', value: stats.messagesPosted, color: 'text-frost-pink' },
+          { icon: Star, label: 'Current Level', value: stats.currentLevel, color: 'text-frost-orange' },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -373,7 +373,7 @@ export default function AgentProfilePage() {
         className="mb-12"
       >
         <div className="flex items-center gap-3 mb-6">
-          <Shield className="w-5 h-5 text-arena-cyan" />
+          <Shield className="w-5 h-5 text-frost-cyan" />
           <h2 className="text-xl font-display font-bold text-white">Warriors Gallery</h2>
           <span className="ml-auto text-sm text-white/30 font-mono">
             {MOCK_WARRIORS.length} NFTs
@@ -395,7 +395,7 @@ export default function AgentProfilePage() {
                   'rounded-xl border cursor-pointer transition-all duration-300 overflow-hidden',
                   `bg-gradient-to-br ${el.bgGradient}`,
                   isExpanded
-                    ? 'border-arena-cyan/40 shadow-glow-cyan'
+                    ? 'border-frost-cyan/40 shadow-glow-cyan'
                     : 'border-white/[0.06] hover:border-white/20',
                 )}
                 onClick={() => setExpandedWarrior(isExpanded ? null : w.tokenId)}
@@ -410,7 +410,7 @@ export default function AgentProfilePage() {
                         <span className="text-white/40 text-xs ml-2">{el.name}</span>
                       </div>
                     </div>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-arena-gold/20 text-arena-gold border border-arena-gold/30 font-bold">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-frost-gold/20 text-frost-gold border border-frost-gold/30 font-bold">
                       Lv.{w.level}
                     </span>
                   </div>
@@ -418,13 +418,13 @@ export default function AgentProfilePage() {
                   {/* Power + Record */}
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-arena-cyan" />
-                      <span className="text-arena-cyan font-mono font-bold text-sm">{w.powerScore}</span>
+                      <Zap className="w-3.5 h-3.5 text-frost-cyan" />
+                      <span className="text-frost-cyan font-mono font-bold text-sm">{w.powerScore}</span>
                     </div>
                     <span className="text-xs text-white/50 font-mono">
-                      <span className="text-arena-green">{w.wins}W</span>
+                      <span className="text-frost-green">{w.wins}W</span>
                       {' / '}
-                      <span className="text-arena-red">{w.losses}L</span>
+                      <span className="text-frost-red">{w.losses}L</span>
                     </span>
                   </div>
 
@@ -459,7 +459,7 @@ export default function AgentProfilePage() {
                             </div>
                             <div className="flex justify-between p-2 rounded-lg bg-white/[0.03]">
                               <span className="text-white/40">SP</span>
-                              <span className="text-arena-purple font-mono font-bold">{w.specialPower}</span>
+                              <span className="text-frost-purple font-mono font-bold">{w.specialPower}</span>
                             </div>
                           </div>
                           <div className="mt-2 text-center">
@@ -488,12 +488,12 @@ export default function AgentProfilePage() {
         className="glass-card rounded-2xl overflow-hidden mb-12"
       >
         <div className="p-6 border-b border-white/5 flex items-center gap-3">
-          <Swords className="w-5 h-5 text-arena-red" />
+          <Swords className="w-5 h-5 text-frost-red" />
           <h2 className="text-xl font-display font-bold text-white">Battle History</h2>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="arena-table">
+          <table className="frost-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -537,8 +537,8 @@ export default function AgentProfilePage() {
                     <span
                       className={cn(
                         'px-3 py-1 rounded-full text-xs font-bold uppercase',
-                        b.result === 'win' && 'bg-arena-green/20 text-arena-green border border-arena-green/30',
-                        b.result === 'loss' && 'bg-arena-red/20 text-arena-red border border-arena-red/30',
+                        b.result === 'win' && 'bg-frost-green/20 text-frost-green border border-frost-green/30',
+                        b.result === 'loss' && 'bg-frost-red/20 text-frost-red border border-frost-red/30',
                       )}
                     >
                       {b.result}
@@ -561,13 +561,13 @@ export default function AgentProfilePage() {
         className="glass-card p-6 rounded-2xl mb-12"
       >
         <div className="flex items-center gap-3 mb-6">
-          <Flame className="w-5 h-5 text-arena-orange" />
+          <Flame className="w-5 h-5 text-frost-orange" />
           <h2 className="text-xl font-display font-bold text-white">Recent Activity</h2>
         </div>
 
         <div className="relative">
           {/* Vertical timeline line */}
-          <div className="absolute left-[15px] top-2 bottom-2 w-px bg-gradient-to-b from-arena-cyan/40 via-arena-purple/30 to-transparent" />
+          <div className="absolute left-[15px] top-2 bottom-2 w-px bg-gradient-to-b from-frost-cyan/40 via-frost-purple/30 to-transparent" />
 
           <div className="space-y-1">
             {MOCK_ACTIVITIES.map((act, i) => {
@@ -623,7 +623,7 @@ export default function AgentProfilePage() {
         className="glass-card p-6 rounded-2xl mb-12"
       >
         <div className="flex items-center gap-3 mb-6">
-          <MessageSquare className="w-5 h-5 text-arena-cyan" />
+          <MessageSquare className="w-5 h-5 text-frost-cyan" />
           <h2 className="text-xl font-display font-bold text-white">Chat Posts</h2>
           <span className="ml-auto text-sm text-white/30 font-mono">
             {MOCK_CHAT_POSTS.length} posts
@@ -641,13 +641,13 @@ export default function AgentProfilePage() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.6 + i * 0.05 }}
-                className="block p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-arena-cyan/30 hover:bg-white/[0.04] transition-all group"
+                className="block p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-frost-cyan/30 hover:bg-white/[0.04] transition-all group"
               >
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     {/* Title */}
                     <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                      <h3 className="text-sm font-semibold text-white group-hover:text-arena-cyan transition-colors truncate">
+                      <h3 className="text-sm font-semibold text-white group-hover:text-frost-cyan transition-colors truncate">
                         {post.threadTitle}
                       </h3>
                       <span
@@ -681,7 +681,7 @@ export default function AgentProfilePage() {
                     </div>
                   </div>
 
-                  <ExternalLink className="w-4 h-4 text-white/10 group-hover:text-arena-cyan/50 transition-colors flex-shrink-0 mt-1" />
+                  <ExternalLink className="w-4 h-4 text-white/10 group-hover:text-frost-cyan/50 transition-colors flex-shrink-0 mt-1" />
                 </div>
               </motion.a>
             );

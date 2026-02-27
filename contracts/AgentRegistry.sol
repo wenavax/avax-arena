@@ -2,12 +2,13 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title AgentRegistry
 /// @notice On-chain registry for AI agents participating in AVAX Arena.
 ///         Each owner may register one agent with a dedicated wallet address,
 ///         a strategy type, and a time-limited session key for autonomous play.
-contract AgentRegistry is Ownable {
+contract AgentRegistry is Ownable, ReentrancyGuard {
     // -----------------------------------------------------------------------
     // Enums
     // -----------------------------------------------------------------------
@@ -290,11 +291,12 @@ contract AgentRegistry is Ownable {
 
     /// @notice Owner withdraws AVAX from agent.
     /// @param _amount The amount of AVAX (in wei) to withdraw.
-    function withdrawFromAgent(uint256 _amount) external {
+    function withdrawFromAgent(uint256 _amount) external nonReentrant {
         uint256 agentId = ownerToAgent[msg.sender];
         if (agentId == 0) revert AgentNotFound();
         Agent storage a = agents[agentId];
         if (a.owner != msg.sender) revert NotAgentOwner();
+        require(address(this).balance >= _amount, "Insufficient balance");
 
         // Transfer from contract to owner
         a.profitWithdrawn += _amount;
@@ -324,7 +326,7 @@ contract AgentRegistry is Ownable {
     /// @notice Called by GameEngine before each game to enforce spending limits.
     /// @param _wallet The agent wallet address.
     /// @param _amount The amount the agent wants to spend (in wei).
-    function checkAndRecordSpend(address _wallet, uint256 _amount) external {
+    function checkAndRecordSpend(address _wallet, uint256 _amount) external nonReentrant {
         if (!authorizedCallers[msg.sender]) revert UnauthorizedCaller();
 
         uint256 agentId = walletToAgent[_wallet];

@@ -6,9 +6,9 @@ import type { TypedContractEvent, TypedDeferredTopicFilter, TypedEventLog, Typed
   
 
   export interface RewardVaultInterface extends Interface {
-    getFunction(nameOrSignature: "arenaToken" | "claimReward" | "depositReward" | "getBalance" | "owner" | "pendingRewards" | "renounceOwnership" | "totalDistributed" | "transferOwnership" | "withdrawEmergency"): FunctionFragment;
+    getFunction(nameOrSignature: "arenaToken" | "claimReward" | "depositReward" | "getBalance" | "owner" | "pendingRewards" | "renounceOwnership" | "totalDistributed" | "totalPendingRewards" | "transferOwnership" | "withdrawEmergency"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "FundsWithdrawn" | "OwnershipTransferred" | "RewardClaimed" | "RewardDeposited"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "EmergencyWithdrawWarning" | "FundsWithdrawn" | "OwnershipTransferred" | "RewardClaimed" | "RewardDeposited"): EventFragment;
 
     encodeFunctionData(functionFragment: 'arenaToken', values?: undefined): string;
 encodeFunctionData(functionFragment: 'claimReward', values?: undefined): string;
@@ -18,6 +18,7 @@ encodeFunctionData(functionFragment: 'owner', values?: undefined): string;
 encodeFunctionData(functionFragment: 'pendingRewards', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'renounceOwnership', values?: undefined): string;
 encodeFunctionData(functionFragment: 'totalDistributed', values?: undefined): string;
+encodeFunctionData(functionFragment: 'totalPendingRewards', values?: undefined): string;
 encodeFunctionData(functionFragment: 'transferOwnership', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'withdrawEmergency', values: [BigNumberish]): string;
 
@@ -29,11 +30,24 @@ decodeFunctionResult(functionFragment: 'owner', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'pendingRewards', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'renounceOwnership', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'totalDistributed', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'totalPendingRewards', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'transferOwnership', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'withdrawEmergency', data: BytesLike): Result;
   }
 
   
+    export namespace EmergencyWithdrawWarningEvent {
+      export type InputTuple = [withdrawnAmount: BigNumberish, remainingBalance: BigNumberish, message: string];
+      export type OutputTuple = [withdrawnAmount: bigint, remainingBalance: bigint, message: string];
+      export interface OutputObject {withdrawnAmount: bigint, remainingBalance: bigint, message: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
     export namespace FundsWithdrawnEvent {
       export type InputTuple = [to: AddressLike, amount: BigNumberish];
       export type OutputTuple = [to: string, amount: bigint];
@@ -180,6 +194,14 @@ decodeFunctionResult(functionFragment: 'withdrawEmergency', data: BytesLike): Re
     
 
     
+    totalPendingRewards: TypedContractMethod<
+      [],
+      [bigint],
+      'view'
+    >
+    
+
+    
     transferOwnership: TypedContractMethod<
       [newOwner: AddressLike, ],
       [void],
@@ -238,6 +260,11 @@ getFunction(nameOrSignature: 'totalDistributed'): TypedContractMethod<
       [bigint],
       'view'
     >;
+getFunction(nameOrSignature: 'totalPendingRewards'): TypedContractMethod<
+      [],
+      [bigint],
+      'view'
+    >;
 getFunction(nameOrSignature: 'transferOwnership'): TypedContractMethod<
       [newOwner: AddressLike, ],
       [void],
@@ -249,13 +276,18 @@ getFunction(nameOrSignature: 'withdrawEmergency'): TypedContractMethod<
       'nonpayable'
     >;
 
-    getEvent(key: 'FundsWithdrawn'): TypedContractEvent<FundsWithdrawnEvent.InputTuple, FundsWithdrawnEvent.OutputTuple, FundsWithdrawnEvent.OutputObject>;
+    getEvent(key: 'EmergencyWithdrawWarning'): TypedContractEvent<EmergencyWithdrawWarningEvent.InputTuple, EmergencyWithdrawWarningEvent.OutputTuple, EmergencyWithdrawWarningEvent.OutputObject>;
+getEvent(key: 'FundsWithdrawn'): TypedContractEvent<FundsWithdrawnEvent.InputTuple, FundsWithdrawnEvent.OutputTuple, FundsWithdrawnEvent.OutputObject>;
 getEvent(key: 'OwnershipTransferred'): TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
 getEvent(key: 'RewardClaimed'): TypedContractEvent<RewardClaimedEvent.InputTuple, RewardClaimedEvent.OutputTuple, RewardClaimedEvent.OutputObject>;
 getEvent(key: 'RewardDeposited'): TypedContractEvent<RewardDepositedEvent.InputTuple, RewardDepositedEvent.OutputTuple, RewardDepositedEvent.OutputObject>;
 
     filters: {
       
+      'EmergencyWithdrawWarning(uint256,uint256,string)': TypedContractEvent<EmergencyWithdrawWarningEvent.InputTuple, EmergencyWithdrawWarningEvent.OutputTuple, EmergencyWithdrawWarningEvent.OutputObject>;
+      EmergencyWithdrawWarning: TypedContractEvent<EmergencyWithdrawWarningEvent.InputTuple, EmergencyWithdrawWarningEvent.OutputTuple, EmergencyWithdrawWarningEvent.OutputObject>;
+    
+
       'FundsWithdrawn(address,uint256)': TypedContractEvent<FundsWithdrawnEvent.InputTuple, FundsWithdrawnEvent.OutputTuple, FundsWithdrawnEvent.OutputObject>;
       FundsWithdrawn: TypedContractEvent<FundsWithdrawnEvent.InputTuple, FundsWithdrawnEvent.OutputTuple, FundsWithdrawnEvent.OutputObject>;
     

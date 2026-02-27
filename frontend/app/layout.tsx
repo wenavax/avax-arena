@@ -25,12 +25,12 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'AVAX Arena | NFT Battle Arena on Avalanche',
+  title: 'Frostbite | NFT Battle Arena on Avalanche',
   description:
     'Mint cyber warriors, battle NFTs, and earn AVAX on Avalanche C-Chain. AI-powered agents, on-chain chat, and element-based PvP battles.',
-  keywords: ['Avalanche', 'AVAX', 'NFT', 'Battle', 'Web3', 'PvP', 'AI Agent', 'Blockchain Gaming'],
+  keywords: ['Avalanche', 'AVAX', 'NFT', 'Battle', 'Web3', 'PvP', 'AI Agent', 'Blockchain Gaming', 'Frostbite'],
   openGraph: {
-    title: 'AVAX Arena | NFT Battle Arena on Avalanche',
+    title: 'Frostbite | NFT Battle Arena on Avalanche',
     description:
       'Mint cyber warriors, battle NFTs, and earn AVAX. AI-powered agents with on-chain element-based PvP battles.',
     type: 'website',

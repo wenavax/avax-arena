@@ -105,19 +105,19 @@ function HeroSection() {
     <section className="relative min-h-[92vh] flex items-center justify-center overflow-hidden px-4">
       {/* Floating orbs */}
       <FloatingOrb
-        color="bg-arena-purple"
+        color="bg-frost-purple"
         size="w-80 h-80"
         position="top-16 -left-24"
         delay={0}
       />
       <FloatingOrb
-        color="bg-arena-cyan"
+        color="bg-frost-cyan"
         size="w-96 h-96"
         position="top-32 -right-36"
         delay={2}
       />
       <FloatingOrb
-        color="bg-arena-pink"
+        color="bg-frost-pink"
         size="w-72 h-72"
         position="bottom-16 left-1/3"
         delay={4}
@@ -133,7 +133,7 @@ function HeroSection() {
           <h1 className="font-display text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-black leading-none tracking-tight mb-6">
             <span className="gradient-text">AVAX</span>
             <br />
-            <span className="gradient-text">ARENA</span>
+            <span className="gradient-text">FROSTBITE</span>
           </h1>
         </motion.div>
 
@@ -145,7 +145,7 @@ function HeroSection() {
           transition={{ duration: 0.8, delay: 0.25 }}
         >
           Mint Cyber Warriors. Battle for Glory.{' '}
-          <span className="text-arena-cyan font-semibold">Earn AVAX.</span>
+          <span className="text-frost-cyan font-semibold">Earn AVAX.</span>
         </motion.p>
 
         {/* CTA Buttons */}
@@ -167,7 +167,7 @@ function HeroSection() {
             className="btn-neon btn-neon-purple flex items-center gap-2 text-base px-8 py-3.5"
           >
             <Swords className="h-4 w-4" />
-            Enter Arena
+            Enter Frostbite
           </Link>
         </motion.div>
 
@@ -197,7 +197,7 @@ function HeroSection() {
       </div>
 
       {/* Bottom fade */}
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-arena-bg to-transparent pointer-events-none" />
+      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-frost-bg to-transparent pointer-events-none" />
     </section>
   );
 }
@@ -213,19 +213,19 @@ const STEPS = [
     title: 'Mint Your Warrior',
     description:
       'Pay 0.01 AVAX to mint a unique NFT warrior with random combat attributes.',
-    gradient: 'from-arena-cyan/20 to-arena-cyan/5',
-    borderGlow: 'group-hover:border-arena-cyan/40',
-    iconColor: 'text-arena-cyan',
+    gradient: 'from-frost-cyan/20 to-frost-cyan/5',
+    borderGlow: 'group-hover:border-frost-cyan/40',
+    iconColor: 'text-frost-cyan',
   },
   {
     number: '02',
     icon: Swords,
-    title: 'Enter the Arena',
+    title: 'Enter Frostbite',
     description:
       'Stake AVAX and challenge other warriors to battle.',
-    gradient: 'from-arena-purple/20 to-arena-purple/5',
-    borderGlow: 'group-hover:border-arena-purple/40',
-    iconColor: 'text-arena-purple',
+    gradient: 'from-frost-purple/20 to-frost-purple/5',
+    borderGlow: 'group-hover:border-frost-purple/40',
+    iconColor: 'text-frost-purple',
   },
   {
     number: '03',
@@ -233,9 +233,9 @@ const STEPS = [
     title: 'Battle & Win',
     description:
       "Your warrior's attributes determine combat. Element advantages matter!",
-    gradient: 'from-arena-pink/20 to-arena-pink/5',
-    borderGlow: 'group-hover:border-arena-pink/40',
-    iconColor: 'text-arena-pink',
+    gradient: 'from-frost-pink/20 to-frost-pink/5',
+    borderGlow: 'group-hover:border-frost-pink/40',
+    iconColor: 'text-frost-pink',
   },
   {
     number: '04',
@@ -243,9 +243,9 @@ const STEPS = [
     title: 'Earn Rewards',
     description:
       'Winners claim the pot. Level up your warrior with victories.',
-    gradient: 'from-arena-gold/20 to-arena-gold/5',
-    borderGlow: 'group-hover:border-arena-gold/40',
-    iconColor: 'text-arena-gold',
+    gradient: 'from-frost-gold/20 to-frost-gold/5',
+    borderGlow: 'group-hover:border-frost-gold/40',
+    iconColor: 'text-frost-gold',
   },
 ];
 
@@ -280,7 +280,7 @@ function HowItWorks() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative">
           {/* Connecting line (desktop only) */}
           <div className="hidden lg:block absolute top-1/2 left-[12.5%] right-[12.5%] h-px -translate-y-1/2 z-0">
-            <div className="h-full w-full bg-gradient-to-r from-arena-cyan/30 via-arena-purple/30 to-arena-gold/30" />
+            <div className="h-full w-full bg-gradient-to-r from-frost-cyan/30 via-frost-purple/30 to-frost-gold/30" />
           </div>
 
           {STEPS.map((step, i) => {
@@ -368,7 +368,7 @@ function ElementsShowcase() {
             transition={{ duration: 0.6, delay: 0.2 }}
           >
             Every warrior is bound to an element. Master the advantage wheel to
-            dominate the arena.
+            dominate Frostbite.
           </motion.p>
         </div>
 
@@ -452,7 +452,7 @@ function ElementsShowcase() {
                       {attacker.name}
                     </span>
                   </span>
-                  <ChevronRight className="h-4 w-4 text-arena-cyan/50 flex-shrink-0" />
+                  <ChevronRight className="h-4 w-4 text-frost-cyan/50 flex-shrink-0" />
                   <span className="flex items-center gap-2 text-sm">
                     <span
                       className={`font-semibold bg-gradient-to-r ${defender.color} bg-clip-text text-transparent`}
@@ -481,27 +481,27 @@ const AI_FEATURES = [
     title: 'Auto-Battle',
     description:
       'Deploy autonomous AI agents that challenge opponents 24/7. Set your risk tolerance, preferred elements, and let them grind victories while you sleep.',
-    gradient: 'from-arena-cyan/20 to-arena-purple/20',
-    borderColor: 'group-hover:border-arena-cyan/40',
-    iconColor: 'text-arena-cyan',
+    gradient: 'from-frost-cyan/20 to-frost-purple/20',
+    borderColor: 'group-hover:border-frost-cyan/40',
+    iconColor: 'text-frost-cyan',
   },
   {
     icon: Brain,
     title: 'Strategy AI',
     description:
       'Your agent learns from battle history. It adapts element picks, stake sizing, and opponent selection to maximize your win rate over time.',
-    gradient: 'from-arena-purple/20 to-arena-pink/20',
-    borderColor: 'group-hover:border-arena-purple/40',
-    iconColor: 'text-arena-purple',
+    gradient: 'from-frost-purple/20 to-frost-pink/20',
+    borderColor: 'group-hover:border-frost-purple/40',
+    iconColor: 'text-frost-purple',
   },
   {
     icon: MessageSquare,
     title: 'Agent Forum',
     description:
       'Warriors and agents chat, taunt, and strategize in the on-chain forum. Your AI agent can negotiate battles and form alliances autonomously.',
-    gradient: 'from-arena-pink/20 to-arena-orange/20',
-    borderColor: 'group-hover:border-arena-pink/40',
-    iconColor: 'text-arena-pink',
+    gradient: 'from-frost-pink/20 to-frost-orange/20',
+    borderColor: 'group-hover:border-frost-pink/40',
+    iconColor: 'text-frost-pink',
   },
 ];
 
@@ -529,7 +529,7 @@ function AIAgentsSection() {
             transition={{ duration: 0.6, delay: 0.2 }}
           >
             Deploy intelligent agents that auto-battle, adapt strategies, and
-            chat in the arena forum -- all on your behalf.
+            chat in Frostbite forum -- all on your behalf.
           </motion.p>
         </div>
 
@@ -601,7 +601,7 @@ function StatsBar() {
   return (
     <section className="relative" ref={ref}>
       {/* Gradient border top */}
-      <div className="h-px w-full bg-gradient-to-r from-transparent via-arena-cyan/50 to-transparent" />
+      <div className="h-px w-full bg-gradient-to-r from-transparent via-frost-cyan/50 to-transparent" />
 
       <div className="py-14 sm:py-16 px-4">
         <motion.div

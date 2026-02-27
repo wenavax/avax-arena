@@ -15,7 +15,7 @@ export declare namespace AgentChat {
   export interface AgentChatInterface extends Interface {
     getFunction(nameOrSignature: "RATE_LIMIT" | "agentRegistry" | "getMessage" | "getMessagesByAgent" | "getThread" | "getThreadCount" | "getThreadIds" | "hasLiked" | "lastPostTime" | "likeMessage" | "messageCount" | "messages" | "owner" | "postMessage" | "renounceOwnership" | "setAgentRegistry" | "threadIds" | "threadReplies" | "transferOwnership" | "userMessages"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "MessageLiked" | "MessagePosted" | "OwnershipTransferred"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "AgentRegistryUpdated" | "MessageLiked" | "MessagePosted" | "OwnershipTransferred"): EventFragment;
 
     encodeFunctionData(functionFragment: 'RATE_LIMIT', values?: undefined): string;
 encodeFunctionData(functionFragment: 'agentRegistry', values?: undefined): string;
@@ -61,6 +61,18 @@ decodeFunctionResult(functionFragment: 'userMessages', data: BytesLike): Result;
   }
 
   
+    export namespace AgentRegistryUpdatedEvent {
+      export type InputTuple = [newAgentRegistry: AddressLike];
+      export type OutputTuple = [newAgentRegistry: string];
+      export interface OutputObject {newAgentRegistry: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
     export namespace MessageLikedEvent {
       export type InputTuple = [messageId: BigNumberish, liker: AddressLike, newLikeCount: BigNumberish];
       export type OutputTuple = [messageId: bigint, liker: string, newLikeCount: bigint];
@@ -394,12 +406,17 @@ getFunction(nameOrSignature: 'userMessages'): TypedContractMethod<
       'view'
     >;
 
-    getEvent(key: 'MessageLiked'): TypedContractEvent<MessageLikedEvent.InputTuple, MessageLikedEvent.OutputTuple, MessageLikedEvent.OutputObject>;
+    getEvent(key: 'AgentRegistryUpdated'): TypedContractEvent<AgentRegistryUpdatedEvent.InputTuple, AgentRegistryUpdatedEvent.OutputTuple, AgentRegistryUpdatedEvent.OutputObject>;
+getEvent(key: 'MessageLiked'): TypedContractEvent<MessageLikedEvent.InputTuple, MessageLikedEvent.OutputTuple, MessageLikedEvent.OutputObject>;
 getEvent(key: 'MessagePosted'): TypedContractEvent<MessagePostedEvent.InputTuple, MessagePostedEvent.OutputTuple, MessagePostedEvent.OutputObject>;
 getEvent(key: 'OwnershipTransferred'): TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
 
     filters: {
       
+      'AgentRegistryUpdated(address)': TypedContractEvent<AgentRegistryUpdatedEvent.InputTuple, AgentRegistryUpdatedEvent.OutputTuple, AgentRegistryUpdatedEvent.OutputObject>;
+      AgentRegistryUpdated: TypedContractEvent<AgentRegistryUpdatedEvent.InputTuple, AgentRegistryUpdatedEvent.OutputTuple, AgentRegistryUpdatedEvent.OutputObject>;
+    
+
       'MessageLiked(uint256,address,uint256)': TypedContractEvent<MessageLikedEvent.InputTuple, MessageLikedEvent.OutputTuple, MessageLikedEvent.OutputObject>;
       MessageLiked: TypedContractEvent<MessageLikedEvent.InputTuple, MessageLikedEvent.OutputTuple, MessageLikedEvent.OutputObject>;
     

@@ -10,10 +10,12 @@ import {
   Trophy,
   Clock,
   ArrowRight,
+  Loader2,
+  XCircle,
 } from 'lucide-react';
-import { ELEMENTS, MIN_BATTLE_STAKE, ELEMENT_ADVANTAGES } from '@/lib/constants';
-import { BATTLE_ENGINE_ABI, ARENA_WARRIOR_ABI } from '@/lib/contracts';
-import { useAccount, useWriteContract, useReadContract, useWaitForTransactionReceipt } from 'wagmi';
+import { ELEMENTS, MIN_BATTLE_STAKE, ELEMENT_ADVANTAGES, CONTRACT_ADDRESSES, FUJI_CHAIN_ID } from '@/lib/constants';
+import { BATTLE_ENGINE_ABI, FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { parseEther, formatEther } from 'viem';
 import { cn, shortenAddress } from '@/lib/utils';
 
@@ -49,79 +51,6 @@ interface Battle {
 }
 
 /* ---------------------------------------------------------------------------
- * Mock Data
- * ------------------------------------------------------------------------- */
-
-const MOCK_WARRIORS: Warrior[] = [
-  { tokenId: 1, attack: 85, defense: 72, speed: 68, element: 0, specialPower: 90, level: 5, experience: 2400, battleWins: 12, battleLosses: 3, powerScore: 315 },
-  { tokenId: 7, attack: 60, defense: 88, speed: 75, element: 1, specialPower: 82, level: 4, experience: 1800, battleWins: 9, battleLosses: 5, powerScore: 305 },
-  { tokenId: 14, attack: 92, defense: 55, speed: 90, element: 5, specialPower: 78, level: 6, experience: 3200, battleWins: 18, battleLosses: 7, powerScore: 315 },
-  { tokenId: 23, attack: 70, defense: 80, speed: 65, element: 3, specialPower: 85, level: 3, experience: 1200, battleWins: 6, battleLosses: 4, powerScore: 300 },
-];
-
-const MOCK_OPEN_BATTLES: (Battle & { creatorWarrior: Warrior })[] = [
-  {
-    id: 1, player1: '0x1a2b3c4d5e6f7890abcdef1234567890abcdef12', player2: '0x0000000000000000000000000000000000000000',
-    nft1: 5, nft2: 0, stake: BigInt('10000000000000000'), winner: '0x0000000000000000000000000000000000000000',
-    resolved: false, createdAt: Math.floor(Date.now() / 1000) - 300, resolvedAt: 0,
-    creatorWarrior: { tokenId: 5, attack: 78, defense: 82, speed: 70, element: 0, specialPower: 88, level: 4, experience: 2000, battleWins: 10, battleLosses: 4, powerScore: 318 },
-  },
-  {
-    id: 2, player1: '0xabcdef1234567890abcdef1234567890abcdef34', player2: '0x0000000000000000000000000000000000000000',
-    nft1: 12, nft2: 0, stake: BigInt('50000000000000000'), winner: '0x0000000000000000000000000000000000000000',
-    resolved: false, createdAt: Math.floor(Date.now() / 1000) - 600, resolvedAt: 0,
-    creatorWarrior: { tokenId: 12, attack: 95, defense: 60, speed: 88, element: 5, specialPower: 92, level: 7, experience: 4200, battleWins: 22, battleLosses: 8, powerScore: 335 },
-  },
-  {
-    id: 3, player1: '0x9876543210fedcba9876543210fedcba98765432', player2: '0x0000000000000000000000000000000000000000',
-    nft1: 8, nft2: 0, stake: BigInt('20000000000000000'), winner: '0x0000000000000000000000000000000000000000',
-    resolved: false, createdAt: Math.floor(Date.now() / 1000) - 120, resolvedAt: 0,
-    creatorWarrior: { tokenId: 8, attack: 65, defense: 90, speed: 55, element: 4, specialPower: 75, level: 3, experience: 1500, battleWins: 7, battleLosses: 6, powerScore: 285 },
-  },
-  {
-    id: 4, player1: '0xfedcba9876543210fedcba9876543210fedcba98', player2: '0x0000000000000000000000000000000000000000',
-    nft1: 19, nft2: 0, stake: BigInt('100000000000000000'), winner: '0x0000000000000000000000000000000000000000',
-    resolved: false, createdAt: Math.floor(Date.now() / 1000) - 45, resolvedAt: 0,
-    creatorWarrior: { tokenId: 19, attack: 88, defense: 75, speed: 82, element: 7, specialPower: 95, level: 8, experience: 5600, battleWins: 30, battleLosses: 10, powerScore: 340 },
-  },
-];
-
-const MOCK_HISTORY: (Battle & { myWarrior: Warrior; theirWarrior: Warrior })[] = [
-  {
-    id: 101, player1: '0xYOU', player2: '0xaaa111bbb222ccc333ddd444eee555fff666777',
-    nft1: 1, nft2: 5, stake: BigInt('10000000000000000'),
-    winner: '0xYOU', resolved: true,
-    createdAt: Math.floor(Date.now() / 1000) - 86400, resolvedAt: Math.floor(Date.now() / 1000) - 86380,
-    myWarrior: { tokenId: 1, attack: 85, defense: 72, speed: 68, element: 0, specialPower: 90, level: 5, experience: 2400, battleWins: 12, battleLosses: 3, powerScore: 315 },
-    theirWarrior: { tokenId: 5, attack: 78, defense: 82, speed: 70, element: 2, specialPower: 88, level: 4, experience: 2000, battleWins: 10, battleLosses: 4, powerScore: 318 },
-  },
-  {
-    id: 102, player1: '0xbbb222ccc333ddd444eee555fff666777aaa111b', player2: '0xYOU',
-    nft1: 12, nft2: 7, stake: BigInt('20000000000000000'),
-    winner: '0xbbb222ccc333ddd444eee555fff666777aaa111b', resolved: true,
-    createdAt: Math.floor(Date.now() / 1000) - 172800, resolvedAt: Math.floor(Date.now() / 1000) - 172780,
-    myWarrior: { tokenId: 7, attack: 60, defense: 88, speed: 75, element: 1, specialPower: 82, level: 4, experience: 1800, battleWins: 9, battleLosses: 5, powerScore: 305 },
-    theirWarrior: { tokenId: 12, attack: 95, defense: 60, speed: 88, element: 5, specialPower: 92, level: 7, experience: 4200, battleWins: 22, battleLosses: 8, powerScore: 335 },
-  },
-  {
-    id: 103, player1: '0xYOU', player2: '0xccc333ddd444eee555fff666777aaa111bbb222c',
-    nft1: 14, nft2: 8, stake: BigInt('50000000000000000'),
-    winner: '0xYOU', resolved: true,
-    createdAt: Math.floor(Date.now() / 1000) - 259200, resolvedAt: Math.floor(Date.now() / 1000) - 259180,
-    myWarrior: { tokenId: 14, attack: 92, defense: 55, speed: 90, element: 5, specialPower: 78, level: 6, experience: 3200, battleWins: 18, battleLosses: 7, powerScore: 315 },
-    theirWarrior: { tokenId: 8, attack: 65, defense: 90, speed: 55, element: 4, specialPower: 75, level: 3, experience: 1500, battleWins: 7, battleLosses: 6, powerScore: 285 },
-  },
-  {
-    id: 104, player1: '0xddd444eee555fff666777aaa111bbb222ccc333d', player2: '0xYOU',
-    nft1: 19, nft2: 23, stake: BigInt('30000000000000000'),
-    winner: '0xYOU', resolved: true,
-    createdAt: Math.floor(Date.now() / 1000) - 345600, resolvedAt: Math.floor(Date.now() / 1000) - 345580,
-    myWarrior: { tokenId: 23, attack: 70, defense: 80, speed: 65, element: 3, specialPower: 85, level: 3, experience: 1200, battleWins: 6, battleLosses: 4, powerScore: 300 },
-    theirWarrior: { tokenId: 19, attack: 88, defense: 75, speed: 82, element: 7, specialPower: 95, level: 8, experience: 5600, battleWins: 30, battleLosses: 10, powerScore: 340 },
-  },
-];
-
-/* ---------------------------------------------------------------------------
  * Helpers
  * ------------------------------------------------------------------------- */
 
@@ -147,6 +76,314 @@ function formatDate(timestamp: number): string {
 
 function hasElementAdvantage(attackerElement: number, defenderElement: number): boolean {
   return ELEMENT_ADVANTAGES[attackerElement] === defenderElement;
+}
+
+function parseWarriorData(raw: Record<string, unknown>, tokenId: number): Warrior {
+  return {
+    tokenId,
+    attack: Number(raw.attack ?? raw[0] ?? 0),
+    defense: Number(raw.defense ?? raw[1] ?? 0),
+    speed: Number(raw.speed ?? raw[2] ?? 0),
+    element: Number(raw.element ?? raw[3] ?? 0),
+    specialPower: Number(raw.specialPower ?? raw[4] ?? 0),
+    level: Number(raw.level ?? raw[5] ?? 0),
+    experience: Number(raw.experience ?? raw[6] ?? 0),
+    battleWins: Number(raw.battleWins ?? raw[7] ?? 0),
+    battleLosses: Number(raw.battleLosses ?? raw[8] ?? 0),
+    powerScore: Number(raw.powerScore ?? raw[9] ?? 0),
+  };
+}
+
+function parseBattleData(raw: Record<string, unknown>): Battle {
+  return {
+    id: Number(raw.id ?? raw[0] ?? 0),
+    player1: String(raw.player1 ?? raw[1] ?? ''),
+    player2: String(raw.player2 ?? raw[2] ?? ''),
+    nft1: Number(raw.nft1 ?? raw[3] ?? 0),
+    nft2: Number(raw.nft2 ?? raw[4] ?? 0),
+    stake: BigInt(String(raw.stake ?? raw[5] ?? 0)),
+    winner: String(raw.winner ?? raw[6] ?? ''),
+    resolved: Boolean(raw.resolved ?? raw[7] ?? false),
+    createdAt: Number(raw.createdAt ?? raw[8] ?? 0),
+    resolvedAt: Number(raw.resolvedAt ?? raw[9] ?? 0),
+  };
+}
+
+/**
+ * Warrior NFT image component.
+ * Uses the metadata image endpoint which returns AI-generated art or SVG fallback.
+ */
+function WarriorImage({
+  tokenId,
+  element,
+  size = 48,
+  className = '',
+}: {
+  tokenId: number;
+  element: number;
+  size?: number;
+  className?: string;
+}) {
+  const el = getElement(element);
+  return (
+    <div
+      className={cn('relative rounded-lg overflow-hidden flex-shrink-0', className)}
+      style={{ width: size, height: size }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/api/metadata/${tokenId}/image?element=${element}`}
+        alt={`Warrior #${tokenId}`}
+        width={size}
+        height={size}
+        className="w-full h-full object-cover"
+        loading="lazy"
+      />
+      <span
+        className="absolute bottom-0 right-0 text-[10px] leading-none bg-black/60 rounded-tl px-0.5"
+        title={el.name}
+      >
+        {el.emoji}
+      </span>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Data Fetching Hook
+ * ------------------------------------------------------------------------- */
+
+function useBattleData(address: string | undefined, isConnected: boolean) {
+  const publicClient = usePublicClient();
+  const [warriors, setWarriors] = useState<Warrior[]>([]);
+  const [openBattles, setOpenBattles] = useState<(Battle & { creatorWarrior: Warrior })[]>([]);
+  const [battleHistory, setBattleHistory] = useState<(Battle & { myWarrior: Warrior; theirWarrior: Warrior })[]>([]);
+  const [isLoadingWarriors, setIsLoadingWarriors] = useState(false);
+  const [isLoadingBattles, setIsLoadingBattles] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [fetchCounter, setFetchCounter] = useState(0);
+
+  const refetch = useCallback(() => setFetchCounter((c) => c + 1), []);
+
+  // Fetch user's warriors
+  useEffect(() => {
+    if (!publicClient || !address || !isConnected) {
+      setWarriors([]);
+      return;
+    }
+    let cancelled = false;
+    async function fetch() {
+      setIsLoadingWarriors(true);
+      try {
+        const ids = await publicClient!.readContract({
+          address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+          abi: FROSTBITE_WARRIOR_ABI,
+          functionName: 'getWarriorsByOwner',
+          args: [address as `0x${string}`],
+        }) as bigint[];
+
+        if (cancelled) return;
+        if (!ids || ids.length === 0) {
+          setWarriors([]);
+          setIsLoadingWarriors(false);
+          return;
+        }
+
+        const details = await Promise.all(
+          ids.map((id) =>
+            publicClient!.readContract({
+              address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+              abi: FROSTBITE_WARRIOR_ABI,
+              functionName: 'getWarrior',
+              args: [id],
+            })
+          )
+        );
+
+        if (cancelled) return;
+        setWarriors(
+          details.map((raw, i) => parseWarriorData(raw as Record<string, unknown>, Number(ids[i])))
+        );
+      } catch (err) {
+        console.error('[battle] Failed to fetch warriors:', err);
+        if (!cancelled) setWarriors([]);
+      } finally {
+        if (!cancelled) setIsLoadingWarriors(false);
+      }
+    }
+    fetch();
+    return () => { cancelled = true; };
+  }, [publicClient, address, isConnected, fetchCounter]);
+
+  // Fetch open battles
+  useEffect(() => {
+    if (!publicClient) return;
+    let cancelled = false;
+    async function fetch() {
+      setIsLoadingBattles(true);
+      try {
+        const battleIds = await publicClient!.readContract({
+          address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+          abi: BATTLE_ENGINE_ABI,
+          functionName: 'getOpenBattles',
+          args: [0n, 50n],
+        }) as bigint[];
+
+        if (cancelled) return;
+        if (!battleIds || battleIds.length === 0) {
+          setOpenBattles([]);
+          setIsLoadingBattles(false);
+          return;
+        }
+
+        // Fetch battle details
+        const battleDetails = await Promise.all(
+          battleIds.map((id) =>
+            publicClient!.readContract({
+              address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+              abi: BATTLE_ENGINE_ABI,
+              functionName: 'getBattle',
+              args: [id],
+            })
+          )
+        );
+
+        if (cancelled) return;
+        const battles = battleDetails.map((raw) => parseBattleData(raw as Record<string, unknown>));
+
+        // Fetch warrior data for each battle creator
+        const warriorDetails = await Promise.all(
+          battles.map((b) =>
+            publicClient!.readContract({
+              address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+              abi: FROSTBITE_WARRIOR_ABI,
+              functionName: 'getWarrior',
+              args: [BigInt(b.nft1)],
+            })
+          )
+        );
+
+        if (cancelled) return;
+        setOpenBattles(
+          battles.map((b, i) => ({
+            ...b,
+            creatorWarrior: parseWarriorData(warriorDetails[i] as Record<string, unknown>, b.nft1),
+          }))
+        );
+      } catch (err) {
+        console.error('[battle] Failed to fetch open battles:', err);
+        if (!cancelled) setOpenBattles([]);
+      } finally {
+        if (!cancelled) setIsLoadingBattles(false);
+      }
+    }
+    fetch();
+    return () => { cancelled = true; };
+  }, [publicClient, fetchCounter]);
+
+  // Fetch battle history
+  useEffect(() => {
+    if (!publicClient || !address || !isConnected) {
+      setBattleHistory([]);
+      return;
+    }
+    let cancelled = false;
+    async function fetch() {
+      setIsLoadingHistory(true);
+      try {
+        const historyIds = await publicClient!.readContract({
+          address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+          abi: BATTLE_ENGINE_ABI,
+          functionName: 'getBattleHistory',
+          args: [address as `0x${string}`],
+        }) as bigint[];
+
+        if (cancelled) return;
+        if (!historyIds || historyIds.length === 0) {
+          setBattleHistory([]);
+          setIsLoadingHistory(false);
+          return;
+        }
+
+        // Get last 20 battles (most recent first)
+        const recentIds = historyIds.slice(-20).reverse();
+
+        const battleDetails = await Promise.all(
+          recentIds.map((id) =>
+            publicClient!.readContract({
+              address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+              abi: BATTLE_ENGINE_ABI,
+              functionName: 'getBattle',
+              args: [id],
+            })
+          )
+        );
+
+        if (cancelled) return;
+        const battles = battleDetails.map((raw) => parseBattleData(raw as Record<string, unknown>));
+
+        // Collect all unique NFT IDs to fetch warrior data
+        const nftIds = new Set<number>();
+        battles.forEach((b) => {
+          if (b.nft1 > 0) nftIds.add(b.nft1);
+          if (b.nft2 > 0) nftIds.add(b.nft2);
+        });
+
+        const nftIdArray = Array.from(nftIds);
+        const warriorResults = await Promise.all(
+          nftIdArray.map((id) =>
+            publicClient!.readContract({
+              address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+              abi: FROSTBITE_WARRIOR_ABI,
+              functionName: 'getWarrior',
+              args: [BigInt(id)],
+            })
+          )
+        );
+
+        if (cancelled) return;
+        const warriorMap = new Map<number, Warrior>();
+        nftIdArray.forEach((id, i) => {
+          warriorMap.set(id, parseWarriorData(warriorResults[i] as Record<string, unknown>, id));
+        });
+
+        const defaultWarrior: Warrior = {
+          tokenId: 0, attack: 0, defense: 0, speed: 0, element: 0,
+          specialPower: 0, level: 0, experience: 0, battleWins: 0, battleLosses: 0, powerScore: 0,
+        };
+
+        setBattleHistory(
+          battles
+            .filter((b) => b.resolved)
+            .map((b) => {
+              const isPlayer1 = b.player1.toLowerCase() === address!.toLowerCase();
+              return {
+                ...b,
+                myWarrior: warriorMap.get(isPlayer1 ? b.nft1 : b.nft2) ?? defaultWarrior,
+                theirWarrior: warriorMap.get(isPlayer1 ? b.nft2 : b.nft1) ?? defaultWarrior,
+              };
+            })
+        );
+      } catch (err) {
+        console.error('[battle] Failed to fetch battle history:', err);
+        if (!cancelled) setBattleHistory([]);
+      } finally {
+        if (!cancelled) setIsLoadingHistory(false);
+      }
+    }
+    fetch();
+    return () => { cancelled = true; };
+  }, [publicClient, address, isConnected, fetchCounter]);
+
+  return {
+    warriors,
+    openBattles,
+    battleHistory,
+    isLoadingWarriors,
+    isLoadingBattles,
+    isLoadingHistory,
+    refetch,
+  };
 }
 
 /* ---------------------------------------------------------------------------
@@ -177,7 +414,7 @@ function WarriorMiniCard({
         'relative rounded-xl text-left transition-all overflow-hidden',
         isSmall ? 'p-2.5' : 'p-3',
         selected
-          ? 'ring-2 ring-arena-cyan shadow-[0_0_20px_rgba(0,240,255,0.2)]'
+          ? 'ring-2 ring-frost-cyan shadow-[0_0_20px_rgba(0,240,255,0.2)]'
           : 'ring-1 ring-white/10 hover:ring-white/20',
         'bg-gradient-to-br from-white/[0.04] to-transparent',
       )}
@@ -186,7 +423,12 @@ function WarriorMiniCard({
       }}
     >
       <div className="flex items-center gap-2">
-        <span className={isSmall ? 'text-lg' : 'text-2xl'}>{element.emoji}</span>
+        <WarriorImage
+          tokenId={warrior.tokenId}
+          element={warrior.element}
+          size={isSmall ? 32 : 40}
+          className={isSmall ? 'rounded-md' : 'rounded-lg'}
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className={cn(
@@ -219,7 +461,7 @@ function WarriorMiniCard({
       {selected && (
         <motion.div
           layoutId="warrior-selected"
-          className="absolute inset-0 rounded-xl ring-2 ring-arena-cyan pointer-events-none"
+          className="absolute inset-0 rounded-xl ring-2 ring-frost-cyan pointer-events-none"
           transition={{ type: 'spring', stiffness: 500, damping: 30 }}
         />
       )}
@@ -248,7 +490,12 @@ function WarriorStatsPreview({ warrior }: { warrior: Warrior }) {
       style={{ boxShadow: `0 0 40px ${element.glowColor}` }}
     >
       <div className="flex items-center gap-3 mb-4">
-        <span className="text-3xl">{element.emoji}</span>
+        <WarriorImage
+          tokenId={warrior.tokenId}
+          element={warrior.element}
+          size={56}
+          className="rounded-xl ring-1 ring-white/10"
+        />
         <div>
           <h4 className="font-display font-bold text-white">
             Warrior #{warrior.tokenId}
@@ -261,7 +508,7 @@ function WarriorStatsPreview({ warrior }: { warrior: Warrior }) {
           </span>
         </div>
         <div className="ml-auto text-right">
-          <div className="text-xl font-mono font-bold text-arena-cyan">
+          <div className="text-xl font-mono font-bold text-frost-cyan">
             {warrior.powerScore}
           </div>
           <div className="text-[10px] uppercase text-white/40 tracking-wider">Power Score</div>
@@ -318,7 +565,6 @@ function BattleResultModal({
   const iHaveAdvantage = hasElementAdvantage(myWarrior.element, theirWarrior.element);
   const theyHaveAdvantage = hasElementAdvantage(theirWarrior.element, myWarrior.element);
 
-  // Combat score breakdown
   const myBaseScore = myWarrior.attack + myWarrior.defense + myWarrior.speed + myWarrior.specialPower;
   const theirBaseScore = theirWarrior.attack + theirWarrior.defense + theirWarrior.speed + theirWarrior.specialPower;
   const myBonus = iHaveAdvantage ? Math.round(myBaseScore * 0.15) : 0;
@@ -333,7 +579,6 @@ function BattleResultModal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          {/* Backdrop */}
           <motion.div
             className="absolute inset-0 bg-black/80 backdrop-blur-sm"
             onClick={onClose}
@@ -342,7 +587,6 @@ function BattleResultModal({
             exit={{ opacity: 0 }}
           />
 
-          {/* Modal */}
           <motion.div
             className="relative w-full max-w-2xl glass-card p-6 sm:p-8 overflow-hidden"
             initial={{ scale: 0.8, opacity: 0, y: 40 }}
@@ -350,7 +594,6 @@ function BattleResultModal({
             exit={{ scale: 0.8, opacity: 0, y: 40 }}
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
           >
-            {/* Confetti-like particles for winner */}
             {isWinner && (
               <div className="absolute inset-0 pointer-events-none overflow-hidden">
                 {Array.from({ length: 30 }).map((_, i) => (
@@ -387,18 +630,18 @@ function BattleResultModal({
             >
               {isWinner ? (
                 <>
-                  <Trophy className="w-12 h-12 text-arena-gold mx-auto mb-2" />
-                  <h2 className="font-display text-3xl sm:text-4xl font-black text-arena-gold text-glow-green">
+                  <Trophy className="w-12 h-12 text-frost-gold mx-auto mb-2" />
+                  <h2 className="font-display text-3xl sm:text-4xl font-black text-frost-gold text-glow-green">
                     VICTORY!
                   </h2>
-                  <p className="text-arena-green text-sm mt-1 font-semibold">
+                  <p className="text-frost-green text-sm mt-1 font-semibold">
                     +{stakeAmount} AVAX earned
                   </p>
                 </>
               ) : (
                 <>
-                  <Shield className="w-12 h-12 text-arena-red mx-auto mb-2" />
-                  <h2 className="font-display text-3xl sm:text-4xl font-black text-arena-red">
+                  <Shield className="w-12 h-12 text-frost-red mx-auto mb-2" />
+                  <h2 className="font-display text-3xl sm:text-4xl font-black text-frost-red">
                     DEFEAT
                   </h2>
                   <p className="text-white/40 text-sm mt-1">
@@ -410,19 +653,25 @@ function BattleResultModal({
 
             {/* VS Screen */}
             <div className="flex items-center gap-4 sm:gap-6 justify-center mb-6">
-              {/* My Warrior */}
               <motion.div
                 className={cn(
                   'flex-1 glass-card p-4 text-center',
-                  isWinner ? 'ring-2 ring-arena-green/50' : 'ring-1 ring-arena-red/30 opacity-70',
+                  isWinner ? 'ring-2 ring-frost-green/50' : 'ring-1 ring-frost-red/30 opacity-70',
                 )}
                 initial={{ x: -100, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1, type: 'spring' }}
                 style={{ boxShadow: isWinner ? `0 0 30px ${myElement.glowColor}` : 'none' }}
               >
-                <span className="text-4xl block mb-2">{myElement.emoji}</span>
-                <span className="text-xs font-mono text-arena-cyan">#{myWarrior.tokenId}</span>
+                <div className="flex justify-center mb-2">
+                  <WarriorImage
+                    tokenId={myWarrior.tokenId}
+                    element={myWarrior.element}
+                    size={80}
+                    className="rounded-xl ring-2 ring-white/10"
+                  />
+                </div>
+                <span className="text-xs font-mono text-frost-cyan">#{myWarrior.tokenId}</span>
                 <div className={cn(
                   'text-xs font-semibold mt-1 bg-gradient-to-r bg-clip-text text-transparent',
                   myElement.color,
@@ -433,30 +682,35 @@ function BattleResultModal({
                 <div className="text-[10px] text-white/30 uppercase">Power</div>
               </motion.div>
 
-              {/* VS */}
               <motion.div
                 className="flex-shrink-0"
                 initial={{ scale: 0, rotate: -180 }}
                 animate={{ scale: 1, rotate: 0 }}
                 transition={{ delay: 0.4, type: 'spring', stiffness: 300 }}
               >
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-arena-pink to-arena-purple flex items-center justify-center">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-frost-pink to-frost-purple flex items-center justify-center">
                   <span className="font-display font-black text-white text-lg sm:text-xl">VS</span>
                 </div>
               </motion.div>
 
-              {/* Their Warrior */}
               <motion.div
                 className={cn(
                   'flex-1 glass-card p-4 text-center',
-                  !isWinner ? 'ring-2 ring-arena-green/50' : 'ring-1 ring-arena-red/30 opacity-70',
+                  !isWinner ? 'ring-2 ring-frost-green/50' : 'ring-1 ring-frost-red/30 opacity-70',
                 )}
                 initial={{ x: 100, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 transition={{ delay: 0.1, type: 'spring' }}
                 style={{ boxShadow: !isWinner ? `0 0 30px ${theirElement.glowColor}` : 'none' }}
               >
-                <span className="text-4xl block mb-2">{theirElement.emoji}</span>
+                <div className="flex justify-center mb-2">
+                  <WarriorImage
+                    tokenId={theirWarrior.tokenId}
+                    element={theirWarrior.element}
+                    size={80}
+                    className="rounded-xl ring-2 ring-white/10"
+                  />
+                </div>
                 <span className="text-xs font-mono text-white/60">#{theirWarrior.tokenId}</span>
                 <div className={cn(
                   'text-xs font-semibold mt-1 bg-gradient-to-r bg-clip-text text-transparent',
@@ -485,7 +739,7 @@ function BattleResultModal({
                   <div className="font-mono">
                     <span className="text-white font-bold">{myBaseScore}</span>
                     {myBonus > 0 && (
-                      <span className="text-arena-green ml-1">+{myBonus}</span>
+                      <span className="text-frost-green ml-1">+{myBonus}</span>
                     )}
                   </div>
                 </div>
@@ -494,17 +748,16 @@ function BattleResultModal({
                   <div className="font-mono">
                     <span className="text-white font-bold">{theirBaseScore}</span>
                     {theirBonus > 0 && (
-                      <span className="text-arena-green ml-1">+{theirBonus}</span>
+                      <span className="text-frost-green ml-1">+{theirBonus}</span>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Element Advantage */}
               {(iHaveAdvantage || theyHaveAdvantage) && (
                 <div className={cn(
                   'mt-3 pt-3 border-t border-white/5 flex items-center gap-2 text-xs',
-                  iHaveAdvantage ? 'text-arena-green' : 'text-arena-red',
+                  iHaveAdvantage ? 'text-frost-green' : 'text-frost-red',
                 )}>
                   <Sparkles className="w-3.5 h-3.5" />
                   {iHaveAdvantage
@@ -515,7 +768,6 @@ function BattleResultModal({
               )}
             </motion.div>
 
-            {/* Close Button */}
             <motion.button
               onClick={onClose}
               className="w-full btn-primary text-center"
@@ -525,7 +777,7 @@ function BattleResultModal({
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              {isWinner ? 'Claim Victory' : 'Return to Arena'}
+              {isWinner ? 'Claim Victory' : 'Return to Frostbite'}
             </motion.button>
           </motion.div>
         </motion.div>
@@ -538,12 +790,11 @@ function BattleResultModal({
  * Sections
  * ------------------------------------------------------------------------- */
 
-function HeroSection() {
+function HeroSection({ battleCount, openCount }: { battleCount: number; openCount: number }) {
   return (
     <section className="relative text-center py-16 sm:py-20 px-4 overflow-hidden">
-      {/* Background glow orbs */}
-      <div className="orb w-80 h-80 bg-arena-pink top-0 -left-32 opacity-20" />
-      <div className="orb w-96 h-96 bg-arena-purple -top-20 -right-40 opacity-20" style={{ animationDelay: '3s' }} />
+      <div className="orb w-80 h-80 bg-frost-pink top-0 -left-32 opacity-20" />
+      <div className="orb w-96 h-96 bg-frost-purple -top-20 -right-40 opacity-20" style={{ animationDelay: '3s' }} />
 
       <motion.div
         className="relative z-10 max-w-4xl mx-auto"
@@ -552,23 +803,21 @@ function HeroSection() {
         transition={{ duration: 0.8 }}
       >
         <div className="flex items-center justify-center gap-3 mb-4">
-          <Sword className="w-8 h-8 text-arena-pink" />
+          <Sword className="w-8 h-8 text-frost-pink" />
           <h1 className="font-display text-5xl sm:text-6xl md:text-7xl font-black">
-            <span className="gradient-text">BATTLE ARENA</span>
+            <span className="gradient-text">FROSTBITE BATTLE</span>
           </h1>
-          <Sword className="w-8 h-8 text-arena-pink transform scale-x-[-1]" />
+          <Sword className="w-8 h-8 text-frost-pink transform scale-x-[-1]" />
         </div>
 
         <p className="text-lg sm:text-xl text-white/50 mb-8 font-medium">
           Stake AVAX. Battle NFTs. Claim Victory.
         </p>
 
-        {/* Stats Bar */}
-        <div className="grid grid-cols-3 gap-4 max-w-xl mx-auto">
+        <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
           {[
-            { label: 'Total Battles', value: '12,847', icon: Sword },
-            { label: 'Active Battles', value: '23', icon: Zap },
-            { label: 'Total Staked', value: '584 AVAX', icon: Sparkles },
+            { label: 'Open Battles', value: String(openCount), icon: Zap },
+            { label: 'Your Battles', value: String(battleCount), icon: Trophy },
           ].map((stat, i) => (
             <motion.div
               key={stat.label}
@@ -577,7 +826,7 @@ function HeroSection() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 + i * 0.1 }}
             >
-              <stat.icon className="w-5 h-5 text-arena-cyan mx-auto mb-1.5" />
+              <stat.icon className="w-5 h-5 text-frost-cyan mx-auto mb-1.5" />
               <div className="text-lg sm:text-xl font-mono font-bold text-white">{stat.value}</div>
               <div className="text-[10px] sm:text-xs text-white/40 uppercase tracking-wider mt-0.5">
                 {stat.label}
@@ -597,25 +846,78 @@ function HeroSection() {
 function CreateBattleSection({
   warriors,
   isConnected,
+  isLoading,
+  onSuccess,
 }: {
   warriors: Warrior[];
   isConnected: boolean;
+  isLoading: boolean;
+  onSuccess: () => void;
 }) {
   const [selectedWarrior, setSelectedWarrior] = useState<Warrior | null>(null);
   const [stakeAmount, setStakeAmount] = useState(MIN_BATTLE_STAKE);
-  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleCreate = useCallback(() => {
-    if (!selectedWarrior) return;
-    setIsCreating(true);
-    // In production, this would call the contract
-    setTimeout(() => setIsCreating(false), 2000);
-  }, [selectedWarrior]);
+  const {
+    writeContract: createBattle,
+    data: createTxHash,
+    isPending: isCreatePending,
+    error: createError,
+    reset: resetCreate,
+  } = useWriteContract();
+
+  const { isLoading: isCreateConfirming, isSuccess: isCreateSuccess } =
+    useWaitForTransactionReceipt({ hash: createTxHash });
+
+  // Handle success
+  useEffect(() => {
+    if (isCreateSuccess) {
+      setSelectedWarrior(null);
+      setStakeAmount(MIN_BATTLE_STAKE);
+      setError(null);
+      resetCreate();
+      onSuccess();
+    }
+  }, [isCreateSuccess, onSuccess, resetCreate]);
+
+  // Handle error
+  useEffect(() => {
+    if (createError) {
+      const msg = createError.message || 'Transaction failed';
+      if (msg.includes('InsufficientStake')) {
+        setError(`Minimum stake is ${MIN_BATTLE_STAKE} AVAX`);
+      } else if (msg.includes('NotWarriorOwner') || msg.includes('NotOwner')) {
+        setError('You do not own this warrior');
+      } else if (msg.includes('insufficient funds') || msg.includes('exceeds the balance')) {
+        setError('Insufficient AVAX balance');
+      } else if (msg.includes('User rejected') || msg.includes('user rejected')) {
+        setError('Transaction cancelled');
+      } else {
+        const short = (createError as { shortMessage?: string }).shortMessage;
+        setError(short || 'Failed to create battle');
+      }
+    }
+  }, [createError]);
 
   const isValidStake = useMemo(() => {
     const amount = parseFloat(stakeAmount);
     return !isNaN(amount) && amount >= parseFloat(MIN_BATTLE_STAKE);
   }, [stakeAmount]);
+
+  const isWorking = isCreatePending || isCreateConfirming;
+
+  const handleCreate = useCallback(() => {
+    if (!selectedWarrior || !isValidStake) return;
+    setError(null);
+    createBattle({
+      address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+      abi: BATTLE_ENGINE_ABI,
+      functionName: 'createBattle',
+      args: [BigInt(selectedWarrior.tokenId)],
+      value: parseEther(stakeAmount),
+      chainId: FUJI_CHAIN_ID,
+    });
+  }, [selectedWarrior, isValidStake, stakeAmount, createBattle]);
 
   return (
     <section className="px-4 pb-16">
@@ -626,7 +928,7 @@ function CreateBattleSection({
           transition={{ delay: 0.2 }}
         >
           <div className="flex items-center gap-2 mb-6">
-            <Sword className="w-5 h-5 text-arena-cyan" />
+            <Sword className="w-5 h-5 text-frost-cyan" />
             <h2 className="font-display text-2xl font-bold text-white">Create Battle</h2>
           </div>
 
@@ -636,6 +938,17 @@ function CreateBattleSection({
                 <Shield className="w-12 h-12 text-white/20 mx-auto mb-4" />
                 <p className="text-white/40 text-lg font-semibold mb-2">Wallet Not Connected</p>
                 <p className="text-white/25 text-sm">Connect your wallet to create battles and stake AVAX</p>
+              </div>
+            ) : isLoading ? (
+              <div className="text-center py-12">
+                <Loader2 className="w-8 h-8 text-frost-cyan mx-auto mb-3 animate-spin" />
+                <p className="text-white/40 text-sm">Loading your warriors...</p>
+              </div>
+            ) : warriors.length === 0 ? (
+              <div className="text-center py-12">
+                <Shield className="w-12 h-12 text-white/20 mx-auto mb-4" />
+                <p className="text-white/40 text-lg font-semibold mb-2">No Warriors Found</p>
+                <p className="text-white/25 text-sm">Mint a warrior first to enter Frostbite!</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -654,17 +967,10 @@ function CreateBattleSection({
                       />
                     ))}
                   </div>
-
-                  {warriors.length === 0 && (
-                    <div className="text-center py-8 text-white/30 text-sm">
-                      <p>No warriors found. Mint one first!</p>
-                    </div>
-                  )}
                 </div>
 
                 {/* Right: Stake & Action */}
                 <div className="flex flex-col">
-                  {/* Stake Input */}
                   <div className="mb-4">
                     <label className="text-xs uppercase tracking-wider text-white/40 font-semibold mb-2 block">
                       Stake Amount (AVAX)
@@ -680,8 +986,8 @@ function CreateBattleSection({
                           'w-full bg-white/[0.04] border rounded-xl px-4 py-3 font-mono text-white',
                           'focus:outline-none focus:ring-2 transition-all',
                           isValidStake
-                            ? 'border-white/10 focus:ring-arena-cyan/40 focus:border-arena-cyan/40'
-                            : 'border-arena-red/30 focus:ring-arena-red/40',
+                            ? 'border-white/10 focus:ring-frost-cyan/40 focus:border-frost-cyan/40'
+                            : 'border-frost-red/30 focus:ring-frost-red/40',
                         )}
                         placeholder={MIN_BATTLE_STAKE}
                       />
@@ -696,14 +1002,14 @@ function CreateBattleSection({
 
                   {/* Quick Stake Buttons */}
                   <div className="flex gap-2 mb-4">
-                    {['0.01', '0.05', '0.1', '0.5'].map((amount) => (
+                    {['0.005', '0.01', '0.05', '0.1'].map((amount) => (
                       <button
                         key={amount}
                         onClick={() => setStakeAmount(amount)}
                         className={cn(
                           'flex-1 py-1.5 rounded-lg text-xs font-mono transition-all',
                           stakeAmount === amount
-                            ? 'bg-arena-cyan/20 text-arena-cyan border border-arena-cyan/30'
+                            ? 'bg-frost-cyan/20 text-frost-cyan border border-frost-cyan/30'
                             : 'bg-white/[0.03] text-white/40 border border-white/5 hover:bg-white/[0.06] hover:text-white/60',
                         )}
                       >
@@ -725,29 +1031,36 @@ function CreateBattleSection({
                     )}
                   </div>
 
+                  {/* Error display */}
+                  {error && (
+                    <div className="mt-3 flex items-center gap-2 text-frost-red text-xs bg-frost-red/10 rounded-lg px-3 py-2">
+                      <XCircle className="w-4 h-4 flex-shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
                   {/* Create Button */}
                   <motion.button
                     onClick={handleCreate}
-                    disabled={!selectedWarrior || !isValidStake || isCreating}
+                    disabled={!selectedWarrior || !isValidStake || isWorking}
                     className={cn(
                       'mt-4 w-full py-3.5 rounded-xl font-display font-bold text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2',
-                      selectedWarrior && isValidStake && !isCreating
+                      selectedWarrior && isValidStake && !isWorking
                         ? 'btn-primary'
                         : 'bg-white/5 text-white/20 cursor-not-allowed',
                     )}
-                    whileHover={selectedWarrior && isValidStake ? { scale: 1.02 } : {}}
-                    whileTap={selectedWarrior && isValidStake ? { scale: 0.98 } : {}}
+                    whileHover={selectedWarrior && isValidStake && !isWorking ? { scale: 1.02 } : {}}
+                    whileTap={selectedWarrior && isValidStake && !isWorking ? { scale: 0.98 } : {}}
                   >
-                    {isCreating ? (
-                      <motion.div
-                        className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full"
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                      />
+                    {isWorking ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {isCreatePending ? 'Confirm in Wallet...' : 'Creating Battle...'}
+                      </>
                     ) : (
                       <>
                         <Sword className="w-4 h-4" />
-                        Create Battle
+                        Create Battle ({stakeAmount} AVAX)
                       </>
                     )}
                   </motion.button>
@@ -769,20 +1082,104 @@ function OpenBattlesSection({
   battles,
   warriors,
   isConnected,
+  isLoading,
+  onSuccess,
+  currentAddress,
 }: {
   battles: (Battle & { creatorWarrior: Warrior })[];
   warriors: Warrior[];
   isConnected: boolean;
+  isLoading: boolean;
+  onSuccess: () => void;
+  currentAddress?: string;
 }) {
   const [joiningBattleId, setJoiningBattleId] = useState<number | null>(null);
   const [selectedJoinWarrior, setSelectedJoinWarrior] = useState<Warrior | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleJoin = useCallback((battleId: number) => {
+  const {
+    writeContract: joinBattle,
+    data: joinTxHash,
+    isPending: isJoinPending,
+    error: joinError,
+    reset: resetJoin,
+  } = useWriteContract();
+
+  const {
+    writeContract: cancelBattle,
+    data: cancelTxHash,
+    isPending: isCancelPending,
+    error: cancelError,
+    reset: resetCancel,
+  } = useWriteContract();
+
+  const { isLoading: isJoinConfirming, isSuccess: isJoinSuccess } =
+    useWaitForTransactionReceipt({ hash: joinTxHash });
+
+  const { isLoading: isCancelConfirming, isSuccess: isCancelSuccess } =
+    useWaitForTransactionReceipt({ hash: cancelTxHash });
+
+  // Handle join success
+  useEffect(() => {
+    if (isJoinSuccess) {
+      setJoiningBattleId(null);
+      setSelectedJoinWarrior(null);
+      setError(null);
+      resetJoin();
+      onSuccess();
+    }
+  }, [isJoinSuccess, onSuccess, resetJoin]);
+
+  // Handle cancel success
+  useEffect(() => {
+    if (isCancelSuccess) {
+      setError(null);
+      resetCancel();
+      onSuccess();
+    }
+  }, [isCancelSuccess, onSuccess, resetCancel]);
+
+  // Handle errors
+  useEffect(() => {
+    const err = joinError || cancelError;
+    if (err) {
+      const msg = err.message || '';
+      if (msg.includes('User rejected') || msg.includes('user rejected')) {
+        setError('Transaction cancelled');
+      } else if (msg.includes('insufficient funds') || msg.includes('exceeds the balance')) {
+        setError('Insufficient AVAX balance');
+      } else {
+        const short = (err as { shortMessage?: string }).shortMessage;
+        setError(short || 'Transaction failed');
+      }
+    }
+  }, [joinError, cancelError]);
+
+  const handleJoin = useCallback((battle: Battle) => {
     if (!selectedJoinWarrior) return;
-    // In production, call joinBattle on the contract
-    setJoiningBattleId(null);
-    setSelectedJoinWarrior(null);
-  }, [selectedJoinWarrior]);
+    setError(null);
+    joinBattle({
+      address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+      abi: BATTLE_ENGINE_ABI,
+      functionName: 'joinBattle',
+      args: [BigInt(battle.id), BigInt(selectedJoinWarrior.tokenId)],
+      value: battle.stake,
+      chainId: FUJI_CHAIN_ID,
+    });
+  }, [selectedJoinWarrior, joinBattle]);
+
+  const handleCancel = useCallback((battleId: number) => {
+    setError(null);
+    cancelBattle({
+      address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+      abi: BATTLE_ENGINE_ABI,
+      functionName: 'cancelBattle',
+      args: [BigInt(battleId)],
+      chainId: FUJI_CHAIN_ID,
+    });
+  }, [cancelBattle]);
+
+  const isWorking = isJoinPending || isJoinConfirming || isCancelPending || isCancelConfirming;
 
   return (
     <section className="px-4 pb-16">
@@ -793,14 +1190,29 @@ function OpenBattlesSection({
           transition={{ delay: 0.3 }}
         >
           <div className="flex items-center gap-2 mb-6">
-            <Zap className="w-5 h-5 text-arena-purple" />
+            <Zap className="w-5 h-5 text-frost-purple" />
             <h2 className="font-display text-2xl font-bold text-white">Open Battles</h2>
-            <span className="ml-2 px-2 py-0.5 rounded-full bg-arena-green/10 text-arena-green text-xs font-mono font-bold">
+            <span className="ml-2 px-2 py-0.5 rounded-full bg-frost-green/10 text-frost-green text-xs font-mono font-bold">
               {battles.length} available
             </span>
           </div>
 
-          {battles.length === 0 ? (
+          {error && (
+            <div className="mb-4 flex items-center gap-2 text-frost-red text-xs bg-frost-red/10 rounded-lg px-3 py-2">
+              <XCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
+              <button onClick={() => setError(null)} className="ml-auto text-white/40 hover:text-white/60">
+                <XCircle className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
+          {isLoading ? (
+            <div className="glass-card p-12 text-center">
+              <Loader2 className="w-8 h-8 text-frost-cyan mx-auto mb-3 animate-spin" />
+              <p className="text-white/30">Loading open battles...</p>
+            </div>
+          ) : battles.length === 0 ? (
             <div className="glass-card p-12 text-center">
               <Sword className="w-10 h-10 text-white/15 mx-auto mb-3" />
               <p className="text-white/30">No open battles. Be the first to create one!</p>
@@ -811,6 +1223,7 @@ function OpenBattlesSection({
                 const element = getElement(battle.creatorWarrior.element);
                 const stakeFormatted = formatEther(battle.stake);
                 const isJoining = joiningBattleId === battle.id;
+                const isMyBattle = currentAddress && battle.player1.toLowerCase() === currentAddress.toLowerCase();
 
                 return (
                   <motion.div
@@ -823,7 +1236,6 @@ function OpenBattlesSection({
                       borderTop: `3px solid ${element.glowColor.replace('0.3', '0.6')}`,
                     }}
                   >
-                    {/* Glow effect on hover */}
                     <div
                       className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
                       style={{
@@ -834,7 +1246,12 @@ function OpenBattlesSection({
                     <div className="relative z-10">
                       {/* Creator info */}
                       <div className="flex items-center gap-2 mb-3">
-                        <span className="text-2xl">{element.emoji}</span>
+                        <WarriorImage
+                          tokenId={battle.creatorWarrior.tokenId}
+                          element={battle.creatorWarrior.element}
+                          size={40}
+                          className="rounded-lg ring-1 ring-white/10"
+                        />
                         <div className="min-w-0 flex-1">
                           <span className={cn(
                             'text-xs font-semibold bg-gradient-to-r bg-clip-text text-transparent',
@@ -843,11 +1260,11 @@ function OpenBattlesSection({
                             {element.name}
                           </span>
                           <div className="text-[10px] text-white/30 font-mono truncate">
-                            {shortenAddress(battle.player1)}
+                            {isMyBattle ? 'You' : shortenAddress(battle.player1)}
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-mono font-bold text-arena-cyan text-sm">
+                          <div className="font-mono font-bold text-frost-cyan text-sm">
                             #{battle.creatorWarrior.tokenId}
                           </div>
                         </div>
@@ -878,8 +1295,8 @@ function OpenBattlesSection({
                       {/* Stake & Time */}
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-arena-gold" />
-                          <span className="font-mono font-bold text-arena-gold text-sm">
+                          <Sparkles className="w-3.5 h-3.5 text-frost-gold" />
+                          <span className="font-mono font-bold text-frost-gold text-sm">
                             {stakeFormatted} AVAX
                           </span>
                         </div>
@@ -889,9 +1306,30 @@ function OpenBattlesSection({
                         </div>
                       </div>
 
-                      {/* Join Battle */}
+                      {/* Actions */}
                       <AnimatePresence mode="wait">
-                        {isJoining ? (
+                        {isMyBattle ? (
+                          <motion.button
+                            key="cancel-btn"
+                            onClick={() => handleCancel(battle.id)}
+                            disabled={isWorking}
+                            className={cn(
+                              'w-full py-2.5 rounded-xl font-semibold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5',
+                              !isWorking
+                                ? 'bg-frost-red/10 text-frost-red border border-frost-red/20 hover:bg-frost-red/20'
+                                : 'bg-white/5 text-white/20 cursor-not-allowed',
+                            )}
+                            whileHover={!isWorking ? { scale: 1.03 } : {}}
+                            whileTap={!isWorking ? { scale: 0.97 } : {}}
+                          >
+                            {isCancelPending || isCancelConfirming ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <XCircle className="w-3.5 h-3.5" />
+                            )}
+                            Cancel Battle
+                          </motion.button>
+                        ) : isJoining ? (
                           <motion.div
                             key="joining"
                             initial={{ opacity: 0, height: 0 }}
@@ -912,6 +1350,9 @@ function OpenBattlesSection({
                                   size="small"
                                 />
                               ))}
+                              {warriors.length === 0 && (
+                                <p className="text-white/30 text-xs text-center py-2">No warriors to fight with</p>
+                              )}
                             </div>
                             <div className="flex gap-2 mt-2">
                               <button
@@ -924,17 +1365,21 @@ function OpenBattlesSection({
                                 Cancel
                               </button>
                               <button
-                                onClick={() => handleJoin(battle.id)}
-                                disabled={!selectedJoinWarrior}
+                                onClick={() => handleJoin(battle)}
+                                disabled={!selectedJoinWarrior || isWorking}
                                 className={cn(
                                   'flex-1 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1',
-                                  selectedJoinWarrior
-                                    ? 'bg-gradient-to-r from-arena-cyan to-arena-purple text-white'
+                                  selectedJoinWarrior && !isWorking
+                                    ? 'bg-gradient-to-r from-frost-cyan to-frost-purple text-white'
                                     : 'bg-white/5 text-white/20 cursor-not-allowed',
                                 )}
                               >
-                                <Sword className="w-3 h-3" />
-                                Fight!
+                                {isJoinPending || isJoinConfirming ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Sword className="w-3 h-3" />
+                                )}
+                                Fight! ({stakeFormatted} AVAX)
                               </button>
                             </div>
                           </motion.div>
@@ -978,18 +1423,22 @@ function OpenBattlesSection({
 function BattleHistorySection({
   history,
   isConnected,
+  isLoading,
   onViewResult,
+  currentAddress,
 }: {
   history: (Battle & { myWarrior: Warrior; theirWarrior: Warrior })[];
   isConnected: boolean;
+  isLoading: boolean;
   onViewResult: (battle: Battle & { myWarrior: Warrior; theirWarrior: Warrior }) => void;
+  currentAddress?: string;
 }) {
   if (!isConnected) {
     return (
       <section className="px-4 pb-16">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center gap-2 mb-6">
-            <Trophy className="w-5 h-5 text-arena-gold" />
+            <Trophy className="w-5 h-5 text-frost-gold" />
             <h2 className="font-display text-2xl font-bold text-white">Battle History</h2>
           </div>
           <div className="glass-card p-12 text-center">
@@ -1010,114 +1459,132 @@ function BattleHistorySection({
           transition={{ delay: 0.4 }}
         >
           <div className="flex items-center gap-2 mb-6">
-            <Trophy className="w-5 h-5 text-arena-gold" />
+            <Trophy className="w-5 h-5 text-frost-gold" />
             <h2 className="font-display text-2xl font-bold text-white">Battle History</h2>
           </div>
 
-          <div className="glass-card rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="arena-table">
-                <thead>
-                  <tr>
-                    <th>Battle</th>
-                    <th>Opponent</th>
-                    <th>My NFT</th>
-                    <th>Their NFT</th>
-                    <th className="text-right">Stake</th>
-                    <th className="text-center">Result</th>
-                    <th className="text-right">Date</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.map((battle, i) => {
-                    const isWinner = battle.winner === '0xYOU';
-                    const myElement = getElement(battle.myWarrior.element);
-                    const theirElement = getElement(battle.theirWarrior.element);
-                    const opponent = battle.player1 === '0xYOU' ? battle.player2 : battle.player1;
-
-                    return (
-                      <motion.tr
-                        key={battle.id}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.5 + i * 0.05 }}
-                        className="cursor-pointer"
-                        onClick={() => onViewResult(battle)}
-                      >
-                        <td>
-                          <span className="font-mono text-sm text-arena-cyan font-bold">
-                            #{battle.id}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="font-mono text-sm text-white/60">
-                            {shortenAddress(opponent)}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="flex items-center gap-1.5">
-                            <span>{myElement.emoji}</span>
-                            <span className="font-mono text-xs text-white/80">
-                              #{battle.myWarrior.tokenId}
-                            </span>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="flex items-center gap-1.5">
-                            <span>{theirElement.emoji}</span>
-                            <span className="font-mono text-xs text-white/80">
-                              #{battle.theirWarrior.tokenId}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="text-right">
-                          <span className="font-mono text-sm text-arena-gold font-semibold">
-                            {formatEther(battle.stake)}
-                          </span>
-                        </td>
-                        <td className="text-center">
-                          <span className={cn(
-                            'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase',
-                            isWinner
-                              ? 'bg-arena-green/10 text-arena-green ring-1 ring-arena-green/20'
-                              : 'bg-arena-red/10 text-arena-red ring-1 ring-arena-red/20',
-                          )}>
-                            {isWinner ? (
-                              <>
-                                <Trophy className="w-3 h-3" />
-                                Win
-                              </>
-                            ) : (
-                              <>
-                                <Shield className="w-3 h-3" />
-                                Loss
-                              </>
-                            )}
-                          </span>
-                        </td>
-                        <td className="text-right">
-                          <span className="text-xs text-white/40 font-mono">
-                            {formatDate(battle.resolvedAt)}
-                          </span>
-                        </td>
-                        <td>
-                          <ArrowRight className="w-4 h-4 text-white/20" />
-                        </td>
-                      </motion.tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          {isLoading ? (
+            <div className="glass-card p-12 text-center">
+              <Loader2 className="w-8 h-8 text-frost-cyan mx-auto mb-3 animate-spin" />
+              <p className="text-white/30">Loading battle history...</p>
             </div>
+          ) : history.length === 0 ? (
+            <div className="glass-card p-12 text-center">
+              <Sword className="w-8 h-8 text-white/10 mx-auto mb-2" />
+              <p className="text-white/25 text-sm">No battles yet. Enter Frostbite!</p>
+            </div>
+          ) : (
+            <div className="glass-card rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="frost-table">
+                  <thead>
+                    <tr>
+                      <th>Battle</th>
+                      <th>Opponent</th>
+                      <th>My NFT</th>
+                      <th>Their NFT</th>
+                      <th className="text-right">Stake</th>
+                      <th className="text-center">Result</th>
+                      <th className="text-right">Date</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((battle, i) => {
+                      const isWinner = currentAddress
+                        ? battle.winner.toLowerCase() === currentAddress.toLowerCase()
+                        : false;
+                      const isPlayer1 = currentAddress
+                        ? battle.player1.toLowerCase() === currentAddress.toLowerCase()
+                        : true;
+                      const opponent = isPlayer1 ? battle.player2 : battle.player1;
 
-            {history.length === 0 && (
-              <div className="p-12 text-center">
-                <Sword className="w-8 h-8 text-white/10 mx-auto mb-2" />
-                <p className="text-white/25 text-sm">No battles yet. Enter the arena!</p>
+                      return (
+                        <motion.tr
+                          key={battle.id}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.05 * i }}
+                          className="cursor-pointer"
+                          onClick={() => onViewResult(battle)}
+                        >
+                          <td>
+                            <span className="font-mono text-sm text-frost-cyan font-bold">
+                              #{battle.id}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="font-mono text-sm text-white/60">
+                              {shortenAddress(opponent)}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="flex items-center gap-1.5">
+                              <WarriorImage
+                                tokenId={battle.myWarrior.tokenId}
+                                element={battle.myWarrior.element}
+                                size={28}
+                                className="rounded-md"
+                              />
+                              <span className="font-mono text-xs text-white/80">
+                                #{battle.myWarrior.tokenId}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="flex items-center gap-1.5">
+                              <WarriorImage
+                                tokenId={battle.theirWarrior.tokenId}
+                                element={battle.theirWarrior.element}
+                                size={28}
+                                className="rounded-md"
+                              />
+                              <span className="font-mono text-xs text-white/80">
+                                #{battle.theirWarrior.tokenId}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="text-right">
+                            <span className="font-mono text-sm text-frost-gold font-semibold">
+                              {formatEther(battle.stake)}
+                            </span>
+                          </td>
+                          <td className="text-center">
+                            <span className={cn(
+                              'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase',
+                              isWinner
+                                ? 'bg-frost-green/10 text-frost-green ring-1 ring-frost-green/20'
+                                : 'bg-frost-red/10 text-frost-red ring-1 ring-frost-red/20',
+                            )}>
+                              {isWinner ? (
+                                <>
+                                  <Trophy className="w-3 h-3" />
+                                  Win
+                                </>
+                              ) : (
+                                <>
+                                  <Shield className="w-3 h-3" />
+                                  Loss
+                                </>
+                              )}
+                            </span>
+                          </td>
+                          <td className="text-right">
+                            <span className="text-xs text-white/40 font-mono">
+                              {formatDate(battle.resolvedAt)}
+                            </span>
+                          </td>
+                          <td>
+                            <ArrowRight className="w-4 h-4 text-white/20" />
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </motion.div>
       </div>
     </section>
@@ -1135,10 +1602,15 @@ export default function BattlePage() {
     (Battle & { myWarrior: Warrior; theirWarrior: Warrior }) | null
   >(null);
 
-  // In production, these would come from contract reads
-  const warriors = isConnected ? MOCK_WARRIORS : MOCK_WARRIORS; // Show mock data regardless for preview
-  const openBattles = MOCK_OPEN_BATTLES;
-  const battleHistory = MOCK_HISTORY;
+  const {
+    warriors,
+    openBattles,
+    battleHistory,
+    isLoadingWarriors,
+    isLoadingBattles,
+    isLoadingHistory,
+    refetch,
+  } = useBattleData(address, isConnected);
 
   const handleViewResult = useCallback(
     (battle: Battle & { myWarrior: Warrior; theirWarrior: Warrior }) => {
@@ -1148,25 +1620,40 @@ export default function BattlePage() {
     [],
   );
 
+  // Refetch on success with a short delay
+  const handleSuccess = useCallback(() => {
+    setTimeout(() => refetch(), 2000);
+  }, [refetch]);
+
   return (
     <div className="min-h-screen">
-      <HeroSection />
+      <HeroSection
+        battleCount={battleHistory.length}
+        openCount={openBattles.length}
+      />
 
       <CreateBattleSection
         warriors={warriors}
         isConnected={isConnected}
+        isLoading={isLoadingWarriors}
+        onSuccess={handleSuccess}
       />
 
       <OpenBattlesSection
         battles={openBattles}
         warriors={warriors}
         isConnected={isConnected}
+        isLoading={isLoadingBattles}
+        onSuccess={handleSuccess}
+        currentAddress={address}
       />
 
       <BattleHistorySection
         history={battleHistory}
         isConnected={isConnected}
+        isLoading={isLoadingHistory}
         onViewResult={handleViewResult}
+        currentAddress={address}
       />
 
       {/* Battle Result Modal */}
@@ -1179,7 +1666,11 @@ export default function BattlePage() {
           }}
           myWarrior={selectedBattleResult.myWarrior}
           theirWarrior={selectedBattleResult.theirWarrior}
-          isWinner={selectedBattleResult.winner === '0xYOU'}
+          isWinner={
+            address
+              ? selectedBattleResult.winner.toLowerCase() === address.toLowerCase()
+              : false
+          }
           stakeAmount={formatEther(selectedBattleResult.stake)}
         />
       )}

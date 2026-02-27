@@ -13,14 +13,15 @@ export declare namespace Leaderboard {
     }
 
   export interface LeaderboardInterface extends Interface {
-    getFunction(nameOrSignature: "currentSeason" | "gameEngine" | "getPlayerScore" | "getSeasonPlayers" | "isInSeason" | "owner" | "renounceOwnership" | "seasonPlayers" | "seasonScores" | "setGameEngine" | "startNewSeason" | "transferOwnership" | "updateScore"): FunctionFragment;
+    getFunction(nameOrSignature: "currentSeason" | "gameEngine" | "getPlayerScore" | "getSeasonPlayerCount" | "getSeasonPlayers" | "isInSeason" | "owner" | "renounceOwnership" | "seasonPlayers" | "seasonScores" | "setGameEngine" | "startNewSeason" | "transferOwnership" | "updateScore"): FunctionFragment;
 
     getEvent(nameOrSignatureOrTopic: "OwnershipTransferred" | "ScoreUpdated" | "SeasonStarted"): EventFragment;
 
     encodeFunctionData(functionFragment: 'currentSeason', values?: undefined): string;
 encodeFunctionData(functionFragment: 'gameEngine', values?: undefined): string;
 encodeFunctionData(functionFragment: 'getPlayerScore', values: [BigNumberish, AddressLike]): string;
-encodeFunctionData(functionFragment: 'getSeasonPlayers', values: [BigNumberish]): string;
+encodeFunctionData(functionFragment: 'getSeasonPlayerCount', values: [BigNumberish]): string;
+encodeFunctionData(functionFragment: 'getSeasonPlayers', values: [BigNumberish, BigNumberish, BigNumberish]): string;
 encodeFunctionData(functionFragment: 'isInSeason', values: [BigNumberish, AddressLike]): string;
 encodeFunctionData(functionFragment: 'owner', values?: undefined): string;
 encodeFunctionData(functionFragment: 'renounceOwnership', values?: undefined): string;
@@ -34,6 +35,7 @@ encodeFunctionData(functionFragment: 'updateScore', values: [AddressLike, BigNum
     decodeFunctionResult(functionFragment: 'currentSeason', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'gameEngine', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getPlayerScore', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'getSeasonPlayerCount', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getSeasonPlayers', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'isInSeason', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'owner', data: BytesLike): Result;
@@ -141,8 +143,16 @@ decodeFunctionResult(functionFragment: 'updateScore', data: BytesLike): Result;
     
 
     
-    getSeasonPlayers: TypedContractMethod<
+    getSeasonPlayerCount: TypedContractMethod<
       [_season: BigNumberish, ],
+      [bigint],
+      'view'
+    >
+    
+
+    
+    getSeasonPlayers: TypedContractMethod<
+      [_season: BigNumberish, _offset: BigNumberish, _limit: BigNumberish, ],
       [string[]],
       'view'
     >
@@ -238,8 +248,13 @@ getFunction(nameOrSignature: 'getPlayerScore'): TypedContractMethod<
       [Leaderboard.PlayerScoreStructOutput],
       'view'
     >;
-getFunction(nameOrSignature: 'getSeasonPlayers'): TypedContractMethod<
+getFunction(nameOrSignature: 'getSeasonPlayerCount'): TypedContractMethod<
       [_season: BigNumberish, ],
+      [bigint],
+      'view'
+    >;
+getFunction(nameOrSignature: 'getSeasonPlayers'): TypedContractMethod<
+      [_season: BigNumberish, _offset: BigNumberish, _limit: BigNumberish, ],
       [string[]],
       'view'
     >;

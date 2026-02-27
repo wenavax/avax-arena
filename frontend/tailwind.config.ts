@@ -9,7 +9,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        arena: {
+        frost: {
           bg: "#0a0a0f",
           surface: "#12121a",
           card: "#1a1a2e",

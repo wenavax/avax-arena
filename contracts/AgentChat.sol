@@ -86,6 +86,8 @@ contract AgentChat is Ownable {
         uint256 newLikeCount
     );
 
+    event AgentRegistryUpdated(address indexed newAgentRegistry);
+
     // -----------------------------------------------------------------------
     // Errors
     // -----------------------------------------------------------------------
@@ -98,6 +100,7 @@ contract AgentChat is Ownable {
     error ParentIsNotThread();
     error AlreadyLiked();
     error InvalidRegistryAddress();
+    error ContentTooLong();
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -134,6 +137,7 @@ contract AgentChat is Ownable {
         uint8 _category
     ) external onlyRegisteredAgent returns (uint256 messageId) {
         if (bytes(_content).length == 0) revert EmptyContent();
+        require(bytes(_content).length <= 2000, "Content too long");
         if (block.timestamp < lastPostTime[msg.sender] + RATE_LIMIT) revert RateLimitExceeded();
 
         // If replying, validate the parent exists and is a top-level thread.
@@ -276,5 +280,6 @@ contract AgentChat is Ownable {
     function setAgentRegistry(address _agentRegistry) external onlyOwner {
         if (_agentRegistry == address(0)) revert InvalidRegistryAddress();
         agentRegistry = IAgentRegistry(_agentRegistry);
+        emit AgentRegistryUpdated(_agentRegistry);
     }
 }

@@ -24,6 +24,9 @@ contract RewardVault is Ownable, ReentrancyGuard {
     /// @notice Total AVAX distributed (claimed) to date.
     uint256 public totalDistributed;
 
+    /// @notice Sum of all pending (unclaimed) rewards across all players.
+    uint256 public totalPendingRewards;
+
     // -----------------------------------------------------------------------
     //  Events
     // -----------------------------------------------------------------------
@@ -31,6 +34,7 @@ contract RewardVault is Ownable, ReentrancyGuard {
     event RewardDeposited(address indexed player, uint256 amount);
     event RewardClaimed(address indexed player, uint256 amount);
     event FundsWithdrawn(address indexed to, uint256 amount);
+    event EmergencyWithdrawWarning(uint256 withdrawnAmount, uint256 remainingBalance, string message);
 
     // -----------------------------------------------------------------------
     //  Constructor
@@ -72,6 +76,7 @@ contract RewardVault is Ownable, ReentrancyGuard {
         require(_amount > 0, "RewardVault: amount must be > 0");
 
         pendingRewards[_player] += _amount;
+        totalPendingRewards += _amount;
 
         emit RewardDeposited(_player, _amount);
     }
@@ -82,9 +87,11 @@ contract RewardVault is Ownable, ReentrancyGuard {
     function claimReward() external nonReentrant {
         uint256 amount = pendingRewards[msg.sender];
         require(amount > 0, "RewardVault: no pending rewards");
+        require(address(this).balance >= amount, "Insufficient vault balance");
 
         pendingRewards[msg.sender] = 0;
         totalDistributed += amount;
+        totalPendingRewards -= amount;
 
         (bool success, ) = payable(msg.sender).call{value: amount}("");
         require(success, "RewardVault: transfer failed");
@@ -106,7 +113,17 @@ contract RewardVault is Ownable, ReentrancyGuard {
         (bool success, ) = payable(owner()).call{value: _amount}("");
         require(success, "RewardVault: transfer failed");
 
+        uint256 remainingBalance = address(this).balance;
         emit FundsWithdrawn(owner(), _amount);
+
+        // Warn if remaining balance may not cover pending rewards
+        if (remainingBalance < totalPendingRewards) {
+            emit EmergencyWithdrawWarning(
+                _amount,
+                remainingBalance,
+                "Remaining balance may not cover pending rewards"
+            );
+        }
     }
 
     // -----------------------------------------------------------------------

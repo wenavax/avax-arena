@@ -56,6 +56,9 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
     /// @notice Authorized battle contract that may update warrior stats.
     address public battleContract;
 
+    /// @notice Base URI for token metadata.
+    string private _baseTokenURI;
+
     /// @notice On-chain attributes for every minted warrior.
     mapping(uint256 => Warrior) private _warriors;
 
@@ -95,6 +98,10 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
         string newURI
     );
 
+    event BattleContractUpdated(address indexed newBattleContract);
+
+    event BaseURIUpdated(string newBaseURI);
+
     // -------------------------------------------------------------------------
     // Errors
     // -------------------------------------------------------------------------
@@ -104,6 +111,7 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
     error NotAuthorizedBattleContract();
     error WithdrawFailed();
     error InvalidBattleContractAddress();
+    error AddressIsNotContract();
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -257,7 +265,20 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
      */
     function setBattleContract(address _battleContract) external onlyOwner {
         if (_battleContract == address(0)) revert InvalidBattleContractAddress();
+        uint256 codeSize;
+        assembly { codeSize := extcodesize(_battleContract) }
+        if (codeSize == 0) revert AddressIsNotContract();
         battleContract = _battleContract;
+        emit BattleContractUpdated(_battleContract);
+    }
+
+    /**
+     * @notice Set the base URI for token metadata.
+     * @param baseURI_ The new base URI string.
+     */
+    function setBaseURI(string calldata baseURI_) external onlyOwner {
+        _baseTokenURI = baseURI_;
+        emit BaseURIUpdated(baseURI_);
     }
 
     /**
@@ -316,6 +337,10 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
     // -------------------------------------------------------------------------
     // Overrides (ERC721 + ERC721Enumerable)
     // -------------------------------------------------------------------------
+
+    function _baseURI() internal view override returns (string memory) {
+        return _baseTokenURI;
+    }
 
     function tokenURI(uint256 tokenId)
         public

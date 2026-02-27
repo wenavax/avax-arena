@@ -11,17 +11,17 @@ export function Footer() {
   return (
     <footer className="relative mt-auto border-t border-transparent">
       {/* Gradient top border */}
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-arena-cyan/40 to-transparent" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-frost-cyan/40 to-transparent" />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Branding */}
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-arena-cyan to-arena-purple">
-              <span className="text-xs font-bold text-arena-bg">A</span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-frost-cyan to-frost-purple">
+              <span className="text-xs font-bold text-frost-bg">F</span>
             </div>
             <span className="font-display text-sm font-semibold tracking-wider text-white/60">
-              AVAX Arena
+              Frostbite
             </span>
           </div>
 
@@ -35,7 +35,7 @@ export function Footer() {
                   href={social.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-center w-9 h-9 rounded-lg text-white/30 hover:text-arena-cyan hover:bg-arena-cyan/[0.08] transition-all duration-200"
+                  className="flex items-center justify-center w-9 h-9 rounded-lg text-white/30 hover:text-frost-cyan hover:bg-frost-cyan/[0.08] transition-all duration-200"
                   aria-label={social.label}
                 >
                   <Icon className="h-4 w-4" />
@@ -47,7 +47,7 @@ export function Footer() {
           {/* Powered by */}
           <p className="text-xs text-white/30">
             Powered by{' '}
-            <span className="text-arena-red font-medium">Avalanche</span>
+            <span className="text-frost-red font-medium">Avalanche</span>
           </p>
         </div>
       </div>

@@ -36,6 +36,7 @@ contract Tournament is Ownable, ReentrancyGuard {
 
     uint256 public tournamentCount;
     mapping(uint256 => TournamentInfo) public tournaments;
+    mapping(uint256 => mapping(address => bool)) public hasJoined;
 
     // -----------------------------------------------------------------------
     //  Events
@@ -129,10 +130,9 @@ contract Tournament is Ownable, ReentrancyGuard {
             "Tournament: max capacity reached"
         );
 
-        // Prevent double-join by checking score mapping default + player list
-        for (uint256 i = 0; i < t.players.length; i++) {
-            require(t.players[i] != msg.sender, "Tournament: already joined");
-        }
+        // Prevent double-join using mapping (O(1) instead of O(n) loop)
+        require(!hasJoined[_id][msg.sender], "Tournament: already joined");
+        hasJoined[_id][msg.sender] = true;
 
         t.players.push(msg.sender);
         t.currentPlayers++;
@@ -192,13 +192,23 @@ contract Tournament is Ownable, ReentrancyGuard {
             address third
         ) = _getTopPlayers(_id);
 
+        // Validate top players are actual tournament participants
+        require(first != address(0), "Tournament: no valid winners");
+        if (second != address(0)) require(hasJoined[_id][second], "Tournament: invalid 2nd place");
+        if (third != address(0)) require(hasJoined[_id][third], "Tournament: invalid 3rd place");
+
+        // Calculate prizes; give rounding remainder to 1st place
+        uint256 secondPrize = (t.prizePool * 25) / 100;
+        uint256 thirdPrize  = (t.prizePool * 15) / 100;
+        uint256 firstPrize  = t.prizePool - secondPrize - thirdPrize; // remainder goes to 1st
+
         uint256 prize = 0;
         if (msg.sender == first) {
-            prize = (t.prizePool * 60) / 100;
+            prize = firstPrize;
         } else if (msg.sender == second) {
-            prize = (t.prizePool * 25) / 100;
+            prize = secondPrize;
         } else if (msg.sender == third) {
-            prize = (t.prizePool * 15) / 100;
+            prize = thirdPrize;
         }
 
         require(prize > 0, "Tournament: not a winner");
