@@ -19,6 +19,10 @@ import {
   incrementAgentMessages,
   updateAgentStats,
   createBattle as dbCreateBattle,
+  addDecision,
+  addLiveEvent,
+  getDailySpent,
+  addDailySpent,
 } from './db-queries';
 
 /* ---------------------------------------------------------------------------
@@ -41,8 +45,7 @@ export interface AgentLoopState {
   lastAction: AgentAction | null;
   lastError: string | null;
   consecutiveErrors: number;
-  dailySpent: bigint;
-  dailyResetTimestamp: number;
+  cachedAccount: ReturnType<typeof getAgentAccount> | null;
   activityLog: ActivityLogEntry[];
 }
 
@@ -118,22 +121,23 @@ function addLog(state: AgentLoopState, action: string, details: string, success:
   }
 }
 
-function checkDailyReset(state: AgentLoopState) {
-  const now = Date.now();
-  // Reset daily spent at midnight UTC
-  const todayMidnight = new Date();
-  todayMidnight.setUTCHours(0, 0, 0, 0);
-  if (state.dailyResetTimestamp < todayMidnight.getTime()) {
-    state.dailySpent = 0n;
-    state.dailyResetTimestamp = todayMidnight.getTime();
-  }
+function getTodayDateStr(): string {
+  return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+}
+
+function getCurrentDailySpent(walletAddress: string): bigint {
+  return getDailySpent(walletAddress, getTodayDateStr());
+}
+
+function recordSpending(walletAddress: string, amountWei: bigint): void {
+  addDailySpent(walletAddress, getTodayDateStr(), amountWei);
 }
 
 /* ---------------------------------------------------------------------------
  * Read chain state
  * ------------------------------------------------------------------------- */
 
-async function fetchWarriors(walletAddress: string): Promise<WarriorInfo[]> {
+export async function fetchWarriors(walletAddress: string): Promise<WarriorInfo[]> {
   const tokenIds = await publicClient.readContract({
     address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
     abi: FROSTBITE_WARRIOR_ABI,
@@ -293,7 +297,7 @@ async function executeAction(
   action: AgentAction,
   state: AgentLoopState
 ): Promise<void> {
-  const account = getAgentAccount(walletAddress);
+  const account = state.cachedAccount ?? getAgentAccount(walletAddress);
   const walletClient = createWalletClient({
     account,
     chain: avalancheFuji,
@@ -314,13 +318,21 @@ async function executeAction(
         functionName: 'mint',
         value: MINT_PRICE,
       });
-      state.dailySpent += MINT_PRICE;
+      recordSpending(walletAddress, MINT_PRICE);
       addLog(state, 'nft_minted', `Minted new warrior`, true, hash);
 
-      // Update DB stats
+      // Update DB stats + emit event
       try {
         const dbAgent = getAgentByWallet(walletAddress);
-        if (dbAgent) incrementAgentMints(dbAgent.id);
+        if (dbAgent) {
+          incrementAgentMints(dbAgent.id);
+          addLiveEvent({
+            eventType: 'warrior_minted',
+            agentId: dbAgent.id,
+            agentName: dbAgent.name,
+            data: { txHash: hash },
+          });
+        }
       } catch { /* ignore */ }
       break;
     }
@@ -337,8 +349,8 @@ async function executeAction(
         return;
       }
 
-      checkDailyReset(state);
-      if (state.dailySpent + stakeWei > DEFAULT_DAILY_LIMIT) {
+      const dailySpentJoin = getCurrentDailySpent(walletAddress);
+      if (dailySpentJoin + stakeWei > DEFAULT_DAILY_LIMIT) {
         addLog(state, 'join_battle', 'Daily spending limit reached', false);
         return;
       }
@@ -356,14 +368,20 @@ async function executeAction(
         args: [BigInt(action.battleId), BigInt(action.tokenId)],
         value: stakeWei,
       });
-      state.dailySpent += stakeWei;
+      recordSpending(walletAddress, stakeWei);
       addLog(state, 'battle_joined', `Joined battle #${action.battleId} with warrior #${action.tokenId}, stake: ${action.stakeAmount} AVAX`, true, hash);
 
-      // Track battle in DB
+      // Track battle in DB + emit event
       try {
         const dbAgent = getAgentByWallet(walletAddress);
         if (dbAgent) {
           updateAgentStats(dbAgent.id, { won: false, stake: action.stakeAmount });
+          addLiveEvent({
+            eventType: 'battle_joined',
+            agentId: dbAgent.id,
+            agentName: dbAgent.name,
+            data: { battleId: action.battleId, tokenId: action.tokenId, stake: action.stakeAmount, txHash: hash },
+          });
         }
       } catch { /* ignore */ }
       break;
@@ -381,8 +399,8 @@ async function executeAction(
         return;
       }
 
-      checkDailyReset(state);
-      if (state.dailySpent + stakeWei > DEFAULT_DAILY_LIMIT) {
+      const dailySpentCreate = getCurrentDailySpent(walletAddress);
+      if (dailySpentCreate + stakeWei > DEFAULT_DAILY_LIMIT) {
         addLog(state, 'create_battle', 'Daily spending limit reached', false);
         return;
       }
@@ -400,10 +418,10 @@ async function executeAction(
         args: [BigInt(action.tokenId)],
         value: stakeWei,
       });
-      state.dailySpent += stakeWei;
+      recordSpending(walletAddress, stakeWei);
       addLog(state, 'battle_created', `Created battle with warrior #${action.tokenId}, stake: ${action.stakeAmount} AVAX`, true, hash);
 
-      // Track in DB
+      // Track in DB + emit event
       try {
         const dbAgent = getAgentByWallet(walletAddress);
         if (dbAgent) {
@@ -413,6 +431,12 @@ async function executeAction(
             attackerNft: action.tokenId,
             stake: action.stakeAmount,
             txHash: hash,
+          });
+          addLiveEvent({
+            eventType: 'battle_created',
+            agentId: dbAgent.id,
+            agentName: dbAgent.name,
+            data: { tokenId: action.tokenId, stake: action.stakeAmount, txHash: hash },
           });
         }
       } catch { /* ignore */ }
@@ -433,7 +457,7 @@ async function executeAction(
       });
       addLog(state, 'message', `Posted: "${action.message.slice(0, 60)}"`, true, hash);
 
-      // Track in DB
+      // Track in DB + emit event
       try {
         const dbAgent = getAgentByWallet(walletAddress);
         if (dbAgent) {
@@ -444,6 +468,12 @@ async function executeAction(
             agentName: dbAgent.name,
             content: action.message,
             txHash: hash,
+          });
+          addLiveEvent({
+            eventType: 'message_posted',
+            agentId: dbAgent.id,
+            agentName: dbAgent.name,
+            data: { message: action.message.slice(0, 100), txHash: hash },
           });
         }
       } catch { /* ignore */ }
@@ -458,13 +488,24 @@ async function executeAction(
 }
 
 /* ---------------------------------------------------------------------------
+ * Tick mutex — prevents concurrent ticks for the same agent
+ * ------------------------------------------------------------------------- */
+
+const tickInProgress = new Set<string>();
+
+/* ---------------------------------------------------------------------------
  * Main loop tick
  * ------------------------------------------------------------------------- */
 
 async function tick(walletAddress: string): Promise<void> {
+  const key = walletAddress.toLowerCase();
   const loops = getLoops();
-  const state = loops[walletAddress.toLowerCase()];
+  const state = loops[key];
   if (!state || !state.running) return;
+
+  // Prevent concurrent ticks for the same agent
+  if (tickInProgress.has(key)) return;
+  tickInProgress.add(key);
 
   try {
     const storedAgent = getStoredAgent(walletAddress);
@@ -488,7 +529,7 @@ async function tick(walletAddress: string): Promise<void> {
       (b) => b.player1.toLowerCase() !== walletAddress.toLowerCase()
     );
 
-    checkDailyReset(state);
+    const currentDailySpent = getCurrentDailySpent(walletAddress);
 
     // 2. Build game state
     const gameState: GameState = {
@@ -498,7 +539,7 @@ async function tick(walletAddress: string): Promise<void> {
       openBattles: filteredBattles,
       recentHistory,
       strategy: strategyNames[storedAgent.strategy] ?? 'Analytical',
-      dailySpent: formatEther(state.dailySpent),
+      dailySpent: formatEther(currentDailySpent),
       dailyLimit: formatEther(DEFAULT_DAILY_LIMIT),
       maxStakePerGame: formatEther(DEFAULT_MAX_STAKE),
     };
@@ -507,6 +548,27 @@ async function tick(walletAddress: string): Promise<void> {
     const decision = await makeDecision(gameState);
     state.lastAction = decision;
     state.lastTick = Date.now();
+
+    // 3.5 Persist decision to DB
+    try {
+      const dbAgent = getAgentByWallet(walletAddress);
+      if (dbAgent) {
+        addDecision({
+          agentId: dbAgent.id,
+          action: decision.action,
+          reasoning: decision.reasoning,
+          gameStateSummary: JSON.stringify({
+            balance: gameState.agentBalance,
+            warriors: gameState.warriors.length,
+            openBattles: gameState.openBattles.length,
+            dailySpent: gameState.dailySpent,
+          }),
+          battleId: decision.battleId,
+          tokenId: decision.tokenId,
+          stakeAmount: decision.stakeAmount,
+        });
+      }
+    } catch { /* Don't break loop on DB errors */ }
 
     // 4. Execute action
     await executeAction(walletAddress, decision, state);
@@ -526,6 +588,8 @@ async function tick(walletAddress: string): Promise<void> {
       }
       addLog(state, 'paused', `Paused after ${MAX_CONSECUTIVE_ERRORS} consecutive errors`, false);
     }
+  } finally {
+    tickInProgress.delete(key);
   }
 }
 
@@ -541,6 +605,14 @@ export function startAgentLoop(walletAddress: string): { success: boolean; error
     return { success: false, error: 'Agent loop is already running' };
   }
 
+  // Decrypt private key once per loop start
+  let cachedAccount: ReturnType<typeof getAgentAccount> | null = null;
+  try {
+    cachedAccount = getAgentAccount(walletAddress);
+  } catch (err) {
+    return { success: false, error: `Failed to decrypt agent key: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
   const state: AgentLoopState = {
     running: true,
     walletAddress: key,
@@ -549,8 +621,7 @@ export function startAgentLoop(walletAddress: string): { success: boolean; error
     lastAction: null,
     lastError: null,
     consecutiveErrors: 0,
-    dailySpent: 0n,
-    dailyResetTimestamp: 0,
+    cachedAccount,
     activityLog: loops[key]?.activityLog ?? [],
   };
 
@@ -576,6 +647,7 @@ export function stopAgentLoop(walletAddress: string): { success: boolean; error?
   }
 
   state.running = false;
+  state.cachedAccount = null;
   if (state.intervalId) {
     clearInterval(state.intervalId);
     state.intervalId = null;
@@ -607,7 +679,7 @@ export function getAgentStatus(walletAddress: string): {
     lastAction: state.lastAction,
     lastError: state.lastError,
     consecutiveErrors: state.consecutiveErrors,
-    dailySpent: formatEther(state.dailySpent),
+    dailySpent: formatEther(getCurrentDailySpent(state.walletAddress)),
     activityLog: state.activityLog,
   };
 }

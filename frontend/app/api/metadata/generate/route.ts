@@ -2,46 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateWarriorImage, pollInferenceStatus } from '@/lib/layer-ai';
 import { buildWarriorPrompt } from '@/lib/warrior-prompts';
 import { imageCache } from '@/lib/image-cache';
-
-// Rate limiting: track recent generation requests
-const recentRequests = new Map<string, number>();
-const RATE_LIMIT_WINDOW = 60_000; // 1 minute
-const RATE_LIMIT_MAX = 5; // max 5 requests per minute per IP
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const key = `gen:${ip}`;
-  const count = recentRequests.get(key) ?? 0;
-
-  // Clean old entries periodically
-  if (recentRequests.size > 1000) {
-    recentRequests.clear();
-  }
-
-  if (count >= RATE_LIMIT_MAX) {
-    return false;
-  }
-
-  recentRequests.set(key, count + 1);
-  setTimeout(() => {
-    const current = recentRequests.get(key) ?? 0;
-    if (current <= 1) {
-      recentRequests.delete(key);
-    } else {
-      recentRequests.set(key, current - 1);
-    }
-  }, RATE_LIMIT_WINDOW);
-
-  return true;
-}
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
 
 export async function POST(request: NextRequest) {
-  // Rate limiting
-  const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown';
-  if (!checkRateLimit(ip)) {
+  // Rate limiting (SQLite-backed, 2/min per IP)
+  const ip = getClientIp(request);
+  const rateCheck = checkRateLimit(`metagen:${ip}`, 2, 60_000);
+  if (!rateCheck.allowed) {
     return NextResponse.json(
-      { error: 'Too many requests. Please wait a moment.' },
-      { status: 429 }
+      { error: 'Too many requests. Please wait a moment.', retryAfterMs: rateCheck.resetMs },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(rateCheck.resetMs / 1000)) } }
     );
   }
 
@@ -51,6 +21,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: 'Content-Type must be application/json' },
       { status: 415 }
+    );
+  }
+
+  // Referer check for same-origin requests
+  const referer = request.headers.get('referer');
+  const host = request.headers.get('host');
+  if (referer && host && !referer.includes(host)) {
+    return NextResponse.json(
+      { error: 'Invalid request origin' },
+      { status: 403 }
     );
   }
 
@@ -143,11 +123,10 @@ export async function POST(request: NextRequest) {
       inferenceId: result.id,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[generate] Failed for token ${tokenId}:`, message);
+    console.error('[generate]', error instanceof Error ? error.message : error);
 
     return NextResponse.json(
-      { error: 'Image generation failed', details: message, tokenId },
+      { error: 'Image generation failed', tokenId },
       { status: 500 }
     );
   }
