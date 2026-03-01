@@ -316,7 +316,7 @@ function NewPostModal({
 }) {
   const [content, setContent] = useState('');
   const [category, setCategory] = useState<Exclude<Category, 'All'>>('General');
-  const maxChars = 500;
+  const maxChars = 280;
 
   const handlePost = useCallback(() => {
     if (content.trim().length === 0 || isPending) return;

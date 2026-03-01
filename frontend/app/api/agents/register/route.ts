@@ -1,25 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateAgentWallet, getAgentByOwner } from '@/lib/wallet-manager';
-import { createAgent, addActivity } from '@/lib/db-queries';
-
-/* ---------------------------------------------------------------------------
- * Rate Limiting (in-memory)
- * ------------------------------------------------------------------------- */
-
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60_000;
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-  if (!entry || now > entry.resetTime) {
-    rateLimitMap.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > RATE_LIMIT_MAX;
-}
+import { createAgent, addActivity, addLiveEvent } from '@/lib/db-queries';
+import { generatePersonality } from '@/lib/personality-generator';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limiter';
+import { verifyChallenge } from '@/lib/challenge-store';
 
 /* ---------------------------------------------------------------------------
  * Validation
@@ -40,22 +24,20 @@ function securityHeaders(): Record<string, string> {
  * Creates a new agent wallet, encrypts the private key, and stores it.
  * The caller must then call registerAgent() on-chain with the returned address.
  *
- * Body: { name: string, strategy: number | string, ownerAddress: string }
+ * Body: { name, strategy, ownerAddress, challengeId?, challengeAnswer? }
  * Returns: { walletAddress, name, strategy, strategyName }
  * ------------------------------------------------------------------------- */
 
 export async function POST(req: NextRequest) {
   try {
-    // Rate limiting
-    const ip =
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      req.headers.get('x-real-ip') ||
-      'unknown';
+    // Rate limiting (SQLite-backed)
+    const ip = getClientIp(req);
 
-    if (isRateLimited(ip)) {
+    const rateCheck = checkRateLimit(`register:${ip}`, 5, 60_000);
+    if (!rateCheck.allowed) {
       return NextResponse.json(
         { error: 'Too many registration requests. Try again later.', code: 'RATE_LIMIT_EXCEEDED' },
-        { status: 429, headers: securityHeaders() }
+        { status: 429, headers: { ...securityHeaders(), 'Retry-After': String(Math.ceil(rateCheck.resetMs / 1000)) } }
       );
     }
 
@@ -69,7 +51,25 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { name, strategy, ownerAddress } = body;
+    const { name, strategy, ownerAddress, challengeId, challengeAnswer } = body;
+
+    // Validate challenge (optional for backward compatibility, but recommended)
+    if (challengeId !== undefined || challengeAnswer !== undefined) {
+      if (!challengeId || typeof challengeId !== 'string' || typeof challengeAnswer !== 'number') {
+        return NextResponse.json(
+          { error: 'Both challengeId (string) and challengeAnswer (number) are required', code: 'INVALID_CHALLENGE' },
+          { status: 400, headers: securityHeaders() }
+        );
+      }
+      if (!verifyChallenge(challengeId, challengeAnswer)) {
+        return NextResponse.json(
+          { error: 'Invalid or expired challenge answer. Request a new challenge.', code: 'CHALLENGE_FAILED' },
+          { status: 403, headers: securityHeaders() }
+        );
+      }
+    } else {
+      console.warn('[agent-register] Registration without challenge from IP:', ip);
+    }
 
     // Validate name
     if (!name || typeof name !== 'string' || !NAME_RE.test(name)) {
@@ -137,6 +137,17 @@ export async function POST(req: NextRequest) {
       description: `New agent "${dbAgent.name}" registered with ${STRATEGY_NAMES[strategyNum]} strategy`,
     });
 
+    // Auto-generate personality
+    generatePersonality(dbAgent);
+
+    // Emit live event
+    addLiveEvent({
+      eventType: 'agent_started',
+      agentId: dbAgent.id,
+      agentName: dbAgent.name,
+      data: { strategy: STRATEGY_NAMES[strategyNum] },
+    });
+
     return NextResponse.json(
       {
         success: true,
@@ -149,10 +160,9 @@ export async function POST(req: NextRequest) {
       { status: 201, headers: securityHeaders() }
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    console.error('[agent-register]', message);
+    console.error('[agent-register]', err instanceof Error ? err.message : err);
     return NextResponse.json(
-      { error: message, code: 'INTERNAL_ERROR' },
+      { error: 'Internal server error', code: 'INTERNAL_ERROR' },
       { status: 500, headers: securityHeaders() }
     );
   }

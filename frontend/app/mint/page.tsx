@@ -467,52 +467,67 @@ function GalleryWarriorCard({
         }}
       />
 
-      <div className="relative bg-frost-card/80 backdrop-blur-lg border border-white/5 rounded-xl p-4 space-y-3">
-        {/* Top row */}
-        <div className="flex items-center justify-between">
-          <div
-            className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-gradient-to-r ${element.bgGradient} border border-white/5`}
-          >
-            <ElementIcon className="w-3 h-3" />
-            <span className="text-xs font-bold">
-              {element.emoji}
+      <div className="relative bg-frost-card/80 backdrop-blur-lg border border-white/5 rounded-xl overflow-hidden">
+        {/* Warrior Image */}
+        <div className="relative w-full aspect-square bg-white/[0.02]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/metadata/${tokenId}/image?element=${warrior.element}`}
+            alt={`Warrior #${tokenId}`}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+          {/* Element badge overlay */}
+          <div className="absolute top-2 left-2">
+            <div
+              className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/60 backdrop-blur-sm border border-white/10`}
+            >
+              <ElementIcon className="w-3 h-3" />
+              <span className="text-[10px] font-bold">
+                {element.emoji}
+              </span>
+            </div>
+          </div>
+          <span className="absolute top-2 right-2 text-[10px] font-mono text-white/60 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded-full">
+            #{tokenId}
+          </span>
+        </div>
+
+        {/* Stats below image */}
+        <div className="p-3 space-y-2">
+          {/* Mini stats */}
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <Sword className="w-3 h-3 mx-auto text-red-400/60 mb-0.5" />
+              <p className="text-xs font-mono font-bold text-white/80">{warrior.attack}</p>
+            </div>
+            <div>
+              <Shield className="w-3 h-3 mx-auto text-blue-400/60 mb-0.5" />
+              <p className="text-xs font-mono font-bold text-white/80">{warrior.defense}</p>
+            </div>
+            <div>
+              <Zap className="w-3 h-3 mx-auto text-green-400/60 mb-0.5" />
+              <p className="text-xs font-mono font-bold text-white/80">{warrior.speed}</p>
+            </div>
+          </div>
+
+          {/* Power Score */}
+          <div className="text-center pt-1 border-t border-white/5">
+            <p className="text-[10px] uppercase tracking-widest text-white/20">PWR</p>
+            <p
+              className={`font-display text-lg font-bold bg-gradient-to-r ${element.color} bg-clip-text text-transparent`}
+            >
+              {powerScore}
+            </p>
+          </div>
+
+          {/* Level */}
+          <div className="flex items-center justify-between text-[10px] text-white/30">
+            <span>Lv.{warrior.level}</span>
+            <span>
+              {Number(warrior.battleWins)}W/{Number(warrior.battleLosses)}L
             </span>
           </div>
-          <span className="text-xs font-mono text-white/30">#{tokenId}</span>
-        </div>
-
-        {/* Mini stats */}
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <div>
-            <Sword className="w-3 h-3 mx-auto text-red-400/60 mb-0.5" />
-            <p className="text-xs font-mono font-bold text-white/80">{warrior.attack}</p>
-          </div>
-          <div>
-            <Shield className="w-3 h-3 mx-auto text-blue-400/60 mb-0.5" />
-            <p className="text-xs font-mono font-bold text-white/80">{warrior.defense}</p>
-          </div>
-          <div>
-            <Zap className="w-3 h-3 mx-auto text-green-400/60 mb-0.5" />
-            <p className="text-xs font-mono font-bold text-white/80">{warrior.speed}</p>
-          </div>
-        </div>
-
-        {/* Power Score */}
-        <div className="text-center pt-1 border-t border-white/5">
-          <p className="text-[10px] uppercase tracking-widest text-white/20">PWR</p>
-          <p
-            className={`font-display text-lg font-bold bg-gradient-to-r ${element.color} bg-clip-text text-transparent`}
-          >
-            {powerScore}
-          </p>
-        </div>
-
-        {/* Level */}
-        <div className="flex items-center justify-between text-[10px] text-white/30">
-          <span>Lv.{warrior.level}</span>
-          <span>
-            {Number(warrior.battleWins)}W/{Number(warrior.battleLosses)}L
-          </span>
         </div>
       </div>
     </motion.div>
@@ -896,7 +911,7 @@ export default function MintPage() {
                           ? 'Not enough AVAX in your wallet.'
                           : mintError.message.includes('chain')
                           ? 'Please switch to Avalanche Fuji Testnet.'
-                          : `Mint failed: ${mintError.shortMessage || mintError.message}`}
+                          : `Mint failed: ${'shortMessage' in mintError ? (mintError as any).shortMessage : mintError.message}`}
                       </motion.div>
                     )}
                   </AnimatePresence>
