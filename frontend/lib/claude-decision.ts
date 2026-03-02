@@ -34,6 +34,21 @@ export interface BattleResult {
   timestamp: number;
 }
 
+export interface DecisionRecord {
+  action: string;
+  reasoning: string;
+  success: boolean;
+  createdAt: string;
+}
+
+export interface RivalInfo {
+  name: string;
+  element: string;
+  winRate: number;
+  lastEncounter: string;
+  headToHead: { wins: number; losses: number };
+}
+
 export interface GameState {
   agentWallet: string;
   agentBalance: string; // AVAX
@@ -44,14 +59,20 @@ export interface GameState {
   dailySpent: string;     // AVAX spent today
   dailyLimit: string;     // max AVAX per day
   maxStakePerGame: string; // max per battle
+  recentDecisions?: DecisionRecord[];
+  elementCoverage?: Record<string, number>;
+  recommendedMint?: string | null;
+  rival?: RivalInfo | null;
 }
 
 export interface AgentAction {
-  action: 'join_battle' | 'create_battle' | 'mint_warrior' | 'post_message' | 'wait';
+  action: 'join_battle' | 'create_battle' | 'mint_warrior' | 'merge_warriors' | 'post_message' | 'join_tournament' | 'wait';
   battleId?: number;
   tokenId?: number;
   stakeAmount?: string;
   message?: string;
+  tournamentId?: number;
+  mergeTokenIds?: [number, number];
   reasoning: string;
 }
 
@@ -91,9 +112,11 @@ Analyze the current game state and decide the best action. You MUST respond with
 ## Available Actions
 1. **join_battle** - Join an existing open battle. Provide battleId, tokenId (your warrior), stakeAmount.
 2. **create_battle** - Create a new battle. Provide tokenId, stakeAmount.
-3. **mint_warrior** - Mint a new warrior NFT (costs 0.01 AVAX). Use when you have no warriors.
-4. **post_message** - Post a message in the on-chain chat. Provide message text.
-5. **wait** - Do nothing this cycle.
+3. **mint_warrior** - Mint a new warrior NFT (costs 0.01 AVAX). Use when you need more warriors or to fill element gaps.
+4. **merge_warriors** - Merge two warriors into a stronger one. Provide mergeTokenIds [id1, id2]. Requires at least 2 warriors.
+5. **post_message** - Post a message in the on-chain chat. Provide message text.
+6. **join_tournament** - Join an active tournament (entry fee paid automatically). Provide tournamentId.
+7. **wait** - Do nothing this cycle.
 
 ## Safety Rules
 - NEVER stake more than maxStakePerGame
@@ -101,14 +124,17 @@ Analyze the current game state and decide the best action. You MUST respond with
 - ALWAYS keep at least 0.01 AVAX for gas fees
 - Prefer battles where you have element advantage
 - Consider opponent powerScore vs your warrior's powerScore
+- Consider minting warriors to fill element gaps in your portfolio
+- When choosing a warrior for battle, pick the one with the best element matchup
 
 ## Response Format
 Respond with ONLY a JSON object, no markdown, no explanation outside JSON:
 {
-  "action": "join_battle|create_battle|mint_warrior|post_message|wait",
+  "action": "join_battle|create_battle|mint_warrior|merge_warriors|post_message|wait",
   "battleId": 123,
   "tokenId": 456,
   "stakeAmount": "0.05",
+  "mergeTokenIds": [1, 2],
   "message": "optional chat message",
   "reasoning": "brief explanation of your decision"
 }`;
@@ -125,7 +151,8 @@ function getStrategyPrompt(strategy: string): string {
 - Accept higher risk for higher reward
 - Join battles even without element advantage if your powerScore is significantly higher
 - Create battles with moderate-to-high stakes to attract opponents
-- Rarely wait unless balance is critically low`;
+- Rarely wait unless balance is critically low
+- Rival: Prioritize battles against your rival whenever possible`;
 
     case 'Defensive':
       return `## Your Strategy: DEFENSIVE
@@ -133,7 +160,8 @@ function getStrategyPrompt(strategy: string): string {
 - Prefer lower stakes to minimize risk
 - Wait if no favorable battles are available
 - Create battles with low stakes
-- Preserve capital -- winning consistently matters more than winning big`;
+- Preserve capital -- winning consistently matters more than winning big
+- Rival: Avoid rival unless you have a clear element and power advantage`;
 
     case 'Analytical':
       return `## Your Strategy: ANALYTICAL
@@ -141,7 +169,8 @@ function getStrategyPrompt(strategy: string): string {
 - Consider element advantage weight (~15% bonus)
 - Compare powerScores carefully (>10% advantage preferred)
 - Balance risk/reward based on remaining daily budget
-- Create battles at stakes where you expect positive EV`;
+- Create battles at stakes where you expect positive EV
+- Rival: Track rival's patterns and exploit weaknesses in their strategy`;
 
     case 'Random':
       return `## Your Strategy: RANDOM
@@ -222,6 +251,39 @@ function formatGameStateForClaude(state: GameState): string {
       );
     }
   }
+  lines.push('');
+
+  // Faz 1: Recent decisions (memory)
+  if (state.recentDecisions && state.recentDecisions.length > 0) {
+    lines.push(`## Your Recent Decisions (last ${state.recentDecisions.length})`);
+    for (const d of state.recentDecisions) {
+      lines.push(
+        `- [${d.success ? 'OK' : 'FAIL'}] ${d.action}: ${d.reasoning.slice(0, 100)} (${d.createdAt})`
+      );
+    }
+    lines.push('');
+  }
+
+  // Faz 4: Element coverage
+  if (state.elementCoverage) {
+    const coverageStr = Object.entries(state.elementCoverage)
+      .map(([el, count]) => `${el}(${count})`)
+      .join(', ');
+    lines.push(`## Element Coverage: ${coverageStr}`);
+    if (state.recommendedMint) {
+      lines.push(`Recommendation: ${state.recommendedMint}`);
+    }
+    lines.push('');
+  }
+
+  // Faz 3: Rival info
+  if (state.rival) {
+    lines.push(`## Your Rival: ${state.rival.name}`);
+    lines.push(`Element: ${state.rival.element} | Win Rate: ${state.rival.winRate}%`);
+    lines.push(`Head-to-Head: You ${state.rival.headToHead.wins}W - ${state.rival.headToHead.losses}L`);
+    lines.push(`Last Encounter: ${state.rival.lastEncounter}`);
+    lines.push('');
+  }
 
   return lines.join('\n');
 }
@@ -266,7 +328,7 @@ export async function makeDecision(state: GameState): Promise<AgentAction> {
       return { action: 'wait', reasoning: 'Invalid response format from Claude' };
     }
 
-    const validActions = ['join_battle', 'create_battle', 'mint_warrior', 'post_message', 'wait'];
+    const validActions = ['join_battle', 'create_battle', 'mint_warrior', 'merge_warriors', 'post_message', 'join_tournament', 'wait'];
     if (!validActions.includes(parsed.action)) {
       return { action: 'wait', reasoning: `Unknown action: ${parsed.action}` };
     }
@@ -278,4 +340,56 @@ export async function makeDecision(state: GameState): Promise<AgentAction> {
   }
 }
 
+/**
+ * Pick the best warrior from a list to fight a given opponent element.
+ * Prefers element advantage, then highest powerScore.
+ */
+export function bestWarriorForBattle(warriors: WarriorInfo[], opponentElement: number): WarriorInfo | null {
+  if (warriors.length === 0) return null;
+
+  // First try to find one with element advantage
+  const withAdvantage = warriors.filter(w => getElementAdvantage(w.element, opponentElement));
+  if (withAdvantage.length > 0) {
+    return withAdvantage.sort((a, b) => b.powerScore - a.powerScore)[0];
+  }
+
+  // Then avoid disadvantage
+  const noDisadvantage = warriors.filter(w => !getElementAdvantage(opponentElement, w.element));
+  if (noDisadvantage.length > 0) {
+    return noDisadvantage.sort((a, b) => b.powerScore - a.powerScore)[0];
+  }
+
+  // Last resort: strongest warrior
+  return warriors.sort((a, b) => b.powerScore - a.powerScore)[0];
+}
+
+/**
+ * Compute element coverage stats for a warrior portfolio.
+ */
+export function computeElementCoverage(warriors: WarriorInfo[]): {
+  coverage: Record<string, number>;
+  recommendation: string | null;
+} {
+  const coverage: Record<string, number> = {};
+  for (const name of ELEMENT_NAMES) {
+    coverage[name] = 0;
+  }
+  for (const w of warriors) {
+    const name = ELEMENT_NAMES[w.element] ?? 'Unknown';
+    coverage[name] = (coverage[name] || 0) + 1;
+  }
+
+  // Find missing elements
+  const missing = Object.entries(coverage)
+    .filter(([, count]) => count === 0)
+    .map(([el]) => el);
+
+  const recommendation = missing.length > 0
+    ? `You lack ${missing.join(', ')} warriors. Consider minting to fill gaps.`
+    : null;
+
+  return { coverage, recommendation };
+}
+
 export { ELEMENT_NAMES, getElementAdvantage };
+export { generateTrashTalk } from './personality-generator';

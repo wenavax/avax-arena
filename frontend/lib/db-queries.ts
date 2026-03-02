@@ -31,6 +31,12 @@ export interface DbAgent {
   last_active_at: string | null;
   total_decisions: number;
   favorite_action: string;
+  elo_rating: number;
+  xp: number;
+  level: number;
+  prestige: number;
+  referral_code: string | null;
+  referred_by: string | null;
 }
 
 export interface DbDecision {
@@ -762,6 +768,86 @@ export function updatePersonality(agentId: string, data: Partial<{
 }
 
 /* ---------------------------------------------------------------------------
+ * Rival System (Faz 3)
+ * ------------------------------------------------------------------------- */
+
+export function setRival(agentId: string, rivalAgentId: string): void {
+  const db = getDb();
+  db.prepare("UPDATE agent_personalities SET rival_agent_id = ?, updated_at = datetime('now') WHERE agent_id = ?")
+    .run(rivalAgentId, agentId);
+}
+
+export function getRivalStats(agentId: string, rivalId: string): { wins: number; losses: number; totalBattles: number } {
+  const db = getDb();
+  const { wins } = db.prepare(`
+    SELECT COUNT(*) as wins FROM battles
+    WHERE ((attacker_id = ? AND defender_id = ?) OR (attacker_id = ? AND defender_id = ?))
+    AND winner_id = ? AND status = 'resolved'
+  `).get(agentId, rivalId, rivalId, agentId, agentId) as { wins: number };
+
+  const { losses } = db.prepare(`
+    SELECT COUNT(*) as losses FROM battles
+    WHERE ((attacker_id = ? AND defender_id = ?) OR (attacker_id = ? AND defender_id = ?))
+    AND winner_id = ? AND status = 'resolved'
+  `).get(agentId, rivalId, rivalId, agentId, rivalId) as { losses: number };
+
+  return { wins, losses, totalBattles: wins + losses };
+}
+
+export function autoDetectRival(agentId: string): string | null {
+  const db = getDb();
+  // Find the opponent this agent has lost to the most
+  const result = db.prepare(`
+    SELECT
+      CASE WHEN attacker_id = ? THEN defender_id ELSE attacker_id END as rival_id,
+      COUNT(*) as loss_count
+    FROM battles
+    WHERE ((attacker_id = ? AND winner_id != ?) OR (defender_id = ? AND winner_id != ?))
+    AND status = 'resolved'
+    AND winner_id IS NOT NULL
+    AND (attacker_id = ? OR defender_id = ?)
+    GROUP BY rival_id
+    ORDER BY loss_count DESC
+    LIMIT 1
+  `).get(agentId, agentId, agentId, agentId, agentId, agentId, agentId) as { rival_id: string; loss_count: number } | undefined;
+
+  return result?.rival_id ?? null;
+}
+
+export function getRivalInfo(agentId: string): {
+  name: string;
+  element: string;
+  winRate: number;
+  lastEncounter: string;
+  headToHead: { wins: number; losses: number };
+} | null {
+  const personality = getPersonality(agentId);
+  if (!personality?.rival_agent_id) return null;
+
+  const rivalAgent = getAgentById(personality.rival_agent_id);
+  if (!rivalAgent) return null;
+
+  const rivalPersonality = getPersonality(personality.rival_agent_id);
+  const stats = getRivalStats(agentId, personality.rival_agent_id);
+
+  const db = getDb();
+  const lastBattle = db.prepare(`
+    SELECT resolved_at FROM battles
+    WHERE ((attacker_id = ? AND defender_id = ?) OR (attacker_id = ? AND defender_id = ?))
+    AND status = 'resolved'
+    ORDER BY resolved_at DESC LIMIT 1
+  `).get(agentId, personality.rival_agent_id, personality.rival_agent_id, agentId) as { resolved_at: string } | undefined;
+
+  return {
+    name: rivalAgent.name,
+    element: rivalPersonality?.favorite_element ?? 'Unknown',
+    winRate: rivalAgent.win_rate,
+    lastEncounter: lastBattle?.resolved_at ?? 'never',
+    headToHead: { wins: stats.wins, losses: stats.losses },
+  };
+}
+
+/* ---------------------------------------------------------------------------
  * Live Events
  * ------------------------------------------------------------------------- */
 
@@ -882,6 +968,186 @@ export function addNotification(params: {
 }
 
 /* ---------------------------------------------------------------------------
+ * Agent Funding (Faz 2)
+ * ------------------------------------------------------------------------- */
+
+export function getDailyFunded(agentWallet: string, date: string): bigint {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT funded_wei FROM agent_funding WHERE agent_wallet = ? AND date = ?')
+    .get(agentWallet.toLowerCase(), date) as { funded_wei: string } | undefined;
+  return row ? BigInt(row.funded_wei) : 0n;
+}
+
+export function addDailyFunded(agentWallet: string, date: string, amountWei: bigint): void {
+  const db = getDb();
+  const existing = db
+    .prepare('SELECT funded_wei FROM agent_funding WHERE agent_wallet = ? AND date = ?')
+    .get(agentWallet.toLowerCase(), date) as { funded_wei: string } | undefined;
+
+  if (existing) {
+    const newTotal = BigInt(existing.funded_wei) + amountWei;
+    db.prepare(
+      'UPDATE agent_funding SET funded_wei = ? WHERE agent_wallet = ? AND date = ?',
+    ).run(newTotal.toString(), agentWallet.toLowerCase(), date);
+  } else {
+    db.prepare(
+      'INSERT INTO agent_funding (agent_wallet, date, funded_wei) VALUES (?, ?, ?)',
+    ).run(agentWallet.toLowerCase(), date, amountWei.toString());
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Agent Loop State (Faz 7 — PM2 restart recovery)
+ * ------------------------------------------------------------------------- */
+
+export function setLoopState(agentWallet: string, running: boolean): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO agent_loop_state (agent_wallet, running, last_tick)
+    VALUES (?, ?, datetime('now'))
+    ON CONFLICT(agent_wallet) DO UPDATE SET
+      running = excluded.running,
+      last_tick = datetime('now'),
+      stopped_at = CASE WHEN excluded.running = 0 THEN datetime('now') ELSE stopped_at END
+  `).run(agentWallet.toLowerCase(), running ? 1 : 0);
+}
+
+export function getRunningAgents(): string[] {
+  const db = getDb();
+  const rows = db.prepare('SELECT agent_wallet FROM agent_loop_state WHERE running = 1').all() as { agent_wallet: string }[];
+  return rows.map(r => r.agent_wallet);
+}
+
+export function updateLoopTick(agentWallet: string): void {
+  const db = getDb();
+  db.prepare("UPDATE agent_loop_state SET last_tick = datetime('now') WHERE agent_wallet = ?")
+    .run(agentWallet.toLowerCase());
+}
+
+/* ---------------------------------------------------------------------------
+ * Tournaments (Faz 6)
+ * ------------------------------------------------------------------------- */
+
+export interface DbTournament {
+  id: number;
+  name: string;
+  status: string;
+  entry_fee: string;
+  max_players: number;
+  prize_pool: string;
+  start_at: string;
+  end_at: string | null;
+  winner_id: string | null;
+  created_at: string;
+}
+
+export interface DbTournamentParticipant {
+  tournament_id: number;
+  agent_id: string;
+  score: number;
+  wins: number;
+  losses: number;
+  joined_at: string;
+}
+
+export function createTournament(data: {
+  name: string;
+  entryFee: string;
+  maxPlayers: number;
+  startAt: string;
+}): number {
+  const db = getDb();
+  const result = db.prepare(`
+    INSERT INTO tournaments (name, entry_fee, max_players, start_at)
+    VALUES (?, ?, ?, ?)
+  `).run(data.name, data.entryFee, data.maxPlayers, data.startAt);
+  return result.lastInsertRowid as number;
+}
+
+export function getTournament(id: number): DbTournament | null {
+  const db = getDb();
+  return db.prepare('SELECT * FROM tournaments WHERE id = ?').get(id) as DbTournament | null;
+}
+
+export function listTournaments(status?: string): DbTournament[] {
+  const db = getDb();
+  if (status) {
+    return db.prepare('SELECT * FROM tournaments WHERE status = ? ORDER BY start_at DESC').all(status) as DbTournament[];
+  }
+  return db.prepare('SELECT * FROM tournaments ORDER BY created_at DESC LIMIT 20').all() as DbTournament[];
+}
+
+export function updateTournamentStatus(id: number, status: string, winnerId?: string): void {
+  const db = getDb();
+  if (winnerId) {
+    db.prepare("UPDATE tournaments SET status = ?, winner_id = ? WHERE id = ?").run(status, winnerId, id);
+  } else {
+    db.prepare("UPDATE tournaments SET status = ? WHERE id = ?").run(status, id);
+  }
+}
+
+export function updateTournamentPrizePool(id: number, prizePool: string): void {
+  const db = getDb();
+  db.prepare("UPDATE tournaments SET prize_pool = ? WHERE id = ?").run(prizePool, id);
+}
+
+export function joinTournament(tournamentId: number, agentId: string): boolean {
+  const db = getDb();
+  const tournament = getTournament(tournamentId);
+  if (!tournament || tournament.status !== 'upcoming') return false;
+
+  const count = db.prepare('SELECT COUNT(*) as cnt FROM tournament_participants WHERE tournament_id = ?')
+    .get(tournamentId) as { cnt: number };
+  if (count.cnt >= tournament.max_players) return false;
+
+  // Check if already joined
+  const existing = db.prepare('SELECT 1 FROM tournament_participants WHERE tournament_id = ? AND agent_id = ?')
+    .get(tournamentId, agentId);
+  if (existing) return false;
+
+  db.prepare('INSERT INTO tournament_participants (tournament_id, agent_id) VALUES (?, ?)').run(tournamentId, agentId);
+
+  // Update prize pool
+  const newPool = parseFloat(tournament.prize_pool) + parseFloat(tournament.entry_fee);
+  updateTournamentPrizePool(tournamentId, newPool.toFixed(4));
+
+  return true;
+}
+
+export function getTournamentParticipants(tournamentId: number): DbTournamentParticipant[] {
+  const db = getDb();
+  return db.prepare('SELECT * FROM tournament_participants WHERE tournament_id = ? ORDER BY score DESC, wins DESC')
+    .all(tournamentId) as DbTournamentParticipant[];
+}
+
+export function updateTournamentScore(tournamentId: number, agentId: string, won: boolean): void {
+  const db = getDb();
+  if (won) {
+    db.prepare(`
+      UPDATE tournament_participants SET score = score + 3, wins = wins + 1
+      WHERE tournament_id = ? AND agent_id = ?
+    `).run(tournamentId, agentId);
+  } else {
+    db.prepare(`
+      UPDATE tournament_participants SET losses = losses + 1
+      WHERE tournament_id = ? AND agent_id = ?
+    `).run(tournamentId, agentId);
+  }
+}
+
+export function getAgentTournaments(agentId: string): (DbTournament & { score: number; wins: number; losses: number })[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT t.*, tp.score, tp.wins, tp.losses
+    FROM tournaments t
+    JOIN tournament_participants tp ON t.id = tp.tournament_id
+    WHERE tp.agent_id = ?
+    ORDER BY t.created_at DESC
+  `).all(agentId) as (DbTournament & { score: number; wins: number; losses: number })[];
+}
+
+/* ---------------------------------------------------------------------------
  * Daily Spending (agent-engine persistence)
  * ------------------------------------------------------------------------- */
 
@@ -909,4 +1175,730 @@ export function addDailySpent(agentWallet: string, date: string, amountWei: bigi
       'INSERT INTO agent_daily_spending (agent_wallet, date, spent_wei) VALUES (?, ?, ?)',
     ).run(agentWallet.toLowerCase(), date, amountWei.toString());
   }
+}
+
+/* ===========================================================================
+ * MODULE 1: ELO/Rating System
+ * ========================================================================= */
+
+const ELO_TIERS = [
+  { name: 'Bronze', min: 0, max: 1199 },
+  { name: 'Silver', min: 1200, max: 1399 },
+  { name: 'Gold', min: 1400, max: 1599 },
+  { name: 'Platinum', min: 1600, max: 1799 },
+  { name: 'Diamond', min: 1800, max: Infinity },
+] as const;
+
+export function getEloTier(elo: number): string {
+  for (const tier of ELO_TIERS) {
+    if (elo >= tier.min && elo <= tier.max) return tier.name;
+  }
+  return 'Bronze';
+}
+
+export function calculateEloChange(
+  winnerElo: number,
+  loserElo: number,
+  winnerBattles: number
+): { winnerDelta: number; loserDelta: number } {
+  const K = winnerBattles < 30 ? 32 : 16;
+  const expectedWinner = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 400));
+  const expectedLoser = 1 - expectedWinner;
+  const winnerDelta = Math.round(K * (1 - expectedWinner));
+  const loserDelta = Math.round(K * (0 - expectedLoser));
+  return { winnerDelta, loserDelta };
+}
+
+export function updateEloAfterBattle(winnerId: string, loserId: string): { winnerElo: number; loserElo: number } {
+  const db = getDb();
+  const winner = getAgentById(winnerId);
+  const loser = getAgentById(loserId);
+  if (!winner || !loser) return { winnerElo: 1200, loserElo: 1200 };
+
+  const { winnerDelta, loserDelta } = calculateEloChange(
+    winner.elo_rating,
+    loser.elo_rating,
+    winner.total_battles
+  );
+
+  const newWinnerElo = Math.max(0, winner.elo_rating + winnerDelta);
+  const newLoserElo = Math.max(0, loser.elo_rating + loserDelta);
+
+  db.prepare("UPDATE agents SET elo_rating = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(newWinnerElo, winnerId);
+  db.prepare("UPDATE agents SET elo_rating = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(newLoserElo, loserId);
+
+  return { winnerElo: newWinnerElo, loserElo: newLoserElo };
+}
+
+export function getLeaderboardByElo(limit = 10, offset = 0): { agents: DbAgent[]; total: number } {
+  const db = getDb();
+  const agents = db.prepare(`
+    SELECT * FROM agents
+    WHERE total_battles > 0
+    ORDER BY elo_rating DESC, wins DESC
+    LIMIT ? OFFSET ?
+  `).all(limit, offset) as DbAgent[];
+  const { total } = db.prepare(
+    'SELECT COUNT(*) as total FROM agents WHERE total_battles > 0'
+  ).get() as { total: number };
+  return { agents, total };
+}
+
+/* ===========================================================================
+ * MODULE 2: XP/Level Progression
+ * ========================================================================= */
+
+export function calculateLevel(xp: number): number {
+  return Math.floor(Math.sqrt(xp / 100));
+}
+
+export function getXpForNextLevel(currentXp: number): { currentLevel: number; nextLevelXp: number; progress: number } {
+  const currentLevel = calculateLevel(currentXp);
+  const nextLevel = currentLevel + 1;
+  const nextLevelXp = nextLevel * nextLevel * 100;
+  const currentLevelXp = currentLevel * currentLevel * 100;
+  const progress = currentLevel === 0
+    ? (currentXp / nextLevelXp) * 100
+    : ((currentXp - currentLevelXp) / (nextLevelXp - currentLevelXp)) * 100;
+  return { currentLevel, nextLevelXp, progress: Math.min(100, Math.round(progress * 10) / 10) };
+}
+
+export function addXp(agentId: string, amount: number, source: string): { newXp: number; newLevel: number; leveledUp: boolean } {
+  const db = getDb();
+  const agent = getAgentById(agentId);
+  if (!agent) return { newXp: 0, newLevel: 0, leveledUp: false };
+
+  const newXp = agent.xp + amount;
+  const newLevel = calculateLevel(newXp);
+  const leveledUp = newLevel > agent.level;
+
+  db.prepare("UPDATE agents SET xp = ?, level = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(newXp, newLevel, agentId);
+
+  if (leveledUp) {
+    addLiveEvent({
+      eventType: 'level_up',
+      agentId,
+      agentName: agent.name,
+      data: { oldLevel: agent.level, newLevel, xp: newXp, source },
+    });
+    addNotification({
+      agentId,
+      type: 'level_up',
+      title: `Level Up! Level ${newLevel}`,
+      message: `You reached level ${newLevel} from ${source}!`,
+      data: { level: newLevel, xp: newXp },
+    });
+  }
+
+  return { newXp, newLevel, leveledUp };
+}
+
+export function checkAndPrestige(agentId: string): boolean {
+  const db = getDb();
+  const agent = getAgentById(agentId);
+  if (!agent || agent.level < 50) return false;
+
+  const newPrestige = agent.prestige + 1;
+  db.prepare("UPDATE agents SET prestige = ?, xp = 0, level = 0, updated_at = datetime('now') WHERE id = ?")
+    .run(newPrestige, agentId);
+
+  addLiveEvent({
+    eventType: 'prestige',
+    agentId,
+    agentName: agent.name,
+    data: { prestige: newPrestige },
+  });
+  addNotification({
+    agentId,
+    type: 'prestige',
+    title: `Prestige ${newPrestige}!`,
+    message: `You have reached Prestige ${newPrestige}. XP and Level have been reset.`,
+    data: { prestige: newPrestige },
+  });
+
+  return true;
+}
+
+/* ===========================================================================
+ * MODULE 3: Achievement/Badge System
+ * ========================================================================= */
+
+export interface DbAchievement {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  rarity: string;
+  xp_reward: number;
+  requirement_type: string;
+  requirement_value: number;
+}
+
+export interface DbAgentAchievement {
+  agent_id: string;
+  achievement_id: string;
+  unlocked_at: string;
+}
+
+const ACHIEVEMENT_SEED: Omit<DbAchievement, never>[] = [
+  // Battle
+  { id: 'first_blood', name: 'First Blood', description: 'Win your first battle', category: 'battle', icon: 'swords', rarity: 'common', xp_reward: 50, requirement_type: 'wins', requirement_value: 1 },
+  { id: 'veteran', name: 'Veteran', description: 'Win 10 battles', category: 'battle', icon: 'shield', rarity: 'rare', xp_reward: 200, requirement_type: 'wins', requirement_value: 10 },
+  { id: 'champion', name: 'Champion', description: 'Win 50 battles', category: 'battle', icon: 'trophy', rarity: 'epic', xp_reward: 500, requirement_type: 'wins', requirement_value: 50 },
+  { id: 'legend', name: 'Legend', description: 'Win 100 battles', category: 'battle', icon: 'crown', rarity: 'legendary', xp_reward: 1000, requirement_type: 'wins', requirement_value: 100 },
+  { id: 'streak_5', name: 'On Fire', description: '5-win streak', category: 'battle', icon: 'flame', rarity: 'rare', xp_reward: 300, requirement_type: 'streak', requirement_value: 5 },
+  { id: 'streak_10', name: 'Unstoppable', description: '10-win streak', category: 'battle', icon: 'flame', rarity: 'epic', xp_reward: 600, requirement_type: 'streak', requirement_value: 10 },
+  // Economy
+  { id: 'first_mint', name: 'First Mint', description: 'Mint your first warrior', category: 'economy', icon: 'gem', rarity: 'common', xp_reward: 30, requirement_type: 'mints', requirement_value: 1 },
+  { id: 'collector', name: 'Collector', description: 'Mint 10 warriors', category: 'economy', icon: 'gem', rarity: 'rare', xp_reward: 150, requirement_type: 'mints', requirement_value: 10 },
+  { id: 'whale', name: 'Whale', description: 'Earn 1 AVAX total profit', category: 'economy', icon: 'coins', rarity: 'epic', xp_reward: 400, requirement_type: 'profit', requirement_value: 1 },
+  // Social
+  { id: 'chatty', name: 'Chatty', description: 'Send 10 messages', category: 'social', icon: 'message-circle', rarity: 'common', xp_reward: 50, requirement_type: 'messages', requirement_value: 10 },
+  { id: 'influencer', name: 'Influencer', description: 'Send 50 messages', category: 'social', icon: 'message-circle', rarity: 'rare', xp_reward: 200, requirement_type: 'messages', requirement_value: 50 },
+  // Milestone
+  { id: 'bronze_tier', name: 'Bronze Tier', description: 'Reach Bronze ELO', category: 'milestone', icon: 'medal', rarity: 'common', xp_reward: 0, requirement_type: 'elo', requirement_value: 0 },
+  { id: 'silver_tier', name: 'Silver Tier', description: 'Reach Silver ELO (1200+)', category: 'milestone', icon: 'medal', rarity: 'rare', xp_reward: 100, requirement_type: 'elo', requirement_value: 1200 },
+  { id: 'gold_tier', name: 'Gold Tier', description: 'Reach Gold ELO (1400+)', category: 'milestone', icon: 'medal', rarity: 'epic', xp_reward: 300, requirement_type: 'elo', requirement_value: 1400 },
+  { id: 'diamond_tier', name: 'Diamond Tier', description: 'Reach Diamond ELO (1800+)', category: 'milestone', icon: 'medal', rarity: 'legendary', xp_reward: 1000, requirement_type: 'elo', requirement_value: 1800 },
+  { id: 'level_10', name: 'Level 10', description: 'Reach Level 10', category: 'milestone', icon: 'star', rarity: 'rare', xp_reward: 200, requirement_type: 'level', requirement_value: 10 },
+  { id: 'level_25', name: 'Level 25', description: 'Reach Level 25', category: 'milestone', icon: 'star', rarity: 'epic', xp_reward: 500, requirement_type: 'level', requirement_value: 25 },
+  { id: 'first_prestige', name: 'Prestige', description: 'Reach Prestige 1', category: 'milestone', icon: 'zap', rarity: 'legendary', xp_reward: 1000, requirement_type: 'prestige', requirement_value: 1 },
+  // Referral
+  { id: 'recruiter', name: 'Recruiter', description: 'Refer 1 agent', category: 'social', icon: 'users', rarity: 'common', xp_reward: 50, requirement_type: 'referrals', requirement_value: 1 },
+  { id: 'networker', name: 'Networker', description: 'Refer 5 agents', category: 'social', icon: 'users', rarity: 'rare', xp_reward: 300, requirement_type: 'referrals', requirement_value: 5 },
+];
+
+export function seedAchievements(): void {
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO achievements (id, name, description, category, icon, rarity, xp_reward, requirement_type, requirement_value)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const a of ACHIEVEMENT_SEED) {
+    stmt.run(a.id, a.name, a.description, a.category, a.icon, a.rarity, a.xp_reward, a.requirement_type, a.requirement_value);
+  }
+}
+
+export function unlockAchievement(agentId: string, achievementId: string): boolean {
+  const db = getDb();
+  // Check if already unlocked
+  const existing = db.prepare('SELECT 1 FROM agent_achievements WHERE agent_id = ? AND achievement_id = ?')
+    .get(agentId, achievementId);
+  if (existing) return false;
+
+  const achievement = db.prepare('SELECT * FROM achievements WHERE id = ?')
+    .get(achievementId) as DbAchievement | undefined;
+  if (!achievement) return false;
+
+  db.prepare('INSERT INTO agent_achievements (agent_id, achievement_id) VALUES (?, ?)')
+    .run(agentId, achievementId);
+
+  // Grant XP reward
+  if (achievement.xp_reward > 0) {
+    addXp(agentId, achievement.xp_reward, `achievement:${achievementId}`);
+  }
+
+  // Notify
+  const agent = getAgentById(agentId);
+  if (agent) {
+    addNotification({
+      agentId,
+      type: 'achievement',
+      title: `Achievement Unlocked: ${achievement.name}`,
+      message: achievement.description,
+      data: { achievementId, rarity: achievement.rarity, xpReward: achievement.xp_reward },
+    });
+    addLiveEvent({
+      eventType: 'achievement_unlocked',
+      agentId,
+      agentName: agent.name,
+      data: { achievementId, achievementName: achievement.name, rarity: achievement.rarity },
+    });
+  }
+
+  return true;
+}
+
+export function checkAchievements(agentId: string): string[] {
+  const db = getDb();
+  const agent = getAgentById(agentId);
+  if (!agent) return [];
+
+  // Seed achievements if table is empty
+  const count = db.prepare('SELECT COUNT(*) as cnt FROM achievements').get() as { cnt: number };
+  if (count.cnt === 0) seedAchievements();
+
+  // Get all achievements not yet unlocked by this agent
+  const locked = db.prepare(`
+    SELECT a.* FROM achievements a
+    WHERE a.id NOT IN (SELECT achievement_id FROM agent_achievements WHERE agent_id = ?)
+  `).all(agentId) as DbAchievement[];
+
+  const unlocked: string[] = [];
+
+  // Get referral count for this agent
+  const { refCount } = db.prepare(
+    'SELECT COUNT(*) as refCount FROM referrals WHERE referrer_id = ?'
+  ).get(agentId) as { refCount: number };
+
+  for (const ach of locked) {
+    let met = false;
+    switch (ach.requirement_type) {
+      case 'wins':
+        met = agent.wins >= ach.requirement_value;
+        break;
+      case 'battles':
+        met = agent.total_battles >= ach.requirement_value;
+        break;
+      case 'streak':
+        met = agent.best_streak >= ach.requirement_value;
+        break;
+      case 'level':
+        met = agent.level >= ach.requirement_value;
+        break;
+      case 'elo':
+        met = agent.elo_rating >= ach.requirement_value;
+        break;
+      case 'messages':
+        met = agent.messages_sent >= ach.requirement_value;
+        break;
+      case 'mints':
+        met = agent.nfts_minted >= ach.requirement_value;
+        break;
+      case 'profit':
+        met = parseFloat(agent.profit) >= ach.requirement_value;
+        break;
+      case 'prestige':
+        met = agent.prestige >= ach.requirement_value;
+        break;
+      case 'referrals':
+        met = refCount >= ach.requirement_value;
+        break;
+    }
+    if (met) {
+      unlockAchievement(agentId, ach.id);
+      unlocked.push(ach.id);
+    }
+  }
+
+  return unlocked;
+}
+
+export function getAgentAchievements(agentId: string): (DbAchievement & { unlocked_at: string })[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT a.*, aa.unlocked_at
+    FROM achievements a
+    JOIN agent_achievements aa ON a.id = aa.achievement_id
+    WHERE aa.agent_id = ?
+    ORDER BY aa.unlocked_at DESC
+  `).all(agentId) as (DbAchievement & { unlocked_at: string })[];
+}
+
+/* ===========================================================================
+ * MODULE 4: Seasonal Rewards
+ * ========================================================================= */
+
+export interface DbSeason {
+  id: number;
+  name: string;
+  number: number;
+  status: string;
+  start_at: string;
+  end_at: string;
+  reward_pool: string;
+  created_at: string;
+}
+
+export interface DbSeasonSnapshot {
+  season_id: number;
+  agent_id: string;
+  elo_start: number;
+  elo_end: number | null;
+  rank: number | null;
+  battles: number;
+  wins: number;
+  xp_earned: number;
+  reward: string;
+}
+
+export function createSeason(data: { name: string; number: number; startAt: string; endAt: string; rewardPool?: string }): number {
+  const db = getDb();
+  const result = db.prepare(`
+    INSERT INTO seasons (name, number, start_at, end_at, reward_pool)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(data.name, data.number, data.startAt, data.endAt, data.rewardPool ?? '0');
+  return result.lastInsertRowid as number;
+}
+
+export function getActiveSeason(): DbSeason | null {
+  const db = getDb();
+  return db.prepare("SELECT * FROM seasons WHERE status = 'active' LIMIT 1").get() as DbSeason | null;
+}
+
+export function getSeasonById(id: number): DbSeason | null {
+  const db = getDb();
+  return db.prepare('SELECT * FROM seasons WHERE id = ?').get(id) as DbSeason | null;
+}
+
+export function listSeasons(): DbSeason[] {
+  const db = getDb();
+  return db.prepare('SELECT * FROM seasons ORDER BY number DESC').all() as DbSeason[];
+}
+
+export function updateSeasonStatus(id: number, status: string): void {
+  const db = getDb();
+  db.prepare('UPDATE seasons SET status = ? WHERE id = ?').run(status, id);
+}
+
+export function takeSeasonSnapshot(seasonId: number): void {
+  const db = getDb();
+  const agents = db.prepare('SELECT id, elo_rating FROM agents WHERE total_battles > 0').all() as { id: string; elo_rating: number }[];
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO season_snapshots (season_id, agent_id, elo_start)
+    VALUES (?, ?, ?)
+  `);
+  for (const a of agents) {
+    stmt.run(seasonId, a.id, a.elo_rating);
+  }
+}
+
+export function getSeasonLeaderboard(seasonId: number): DbSeasonSnapshot[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT * FROM season_snapshots
+    WHERE season_id = ?
+    ORDER BY COALESCE(elo_end, elo_start) DESC
+  `).all(seasonId) as DbSeasonSnapshot[];
+}
+
+export function updateSeasonSnapshot(seasonId: number, agentId: string, data: Partial<{
+  elo_end: number;
+  rank: number;
+  battles: number;
+  wins: number;
+  xp_earned: number;
+  reward: string;
+}>): void {
+  const db = getDb();
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  if (data.elo_end !== undefined) { sets.push('elo_end = ?'); values.push(data.elo_end); }
+  if (data.rank !== undefined) { sets.push('rank = ?'); values.push(data.rank); }
+  if (data.battles !== undefined) { sets.push('battles = ?'); values.push(data.battles); }
+  if (data.wins !== undefined) { sets.push('wins = ?'); values.push(data.wins); }
+  if (data.xp_earned !== undefined) { sets.push('xp_earned = ?'); values.push(data.xp_earned); }
+  if (data.reward !== undefined) { sets.push('reward = ?'); values.push(data.reward); }
+
+  if (sets.length === 0) return;
+
+  values.push(seasonId, agentId);
+  db.prepare(`UPDATE season_snapshots SET ${sets.join(', ')} WHERE season_id = ? AND agent_id = ?`).run(...values);
+}
+
+export function finalizeSeasonRewards(seasonId: number): void {
+  const db = getDb();
+  const season = getSeasonById(seasonId);
+  if (!season) return;
+
+  const pool = parseFloat(season.reward_pool);
+  const agents = db.prepare(`
+    SELECT agent_id, elo_rating FROM agents
+    WHERE id IN (SELECT agent_id FROM season_snapshots WHERE season_id = ?)
+    ORDER BY elo_rating DESC
+  `).all(seasonId) as { agent_id: string; elo_rating: number }[];
+
+  // Update elo_end and rank for all participants
+  agents.forEach((a, i) => {
+    updateSeasonSnapshot(seasonId, a.agent_id, {
+      elo_end: a.elo_rating,
+      rank: i + 1,
+    });
+  });
+
+  // Top 3 rewards: 50%, 30%, 20%
+  const rewardPcts = [0.5, 0.3, 0.2];
+  for (let i = 0; i < Math.min(3, agents.length); i++) {
+    const reward = (pool * rewardPcts[i]).toFixed(4);
+    updateSeasonSnapshot(seasonId, agents[i].agent_id, { reward });
+  }
+
+  updateSeasonStatus(seasonId, 'completed');
+}
+
+/* ===========================================================================
+ * MODULE 5: Referral System
+ * ========================================================================= */
+
+export function generateReferralCode(agentId: string): string {
+  const db = getDb();
+  const agent = getAgentById(agentId);
+  if (!agent) return '';
+
+  if (agent.referral_code) return agent.referral_code;
+
+  // Generate 8-char hex code
+  const code = Array.from({ length: 8 }, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  ).join('');
+
+  db.prepare("UPDATE agents SET referral_code = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(code, agentId);
+
+  return code;
+}
+
+export function applyReferral(newAgentId: string, referralCode: string): { success: boolean; error?: string } {
+  const db = getDb();
+  const newAgent = getAgentById(newAgentId);
+  if (!newAgent) return { success: false, error: 'Agent not found' };
+  if (newAgent.referred_by) return { success: false, error: 'Already referred' };
+
+  const referrer = db.prepare('SELECT * FROM agents WHERE referral_code = ?')
+    .get(referralCode) as DbAgent | undefined;
+  if (!referrer) return { success: false, error: 'Invalid referral code' };
+  if (referrer.id === newAgentId) return { success: false, error: 'Cannot refer yourself' };
+
+  // Apply referral
+  db.prepare("UPDATE agents SET referred_by = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(referrer.id, newAgentId);
+  db.prepare('INSERT INTO referrals (referrer_id, referee_id) VALUES (?, ?)')
+    .run(referrer.id, newAgentId);
+
+  // Bonus XP
+  addXp(referrer.id, 100, 'referral_bonus');
+  addXp(newAgentId, 50, 'referral_welcome');
+
+  // Notifications
+  addNotification({
+    agentId: referrer.id,
+    type: 'referral',
+    title: 'New Referral!',
+    message: `${newAgent.name} joined using your referral code. +100 XP!`,
+    data: { refereeId: newAgentId },
+  });
+
+  return { success: true };
+}
+
+export function getReferralStats(agentId: string): { totalReferrals: number; totalBonusXp: number; referees: string[] } {
+  const db = getDb();
+  const rows = db.prepare('SELECT referee_id, bonus_xp FROM referrals WHERE referrer_id = ?')
+    .all(agentId) as { referee_id: string; bonus_xp: number }[];
+  return {
+    totalReferrals: rows.length,
+    totalBonusXp: rows.reduce((sum, r) => sum + r.bonus_xp, 0),
+    referees: rows.map(r => r.referee_id),
+  };
+}
+
+/* ===========================================================================
+ * MODULE 6: Warrior Merging/Fusion
+ * ========================================================================= */
+
+export interface DbWarriorMerge {
+  id: number;
+  agent_id: string;
+  token_id_1: number;
+  token_id_2: number;
+  result_token_id: number | null;
+  element_1: number | null;
+  element_2: number | null;
+  result_element: number | null;
+  tx_hash: string | null;
+  success: number;
+  created_at: string;
+}
+
+export function recordMerge(data: {
+  agentId: string;
+  tokenId1: number;
+  tokenId2: number;
+  resultTokenId?: number;
+  element1?: number;
+  element2?: number;
+  resultElement?: number;
+  txHash?: string;
+  success?: boolean;
+}): number {
+  const db = getDb();
+  const result = db.prepare(`
+    INSERT INTO warrior_merges (agent_id, token_id_1, token_id_2, result_token_id, element_1, element_2, result_element, tx_hash, success)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    data.agentId,
+    data.tokenId1,
+    data.tokenId2,
+    data.resultTokenId ?? null,
+    data.element1 ?? null,
+    data.element2 ?? null,
+    data.resultElement ?? null,
+    data.txHash ?? null,
+    data.success !== false ? 1 : 0
+  );
+  return result.lastInsertRowid as number;
+}
+
+export function getMergeHistory(agentId: string, limit = 10): DbWarriorMerge[] {
+  const db = getDb();
+  return db.prepare('SELECT * FROM warrior_merges WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?')
+    .all(agentId, limit) as DbWarriorMerge[];
+}
+
+/* ===========================================================================
+ * MODULE 7: Agent Marketplace
+ * ========================================================================= */
+
+export interface DbAgentListing {
+  id: number;
+  agent_id: string;
+  seller_address: string;
+  price: string;
+  status: string;
+  buyer_address: string | null;
+  tx_hash: string | null;
+  created_at: string;
+  sold_at: string | null;
+}
+
+export function listAgentForSale(agentId: string, sellerAddress: string, price: string): { success: boolean; listingId?: number; error?: string } {
+  const db = getDb();
+  const agent = getAgentById(agentId);
+  if (!agent) return { success: false, error: 'Agent not found' };
+  if (agent.owner_address.toLowerCase() !== sellerAddress.toLowerCase()) {
+    return { success: false, error: 'Not the owner of this agent' };
+  }
+
+  // Check if already listed
+  const existing = db.prepare("SELECT 1 FROM agent_listings WHERE agent_id = ? AND status = 'active'")
+    .get(agentId);
+  if (existing) return { success: false, error: 'Agent already listed' };
+
+  const result = db.prepare(`
+    INSERT INTO agent_listings (agent_id, seller_address, price)
+    VALUES (?, ?, ?)
+  `).run(agentId, sellerAddress.toLowerCase(), price);
+
+  return { success: true, listingId: result.lastInsertRowid as number };
+}
+
+export function buyAgent(listingId: number, buyerAddress: string): { success: boolean; error?: string } {
+  const db = getDb();
+  const listing = db.prepare("SELECT * FROM agent_listings WHERE id = ? AND status = 'active'")
+    .get(listingId) as DbAgentListing | undefined;
+  if (!listing) return { success: false, error: 'Listing not found or not active' };
+  if (listing.seller_address.toLowerCase() === buyerAddress.toLowerCase()) {
+    return { success: false, error: 'Cannot buy your own agent' };
+  }
+
+  // Transfer ownership
+  db.prepare("UPDATE agents SET owner_address = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(buyerAddress.toLowerCase(), listing.agent_id);
+
+  // Update listing
+  db.prepare("UPDATE agent_listings SET status = 'sold', buyer_address = ?, sold_at = datetime('now') WHERE id = ?")
+    .run(buyerAddress.toLowerCase(), listingId);
+
+  return { success: true };
+}
+
+export function cancelAgentListing(listingId: number, sellerAddress: string): { success: boolean; error?: string } {
+  const db = getDb();
+  const listing = db.prepare("SELECT * FROM agent_listings WHERE id = ? AND status = 'active'")
+    .get(listingId) as DbAgentListing | undefined;
+  if (!listing) return { success: false, error: 'Listing not found or not active' };
+  if (listing.seller_address.toLowerCase() !== sellerAddress.toLowerCase()) {
+    return { success: false, error: 'Not the seller' };
+  }
+
+  db.prepare("UPDATE agent_listings SET status = 'cancelled' WHERE id = ?").run(listingId);
+  return { success: true };
+}
+
+export function getAgentListings(status = 'active', limit = 20, offset = 0): { listings: (DbAgentListing & { agent_name?: string; elo_rating?: number; level?: number })[]; total: number } {
+  const db = getDb();
+  const listings = db.prepare(`
+    SELECT al.*, a.name as agent_name, a.elo_rating, a.level
+    FROM agent_listings al
+    JOIN agents a ON al.agent_id = a.id
+    WHERE al.status = ?
+    ORDER BY al.created_at DESC
+    LIMIT ? OFFSET ?
+  `).all(status, limit, offset) as (DbAgentListing & { agent_name: string; elo_rating: number; level: number })[];
+  const { total } = db.prepare(
+    'SELECT COUNT(*) as total FROM agent_listings WHERE status = ?'
+  ).get(status) as { total: number };
+  return { listings, total };
+}
+
+/* ===========================================================================
+ * MODULE 8: Cross-game Reputation
+ * ========================================================================= */
+
+export function getReputationProfile(agentId: string): Record<string, unknown> | null {
+  const agent = getAgentById(agentId);
+  if (!agent) return null;
+
+  const achievements = getAgentAchievements(agentId);
+  const seasonData = getDb().prepare(`
+    SELECT ss.*, s.number as season_number
+    FROM season_snapshots ss
+    JOIN seasons s ON ss.season_id = s.id
+    WHERE ss.agent_id = ?
+    ORDER BY s.number DESC
+  `).all(agentId) as (DbSeasonSnapshot & { season_number: number })[];
+
+  const referralStats = getReferralStats(agentId);
+
+  // Get followers count
+  const { followers } = getDb().prepare(
+    'SELECT COUNT(*) as followers FROM agent_follows WHERE following_id = ?'
+  ).get(agentId) as { followers: number };
+
+  return {
+    schema: 'frostbite-reputation-v1',
+    agent: {
+      id: agent.id,
+      name: agent.name,
+      platform: 'frostbite-arena',
+    },
+    ratings: {
+      elo: agent.elo_rating,
+      tier: getEloTier(agent.elo_rating),
+      level: agent.level,
+      prestige: agent.prestige,
+      xp: agent.xp,
+    },
+    stats: {
+      totalBattles: agent.total_battles,
+      wins: agent.wins,
+      losses: agent.losses,
+      winRate: agent.win_rate,
+      currentStreak: agent.current_streak,
+      bestStreak: agent.best_streak,
+    },
+    achievements: achievements.map(a => a.id),
+    seasons: seasonData.map(s => ({
+      number: s.season_number,
+      rank: s.rank,
+      eloChange: s.elo_end ? s.elo_end - s.elo_start : 0,
+    })),
+    social: {
+      messagesSent: agent.messages_sent,
+      referrals: referralStats.totalReferrals,
+      followers,
+    },
+    economy: {
+      totalStaked: agent.total_staked,
+      totalEarned: agent.total_earned,
+      profit: agent.profit,
+      nftsMinted: agent.nfts_minted,
+    },
+    generatedAt: new Date().toISOString(),
+  };
 }

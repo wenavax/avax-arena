@@ -6,11 +6,13 @@ import { getAgentAccount, getStoredAgent } from './wallet-manager';
 import {
   makeDecision,
   ELEMENT_NAMES,
+  computeElementCoverage,
   type GameState,
   type WarriorInfo,
   type BattleInfo,
   type BattleResult,
   type AgentAction,
+  type DecisionRecord,
 } from './claude-decision';
 import {
   getAgentByWallet,
@@ -23,6 +25,13 @@ import {
   addLiveEvent,
   getDailySpent,
   addDailySpent,
+  getDecisions,
+  getPersonality,
+  updateEloAfterBattle,
+  addXp,
+  checkAchievements,
+  checkAndPrestige,
+  recordMerge,
 } from './db-queries';
 
 /* ---------------------------------------------------------------------------
@@ -365,13 +374,13 @@ async function executeAction(
         address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
         abi: BATTLE_ENGINE_ABI,
         functionName: 'joinBattle',
-        args: [BigInt(action.battleId), BigInt(action.tokenId)],
+        args: [BigInt(action.battleId), BigInt(action.tokenId), '0x' as `0x${string}`],
         value: stakeWei,
       });
       recordSpending(walletAddress, stakeWei);
       addLog(state, 'battle_joined', `Joined battle #${action.battleId} with warrior #${action.tokenId}, stake: ${action.stakeAmount} AVAX`, true, hash);
 
-      // Track battle in DB + emit event
+      // Track battle in DB + emit event + XP
       try {
         const dbAgent = getAgentByWallet(walletAddress);
         if (dbAgent) {
@@ -415,7 +424,7 @@ async function executeAction(
         address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
         abi: BATTLE_ENGINE_ABI,
         functionName: 'createBattle',
-        args: [BigInt(action.tokenId)],
+        args: [BigInt(action.tokenId), '0x' as `0x${string}`],
         value: stakeWei,
       });
       recordSpending(walletAddress, stakeWei);
@@ -480,6 +489,90 @@ async function executeAction(
       break;
     }
 
+    case 'merge_warriors': {
+      if (!action.mergeTokenIds || action.mergeTokenIds.length !== 2) {
+        addLog(state, 'merge_warriors', 'Missing or invalid mergeTokenIds', false);
+        return;
+      }
+
+      const [tokenId1, tokenId2] = action.mergeTokenIds;
+
+      // Simulate merge: burn 2 NFTs + mint 1 new
+      // On-chain merge requires contract support; simulate with 2 burn + 1 mint
+      try {
+        const balance = await publicClient.getBalance({ address: account.address });
+        if (balance < MINT_PRICE + MIN_BALANCE_RESERVE) {
+          addLog(state, 'merge_warriors', 'Insufficient balance for merge mint', false);
+          return;
+        }
+
+        // Mint a new warrior (merge result)
+        const hash = await walletClient.writeContract({
+          address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+          abi: FROSTBITE_WARRIOR_ABI,
+          functionName: 'mint',
+          value: MINT_PRICE,
+        });
+        recordSpending(walletAddress, MINT_PRICE);
+        addLog(state, 'warriors_merged', `Merged warriors #${tokenId1} + #${tokenId2}`, true, hash);
+
+        const dbAgent = getAgentByWallet(walletAddress);
+        if (dbAgent) {
+          recordMerge({
+            agentId: dbAgent.id,
+            tokenId1,
+            tokenId2,
+            txHash: hash,
+            success: true,
+          });
+          incrementAgentMints(dbAgent.id);
+          addXp(dbAgent.id, 40, 'merge_warriors');
+          addLiveEvent({
+            eventType: 'warriors_merged',
+            agentId: dbAgent.id,
+            agentName: dbAgent.name,
+            data: { tokenId1, tokenId2, txHash: hash },
+          });
+        }
+      } catch (mergeErr) {
+        addLog(state, 'merge_warriors', `Merge failed: ${mergeErr instanceof Error ? mergeErr.message : String(mergeErr)}`, false);
+        const dbAgent = getAgentByWallet(walletAddress);
+        if (dbAgent) {
+          recordMerge({ agentId: dbAgent.id, tokenId1, tokenId2, success: false });
+        }
+      }
+      break;
+    }
+
+    case 'join_tournament': {
+      if (!action.tournamentId) {
+        addLog(state, 'join_tournament', 'Missing tournamentId', false);
+        return;
+      }
+
+      try {
+        const dbAgent = getAgentByWallet(walletAddress);
+        if (dbAgent) {
+          const { joinTournament } = await import('./db-queries');
+          const success = joinTournament(action.tournamentId, dbAgent.id);
+          if (success) {
+            addLog(state, 'tournament_joined', `Joined tournament #${action.tournamentId}`, true);
+            addLiveEvent({
+              eventType: 'tournament_joined',
+              agentId: dbAgent.id,
+              agentName: dbAgent.name,
+              data: { tournamentId: action.tournamentId },
+            });
+          } else {
+            addLog(state, 'join_tournament', `Could not join tournament #${action.tournamentId}`, false);
+          }
+        }
+      } catch {
+        addLog(state, 'join_tournament', 'Failed to join tournament', false);
+      }
+      break;
+    }
+
     case 'wait': {
       addLog(state, 'wait', action.reasoning, true);
       break;
@@ -516,6 +609,54 @@ async function tick(walletAddress: string): Promise<void> {
 
     const strategyNames = ['Aggressive', 'Defensive', 'Analytical', 'Random'];
 
+    // 0.3 Tournament schedule check (Faz 6) — runs once per tick, lightweight
+    try {
+      const { checkTournamentSchedule, ensureUpcomingTournament } = await import('./tournament-manager');
+      checkTournamentSchedule();
+      ensureUpcomingTournament();
+    } catch { /* ignore */ }
+
+    // 0.35 Season schedule check — ensure active season, check expiry
+    try {
+      const { checkSeasonSchedule, ensureActiveSeason } = await import('./season-manager');
+      ensureActiveSeason();
+      checkSeasonSchedule();
+    } catch { /* ignore */ }
+
+    // 0.5 Auto-funding check (Faz 2)
+    const preBalance = await publicClient.getBalance({ address: walletAddress as `0x${string}` });
+    if (preBalance < parseEther('0.02')) {
+      addLog(state, 'low_balance', `Balance ${formatEther(preBalance)} AVAX is low, requesting funding`, true);
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+        const fundRes = await fetch(`${baseUrl}/api/v1/agent/fund`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentWallet: walletAddress }),
+        });
+        const fundData = await fundRes.json();
+        if (fundData.funded) {
+          addLog(state, 'auto_funded', `Received ${fundData.amount} AVAX from faucet`, true, fundData.txHash);
+        } else {
+          addLog(state, 'fund_failed', fundData.error ?? 'Funding failed', false);
+          // Emit low_balance event
+          try {
+            const dbAgent = getAgentByWallet(walletAddress);
+            if (dbAgent) {
+              addLiveEvent({
+                eventType: 'low_balance',
+                agentId: dbAgent.id,
+                agentName: dbAgent.name,
+                data: { balance: formatEther(preBalance) },
+              });
+            }
+          } catch { /* ignore */ }
+        }
+      } catch {
+        addLog(state, 'fund_error', 'Failed to call funding API', false);
+      }
+    }
+
     // 1. Read chain state
     const [warriors, openBattles, recentHistory, balance] = await Promise.all([
       fetchWarriors(walletAddress),
@@ -531,6 +672,34 @@ async function tick(walletAddress: string): Promise<void> {
 
     const currentDailySpent = getCurrentDailySpent(walletAddress);
 
+    // 1.5 Fetch recent decisions for memory (Faz 1)
+    let recentDecisions: DecisionRecord[] = [];
+    try {
+      const dbAgent = getAgentByWallet(walletAddress);
+      if (dbAgent) {
+        const { decisions } = getDecisions(dbAgent.id, 10);
+        recentDecisions = decisions.map(d => ({
+          action: d.action,
+          reasoning: d.reasoning,
+          success: d.success === 1,
+          createdAt: d.created_at,
+        }));
+      }
+    } catch { /* ignore */ }
+
+    // 1.6 Compute element coverage (Faz 4)
+    const { coverage: elementCoverage, recommendation: recommendedMint } = computeElementCoverage(warriors);
+
+    // 1.7 Fetch rival info (Faz 3)
+    let rival: GameState['rival'] = null;
+    try {
+      const dbAgent = getAgentByWallet(walletAddress);
+      if (dbAgent) {
+        const { getRivalInfo } = await import('./db-queries');
+        rival = getRivalInfo(dbAgent.id);
+      }
+    } catch { /* ignore */ }
+
     // 2. Build game state
     const gameState: GameState = {
       agentWallet: walletAddress,
@@ -542,12 +711,22 @@ async function tick(walletAddress: string): Promise<void> {
       dailySpent: formatEther(currentDailySpent),
       dailyLimit: formatEther(DEFAULT_DAILY_LIMIT),
       maxStakePerGame: formatEther(DEFAULT_MAX_STAKE),
+      recentDecisions,
+      elementCoverage,
+      recommendedMint,
+      rival,
     };
 
     // 3. Ask Claude for decision
     const decision = await makeDecision(gameState);
     state.lastAction = decision;
     state.lastTick = Date.now();
+
+    // Persist tick timestamp (Faz 7)
+    try {
+      const { updateLoopTick } = await import('./db-queries');
+      updateLoopTick(walletAddress);
+    } catch { /* ignore */ }
 
     // 3.5 Persist decision to DB
     try {
@@ -573,6 +752,149 @@ async function tick(walletAddress: string): Promise<void> {
     // 4. Execute action
     await executeAction(walletAddress, decision, state);
     state.consecutiveErrors = 0;
+
+    // 4.1 XP rewards for non-battle actions
+    try {
+      const dbAgent = getAgentByWallet(walletAddress);
+      if (dbAgent) {
+        const xpMap: Record<string, number> = {
+          mint_warrior: 20,
+          post_message: 5,
+          join_tournament: 30,
+        };
+        const xpAmount = xpMap[decision.action];
+        if (xpAmount) {
+          addXp(dbAgent.id, xpAmount, decision.action);
+        }
+      }
+    } catch { /* ignore */ }
+
+    // 4.2 Battle resolution check — detect recently resolved battles for ELO + XP
+    try {
+      const dbAgent = getAgentByWallet(walletAddress);
+      if (dbAgent) {
+        const { getBattleHistory } = await import('./db-queries');
+        const recentBattles = getBattleHistory(dbAgent.id, 5);
+        for (const battle of recentBattles) {
+          if (battle.status !== 'resolved' || !battle.winner_id) continue;
+
+          // Check if we already processed this battle (use a simple heuristic: resolved_at within last 2 minutes)
+          if (!battle.resolved_at) continue;
+          const resolvedAge = Date.now() - new Date(battle.resolved_at).getTime();
+          if (resolvedAge > 120_000) continue; // older than 2 min, skip
+
+          const won = battle.winner_id === dbAgent.id;
+          const opponentId = battle.attacker_id === dbAgent.id ? battle.defender_id : battle.attacker_id;
+
+          // ELO update
+          if (opponentId && won) {
+            updateEloAfterBattle(dbAgent.id, opponentId);
+          } else if (opponentId && !won) {
+            updateEloAfterBattle(opponentId, dbAgent.id);
+          }
+
+          // XP for battle result
+          addXp(dbAgent.id, won ? 50 : 15, won ? 'battle_win' : 'battle_loss');
+        }
+
+        // 4.3 Achievement check
+        checkAchievements(dbAgent.id);
+
+        // 4.4 Prestige check
+        checkAndPrestige(dbAgent.id);
+      }
+    } catch { /* ignore */ }
+
+    // 4.5 Auto-detect rival after battles (Faz 3)
+    if (decision.action === 'join_battle' || decision.action === 'create_battle') {
+      try {
+        const dbAgent = getAgentByWallet(walletAddress);
+        if (dbAgent) {
+          const { autoDetectRival, setRival } = await import('./db-queries');
+          const rivalId = autoDetectRival(dbAgent.id);
+          if (rivalId) {
+            const personality = getPersonality(dbAgent.id);
+            if (personality && personality.rival_agent_id !== rivalId) {
+              setRival(dbAgent.id, rivalId);
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 4.6 Social interactions — auto trash talk (Faz 5)
+    try {
+      const dbAgent = getAgentByWallet(walletAddress);
+      if (dbAgent) {
+        const personality = getPersonality(dbAgent.id);
+        if (personality) {
+          const { generateTrashTalk } = await import('./personality-generator');
+          let autoMessage: string | null = null;
+          let messageType = '';
+
+          if (decision.action === 'join_battle' || decision.action === 'create_battle') {
+            // Check last battle result to determine win/loss taunt
+            const lastResult = recentHistory[0];
+            if (lastResult) {
+              if (lastResult.won) {
+                autoMessage = generateTrashTalk(personality.personality_type, 'win_taunt', walletAddress + Date.now());
+                messageType = 'win_taunt';
+              } else if (Math.random() < 0.3) {
+                // 30% chance of revenge message after loss
+                autoMessage = generateTrashTalk(personality.personality_type, 'loss_revenge', walletAddress + Date.now());
+                messageType = 'loss_revenge';
+              }
+            }
+
+            // Rival-specific messages
+            if (personality.rival_agent_id && !autoMessage) {
+              const rivalInBattle = filteredBattles.some(
+                b => b.player1.toLowerCase() === walletAddress.toLowerCase()
+              );
+              if (rivalInBattle && Math.random() < 0.5) {
+                autoMessage = generateTrashTalk(personality.personality_type, 'rival_challenge', walletAddress + Date.now());
+                messageType = 'rival_challenge';
+              }
+            }
+          } else if (decision.action === 'mint_warrior') {
+            autoMessage = generateTrashTalk(personality.personality_type, 'new_warrior', walletAddress + Date.now());
+            messageType = 'new_warrior';
+          }
+
+          if (autoMessage) {
+            try {
+              const account = state.cachedAccount ?? getAgentAccount(walletAddress);
+              const walletClient = createWalletClient({
+                account,
+                chain: avalancheFuji,
+                transport: http(RPC_URL),
+              });
+              const hash = await walletClient.writeContract({
+                address: CONTRACT_ADDRESSES.agentChat as `0x${string}`,
+                abi: AGENT_CHAT_ABI,
+                functionName: 'postMessage',
+                args: [autoMessage, 0n, 0],
+              });
+              addLog(state, 'auto_message', `[${messageType}] ${autoMessage.slice(0, 60)}`, true, hash);
+              incrementAgentMessages(dbAgent.id);
+              const { addChatMessage } = await import('./db-queries');
+              addChatMessage({
+                agentId: dbAgent.id,
+                agentName: dbAgent.name,
+                content: autoMessage,
+                txHash: hash,
+              });
+              addLiveEvent({
+                eventType: 'message_posted',
+                agentId: dbAgent.id,
+                agentName: dbAgent.name,
+                data: { message: autoMessage.slice(0, 100), type: messageType },
+              });
+            } catch { /* ignore message posting failures */ }
+          }
+        }
+      }
+    } catch { /* ignore social interaction errors */ }
   } catch (err) {
     state.consecutiveErrors += 1;
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -631,6 +953,12 @@ export function startAgentLoop(walletAddress: string): { success: boolean; error
 
   addLog(state, 'started', 'Agent loop started', true);
 
+  // Persist loop state to DB (Faz 7)
+  try {
+    const { setLoopState } = require('./db-queries');
+    setLoopState(walletAddress, true);
+  } catch { /* ignore */ }
+
   // Trigger first tick immediately (async, don't await)
   tick(walletAddress);
 
@@ -655,7 +983,44 @@ export function stopAgentLoop(walletAddress: string): { success: boolean; error?
 
   addLog(state, 'stopped', 'Agent loop stopped', true);
 
+  // Persist loop state to DB (Faz 7)
+  try {
+    const { setLoopState } = require('./db-queries');
+    setLoopState(walletAddress, false);
+  } catch { /* ignore */ }
+
   return { success: true };
+}
+
+/**
+ * Restore all previously running agent loops after server restart (Faz 7).
+ * Call this once on server startup.
+ */
+export function restoreActiveLoops(): { restored: string[]; errors: string[] } {
+  const restored: string[] = [];
+  const errors: string[] = [];
+
+  try {
+    const { getRunningAgents } = require('./db-queries');
+    const runningWallets: string[] = getRunningAgents();
+
+    for (const wallet of runningWallets) {
+      const result = startAgentLoop(wallet);
+      if (result.success) {
+        restored.push(wallet);
+      } else {
+        errors.push(`${wallet}: ${result.error}`);
+      }
+    }
+  } catch (err) {
+    errors.push(`Failed to query running agents: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (restored.length > 0) {
+    console.log(`[agent-engine] Restored ${restored.length} agent loops`);
+  }
+
+  return { restored, errors };
 }
 
 export function getAgentStatus(walletAddress: string): {
