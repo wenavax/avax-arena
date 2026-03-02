@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAgentById, updateAgent, getActivities } from '@/lib/db-queries';
+import { getAgentById, updateAgent, getActivities, getPersonality, getDecisions, getDecisionStats, getRivalInfo, getAgentTournaments, getEloTier, getXpForNextLevel, getAgentAchievements, checkAchievements } from '@/lib/db-queries';
+import { generatePersonality } from '@/lib/personality-generator';
+import { authenticateRequest } from '@/lib/api-auth';
 
 // --- Validation helpers ---
 const AGENT_ID_RE = /^agent_.+$/;
@@ -39,15 +41,31 @@ export async function GET(
   // Fetch recent activity for this agent
   const { activities } = getActivities(5, 0, agentId);
 
+  // Fetch personality (auto-generate if missing)
+  let personality = getPersonality(agentId);
+  if (!personality) {
+    personality = generatePersonality(agent);
+  }
+
+  // Fetch recent decisions
+  const { decisions: recentDecisions } = getDecisions(agentId, 10);
+  const decisionStats = getDecisionStats(agentId);
+
+  // Check & unlock any new achievements, then fetch
+  try { checkAchievements(agentId); } catch { /* ignore */ }
+  const achievements = getAgentAchievements(agentId);
+  const xpInfo = getXpForNextLevel(agent.xp);
+
   const response = {
     id: agent.id,
     name: agent.name,
     strategy: agent.strategy_name,
-    ownerAddress: agent.owner_address,
     description: agent.description,
     walletAddress: agent.wallet_address,
     createdAt: agent.created_at,
     active: agent.active === 1,
+    lastActiveAt: agent.last_active_at,
+    isOnline: agent.last_active_at ? (Date.now() - new Date(agent.last_active_at).getTime()) < 120_000 : false,
     stats: {
       battles: agent.total_battles,
       wins: agent.wins,
@@ -61,12 +79,59 @@ export async function GET(
       nftsMinted: agent.nfts_minted,
       currentStreak: agent.current_streak,
       bestStreak: agent.best_streak,
+      totalDecisions: agent.total_decisions,
+      favoriteAction: agent.favorite_action ?? 'wait',
+      elo: agent.elo_rating,
+      eloTier: getEloTier(agent.elo_rating),
+      xp: agent.xp,
+      level: agent.level,
+      prestige: agent.prestige,
+      xpProgress: xpInfo.progress,
+      xpForNextLevel: xpInfo.nextLevelXp,
     },
+    achievements: achievements.map(a => ({
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      category: a.category,
+      icon: a.icon,
+      rarity: a.rarity,
+      unlockedAt: a.unlocked_at,
+    })),
+    personality: personality ? {
+      bio: personality.bio,
+      catchphrase: personality.catchphrase,
+      personalityType: personality.personality_type,
+      avatarSeed: personality.avatar_seed,
+      avatarGradient: personality.avatar_gradient,
+      tauntStyle: personality.taunt_style,
+      favoriteElement: personality.favorite_element,
+    } : null,
+    recentDecisions: recentDecisions.map((d) => ({
+      id: d.id,
+      action: d.action,
+      reasoning: d.reasoning,
+      gameStateSummary: JSON.parse(d.game_state_summary || '{}'),
+      success: d.success === 1,
+      createdAt: d.created_at,
+    })),
+    decisionStats,
     recentActivity: activities.map((a) => ({
       type: a.type,
       description: a.description,
       timestamp: new Date(a.created_at).getTime(),
       txHash: a.tx_hash,
+    })),
+    rival: getRivalInfo(agentId),
+    tournaments: getAgentTournaments(agentId).map((t) => ({
+      id: t.id,
+      name: t.name,
+      status: t.status,
+      score: t.score,
+      wins: t.wins,
+      losses: t.losses,
+      prize_pool: t.prize_pool,
+      winner_id: t.winner_id,
     })),
   };
 
@@ -79,12 +144,26 @@ export async function PATCH(
   { params }: { params: { agentId: string } }
 ) {
   try {
+    // Authenticate the request
+    const auth = authenticateRequest(req, 'write');
+    if (!auth.valid) {
+      return auth.response;
+    }
+
     const { agentId } = params;
 
     if (!agentId || !AGENT_ID_RE.test(agentId)) {
       return NextResponse.json(
         { error: 'Invalid agentId format. Must match pattern agent_*', code: 'INVALID_AGENT_ID' },
         { status: 400, headers: securityHeaders() }
+      );
+    }
+
+    // Verify the authenticated agent matches the requested agentId
+    if (auth.agentId !== agentId) {
+      return NextResponse.json(
+        { error: 'Forbidden: API key does not belong to this agent', code: 'FORBIDDEN' },
+        { status: 403, headers: securityHeaders() }
       );
     }
 

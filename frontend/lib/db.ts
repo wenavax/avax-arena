@@ -287,6 +287,53 @@ function migrate(db: Database.Database): void {
       PRIMARY KEY (agent_wallet, date)
     );
 
+    /* --- Agent Funding (faucet daily limits) --- */
+
+    CREATE TABLE IF NOT EXISTS agent_funding (
+      agent_wallet  TEXT NOT NULL,
+      date          TEXT NOT NULL,
+      funded_wei    TEXT DEFAULT '0',
+      PRIMARY KEY (agent_wallet, date)
+    );
+
+    /* --- Agent Loop State (PM2 restart recovery) --- */
+
+    CREATE TABLE IF NOT EXISTS agent_loop_state (
+      agent_wallet  TEXT PRIMARY KEY,
+      running       INTEGER DEFAULT 0,
+      last_tick     TEXT,
+      stopped_at    TEXT
+    );
+
+    /* --- Tournaments --- */
+
+    CREATE TABLE IF NOT EXISTS tournaments (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT NOT NULL,
+      status        TEXT DEFAULT 'upcoming',
+      entry_fee     TEXT DEFAULT '0.01',
+      max_players   INTEGER DEFAULT 8,
+      prize_pool    TEXT DEFAULT '0',
+      start_at      TEXT NOT NULL,
+      end_at        TEXT,
+      winner_id     TEXT,
+      created_at    TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS tournament_participants (
+      tournament_id INTEGER NOT NULL,
+      agent_id      TEXT NOT NULL,
+      score         INTEGER DEFAULT 0,
+      wins          INTEGER DEFAULT 0,
+      losses        INTEGER DEFAULT 0,
+      joined_at     TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (tournament_id, agent_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tournaments_status ON tournaments(status);
+    CREATE INDEX IF NOT EXISTS idx_tournaments_start ON tournaments(start_at);
+    CREATE INDEX IF NOT EXISTS idx_tournament_participants_agent ON tournament_participants(agent_id);
+
     /* --- Security Events (structured audit log) --- */
 
     CREATE TABLE IF NOT EXISTS security_events (
@@ -315,14 +362,148 @@ function migrate(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_notifications_agent ON notifications(agent_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(agent_id, read);
+
+    /* --- Feed Likes --- */
+
+    CREATE TABLE IF NOT EXISTS feed_likes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id    INTEGER NOT NULL,
+      agent_id    TEXT NOT NULL REFERENCES agents(id),
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(event_id, agent_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_feed_likes_event ON feed_likes(event_id);
+    CREATE INDEX IF NOT EXISTS idx_feed_likes_agent ON feed_likes(agent_id);
+
+    /* --- Agent Follows --- */
+
+    CREATE TABLE IF NOT EXISTS agent_follows (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      follower_id     TEXT NOT NULL REFERENCES agents(id),
+      following_id    TEXT NOT NULL REFERENCES agents(id),
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(follower_id, following_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_follows_follower ON agent_follows(follower_id);
+    CREATE INDEX IF NOT EXISTS idx_follows_following ON agent_follows(following_id);
   `);
 
   // Add new columns to agents table (safe ALTER — ignores if already exists)
+  // --- New tables for achievements, seasons, referrals, merges, agent marketplace ---
+
+  db.exec(`
+    /* --- Achievements --- */
+    CREATE TABLE IF NOT EXISTS achievements (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT NOT NULL,
+      icon TEXT NOT NULL DEFAULT 'trophy',
+      rarity TEXT NOT NULL DEFAULT 'common',
+      xp_reward INTEGER DEFAULT 0,
+      requirement_type TEXT NOT NULL,
+      requirement_value INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_achievements (
+      agent_id TEXT NOT NULL REFERENCES agents(id),
+      achievement_id TEXT NOT NULL REFERENCES achievements(id),
+      unlocked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (agent_id, achievement_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_achievements_agent ON agent_achievements(agent_id);
+
+    /* --- Seasons --- */
+    CREATE TABLE IF NOT EXISTS seasons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      number INTEGER NOT NULL,
+      status TEXT DEFAULT 'upcoming',
+      start_at TEXT NOT NULL,
+      end_at TEXT NOT NULL,
+      reward_pool TEXT DEFAULT '0',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS season_snapshots (
+      season_id INTEGER NOT NULL,
+      agent_id TEXT NOT NULL,
+      elo_start INTEGER DEFAULT 1200,
+      elo_end INTEGER,
+      rank INTEGER,
+      battles INTEGER DEFAULT 0,
+      wins INTEGER DEFAULT 0,
+      xp_earned INTEGER DEFAULT 0,
+      reward TEXT DEFAULT '0',
+      PRIMARY KEY (season_id, agent_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_seasons_status ON seasons(status);
+    CREATE INDEX IF NOT EXISTS idx_season_snapshots_season ON season_snapshots(season_id);
+
+    /* --- Referrals --- */
+    CREATE TABLE IF NOT EXISTS referrals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      referrer_id TEXT NOT NULL REFERENCES agents(id),
+      referee_id TEXT NOT NULL REFERENCES agents(id),
+      bonus_xp INTEGER DEFAULT 100,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(referee_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id);
+
+    /* --- Warrior Merges --- */
+    CREATE TABLE IF NOT EXISTS warrior_merges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL REFERENCES agents(id),
+      token_id_1 INTEGER NOT NULL,
+      token_id_2 INTEGER NOT NULL,
+      result_token_id INTEGER,
+      element_1 INTEGER,
+      element_2 INTEGER,
+      result_element INTEGER,
+      tx_hash TEXT,
+      success INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_merges_agent ON warrior_merges(agent_id);
+
+    /* --- Agent Listings (agent marketplace) --- */
+    CREATE TABLE IF NOT EXISTS agent_listings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL REFERENCES agents(id),
+      seller_address TEXT NOT NULL,
+      price TEXT NOT NULL,
+      status TEXT DEFAULT 'active',
+      buyer_address TEXT,
+      tx_hash TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      sold_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_listings_status ON agent_listings(status);
+    CREATE INDEX IF NOT EXISTS idx_agent_listings_agent ON agent_listings(agent_id);
+  `);
+
   const alterStatements = [
     "ALTER TABLE agents ADD COLUMN last_active_at TEXT",
     "ALTER TABLE agents ADD COLUMN total_decisions INTEGER DEFAULT 0",
     "ALTER TABLE agents ADD COLUMN favorite_action TEXT DEFAULT 'wait'",
     "ALTER TABLE challenges ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0",
+    // Modül 1: ELO
+    "ALTER TABLE agents ADD COLUMN elo_rating INTEGER DEFAULT 1200",
+    // Modül 2: XP/Level
+    "ALTER TABLE agents ADD COLUMN xp INTEGER DEFAULT 0",
+    "ALTER TABLE agents ADD COLUMN level INTEGER DEFAULT 0",
+    "ALTER TABLE agents ADD COLUMN prestige INTEGER DEFAULT 0",
+    // Modül 5: Referral
+    "ALTER TABLE agents ADD COLUMN referral_code TEXT",
+    "ALTER TABLE agents ADD COLUMN referred_by TEXT",
   ];
   for (const sql of alterStatements) {
     try { db.exec(sql); } catch { /* column already exists */ }
