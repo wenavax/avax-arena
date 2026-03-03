@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title ArenaWarrior
@@ -11,7 +12,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *         on-chain attributes, a power score derived from those attributes, and
  *         battle statistics that are updated by an authorized battle contract.
  */
-contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
+contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable, ReentrancyGuard {
     // -------------------------------------------------------------------------
     // Types
     // -------------------------------------------------------------------------
@@ -33,7 +34,7 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
         uint8 speed;         // 1-100
         Element element;
         uint8 specialPower;  // 1-50
-        uint8 level;         // starts at 1
+        uint16 level;        // starts at 1, uint16 to avoid overflow at 256
         uint256 experience;  // starts at 0
         uint256 battleWins;
         uint256 battleLosses;
@@ -46,6 +47,7 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
 
     uint256 public constant MINT_PRICE = 0.01 ether;
     uint256 public constant WINS_PER_LEVEL = 3;
+    uint256 public mergePrice = 0.005 ether;
 
     // -------------------------------------------------------------------------
     // State
@@ -53,8 +55,8 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
 
     uint256 private _nextTokenId;
 
-    /// @notice Authorized battle contract that may update warrior stats.
-    address public battleContract;
+    /// @notice Authorized battle contracts that may update warrior stats.
+    mapping(address => bool) public battleContracts;
 
     /// @notice Base URI for token metadata.
     string private _baseTokenURI;
@@ -89,7 +91,7 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
 
     event LevelUp(
         uint256 indexed tokenId,
-        uint8 newLevel,
+        uint16 newLevel,
         uint256 newPowerScore
     );
 
@@ -98,9 +100,24 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
         string newURI
     );
 
-    event BattleContractUpdated(address indexed newBattleContract);
+    event BattleContractAdded(address indexed battleContract);
+    event BattleContractRemoved(address indexed battleContract);
 
     event BaseURIUpdated(string newBaseURI);
+
+    event WarriorsMerged(
+        address indexed owner,
+        uint256 indexed resultTokenId,
+        uint256 burnedTokenId1,
+        uint256 burnedTokenId2,
+        uint8 attack,
+        uint8 defense,
+        uint8 speed,
+        Element element,
+        uint8 specialPower,
+        uint16 level,
+        uint256 powerScore
+    );
 
     // -------------------------------------------------------------------------
     // Errors
@@ -112,13 +129,16 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
     error WithdrawFailed();
     error InvalidBattleContractAddress();
     error AddressIsNotContract();
+    error NotOwnerOfToken(uint256 tokenId);
+    error CannotMergeSameToken();
+    error MergeInsufficientPayment();
 
     // -------------------------------------------------------------------------
     // Modifiers
     // -------------------------------------------------------------------------
 
     modifier onlyBattleContract() {
-        if (msg.sender != battleContract) revert NotAuthorizedBattleContract();
+        if (!battleContracts[msg.sender]) revert NotAuthorizedBattleContract();
         _;
     }
 
@@ -145,20 +165,25 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
      * @dev Requires exactly MINT_PRICE (0.01 AVAX). Attributes are derived from
      *      block.timestamp, msg.sender, tokenId, and block.prevrandao.
      */
-    function mint() external payable {
+    function mint() external payable nonReentrant {
         if (msg.value < MINT_PRICE) revert InsufficientPayment();
 
         uint256 tokenId = _nextTokenId;
         _nextTokenId++;
 
-        // Generate pseudo-random seed components
+        // Generate pseudo-random seed with multiple entropy sources
+        // to make contract-based stat mining significantly harder
         uint256 seed = uint256(
             keccak256(
                 abi.encodePacked(
                     block.timestamp,
+                    block.number,
+                    block.prevrandao,
                     msg.sender,
                     tokenId,
-                    block.prevrandao
+                    address(this).balance,
+                    totalSupply(),
+                    gasleft()
                 )
             )
         );
@@ -197,6 +222,103 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
             specialPower,
             powerScore
         );
+
+        // Refund overpayment
+        uint256 excess = msg.value - MINT_PRICE;
+        if (excess > 0) {
+            (bool success, ) = payable(msg.sender).call{value: excess}("");
+            if (!success) revert WithdrawFailed();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Merge
+    // -------------------------------------------------------------------------
+
+    /**
+     * @notice Merge (fuse) two warriors into a new, stronger warrior.
+     *         Both source warriors are burned on-chain.
+     * @param tokenId1 First warrior to merge.
+     * @param tokenId2 Second warrior to merge.
+     */
+    function mergeWarriors(uint256 tokenId1, uint256 tokenId2) external payable nonReentrant {
+        if (msg.value < mergePrice) revert MergeInsufficientPayment();
+        if (tokenId1 == tokenId2) revert CannotMergeSameToken();
+        if (ownerOf(tokenId1) != msg.sender) revert NotOwnerOfToken(tokenId1);
+        if (ownerOf(tokenId2) != msg.sender) revert NotOwnerOfToken(tokenId2);
+
+        // Read stats before burning
+        Warrior memory w1 = _warriors[tokenId1];
+        Warrior memory w2 = _warriors[tokenId2];
+
+        // Burn both warriors
+        _burn(tokenId1);
+        _burn(tokenId2);
+
+        // Clean up storage
+        delete _warriors[tokenId1];
+        delete _warriors[tokenId2];
+        delete _tokenURIs[tokenId1];
+        delete _tokenURIs[tokenId2];
+
+        // Calculate merged stats: avg * 1.2, truncated (Solidity integer division)
+        uint8 newAttack = _mergedStat(w1.attack, w2.attack, 100);
+        uint8 newDefense = _mergedStat(w1.defense, w2.defense, 100);
+        uint8 newSpeed = _mergedStat(w1.speed, w2.speed, 100);
+        uint8 newSpecialPower = _mergedStat(w1.specialPower, w2.specialPower, 50);
+
+        // Element: from the parent with higher power score
+        Element newElement = w1.powerScore >= w2.powerScore ? w1.element : w2.element;
+
+        // Level: max + 1
+        uint16 newLevel = (w1.level >= w2.level ? w1.level : w2.level) + 1;
+
+        // Aggregate experience and battle record
+        uint256 newExperience = w1.experience + w2.experience;
+        uint256 newWins = w1.battleWins + w2.battleWins;
+        uint256 newLosses = w1.battleLosses + w2.battleLosses;
+
+        uint256 newPowerScore = _calculatePowerScore(newAttack, newDefense, newSpeed, newSpecialPower);
+
+        // Mint new warrior
+        uint256 newTokenId = _nextTokenId;
+        _nextTokenId++;
+
+        _warriors[newTokenId] = Warrior({
+            attack: newAttack,
+            defense: newDefense,
+            speed: newSpeed,
+            element: newElement,
+            specialPower: newSpecialPower,
+            level: newLevel,
+            experience: newExperience,
+            battleWins: newWins,
+            battleLosses: newLosses,
+            powerScore: newPowerScore
+        });
+
+        _safeMint(msg.sender, newTokenId);
+
+        emit WarriorsMerged(
+            msg.sender,
+            newTokenId,
+            tokenId1,
+            tokenId2,
+            newAttack,
+            newDefense,
+            newSpeed,
+            newElement,
+            newSpecialPower,
+            newLevel,
+            newPowerScore
+        );
+
+        // Refund overpayment
+        uint256 excess = msg.value - mergePrice;
+        if (excess > 0) {
+            (bool success, ) = payable(msg.sender).call{value: excess}("");
+            if (!success) revert WithdrawFailed();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -206,10 +328,11 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
     /**
      * @notice Record the result of a battle for a warrior. Only callable by the
      *         authorized battle contract.
-     * @param tokenId The warrior whose stats are updated.
-     * @param won     Whether the warrior won the battle.
+     * @param tokenId    The warrior whose stats are updated.
+     * @param won        Whether the warrior won the battle.
+     * @param expGained  Experience points to award.
      */
-    function recordBattle(uint256 tokenId, bool won)
+    function recordBattle(uint256 tokenId, bool won, uint256 expGained)
         external
         onlyBattleContract
         tokenExists(tokenId)
@@ -218,7 +341,7 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
 
         if (won) {
             w.battleWins++;
-            w.experience += 10;
+            w.experience += expGained;
 
             // Level up every WINS_PER_LEVEL wins
             if (w.battleWins % WINS_PER_LEVEL == 0) {
@@ -226,7 +349,7 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
             }
         } else {
             w.battleLosses++;
-            w.experience += 3;
+            w.experience += expGained;
         }
 
         emit BattleRecorded(tokenId, won, w.battleWins, w.battleLosses);
@@ -246,7 +369,7 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
         external
         tokenExists(tokenId)
     {
-        if (msg.sender != owner() && msg.sender != battleContract) {
+        if (msg.sender != owner() && !battleContracts[msg.sender]) {
             revert NotAuthorizedBattleContract();
         }
 
@@ -260,16 +383,25 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
     // -------------------------------------------------------------------------
 
     /**
-     * @notice Set the authorized battle contract address.
-     * @param _battleContract The new battle contract address.
+     * @notice Add an authorized battle contract address.
+     * @param _battleContract The battle contract address to authorize.
      */
-    function setBattleContract(address _battleContract) external onlyOwner {
+    function addBattleContract(address _battleContract) external onlyOwner {
         if (_battleContract == address(0)) revert InvalidBattleContractAddress();
         uint256 codeSize;
         assembly { codeSize := extcodesize(_battleContract) }
         if (codeSize == 0) revert AddressIsNotContract();
-        battleContract = _battleContract;
-        emit BattleContractUpdated(_battleContract);
+        battleContracts[_battleContract] = true;
+        emit BattleContractAdded(_battleContract);
+    }
+
+    /**
+     * @notice Remove an authorized battle contract address.
+     * @param _battleContract The battle contract address to de-authorize.
+     */
+    function removeBattleContract(address _battleContract) external onlyOwner {
+        battleContracts[_battleContract] = false;
+        emit BattleContractRemoved(_battleContract);
     }
 
     /**
@@ -279,6 +411,13 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
     function setBaseURI(string calldata baseURI_) external onlyOwner {
         _baseTokenURI = baseURI_;
         emit BaseURIUpdated(baseURI_);
+    }
+
+    /**
+     * @notice Update the merge price.
+     */
+    function setMergePrice(uint256 _mergePrice) external onlyOwner {
+        mergePrice = _mergePrice;
     }
 
     /**
@@ -425,5 +564,15 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable {
             + uint256(defense) * 2
             + uint256(speed) * 2
             + uint256(specialPower) * 5;
+    }
+
+    /**
+     * @dev Calculate a merged stat: (stat1 + stat2) * 6 / 10, capped at maxVal.
+     *      Equivalent to avg * 1.2 with integer truncation.
+     */
+    function _mergedStat(uint8 stat1, uint8 stat2, uint8 maxVal) internal pure returns (uint8) {
+        uint16 merged = (uint16(stat1) + uint16(stat2)) * 6 / 10;
+        if (merged > maxVal) return maxVal;
+        return uint8(merged);
     }
 }
