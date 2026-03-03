@@ -13,9 +13,9 @@ export declare namespace BattleEngine {
     }
 
   export interface BattleEngineInterface extends Interface {
-    getFunction(nameOrSignature: "ATTACK_WEIGHT" | "BASIS_POINTS" | "BATTLE_TIMEOUT" | "DEFENSE_WEIGHT" | "ELEMENT_EARTH" | "ELEMENT_FIRE" | "ELEMENT_ICE" | "ELEMENT_LIGHT" | "ELEMENT_SHADOW" | "ELEMENT_THUNDER" | "ELEMENT_WATER" | "ELEMENT_WIND" | "FEE_BASIS_POINTS" | "LOSS_EXPERIENCE" | "MIN_STAKE" | "SPECIAL_WEIGHT" | "SPEED_WEIGHT" | "WIN_EXPERIENCE" | "accumulatedFees" | "arenaWarrior" | "battleCounter" | "battles" | "cancelBattle" | "claimTimeout" | "createBattle" | "feeRecipient" | "getBattle" | "getBattleHistory" | "getOpenBattleCount" | "getOpenBattles" | "joinBattle" | "owner" | "renounceOwnership" | "setArenaWarrior" | "setFeeRecipient" | "transferOwnership" | "withdrawFees"): FunctionFragment;
+    getFunction(nameOrSignature: "ATTACK_WEIGHT" | "BASIS_POINTS" | "BATTLE_TIMEOUT" | "DEFENSE_WEIGHT" | "ELEMENT_EARTH" | "ELEMENT_FIRE" | "ELEMENT_ICE" | "ELEMENT_LIGHT" | "ELEMENT_SHADOW" | "ELEMENT_THUNDER" | "ELEMENT_WATER" | "ELEMENT_WIND" | "FEE_BASIS_POINTS" | "LOSS_EXPERIENCE" | "MIN_STAKE" | "SPECIAL_WEIGHT" | "SPEED_WEIGHT" | "UPGRADE_INTERFACE_VERSION" | "WIN_EXPERIENCE" | "accumulatedFees" | "addAdmin" | "admins" | "arenaWarrior" | "battleCounter" | "battles" | "cancelBattle" | "claimTimeout" | "createBattle" | "feeRecipient" | "getBattle" | "getBattleHistory" | "getOpenBattleCount" | "getOpenBattles" | "getPlatformStats" | "getPlayerBattleCount" | "getPlayerBattlesPaginated" | "getResolvedBattleCount" | "getResolvedBattles" | "initialize" | "joinBattle" | "nonces" | "owner" | "pause" | "paused" | "proxiableUUID" | "removeAdmin" | "renounceOwnership" | "setArenaWarrior" | "setFeeRecipient" | "setTrustedSigner" | "totalWagered" | "transferOwnership" | "trustedSigner" | "unpause" | "upgradeToAndCall" | "withdrawFees"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "BattleCancelled" | "BattleCreated" | "BattleJoined" | "BattleResolved" | "OwnershipTransferred"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "AdminAdded" | "AdminRemoved" | "BattleCancelled" | "BattleCreated" | "BattleJoined" | "BattleResolved" | "ContractPaused" | "ContractUnpaused" | "Initialized" | "OwnershipTransferred" | "Paused" | "TrustedSignerUpdated" | "Unpaused" | "Upgraded"): EventFragment;
 
     encodeFunctionData(functionFragment: 'ATTACK_WEIGHT', values?: undefined): string;
 encodeFunctionData(functionFragment: 'BASIS_POINTS', values?: undefined): string;
@@ -34,25 +34,44 @@ encodeFunctionData(functionFragment: 'LOSS_EXPERIENCE', values?: undefined): str
 encodeFunctionData(functionFragment: 'MIN_STAKE', values?: undefined): string;
 encodeFunctionData(functionFragment: 'SPECIAL_WEIGHT', values?: undefined): string;
 encodeFunctionData(functionFragment: 'SPEED_WEIGHT', values?: undefined): string;
+encodeFunctionData(functionFragment: 'UPGRADE_INTERFACE_VERSION', values?: undefined): string;
 encodeFunctionData(functionFragment: 'WIN_EXPERIENCE', values?: undefined): string;
 encodeFunctionData(functionFragment: 'accumulatedFees', values?: undefined): string;
+encodeFunctionData(functionFragment: 'addAdmin', values: [AddressLike]): string;
+encodeFunctionData(functionFragment: 'admins', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'arenaWarrior', values?: undefined): string;
 encodeFunctionData(functionFragment: 'battleCounter', values?: undefined): string;
 encodeFunctionData(functionFragment: 'battles', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'cancelBattle', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'claimTimeout', values: [BigNumberish]): string;
-encodeFunctionData(functionFragment: 'createBattle', values: [BigNumberish]): string;
+encodeFunctionData(functionFragment: 'createBattle', values: [BigNumberish, BytesLike]): string;
 encodeFunctionData(functionFragment: 'feeRecipient', values?: undefined): string;
 encodeFunctionData(functionFragment: 'getBattle', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'getBattleHistory', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'getOpenBattleCount', values?: undefined): string;
 encodeFunctionData(functionFragment: 'getOpenBattles', values: [BigNumberish, BigNumberish]): string;
-encodeFunctionData(functionFragment: 'joinBattle', values: [BigNumberish, BigNumberish]): string;
+encodeFunctionData(functionFragment: 'getPlatformStats', values?: undefined): string;
+encodeFunctionData(functionFragment: 'getPlayerBattleCount', values: [AddressLike]): string;
+encodeFunctionData(functionFragment: 'getPlayerBattlesPaginated', values: [AddressLike, BigNumberish, BigNumberish]): string;
+encodeFunctionData(functionFragment: 'getResolvedBattleCount', values?: undefined): string;
+encodeFunctionData(functionFragment: 'getResolvedBattles', values: [BigNumberish, BigNumberish]): string;
+encodeFunctionData(functionFragment: 'initialize', values: [AddressLike, AddressLike]): string;
+encodeFunctionData(functionFragment: 'joinBattle', values: [BigNumberish, BigNumberish, BytesLike]): string;
+encodeFunctionData(functionFragment: 'nonces', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'owner', values?: undefined): string;
+encodeFunctionData(functionFragment: 'pause', values?: undefined): string;
+encodeFunctionData(functionFragment: 'paused', values?: undefined): string;
+encodeFunctionData(functionFragment: 'proxiableUUID', values?: undefined): string;
+encodeFunctionData(functionFragment: 'removeAdmin', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'renounceOwnership', values?: undefined): string;
 encodeFunctionData(functionFragment: 'setArenaWarrior', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'setFeeRecipient', values: [AddressLike]): string;
+encodeFunctionData(functionFragment: 'setTrustedSigner', values: [AddressLike]): string;
+encodeFunctionData(functionFragment: 'totalWagered', values?: undefined): string;
 encodeFunctionData(functionFragment: 'transferOwnership', values: [AddressLike]): string;
+encodeFunctionData(functionFragment: 'trustedSigner', values?: undefined): string;
+encodeFunctionData(functionFragment: 'unpause', values?: undefined): string;
+encodeFunctionData(functionFragment: 'upgradeToAndCall', values: [AddressLike, BytesLike]): string;
 encodeFunctionData(functionFragment: 'withdrawFees', values?: undefined): string;
 
     decodeFunctionResult(functionFragment: 'ATTACK_WEIGHT', data: BytesLike): Result;
@@ -72,8 +91,11 @@ decodeFunctionResult(functionFragment: 'LOSS_EXPERIENCE', data: BytesLike): Resu
 decodeFunctionResult(functionFragment: 'MIN_STAKE', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'SPECIAL_WEIGHT', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'SPEED_WEIGHT', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'UPGRADE_INTERFACE_VERSION', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'WIN_EXPERIENCE', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'accumulatedFees', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'addAdmin', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'admins', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'arenaWarrior', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'battleCounter', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'battles', data: BytesLike): Result;
@@ -85,16 +107,56 @@ decodeFunctionResult(functionFragment: 'getBattle', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getBattleHistory', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getOpenBattleCount', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getOpenBattles', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'getPlatformStats', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'getPlayerBattleCount', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'getPlayerBattlesPaginated', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'getResolvedBattleCount', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'getResolvedBattles', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'initialize', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'joinBattle', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'nonces', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'owner', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'pause', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'paused', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'proxiableUUID', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'removeAdmin', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'renounceOwnership', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'setArenaWarrior', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'setFeeRecipient', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'setTrustedSigner', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'totalWagered', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'transferOwnership', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'trustedSigner', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'unpause', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'upgradeToAndCall', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
   }
 
   
+    export namespace AdminAddedEvent {
+      export type InputTuple = [admin: AddressLike];
+      export type OutputTuple = [admin: string];
+      export interface OutputObject {admin: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace AdminRemovedEvent {
+      export type InputTuple = [admin: AddressLike];
+      export type OutputTuple = [admin: string];
+      export interface OutputObject {admin: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
     export namespace BattleCancelledEvent {
       export type InputTuple = [battleId: BigNumberish, player: AddressLike];
       export type OutputTuple = [battleId: bigint, player: string];
@@ -143,10 +205,94 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
 
   
 
+    export namespace ContractPausedEvent {
+      export type InputTuple = [by: AddressLike];
+      export type OutputTuple = [by: string];
+      export interface OutputObject {by: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace ContractUnpausedEvent {
+      export type InputTuple = [by: AddressLike];
+      export type OutputTuple = [by: string];
+      export interface OutputObject {by: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace InitializedEvent {
+      export type InputTuple = [version: BigNumberish];
+      export type OutputTuple = [version: bigint];
+      export interface OutputObject {version: bigint };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
     export namespace OwnershipTransferredEvent {
       export type InputTuple = [previousOwner: AddressLike, newOwner: AddressLike];
       export type OutputTuple = [previousOwner: string, newOwner: string];
       export interface OutputObject {previousOwner: string, newOwner: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace PausedEvent {
+      export type InputTuple = [account: AddressLike];
+      export type OutputTuple = [account: string];
+      export interface OutputObject {account: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace TrustedSignerUpdatedEvent {
+      export type InputTuple = [signer: AddressLike];
+      export type OutputTuple = [signer: string];
+      export interface OutputObject {signer: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace UnpausedEvent {
+      export type InputTuple = [account: AddressLike];
+      export type OutputTuple = [account: string];
+      export interface OutputObject {account: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace UpgradedEvent {
+      export type InputTuple = [implementation: AddressLike];
+      export type OutputTuple = [implementation: string];
+      export interface OutputObject {implementation: string };
       export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
       export type Filter = TypedDeferredTopicFilter<Event>
       export type Log = TypedEventLog<Event>
@@ -325,6 +471,14 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
     
 
     
+    UPGRADE_INTERFACE_VERSION: TypedContractMethod<
+      [],
+      [string],
+      'view'
+    >
+    
+
+    
     WIN_EXPERIENCE: TypedContractMethod<
       [],
       [bigint],
@@ -336,6 +490,22 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
     accumulatedFees: TypedContractMethod<
       [],
       [bigint],
+      'view'
+    >
+    
+
+    
+    addAdmin: TypedContractMethod<
+      [admin: AddressLike, ],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
+    admins: TypedContractMethod<
+      [arg0: AddressLike, ],
+      [boolean],
       'view'
     >
     
@@ -382,7 +552,7 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
 
     
     createBattle: TypedContractMethod<
-      [tokenId: BigNumberish, ],
+      [tokenId: BigNumberish, signature: BytesLike, ],
       [void],
       'payable'
     >
@@ -429,10 +599,66 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
     
 
     
+    getPlatformStats: TypedContractMethod<
+      [],
+      [[bigint, bigint, bigint] & {_totalBattles: bigint, _totalWagered: bigint, _totalFees: bigint }],
+      'view'
+    >
+    
+
+    
+    getPlayerBattleCount: TypedContractMethod<
+      [player: AddressLike, ],
+      [bigint],
+      'view'
+    >
+    
+
+    
+    getPlayerBattlesPaginated: TypedContractMethod<
+      [player: AddressLike, offset: BigNumberish, limit: BigNumberish, ],
+      [bigint[]],
+      'view'
+    >
+    
+
+    
+    getResolvedBattleCount: TypedContractMethod<
+      [],
+      [bigint],
+      'view'
+    >
+    
+
+    
+    getResolvedBattles: TypedContractMethod<
+      [offset: BigNumberish, limit: BigNumberish, ],
+      [bigint[]],
+      'view'
+    >
+    
+
+    
+    initialize: TypedContractMethod<
+      [_arenaWarrior: AddressLike, _feeRecipient: AddressLike, ],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
     joinBattle: TypedContractMethod<
-      [battleId: BigNumberish, tokenId: BigNumberish, ],
+      [battleId: BigNumberish, tokenId: BigNumberish, signature: BytesLike, ],
       [void],
       'payable'
+    >
+    
+
+    
+    nonces: TypedContractMethod<
+      [arg0: AddressLike, ],
+      [bigint],
+      'view'
     >
     
 
@@ -441,6 +667,38 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
       [],
       [string],
       'view'
+    >
+    
+
+    
+    pause: TypedContractMethod<
+      [],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
+    paused: TypedContractMethod<
+      [],
+      [boolean],
+      'view'
+    >
+    
+
+    
+    proxiableUUID: TypedContractMethod<
+      [],
+      [string],
+      'view'
+    >
+    
+
+    
+    removeAdmin: TypedContractMethod<
+      [admin: AddressLike, ],
+      [void],
+      'nonpayable'
     >
     
 
@@ -469,10 +727,50 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
     
 
     
+    setTrustedSigner: TypedContractMethod<
+      [_signer: AddressLike, ],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
+    totalWagered: TypedContractMethod<
+      [],
+      [bigint],
+      'view'
+    >
+    
+
+    
     transferOwnership: TypedContractMethod<
       [newOwner: AddressLike, ],
       [void],
       'nonpayable'
+    >
+    
+
+    
+    trustedSigner: TypedContractMethod<
+      [],
+      [string],
+      'view'
+    >
+    
+
+    
+    unpause: TypedContractMethod<
+      [],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
+    upgradeToAndCall: TypedContractMethod<
+      [newImplementation: AddressLike, data: BytesLike, ],
+      [void],
+      'payable'
     >
     
 
@@ -572,6 +870,11 @@ getFunction(nameOrSignature: 'SPEED_WEIGHT'): TypedContractMethod<
       [bigint],
       'view'
     >;
+getFunction(nameOrSignature: 'UPGRADE_INTERFACE_VERSION'): TypedContractMethod<
+      [],
+      [string],
+      'view'
+    >;
 getFunction(nameOrSignature: 'WIN_EXPERIENCE'): TypedContractMethod<
       [],
       [bigint],
@@ -580,6 +883,16 @@ getFunction(nameOrSignature: 'WIN_EXPERIENCE'): TypedContractMethod<
 getFunction(nameOrSignature: 'accumulatedFees'): TypedContractMethod<
       [],
       [bigint],
+      'view'
+    >;
+getFunction(nameOrSignature: 'addAdmin'): TypedContractMethod<
+      [admin: AddressLike, ],
+      [void],
+      'nonpayable'
+    >;
+getFunction(nameOrSignature: 'admins'): TypedContractMethod<
+      [arg0: AddressLike, ],
+      [boolean],
       'view'
     >;
 getFunction(nameOrSignature: 'arenaWarrior'): TypedContractMethod<
@@ -608,7 +921,7 @@ getFunction(nameOrSignature: 'claimTimeout'): TypedContractMethod<
       'nonpayable'
     >;
 getFunction(nameOrSignature: 'createBattle'): TypedContractMethod<
-      [tokenId: BigNumberish, ],
+      [tokenId: BigNumberish, signature: BytesLike, ],
       [void],
       'payable'
     >;
@@ -637,15 +950,70 @@ getFunction(nameOrSignature: 'getOpenBattles'): TypedContractMethod<
       [bigint[]],
       'view'
     >;
+getFunction(nameOrSignature: 'getPlatformStats'): TypedContractMethod<
+      [],
+      [[bigint, bigint, bigint] & {_totalBattles: bigint, _totalWagered: bigint, _totalFees: bigint }],
+      'view'
+    >;
+getFunction(nameOrSignature: 'getPlayerBattleCount'): TypedContractMethod<
+      [player: AddressLike, ],
+      [bigint],
+      'view'
+    >;
+getFunction(nameOrSignature: 'getPlayerBattlesPaginated'): TypedContractMethod<
+      [player: AddressLike, offset: BigNumberish, limit: BigNumberish, ],
+      [bigint[]],
+      'view'
+    >;
+getFunction(nameOrSignature: 'getResolvedBattleCount'): TypedContractMethod<
+      [],
+      [bigint],
+      'view'
+    >;
+getFunction(nameOrSignature: 'getResolvedBattles'): TypedContractMethod<
+      [offset: BigNumberish, limit: BigNumberish, ],
+      [bigint[]],
+      'view'
+    >;
+getFunction(nameOrSignature: 'initialize'): TypedContractMethod<
+      [_arenaWarrior: AddressLike, _feeRecipient: AddressLike, ],
+      [void],
+      'nonpayable'
+    >;
 getFunction(nameOrSignature: 'joinBattle'): TypedContractMethod<
-      [battleId: BigNumberish, tokenId: BigNumberish, ],
+      [battleId: BigNumberish, tokenId: BigNumberish, signature: BytesLike, ],
       [void],
       'payable'
+    >;
+getFunction(nameOrSignature: 'nonces'): TypedContractMethod<
+      [arg0: AddressLike, ],
+      [bigint],
+      'view'
     >;
 getFunction(nameOrSignature: 'owner'): TypedContractMethod<
       [],
       [string],
       'view'
+    >;
+getFunction(nameOrSignature: 'pause'): TypedContractMethod<
+      [],
+      [void],
+      'nonpayable'
+    >;
+getFunction(nameOrSignature: 'paused'): TypedContractMethod<
+      [],
+      [boolean],
+      'view'
+    >;
+getFunction(nameOrSignature: 'proxiableUUID'): TypedContractMethod<
+      [],
+      [string],
+      'view'
+    >;
+getFunction(nameOrSignature: 'removeAdmin'): TypedContractMethod<
+      [admin: AddressLike, ],
+      [void],
+      'nonpayable'
     >;
 getFunction(nameOrSignature: 'renounceOwnership'): TypedContractMethod<
       [],
@@ -662,10 +1030,35 @@ getFunction(nameOrSignature: 'setFeeRecipient'): TypedContractMethod<
       [void],
       'nonpayable'
     >;
+getFunction(nameOrSignature: 'setTrustedSigner'): TypedContractMethod<
+      [_signer: AddressLike, ],
+      [void],
+      'nonpayable'
+    >;
+getFunction(nameOrSignature: 'totalWagered'): TypedContractMethod<
+      [],
+      [bigint],
+      'view'
+    >;
 getFunction(nameOrSignature: 'transferOwnership'): TypedContractMethod<
       [newOwner: AddressLike, ],
       [void],
       'nonpayable'
+    >;
+getFunction(nameOrSignature: 'trustedSigner'): TypedContractMethod<
+      [],
+      [string],
+      'view'
+    >;
+getFunction(nameOrSignature: 'unpause'): TypedContractMethod<
+      [],
+      [void],
+      'nonpayable'
+    >;
+getFunction(nameOrSignature: 'upgradeToAndCall'): TypedContractMethod<
+      [newImplementation: AddressLike, data: BytesLike, ],
+      [void],
+      'payable'
     >;
 getFunction(nameOrSignature: 'withdrawFees'): TypedContractMethod<
       [],
@@ -673,14 +1066,31 @@ getFunction(nameOrSignature: 'withdrawFees'): TypedContractMethod<
       'nonpayable'
     >;
 
-    getEvent(key: 'BattleCancelled'): TypedContractEvent<BattleCancelledEvent.InputTuple, BattleCancelledEvent.OutputTuple, BattleCancelledEvent.OutputObject>;
+    getEvent(key: 'AdminAdded'): TypedContractEvent<AdminAddedEvent.InputTuple, AdminAddedEvent.OutputTuple, AdminAddedEvent.OutputObject>;
+getEvent(key: 'AdminRemoved'): TypedContractEvent<AdminRemovedEvent.InputTuple, AdminRemovedEvent.OutputTuple, AdminRemovedEvent.OutputObject>;
+getEvent(key: 'BattleCancelled'): TypedContractEvent<BattleCancelledEvent.InputTuple, BattleCancelledEvent.OutputTuple, BattleCancelledEvent.OutputObject>;
 getEvent(key: 'BattleCreated'): TypedContractEvent<BattleCreatedEvent.InputTuple, BattleCreatedEvent.OutputTuple, BattleCreatedEvent.OutputObject>;
 getEvent(key: 'BattleJoined'): TypedContractEvent<BattleJoinedEvent.InputTuple, BattleJoinedEvent.OutputTuple, BattleJoinedEvent.OutputObject>;
 getEvent(key: 'BattleResolved'): TypedContractEvent<BattleResolvedEvent.InputTuple, BattleResolvedEvent.OutputTuple, BattleResolvedEvent.OutputObject>;
+getEvent(key: 'ContractPaused'): TypedContractEvent<ContractPausedEvent.InputTuple, ContractPausedEvent.OutputTuple, ContractPausedEvent.OutputObject>;
+getEvent(key: 'ContractUnpaused'): TypedContractEvent<ContractUnpausedEvent.InputTuple, ContractUnpausedEvent.OutputTuple, ContractUnpausedEvent.OutputObject>;
+getEvent(key: 'Initialized'): TypedContractEvent<InitializedEvent.InputTuple, InitializedEvent.OutputTuple, InitializedEvent.OutputObject>;
 getEvent(key: 'OwnershipTransferred'): TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
+getEvent(key: 'Paused'): TypedContractEvent<PausedEvent.InputTuple, PausedEvent.OutputTuple, PausedEvent.OutputObject>;
+getEvent(key: 'TrustedSignerUpdated'): TypedContractEvent<TrustedSignerUpdatedEvent.InputTuple, TrustedSignerUpdatedEvent.OutputTuple, TrustedSignerUpdatedEvent.OutputObject>;
+getEvent(key: 'Unpaused'): TypedContractEvent<UnpausedEvent.InputTuple, UnpausedEvent.OutputTuple, UnpausedEvent.OutputObject>;
+getEvent(key: 'Upgraded'): TypedContractEvent<UpgradedEvent.InputTuple, UpgradedEvent.OutputTuple, UpgradedEvent.OutputObject>;
 
     filters: {
       
+      'AdminAdded(address)': TypedContractEvent<AdminAddedEvent.InputTuple, AdminAddedEvent.OutputTuple, AdminAddedEvent.OutputObject>;
+      AdminAdded: TypedContractEvent<AdminAddedEvent.InputTuple, AdminAddedEvent.OutputTuple, AdminAddedEvent.OutputObject>;
+    
+
+      'AdminRemoved(address)': TypedContractEvent<AdminRemovedEvent.InputTuple, AdminRemovedEvent.OutputTuple, AdminRemovedEvent.OutputObject>;
+      AdminRemoved: TypedContractEvent<AdminRemovedEvent.InputTuple, AdminRemovedEvent.OutputTuple, AdminRemovedEvent.OutputObject>;
+    
+
       'BattleCancelled(uint256,address)': TypedContractEvent<BattleCancelledEvent.InputTuple, BattleCancelledEvent.OutputTuple, BattleCancelledEvent.OutputObject>;
       BattleCancelled: TypedContractEvent<BattleCancelledEvent.InputTuple, BattleCancelledEvent.OutputTuple, BattleCancelledEvent.OutputObject>;
     
@@ -697,8 +1107,36 @@ getEvent(key: 'OwnershipTransferred'): TypedContractEvent<OwnershipTransferredEv
       BattleResolved: TypedContractEvent<BattleResolvedEvent.InputTuple, BattleResolvedEvent.OutputTuple, BattleResolvedEvent.OutputObject>;
     
 
+      'ContractPaused(address)': TypedContractEvent<ContractPausedEvent.InputTuple, ContractPausedEvent.OutputTuple, ContractPausedEvent.OutputObject>;
+      ContractPaused: TypedContractEvent<ContractPausedEvent.InputTuple, ContractPausedEvent.OutputTuple, ContractPausedEvent.OutputObject>;
+    
+
+      'ContractUnpaused(address)': TypedContractEvent<ContractUnpausedEvent.InputTuple, ContractUnpausedEvent.OutputTuple, ContractUnpausedEvent.OutputObject>;
+      ContractUnpaused: TypedContractEvent<ContractUnpausedEvent.InputTuple, ContractUnpausedEvent.OutputTuple, ContractUnpausedEvent.OutputObject>;
+    
+
+      'Initialized(uint64)': TypedContractEvent<InitializedEvent.InputTuple, InitializedEvent.OutputTuple, InitializedEvent.OutputObject>;
+      Initialized: TypedContractEvent<InitializedEvent.InputTuple, InitializedEvent.OutputTuple, InitializedEvent.OutputObject>;
+    
+
       'OwnershipTransferred(address,address)': TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
       OwnershipTransferred: TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
+    
+
+      'Paused(address)': TypedContractEvent<PausedEvent.InputTuple, PausedEvent.OutputTuple, PausedEvent.OutputObject>;
+      Paused: TypedContractEvent<PausedEvent.InputTuple, PausedEvent.OutputTuple, PausedEvent.OutputObject>;
+    
+
+      'TrustedSignerUpdated(address)': TypedContractEvent<TrustedSignerUpdatedEvent.InputTuple, TrustedSignerUpdatedEvent.OutputTuple, TrustedSignerUpdatedEvent.OutputObject>;
+      TrustedSignerUpdated: TypedContractEvent<TrustedSignerUpdatedEvent.InputTuple, TrustedSignerUpdatedEvent.OutputTuple, TrustedSignerUpdatedEvent.OutputObject>;
+    
+
+      'Unpaused(address)': TypedContractEvent<UnpausedEvent.InputTuple, UnpausedEvent.OutputTuple, UnpausedEvent.OutputObject>;
+      Unpaused: TypedContractEvent<UnpausedEvent.InputTuple, UnpausedEvent.OutputTuple, UnpausedEvent.OutputObject>;
+    
+
+      'Upgraded(address)': TypedContractEvent<UpgradedEvent.InputTuple, UpgradedEvent.OutputTuple, UpgradedEvent.OutputObject>;
+      Upgraded: TypedContractEvent<UpgradedEvent.InputTuple, UpgradedEvent.OutputTuple, UpgradedEvent.OutputObject>;
     
     };
   }

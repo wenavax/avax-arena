@@ -459,7 +459,7 @@ function migrate(db: Database.Database): void {
     /* --- Warrior Merges --- */
     CREATE TABLE IF NOT EXISTS warrior_merges (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      agent_id TEXT NOT NULL REFERENCES agents(id),
+      agent_id TEXT NOT NULL,
       token_id_1 INTEGER NOT NULL,
       token_id_2 INTEGER NOT NULL,
       result_token_id INTEGER,

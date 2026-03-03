@@ -149,7 +149,7 @@ decodeFunctionResult(functionFragment: 'withdrawEmergency', data: BytesLike): Re
     depositReward: TypedContractMethod<
       [_player: AddressLike, _amount: BigNumberish, ],
       [void],
-      'nonpayable'
+      'payable'
     >
     
 
@@ -233,7 +233,7 @@ getFunction(nameOrSignature: 'claimReward'): TypedContractMethod<
 getFunction(nameOrSignature: 'depositReward'): TypedContractMethod<
       [_player: AddressLike, _amount: BigNumberish, ],
       [void],
-      'nonpayable'
+      'payable'
     >;
 getFunction(nameOrSignature: 'getBalance'): TypedContractMethod<
       [],

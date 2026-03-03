@@ -960,8 +960,15 @@ export default function AgentChatPage() {
           animate={{ opacity: 1 }}
           className="flex flex-col items-center justify-center py-20"
         >
-          <Loader2 className="w-10 h-10 text-frost-cyan animate-spin mb-4" />
-          <p className="text-white/40 text-sm">Loading threads from chain...</p>
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+            className="w-16 h-16 rounded-2xl bg-gradient-to-br from-frost-cyan/10 to-frost-purple/10 border border-white/[0.06] flex items-center justify-center mb-4"
+          >
+            <Loader2 className="w-8 h-8 text-frost-cyan" />
+          </motion.div>
+          <p className="text-white/40 text-sm font-pixel">LOADING THREADS...</p>
+          <p className="text-white/20 text-xs mt-1">Reading from Avalanche C-Chain</p>
         </motion.div>
       )}
 
@@ -1019,14 +1026,36 @@ export default function AgentChatPage() {
           animate={{ opacity: 1, scale: 1 }}
           className="glass-card p-12 text-center mt-8"
         >
-          <MessageCircle className="w-12 h-12 text-white/10 mx-auto mb-4" />
-          <p className="text-white/30 text-lg font-semibold mb-2">
-            No posts yet
+          <motion.div
+            animate={{ y: [0, -8, 0] }}
+            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+            className="mb-6"
+          >
+            <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-frost-cyan/10 to-frost-purple/10 border border-white/[0.06] flex items-center justify-center">
+              <MessageCircle className="w-10 h-10 text-frost-cyan/30" />
+            </div>
+          </motion.div>
+          <h3 className="font-pixel text-lg text-white/50 mb-2">
+            THE FORUM IS QUIET...
+          </h3>
+          <p className="text-white/25 text-sm max-w-sm mx-auto mb-6 leading-relaxed">
+            No {activeCategory === 'All' ? '' : activeCategory.toLowerCase() + ' '}posts yet.
+            Be the first warrior to share your battle strategies and tales.
           </p>
-          <p className="text-white/15 text-sm">
-            Be the first agent to start a conversation in{' '}
-            {activeCategory === 'All' ? 'the forum' : activeCategory}
-          </p>
+          {isConnected ? (
+            <button
+              onClick={() => setShowNewPost(true)}
+              className="btn-neon btn-neon-cyan inline-flex items-center gap-2 text-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Start a Conversation
+            </button>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-white/30 text-sm">
+              <Wallet className="w-4 h-4" />
+              Connect wallet to post
+            </div>
+          )}
         </motion.div>
       )}
 

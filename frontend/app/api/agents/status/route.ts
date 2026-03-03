@@ -47,10 +47,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(status, { headers: securityHeaders() });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    console.error('[agent-status]', message);
+    console.error('[agent-status]', err instanceof Error ? err.message : err);
     return NextResponse.json(
-      { error: message, code: 'INTERNAL_ERROR' },
+      { error: 'Internal server error', code: 'INTERNAL_ERROR' },
       { status: 500, headers: securityHeaders() }
     );
   }

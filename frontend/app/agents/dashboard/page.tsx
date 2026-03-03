@@ -20,6 +20,7 @@ import {
   Loader2,
   Play,
   Square,
+  Brain,
 } from 'lucide-react';
 import { parseEther, formatEther } from 'viem';
 import { ELEMENTS, CONTRACT_ADDRESSES, FUJI_CHAIN_ID } from '@/lib/constants';
@@ -219,7 +220,7 @@ function FundAgentModal({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
-              className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 text-white placeholder-white/20 font-mono focus:outline-none focus:border-[var(--frost-cyan)] focus:ring-1 focus:ring-[var(--frost-cyan)]/30 transition-colors"
+              className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 text-white placeholder-white/20 font-mono focus:outline-none focus:border-frost-cyan focus:ring-1 focus:ring-frost-cyan/30 transition-colors"
             />
           </div>
 
@@ -316,7 +317,7 @@ function AgentCard({
 
   return (
     <motion.div
-      className="glass-card p-6 transition-all duration-300 ring-1 ring-[var(--frost-cyan)]/50 shadow-[0_0_30px_rgba(0,240,255,0.1)]"
+      className="glass-card p-6 transition-all duration-300 ring-1 ring-frost-primary/50 shadow-glow-primary"
       style={{ transform: 'none' }}
       layout
     >
@@ -324,8 +325,8 @@ function AgentCard({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--frost-cyan)]/20 to-[var(--frost-purple)]/20 border border-white/10 flex items-center justify-center">
-              <Bot className="w-5 h-5 text-[var(--frost-cyan)]" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-frost-cyan/20 to-frost-purple/20 border border-white/10 flex items-center justify-center">
+              <Bot className="w-5 h-5 text-frost-cyan" />
             </div>
             {/* Active status dot */}
             <div
@@ -334,7 +335,7 @@ function AgentCard({
                 agentRunning
                   ? 'bg-[var(--frost-green)] animate-pulse'
                   : agent.active
-                    ? 'bg-[var(--frost-cyan)]'
+                    ? 'bg-frost-cyan'
                     : 'bg-white/20'
               )}
             />
@@ -344,7 +345,7 @@ function AgentCard({
             <span
               className={cn(
                 'text-xs font-medium',
-                agentRunning ? 'text-[var(--frost-green)]' : agent.active ? 'text-[var(--frost-cyan)]' : 'text-white/30'
+                agentRunning ? 'text-[var(--frost-green)]' : agent.active ? 'text-frost-cyan' : 'text-white/30'
               )}
             >
               {agentRunning ? 'Running' : agent.active ? 'Active' : 'Inactive'}
@@ -393,7 +394,7 @@ function AgentCard({
 
       {/* Session Key Status */}
       <div className="flex items-center gap-2 mb-4">
-        <Clock className={cn('w-3.5 h-3.5', isExpired ? 'text-[var(--frost-red)]' : 'text-[var(--frost-cyan)]')} />
+        <Clock className={cn('w-3.5 h-3.5', isExpired ? 'text-[var(--frost-red)]' : 'text-frost-cyan')} />
         <span className="text-xs text-white/40">Session:</span>
         <span
           className={cn(
@@ -406,9 +407,9 @@ function AgentCard({
       </div>
 
       {/* Balance */}
-      <div className="flex items-center gap-2 mb-5 p-3 rounded-lg bg-gradient-to-r from-[var(--frost-cyan)]/5 to-transparent border border-[var(--frost-cyan)]/10">
+      <div className="flex items-center gap-2 mb-5 p-3 rounded-lg bg-gradient-to-r from-frost-cyan/5 to-transparent border border-frost-cyan/10">
         <span className="text-xs text-white/40">Deposited:</span>
-        <span className="font-display text-lg font-bold text-[var(--frost-cyan)] text-glow-cyan">
+        <span className="font-display text-lg font-bold text-frost-cyan text-glow-cyan">
           {formatEther(agent.totalDeposited)} AVAX
         </span>
       </div>
@@ -418,7 +419,7 @@ function AgentCard({
         {[
           { label: 'Battles', value: String(agent.totalGames), color: 'text-white/80' },
           { label: 'Wins', value: String(agent.wins), color: 'text-[var(--frost-green)]' },
-          { label: 'Win Rate', value: `${winRate}%`, color: 'text-[var(--frost-cyan)]' },
+          { label: 'Win Rate', value: `${winRate}%`, color: 'text-frost-cyan' },
           {
             label: 'Withdrawn',
             value: `${profitAvax >= 0 ? '+' : ''}${profitAvax.toFixed(2)}`,
@@ -524,7 +525,7 @@ function AgentCard({
  * Agent Controls Panel
  * ------------------------------------------------------------------------- */
 
-type ControlTab = 'overview' | 'warriors' | 'battles';
+type ControlTab = 'overview' | 'warriors' | 'battles' | 'ai_brain';
 
 function AgentControlsPanel({
   agent,
@@ -542,6 +543,7 @@ function AgentControlsPanel({
     { id: 'overview', label: 'Overview' },
     { id: 'warriors', label: 'Warriors' },
     { id: 'battles', label: 'Battles' },
+    { id: 'ai_brain', label: 'AI Brain' },
   ];
 
   return (
@@ -561,7 +563,7 @@ function AgentControlsPanel({
             className={cn(
               'px-5 py-3.5 text-xs font-display font-bold uppercase tracking-wider transition-colors whitespace-nowrap',
               activeTab === tab.id
-                ? 'text-[var(--frost-cyan)] border-b-2 border-[var(--frost-cyan)] bg-[var(--frost-cyan)]/5'
+                ? 'text-frost-cyan border-b-2 border-frost-cyan bg-frost-cyan/5'
                 : 'text-white/30 hover:text-white/60'
             )}
           >
@@ -581,7 +583,7 @@ function AgentControlsPanel({
               </h4>
               <div className="h-48 rounded-xl bg-black/30 border border-white/5 flex items-center justify-center">
                 <div className="text-center">
-                  <TrendingUp className="w-8 h-8 text-[var(--frost-cyan)]/30 mx-auto mb-2" />
+                  <TrendingUp className="w-8 h-8 text-frost-cyan/30 mx-auto mb-2" />
                   <p className="text-sm text-white/20 font-mono">Profit chart visualization</p>
                   <p className="text-xs text-white/10 mt-1">Real-time P&L tracking</p>
                 </div>
@@ -595,7 +597,7 @@ function AgentControlsPanel({
               </h4>
               {battlesLoading ? (
                 <div className="flex items-center justify-center py-8 gap-2">
-                  <Loader2 className="w-5 h-5 text-[var(--frost-cyan)] animate-spin" />
+                  <Loader2 className="w-5 h-5 text-frost-cyan animate-spin" />
                   <span className="text-sm text-white/30">Loading battles...</span>
                 </div>
               ) : battles.length === 0 ? (
@@ -760,7 +762,7 @@ function AgentControlsPanel({
             </h4>
             {battlesLoading ? (
               <div className="flex items-center justify-center py-8 gap-2">
-                <Loader2 className="w-5 h-5 text-[var(--frost-cyan)] animate-spin" />
+                <Loader2 className="w-5 h-5 text-frost-cyan animate-spin" />
                 <span className="text-sm text-white/30">Loading battle history...</span>
               </div>
             ) : battles.length === 0 ? (
@@ -842,8 +844,234 @@ function AgentControlsPanel({
             )}
           </div>
         )}
+
+        {/* AI Brain Tab */}
+        {activeTab === 'ai_brain' && (
+          <AIBrainPanel agentWallet={agent.agentWallet} />
+        )}
       </div>
     </motion.div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * AI Brain Panel (Faz 8)
+ * ------------------------------------------------------------------------- */
+
+interface DecisionData {
+  id: number;
+  action: string;
+  reasoning: string;
+  success: boolean;
+  createdAt: string;
+  gameStateSummary?: Record<string, unknown>;
+}
+
+interface DecisionStatsData {
+  actionBreakdown: Record<string, number>;
+  successRate: number;
+  totalDecisions: number;
+}
+
+interface DailySummary {
+  day: string;
+  total_decisions: number;
+  successes: number;
+  battles: number;
+  mints: number;
+  messages: number;
+  waits: number;
+}
+
+const ACTION_COLORS: Record<string, string> = {
+  join_battle: 'bg-red-500',
+  create_battle: 'bg-frost-orange',
+  mint_warrior: 'bg-frost-purple',
+  post_message: 'bg-frost-cyan',
+  join_tournament: 'bg-frost-gold',
+  wait: 'bg-white/20',
+};
+
+function AIBrainPanel({ agentWallet }: { agentWallet: string }) {
+  const [decisions, setDecisions] = useState<DecisionData[]>([]);
+  const [stats, setStats] = useState<DecisionStatsData | null>(null);
+  const [dailySummary, setDailySummary] = useState<DailySummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dbAgentId, setDbAgentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        // First get the db agent id from wallet
+        const rosterRes = await fetch('/api/agents/roster');
+        const rosterData = await rosterRes.json();
+        const matchedAgent = rosterData.agents?.find(
+          (a: { wallet_address: string }) => a.wallet_address?.toLowerCase() === agentWallet.toLowerCase()
+        );
+        if (!matchedAgent) {
+          setLoading(false);
+          return;
+        }
+        setDbAgentId(matchedAgent.id);
+
+        // Fetch decisions with details
+        const decRes = await fetch(`/api/agents/decisions?agentId=${matchedAgent.id}&limit=20&detailed=true`);
+        const decData = await decRes.json();
+        setDecisions(decData.decisions ?? []);
+        setStats(decData.stats ?? null);
+
+        // Fetch daily summary
+        const dailyRes = await fetch(`/api/agents/decisions?agentId=${matchedAgent.id}&groupBy=day&limit=7`);
+        const dailyData = await dailyRes.json();
+        setDailySummary(dailyData.dailySummary ?? []);
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, [agentWallet]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 gap-2">
+        <Loader2 className="w-5 h-5 text-frost-cyan animate-spin" />
+        <span className="text-sm text-white/30">Loading AI decisions...</span>
+      </div>
+    );
+  }
+
+  if (!stats || stats.totalDecisions === 0) {
+    return (
+      <div className="text-center py-12">
+        <Brain className="w-10 h-10 text-white/10 mx-auto mb-3" />
+        <p className="text-sm text-white/30">No AI decisions recorded yet.</p>
+        <p className="text-xs text-white/20 mt-1">Start the agent loop to see AI reasoning here.</p>
+      </div>
+    );
+  }
+
+  const totalActions = Object.values(stats.actionBreakdown).reduce((a, b) => a + b, 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Row */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3 text-center">
+          <div className="text-lg font-bold font-mono text-frost-cyan">{stats.totalDecisions}</div>
+          <div className="text-[10px] text-white/30 uppercase">Decisions</div>
+        </div>
+        <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3 text-center">
+          <div className="text-lg font-bold font-mono text-frost-green">{stats.successRate}%</div>
+          <div className="text-[10px] text-white/30 uppercase">Success</div>
+        </div>
+        <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3 text-center">
+          <div className="text-lg font-bold font-mono text-frost-purple">
+            {Object.entries(stats.actionBreakdown).sort((a, b) => b[1] - a[1])[0]?.[0]?.replace('_', ' ') ?? '-'}
+          </div>
+          <div className="text-[10px] text-white/30 uppercase">Fav Action</div>
+        </div>
+      </div>
+
+      {/* Action Distribution */}
+      <div>
+        <h4 className="text-xs font-display font-bold text-white/50 uppercase tracking-wider mb-3">
+          Action Distribution
+        </h4>
+        <div className="flex h-4 rounded-full overflow-hidden bg-white/5">
+          {Object.entries(stats.actionBreakdown)
+            .sort((a, b) => b[1] - a[1])
+            .map(([action, count]) => (
+              <div
+                key={action}
+                className={cn(ACTION_COLORS[action] ?? 'bg-white/10')}
+                style={{ width: `${(count / totalActions) * 100}%` }}
+                title={`${action}: ${count} (${Math.round((count / totalActions) * 100)}%)`}
+              />
+            ))}
+        </div>
+        <div className="flex flex-wrap gap-3 mt-2">
+          {Object.entries(stats.actionBreakdown)
+            .sort((a, b) => b[1] - a[1])
+            .map(([action, count]) => (
+              <div key={action} className="flex items-center gap-1.5">
+                <div className={cn('w-2 h-2 rounded-full', ACTION_COLORS[action] ?? 'bg-white/10')} />
+                <span className="text-[10px] text-white/40 font-mono">
+                  {action.replace('_', ' ')} ({Math.round((count / totalActions) * 100)}%)
+                </span>
+              </div>
+            ))}
+        </div>
+      </div>
+
+      {/* Daily P&L Table */}
+      {dailySummary.length > 0 && (
+        <div>
+          <h4 className="text-xs font-display font-bold text-white/50 uppercase tracking-wider mb-3">
+            Daily Summary (Last 7 Days)
+          </h4>
+          <div className="overflow-x-auto">
+            <table className="frost-table w-full">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Decisions</th>
+                  <th>Battles</th>
+                  <th>Mints</th>
+                  <th>Success</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailySummary.map((d) => (
+                  <tr key={d.day}>
+                    <td><span className="text-xs font-mono text-white/60">{d.day}</span></td>
+                    <td><span className="text-xs font-mono text-white/50">{d.total_decisions}</span></td>
+                    <td><span className="text-xs font-mono text-frost-orange">{d.battles}</span></td>
+                    <td><span className="text-xs font-mono text-frost-purple">{d.mints}</span></td>
+                    <td>
+                      <span className="text-xs font-mono text-frost-green">
+                        {d.total_decisions > 0 ? Math.round((d.successes / d.total_decisions) * 100) : 0}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Decision Timeline */}
+      <div>
+        <h4 className="text-xs font-display font-bold text-white/50 uppercase tracking-wider mb-3">
+          Recent Decisions
+        </h4>
+        <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+          {decisions.map((d) => (
+            <div
+              key={d.id}
+              className={cn(
+                'rounded-xl border p-3',
+                d.success ? 'border-frost-green/10 bg-frost-green/[0.02]' : 'border-red-500/10 bg-red-500/[0.02]'
+              )}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div className={cn('w-2 h-2 rounded-full', ACTION_COLORS[d.action] ?? 'bg-white/20')} />
+                <span className="text-xs font-bold font-mono text-white/70 uppercase">{d.action.replace('_', ' ')}</span>
+                <span className={cn('ml-auto text-[10px] font-bold', d.success ? 'text-frost-green' : 'text-red-400')}>
+                  {d.success ? 'OK' : 'FAIL'}
+                </span>
+              </div>
+              <p className="text-xs text-white/40 font-mono leading-relaxed">{d.reasoning}</p>
+              <span className="text-[10px] text-white/20 font-mono mt-1 block">
+                {new Date(d.createdAt).toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -908,7 +1136,7 @@ function ActivityLog({ entries }: { entries: ActivityLogEntry[] }) {
                       href={`https://testnet.snowtrace.io/tx/${entry.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[10px] font-mono text-[var(--frost-cyan)]/60 hover:text-[var(--frost-cyan)] transition-colors mt-0.5 inline-block"
+                      className="text-[10px] font-mono text-frost-cyan/60 hover:text-frost-cyan transition-colors mt-0.5 inline-block"
                     >
                       tx: {entry.txHash.slice(0, 10)}...{entry.txHash.slice(-6)}
                     </a>
@@ -926,6 +1154,195 @@ function ActivityLog({ entries }: { entries: ActivityLogEntry[] }) {
 /* ---------------------------------------------------------------------------
  * Main Dashboard Page
  * ------------------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------------------
+ * Decision History Panel (fetches from API)
+ * ------------------------------------------------------------------------- */
+
+interface DecisionItem {
+  id: number;
+  action: string;
+  reasoning: string;
+  gameStateSummary: Record<string, unknown>;
+  success: boolean;
+  createdAt: string;
+}
+
+interface DecisionStatsData {
+  actionBreakdown: Record<string, number>;
+  successRate: number;
+  totalDecisions: number;
+}
+
+const ACTION_COLORS_MAP: Record<string, string> = {
+  join_battle: 'bg-[var(--frost-red)]',
+  create_battle: 'bg-[var(--frost-orange)]',
+  mint_warrior: 'bg-[var(--frost-gold)]',
+  post_message: 'bg-frost-cyan',
+  wait: 'bg-white/20',
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  join_battle: 'Join',
+  create_battle: 'Create',
+  mint_warrior: 'Mint',
+  post_message: 'Chat',
+  wait: 'Wait',
+};
+
+const ACTION_ICONS_MAP: Record<string, typeof Swords> = {
+  join_battle: Swords,
+  create_battle: Swords,
+  mint_warrior: Sparkles,
+  post_message: Terminal,
+  wait: Clock,
+};
+
+function DashboardDecisionPanel({ walletAddress }: { walletAddress: string }) {
+  const [decisions, setDecisions] = useState<DecisionItem[]>([]);
+  const [stats, setStats] = useState<DecisionStatsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [agentId, setAgentId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // First find agent ID from roster
+    fetch(`/api/agents/roster?limit=100`)
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled) return;
+        const found = data.roster?.find((a: { walletAddress?: string }) =>
+          a.walletAddress?.toLowerCase() === walletAddress.toLowerCase()
+        );
+        if (found?.id) {
+          setAgentId(found.id);
+          return fetch(`/api/agents/decisions?agentId=${found.id}&limit=20`);
+        }
+        setLoading(false);
+        return null;
+      })
+      .then(res => res?.json())
+      .then(data => {
+        if (cancelled || !data) return;
+        setDecisions(data.decisions ?? []);
+        setStats(data.stats ?? null);
+        setLoading(false);
+      })
+      .catch(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [walletAddress]);
+
+  if (loading) {
+    return (
+      <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+        <div className="flex items-center gap-2 mb-6">
+          <Brain className="w-5 h-5 text-frost-cyan" />
+          <h2 className="font-display text-2xl font-bold text-white">AI Brain</h2>
+        </div>
+        <div className="glass-card p-8 text-center">
+          <Loader2 className="w-6 h-6 text-frost-cyan animate-spin mx-auto" />
+        </div>
+      </motion.section>
+    );
+  }
+
+  return (
+    <motion.section initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+      <div className="flex items-center gap-2 mb-6">
+        <Brain className="w-5 h-5 text-frost-cyan" />
+        <h2 className="font-display text-2xl font-bold text-white">AI Brain</h2>
+        {stats && (
+          <span className="ml-auto text-sm text-white/30 font-mono">
+            {stats.totalDecisions} decisions | {stats.successRate}% success
+          </span>
+        )}
+      </div>
+
+      {/* Action Distribution Bar */}
+      {stats && stats.totalDecisions > 0 && (
+        <div className="glass-card p-5 mb-4">
+          <div className="text-xs text-white/40 font-mono mb-3">Strategy Distribution</div>
+          <div className="h-5 rounded-full overflow-hidden flex bg-white/[0.04] border border-white/[0.06]">
+            {Object.entries(stats.actionBreakdown)
+              .sort((a, b) => b[1] - a[1])
+              .map(([action, count]) => {
+                const pct = (count / stats.totalDecisions) * 100;
+                if (pct < 1) return null;
+                return (
+                  <div key={action} className={cn('h-full', ACTION_COLORS_MAP[action] ?? 'bg-white/10')}
+                    style={{ width: `${pct}%` }} title={`${ACTION_LABELS[action] ?? action}: ${count}`} />
+                );
+              })}
+          </div>
+          <div className="flex flex-wrap gap-3 mt-2">
+            {Object.entries(stats.actionBreakdown).sort((a, b) => b[1] - a[1]).map(([action, count]) => (
+              <div key={action} className="flex items-center gap-1.5">
+                <div className={cn('w-2.5 h-2.5 rounded-sm', ACTION_COLORS_MAP[action] ?? 'bg-white/10')} />
+                <span className="text-[10px] font-mono text-white/40">
+                  {ACTION_LABELS[action] ?? action} {((count / stats.totalDecisions) * 100).toFixed(0)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Win/Loss dots */}
+      {decisions.length > 0 && (
+        <div className="glass-card p-5 mb-4">
+          <div className="text-xs text-white/40 font-mono mb-3">Recent Battle Outcomes</div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {decisions
+              .filter(d => d.action === 'join_battle' || d.action === 'create_battle')
+              .slice(0, 20)
+              .map((d, i) => (
+                <div key={i} className={cn('w-3.5 h-3.5 rounded-full border',
+                  d.success ? 'bg-[var(--frost-green)]/30 border-[var(--frost-green)]/50' : 'bg-[var(--frost-red)]/30 border-[var(--frost-red)]/50'
+                )} />
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Decision list */}
+      <div className="space-y-2 max-h-[500px] overflow-y-auto">
+        {decisions.length === 0 ? (
+          <div className="glass-card p-8 text-center">
+            <Brain className="w-8 h-8 text-white/15 mx-auto mb-3" />
+            <p className="text-sm text-white/30 font-mono">Start the agent loop to see Claude&apos;s reasoning here.</p>
+          </div>
+        ) : (
+          decisions.map((d) => {
+            const Icon = ACTION_ICONS_MAP[d.action] ?? Clock;
+            return (
+              <div key={d.id} className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-frost-cyan/20 transition-colors">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Icon className={cn('w-3.5 h-3.5',
+                      d.action.includes('battle') ? 'text-[var(--frost-red)]' :
+                      d.action === 'mint_warrior' ? 'text-[var(--frost-gold)]' :
+                      d.action === 'post_message' ? 'text-frost-cyan' : 'text-white/40'
+                    )} />
+                    <span className="text-xs font-mono font-bold text-white/60">
+                      {ACTION_LABELS[d.action] ?? d.action}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-white/25 font-mono">
+                    {new Date(d.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div className="font-mono text-[11px] text-frost-cyan/70 bg-[var(--frost-bg)]/60 rounded-lg p-2 leading-relaxed">
+                  <span className="text-frost-cyan/30">{'> '}</span>{d.reasoning}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </motion.section>
+  );
+}
 
 export default function AgentDashboardPage() {
   const { address, isConnected } = useAccount();
@@ -1259,9 +1676,9 @@ export default function AgentDashboardPage() {
     <div className="min-h-screen relative">
       {/* Background orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-        <div className="orb w-80 h-80 bg-[var(--frost-purple)] top-20 -left-20" />
-        <div className="orb w-96 h-96 bg-[var(--frost-cyan)] top-60 -right-32" style={{ animationDelay: '2s' }} />
-        <div className="orb w-72 h-72 bg-[var(--frost-pink)] bottom-20 left-1/4" style={{ animationDelay: '4s' }} />
+        <div className="orb w-80 h-80 bg-frost-purple top-20 -left-20" />
+        <div className="orb w-96 h-96 bg-frost-cyan top-60 -right-32" style={{ animationDelay: '2s' }} />
+        <div className="orb w-72 h-72 bg-frost-pink bottom-20 left-1/4" style={{ animationDelay: '4s' }} />
       </div>
 
       {/* ============================================================
@@ -1275,11 +1692,11 @@ export default function AgentDashboardPage() {
             transition={{ duration: 0.8 }}
           >
             <div className="flex items-center justify-center gap-3 mb-4">
-              <Bot className="w-8 h-8 text-[var(--frost-cyan)]" />
+              <Bot className="w-8 h-8 text-frost-cyan" />
               <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-black gradient-text">
                 AGENT DASHBOARD
               </h1>
-              <Sparkles className="w-8 h-8 text-[var(--frost-pink)]" />
+              <Sparkles className="w-8 h-8 text-frost-pink" />
             </div>
             <p className="text-lg text-white/50 max-w-xl mx-auto">
               Manage your autonomous warriors
@@ -1307,7 +1724,7 @@ export default function AgentDashboardPage() {
           {/* Loading State */}
           {loading && (
             <div className="flex items-center justify-center py-20 gap-3">
-              <Loader2 className="w-8 h-8 text-[var(--frost-cyan)] animate-spin" />
+              <Loader2 className="w-8 h-8 text-frost-cyan animate-spin" />
               <span className="text-lg text-white/40 font-display">Loading agent data...</span>
             </div>
           )}
@@ -1347,7 +1764,7 @@ export default function AgentDashboardPage() {
                   transition={{ delay: 0.2 }}
                 >
                   <div className="flex items-center gap-2 mb-6">
-                    <Sparkles className="w-5 h-5 text-[var(--frost-cyan)]" />
+                    <Sparkles className="w-5 h-5 text-frost-cyan" />
                     <h2 className="font-display text-2xl font-bold text-white">
                       Register New Agent
                     </h2>
@@ -1379,7 +1796,7 @@ export default function AgentDashboardPage() {
                           value={formName}
                           onChange={(e) => setFormName(e.target.value)}
                           placeholder="e.g. AlphaStrike"
-                          className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 text-white placeholder-white/20 text-sm focus:outline-none focus:border-[var(--frost-cyan)] focus:ring-1 focus:ring-[var(--frost-cyan)]/30 transition-colors"
+                          className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 text-white placeholder-white/20 text-sm focus:outline-none focus:border-frost-cyan focus:ring-1 focus:ring-frost-cyan/30 transition-colors"
                         />
                       </div>
 
@@ -1391,7 +1808,7 @@ export default function AgentDashboardPage() {
                         <select
                           value={formStrategy}
                           onChange={(e) => setFormStrategy(e.target.value)}
-                          className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 text-white text-sm focus:outline-none focus:border-[var(--frost-cyan)] focus:ring-1 focus:ring-[var(--frost-cyan)]/30 transition-colors appearance-none"
+                          className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 text-white text-sm focus:outline-none focus:border-frost-cyan focus:ring-1 focus:ring-frost-cyan/30 transition-colors appearance-none"
                         >
                           <option value="Aggressive">Aggressive</option>
                           <option value="Defensive">Defensive</option>
@@ -1408,7 +1825,7 @@ export default function AgentDashboardPage() {
                         <select
                           value={formSessionDuration}
                           onChange={(e) => setFormSessionDuration(e.target.value)}
-                          className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 text-white text-sm focus:outline-none focus:border-[var(--frost-cyan)] focus:ring-1 focus:ring-[var(--frost-cyan)]/30 transition-colors appearance-none"
+                          className="w-full px-4 py-3 rounded-lg bg-black/40 border border-white/10 text-white text-sm focus:outline-none focus:border-frost-cyan focus:ring-1 focus:ring-frost-cyan/30 transition-colors appearance-none"
                         >
                           <option value="1h">1 Hour</option>
                           <option value="6h">6 Hours</option>
@@ -1458,7 +1875,7 @@ export default function AgentDashboardPage() {
                   transition={{ delay: 0.3 }}
                 >
                   <div className="flex items-center gap-2 mb-6">
-                    <Shield className="w-5 h-5 text-[var(--frost-cyan)]" />
+                    <Shield className="w-5 h-5 text-frost-cyan" />
                     <h2 className="font-display text-2xl font-bold text-white">
                       My Agent
                     </h2>
@@ -1498,12 +1915,12 @@ export default function AgentDashboardPage() {
                   transition={{ delay: 0.4 }}
                 >
                   <div className="flex items-center gap-2 mb-6">
-                    <Settings className="w-5 h-5 text-[var(--frost-cyan)]" />
+                    <Settings className="w-5 h-5 text-frost-cyan" />
                     <h2 className="font-display text-2xl font-bold text-white">
                       Agent Controls
                     </h2>
                     <ChevronRight className="w-4 h-4 text-white/20" />
-                    <span className="text-sm text-[var(--frost-cyan)] font-display font-bold">
+                    <span className="text-sm text-frost-cyan font-display font-bold">
                       {agent.name}
                     </span>
                   </div>
@@ -1533,6 +1950,11 @@ export default function AgentDashboardPage() {
 
                 <ActivityLog entries={agentActivity} />
               </motion.section>
+
+              {/* ============================================================
+               * DECISION HISTORY + ANALYTICS
+               * ============================================================ */}
+              {agent && <DashboardDecisionPanel walletAddress={agent.agentWallet} />}
             </>
           )}
         </div>

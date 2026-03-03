@@ -71,9 +71,10 @@ contract RewardVault is Ownable, ReentrancyGuard {
     function depositReward(
         address _player,
         uint256 _amount
-    ) external onlyOwner {
+    ) external payable onlyOwner {
         require(_player != address(0), "RewardVault: zero address");
         require(_amount > 0, "RewardVault: amount must be > 0");
+        require(msg.value == _amount, "RewardVault: msg.value must equal _amount");
 
         pendingRewards[_player] += _amount;
         totalPendingRewards += _amount;
@@ -109,21 +110,15 @@ contract RewardVault is Ownable, ReentrancyGuard {
             address(this).balance >= _amount,
             "RewardVault: insufficient balance"
         );
+        require(
+            address(this).balance - _amount >= totalPendingRewards,
+            "RewardVault: would leave insufficient funds for pending rewards"
+        );
 
         (bool success, ) = payable(owner()).call{value: _amount}("");
         require(success, "RewardVault: transfer failed");
 
-        uint256 remainingBalance = address(this).balance;
         emit FundsWithdrawn(owner(), _amount);
-
-        // Warn if remaining balance may not cover pending rewards
-        if (remainingBalance < totalPendingRewards) {
-            emit EmergencyWithdrawWarning(
-                _amount,
-                remainingBalance,
-                "Remaining balance may not cover pending rewards"
-            );
-        }
     }
 
     // -----------------------------------------------------------------------

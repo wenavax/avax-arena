@@ -181,7 +181,7 @@ function MysteryCard() {
             className="w-full h-full"
             style={{
               backgroundImage:
-                'linear-gradient(rgba(0,240,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(0,240,255,0.3) 1px, transparent 1px)',
+                'linear-gradient(rgba(255,32,32,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255,32,32,0.3) 1px, transparent 1px)',
               backgroundSize: '40px 40px',
             }}
           />
@@ -707,16 +707,25 @@ export default function MintPage() {
             </motion.div>
           </motion.div>
 
-          {/* Total Supply */}
+          {/* Total Supply + Network Badge */}
           <motion.div
-            className="mt-6 flex items-center justify-center gap-2 text-white/30 text-sm"
+            className="mt-6 flex items-center justify-center gap-3 text-white/30 text-sm"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
           >
-            <Sparkles className="w-4 h-4" />
-            <span className="font-mono">
-              Total Minted: <span className="text-frost-cyan font-bold">{String(supply)}</span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-orange/10 border border-frost-orange/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-frost-orange animate-pulse" />
+              <span className="text-[10px] font-pixel text-frost-orange/80">FUJI</span>
+            </span>
+            <span className="font-mono flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4" />
+              Total Minted:{' '}
+              {supply === '---' ? (
+                <Loader2 className="w-3 h-3 animate-spin text-frost-cyan inline" />
+              ) : (
+                <span className="text-frost-cyan font-bold">{supply}</span>
+              )}
             </span>
           </motion.div>
         </div>

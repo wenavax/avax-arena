@@ -3,9 +3,14 @@
 /* eslint-disable */
 export * as agentChatSol from './AgentChat.sol/index.js';
 export * as battleEngineSol from './BattleEngine.sol/index.js';
+export * as gameEngineSol from './GameEngine.sol/index.js';
+export * as teamBattleEngineSol from './TeamBattleEngine.sol/index.js';
 export { AgentRegistry__factory } from './AgentRegistry__factory.js';
 export { ArenaToken__factory } from './ArenaToken__factory.js';
 export { ArenaWarrior__factory } from './ArenaWarrior__factory.js';
+export { BattleEngineProxy__factory } from './BattleEngineProxy__factory.js';
+export { FrostbiteMarketplace__factory } from './FrostbiteMarketplace__factory.js';
 export { Leaderboard__factory } from './Leaderboard__factory.js';
 export { RewardVault__factory } from './RewardVault__factory.js';
+export { TeamBattleEngineProxy__factory } from './TeamBattleEngineProxy__factory.js';
 export { Tournament__factory } from './Tournament__factory.js';

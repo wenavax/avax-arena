@@ -6,17 +6,23 @@ const config: Config = {
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./providers/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
         frost: {
-          bg: "#0a0a0f",
-          surface: "#12121a",
-          card: "#1a1a2e",
-          border: "#2a2a3e",
-          cyan: "#00f0ff",
-          purple: "#7b2ff7",
-          pink: "#ff2d87",
+          bg: "rgb(var(--frost-bg) / <alpha-value>)",
+          surface: "rgb(var(--frost-surface) / <alpha-value>)",
+          card: "rgb(var(--frost-card) / <alpha-value>)",
+          border: "rgb(var(--frost-border) / <alpha-value>)",
+          primary: "rgb(var(--frost-primary) / <alpha-value>)",
+          secondary: "rgb(var(--frost-secondary) / <alpha-value>)",
+          accent: "rgb(var(--frost-accent) / <alpha-value>)",
+          // Aliases — mevcut frost-cyan/purple/pink class'ları otomatik çalışır
+          cyan: "rgb(var(--frost-primary) / <alpha-value>)",
+          purple: "rgb(var(--frost-secondary) / <alpha-value>)",
+          pink: "rgb(var(--frost-accent) / <alpha-value>)",
+          // Sabit renkler (status/game)
           green: "#00ff88",
           orange: "#ff8800",
           red: "#ff3366",
@@ -27,17 +33,20 @@ const config: Config = {
         sans: ["Inter", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Fira Code", "monospace"],
         display: ["Orbitron", "sans-serif"],
+        pixel: ["Silkscreen", "monospace"],
       },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "gradient-conic": "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
-        "mesh-gradient":
-          "radial-gradient(at 40% 20%, #7b2ff7 0px, transparent 50%), radial-gradient(at 80% 0%, #00f0ff 0px, transparent 50%), radial-gradient(at 0% 50%, #ff2d87 0px, transparent 50%)",
       },
       boxShadow: {
-        "glow-cyan": "0 0 20px rgba(0, 240, 255, 0.3), 0 0 60px rgba(0, 240, 255, 0.1)",
-        "glow-purple": "0 0 20px rgba(123, 47, 247, 0.3), 0 0 60px rgba(123, 47, 247, 0.1)",
-        "glow-pink": "0 0 20px rgba(255, 45, 135, 0.3), 0 0 60px rgba(255, 45, 135, 0.1)",
+        "glow-primary": "0 0 20px rgb(var(--frost-primary) / 0.3), 0 0 60px rgb(var(--frost-primary) / 0.1)",
+        "glow-secondary": "0 0 20px rgb(var(--frost-secondary) / 0.3), 0 0 60px rgb(var(--frost-secondary) / 0.1)",
+        "glow-accent": "0 0 20px rgb(var(--frost-accent) / 0.2), 0 0 60px rgb(var(--frost-accent) / 0.06)",
+        // Aliases
+        "glow-cyan": "0 0 20px rgb(var(--frost-primary) / 0.3), 0 0 60px rgb(var(--frost-primary) / 0.1)",
+        "glow-purple": "0 0 20px rgb(var(--frost-secondary) / 0.3), 0 0 60px rgb(var(--frost-secondary) / 0.1)",
+        "glow-pink": "0 0 20px rgb(var(--frost-accent) / 0.2), 0 0 60px rgb(var(--frost-accent) / 0.06)",
         "glow-green": "0 0 20px rgba(0, 255, 136, 0.3), 0 0 60px rgba(0, 255, 136, 0.1)",
         "glow-gold": "0 0 20px rgba(255, 215, 0, 0.3), 0 0 60px rgba(255, 215, 0, 0.1)",
         glass: "0 8px 32px rgba(0, 0, 0, 0.4)",

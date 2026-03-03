@@ -1,5 +1,6 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import { avalanche, avalancheFuji } from 'wagmi/chains';
+import { http } from 'wagmi';
 
 // RainbowKit requires a non-empty projectId at config time (including SSG).
 // In production, NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID must be set to a real
@@ -19,5 +20,13 @@ export const config = getDefaultConfig({
   appName: 'Frostbite',
   projectId,
   chains: [avalancheFuji, avalanche],
+  transports: {
+    [avalancheFuji.id]: http('https://api.avax-test.network/ext/bc/C/rpc', {
+      timeout: 30_000,
+    }),
+    [avalanche.id]: http('https://api.avax.network/ext/bc/C/rpc', {
+      timeout: 30_000,
+    }),
+  },
   ssr: true,
 });

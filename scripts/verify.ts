@@ -56,12 +56,14 @@ async function verifyContract(
 // ---------------------------------------------------------------------------
 const contractNames = [
   "ArenaToken",
+  "AgentRegistry",
+  "ArenaWarrior",
+  "BattleEngine",
+  "AgentChat",
   "Leaderboard",
   "RewardVault",
-  "GameEngine",
+  "FrostbiteMarketplace",
   "Tournament",
-  "AgentRegistry",
-  "GameRegistry",
 ] as const;
 
 for (const name of contractNames) {

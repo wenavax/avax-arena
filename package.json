@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0",
+    "@openzeppelin/contracts-upgradeable": "^5.4.0",
     "dotenv": "^17.3.1",
     "ethers": "^6.16.0",
     "openai": "^6.25.0"

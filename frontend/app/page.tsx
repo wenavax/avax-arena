@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import { motion, useInView } from 'framer-motion';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { motion, useInView, AnimatePresence } from 'framer-motion';
 import {
   Sparkles,
   Swords,
@@ -16,7 +16,10 @@ import {
   Shield,
   Zap,
 } from 'lucide-react';
-import { ELEMENTS, ELEMENT_ADVANTAGES } from '@/lib/constants';
+import { usePublicClient } from 'wagmi';
+import { formatEther } from 'viem';
+import { ELEMENTS, ELEMENT_ADVANTAGES, CONTRACT_ADDRESSES } from '@/lib/constants';
+import { FROSTBITE_WARRIOR_ABI, BATTLE_ENGINE_ABI } from '@/lib/contracts';
 
 /* ===========================================================================
  * Animated Counter
@@ -64,141 +67,508 @@ function AnimatedCounter({
 }
 
 /* ===========================================================================
- * Floating Orb (animated with framer-motion)
+ * Live Platform Stats (on-chain reads)
  * ========================================================================= */
 
-function FloatingOrb({
-  color,
-  size,
-  position,
-  delay,
+interface LiveStats {
+  warriorsMinted: number;
+  totalBattles: number;
+  avaxVolume: number;
+  activeAgents: number;
+}
+
+function useLiveStats(): LiveStats {
+  const publicClient = usePublicClient();
+  const [stats, setStats] = useState<LiveStats>({
+    warriorsMinted: 0,
+    totalBattles: 0,
+    avaxVolume: 0,
+    activeAgents: 0,
+  });
+
+  useEffect(() => {
+    if (!publicClient) return;
+    let cancelled = false;
+
+    async function fetchOnChain() {
+      try {
+        const [supplyRes, battleRes, balanceRes] = await Promise.allSettled([
+          publicClient!.readContract({
+            address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+            abi: FROSTBITE_WARRIOR_ABI,
+            functionName: 'totalSupply',
+          }),
+          publicClient!.readContract({
+            address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+            abi: BATTLE_ENGINE_ABI,
+            functionName: 'battleCounter',
+          }),
+          publicClient!.getBalance({
+            address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+          }),
+        ]);
+        if (cancelled) return;
+        setStats((prev) => ({
+          ...prev,
+          warriorsMinted:
+            supplyRes.status === 'fulfilled' ? Number(supplyRes.value) : 0,
+          totalBattles:
+            battleRes.status === 'fulfilled' ? Number(battleRes.value) : 0,
+          avaxVolume:
+            balanceRes.status === 'fulfilled'
+              ? parseFloat(Number(formatEther(balanceRes.value as bigint)).toFixed(2))
+              : 0,
+        }));
+      } catch {
+        /* stats stay at 0 */
+      }
+    }
+
+    async function fetchAgentCount() {
+      try {
+        const res = await fetch('/api/agents/roster');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setStats((prev) => ({
+          ...prev,
+          activeAgents: Array.isArray(data.agents) ? data.agents.length : 0,
+        }));
+      } catch {
+        /* stays at 0 */
+      }
+    }
+
+    fetchOnChain();
+    fetchAgentCount();
+    return () => {
+      cancelled = true;
+    };
+  }, [publicClient]);
+
+  return stats;
+}
+
+/* ===========================================================================
+ * Warrior Showcase Card
+ * ========================================================================= */
+
+interface ShowcaseWarrior {
+  element: (typeof ELEMENTS)[number];
+  attack: number;
+  defense: number;
+  speed: number;
+  level: number;
+  powerScore: number;
+}
+
+const SHOWCASE_PAIRS: [number, number][] = [
+  [0, 3], // Fire vs Ice
+  [5, 6], // Thunder vs Shadow
+  [1, 0], // Water vs Fire
+  [7, 4], // Light vs Earth
+  [2, 3], // Wind vs Ice
+  [6, 7], // Shadow vs Light
+];
+
+function useShowcaseWarriors(): [ShowcaseWarrior, ShowcaseWarrior] {
+  const warriors = useMemo<ShowcaseWarrior[]>(() => {
+    // Deterministic stats to avoid hydration mismatch
+    const stats = [
+      { a: 88, d: 62, s: 75, l: 4 },
+      { a: 71, d: 85, s: 68, l: 3 },
+      { a: 65, d: 78, s: 92, l: 5 },
+      { a: 72, d: 90, s: 55, l: 2 },
+      { a: 80, d: 58, s: 82, l: 4 },
+      { a: 95, d: 45, s: 70, l: 3 },
+      { a: 76, d: 72, s: 88, l: 5 },
+      { a: 60, d: 95, s: 60, l: 2 },
+    ];
+    return ELEMENTS.map((el, i) => ({
+      element: el,
+      attack: stats[i].a,
+      defense: stats[i].d,
+      speed: stats[i].s,
+      level: stats[i].l,
+      powerScore: stats[i].a + stats[i].d + stats[i].s,
+    }));
+  }, []);
+
+  const [pairIndex, setPairIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setPairIndex((prev) => (prev + 1) % SHOWCASE_PAIRS.length);
+    }, 4500);
+    return () => clearInterval(timer);
+  }, []);
+
+  const [leftIdx, rightIdx] = SHOWCASE_PAIRS[pairIndex];
+  return [warriors[leftIdx], warriors[rightIdx]];
+}
+
+function WarriorCard({
+  warrior,
+  side,
 }: {
-  color: string;
-  size: string;
-  position: string;
-  delay: number;
+  warrior: ShowcaseWarrior;
+  side: 'left' | 'right';
 }) {
+  const stats = [
+    { label: 'ATK', value: warrior.attack, color: 'bg-red-500' },
+    { label: 'DEF', value: warrior.defense, color: 'bg-blue-500' },
+    { label: 'SPD', value: warrior.speed, color: 'bg-green-500' },
+  ];
+
   return (
     <motion.div
-      className={`absolute rounded-full blur-[80px] opacity-25 pointer-events-none ${size} ${color} ${position}`}
-      animate={{
-        y: [0, -30, 0, 20, 0],
-        x: [0, 15, -10, 5, 0],
-        scale: [1, 1.1, 0.95, 1.05, 1],
-      }}
-      transition={{
-        duration: 8,
-        repeat: Infinity,
-        ease: 'easeInOut',
-        delay,
-      }}
-    />
+      key={`${warrior.element.id}-${side}`}
+      initial={{ opacity: 0, x: side === 'left' ? -60 : 60, scale: 0.85 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.8, y: 20 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+      className="relative w-36 sm:w-44"
+    >
+      <div
+        className="glass-card p-4 sm:p-5 text-center relative overflow-hidden border border-white/[0.08]"
+        style={{
+          boxShadow: `0 0 30px ${warrior.element.glowColor}, 0 0 60px ${warrior.element.glowColor}`,
+        }}
+      >
+        {/* Background glow */}
+        <div
+          className={`absolute inset-0 bg-gradient-to-br ${warrior.element.bgGradient} opacity-60 rounded-[16px]`}
+        />
+
+        <div className="relative z-10">
+          {/* Element emoji */}
+          <div className="text-4xl sm:text-5xl mb-2 drop-shadow-lg">
+            {warrior.element.emoji}
+          </div>
+
+          {/* Element name */}
+          <h4
+            className={`font-display text-sm sm:text-base font-bold mb-3 bg-gradient-to-r ${warrior.element.color} bg-clip-text text-transparent`}
+          >
+            {warrior.element.name}
+          </h4>
+
+          {/* Stat bars */}
+          <div className="space-y-2">
+            {stats.map((stat) => (
+              <div key={stat.label}>
+                <div className="flex justify-between mb-0.5">
+                  <span className="text-[10px] font-mono text-white/50 uppercase">
+                    {stat.label}
+                  </span>
+                  <span className="text-[10px] font-mono text-white/70">
+                    {stat.value}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <motion.div
+                    className={`h-full rounded-full ${stat.color}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${stat.value}%` }}
+                    transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Power score */}
+          <div className="mt-3 pt-2 border-t border-white/[0.06]">
+            <span className="text-[10px] font-pixel text-white/40 uppercase">
+              Power
+            </span>
+            <span className="ml-2 text-sm font-mono font-bold text-frost-gold">
+              {warrior.powerScore}
+            </span>
+          </div>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
 /* ===========================================================================
- * Hero Section
+ * Clash Effect (center between warriors)
  * ========================================================================= */
 
-function HeroSection() {
+function ClashEffect() {
+  const sparks = useMemo(
+    () =>
+      Array.from({ length: 8 }, (_, i) => {
+        const angle = (i / 8) * Math.PI * 2;
+        const dist = 25 + (i % 3) * 10;
+        return {
+          id: i,
+          x: Math.cos(angle) * dist,
+          y: Math.sin(angle) * dist,
+          delay: i * 0.15,
+          size: 2 + (i % 2),
+        };
+      }),
+    [],
+  );
+
   return (
-    <section className="relative min-h-[92vh] flex items-center justify-center overflow-hidden px-4">
-      {/* Floating orbs */}
-      <FloatingOrb
-        color="bg-frost-purple"
-        size="w-80 h-80"
-        position="top-16 -left-24"
-        delay={0}
+    <div className="relative flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20">
+      {/* Pulse rings */}
+      <div
+        className="absolute inset-0 rounded-full border-2 border-frost-primary/60"
+        style={{ animation: 'clash-ring 2s ease-out infinite' }}
       />
-      <FloatingOrb
-        color="bg-frost-cyan"
-        size="w-96 h-96"
-        position="top-32 -right-36"
-        delay={2}
-      />
-      <FloatingOrb
-        color="bg-frost-pink"
-        size="w-72 h-72"
-        position="bottom-16 left-1/3"
-        delay={4}
+      <div
+        className="absolute inset-0 rounded-full border-2 border-frost-secondary/40"
+        style={{ animation: 'clash-ring 2s ease-out infinite 0.5s' }}
       />
 
-      <div className="relative z-10 mx-auto max-w-5xl text-center">
-        {/* Main title */}
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.9, ease: 'easeOut' }}
-        >
-          <h1 className="font-display text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-black leading-none tracking-tight mb-6">
-            <span className="gradient-text">AVAX</span>
-            <br />
-            <span className="gradient-text">FROSTBITE</span>
-          </h1>
-        </motion.div>
+      {/* Center glow */}
+      <div
+        className="absolute w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-frost-primary/30 blur-md"
+        style={{ animation: 'clash-pulse 1.5s ease-in-out infinite' }}
+      />
 
-        {/* Subtitle */}
-        <motion.p
-          className="text-lg sm:text-xl md:text-2xl text-white/60 max-w-2xl mx-auto mb-10 leading-relaxed"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.25 }}
-        >
-          Mint Cyber Warriors. Battle for Glory.{' '}
-          <span className="text-frost-cyan font-semibold">Earn AVAX.</span>
-        </motion.p>
+      {/* Swords icon */}
+      <Swords className="relative z-10 h-6 w-6 sm:h-8 sm:w-8 text-frost-primary drop-shadow-[0_0_8px_rgba(255,32,32,0.8)]" />
 
-        {/* CTA Buttons */}
-        <motion.div
-          className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.45 }}
-        >
-          <Link
-            href="/mint"
-            className="btn-neon btn-neon-cyan flex items-center gap-2 text-base px-8 py-3.5"
+      {/* Sparks */}
+      {sparks.map((spark) => (
+        <span
+          key={spark.id}
+          className="absolute rounded-full bg-frost-gold"
+          style={{
+            width: `${spark.size}px`,
+            height: `${spark.size}px`,
+            ['--spark-x' as string]: `${spark.x}px`,
+            ['--spark-y' as string]: `${spark.y}px`,
+            animation: `spark-burst 1.2s ease-out infinite ${spark.delay}s`,
+            boxShadow: `0 0 ${spark.size * 3}px #ffd700`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ===========================================================================
+ * Warrior Showdown (right side of hero)
+ * ========================================================================= */
+
+function WarriorShowdown() {
+  const [leftWarrior, rightWarrior] = useShowcaseWarriors();
+
+  return (
+    <div className="relative flex items-center justify-center py-8 md:py-0">
+      {/* Background radial glow */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-frost-primary/[0.06] blur-[80px]" />
+      </div>
+
+      {/* Energy lines connecting warriors */}
+      <div className="absolute top-1/2 left-[15%] right-[15%] h-px -translate-y-1/2">
+        <div
+          className="h-full bg-gradient-to-r from-transparent via-frost-primary/40 to-transparent"
+          style={{ animation: 'energy-line 3s ease-in-out infinite' }}
+        />
+      </div>
+
+      {/* Warriors + Clash */}
+      <div className="relative z-10 flex items-center gap-3 sm:gap-5">
+        <AnimatePresence mode="wait">
+          <WarriorCard key={`l-${leftWarrior.element.id}`} warrior={leftWarrior} side="left" />
+        </AnimatePresence>
+
+        <ClashEffect />
+
+        <AnimatePresence mode="wait">
+          <WarriorCard key={`r-${rightWarrior.element.id}`} warrior={rightWarrior} side="right" />
+        </AnimatePresence>
+      </div>
+
+      {/* VS text */}
+      <div className="absolute bottom-2 md:bottom-4 left-1/2 -translate-x-1/2">
+        <span className="font-pixel text-[10px] text-white/30 uppercase tracking-[0.3em]">
+          Battle Preview
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ===========================================================================
+ * Hero Section (Cinematic Split)
+ * ========================================================================= */
+
+function HeroSection({ stats }: { stats: LiveStats }) {
+  return (
+    <section className="relative min-h-[90vh] flex items-center overflow-hidden px-4">
+      {/* Subtle background orbs */}
+      <div className="absolute top-20 -left-32 w-80 h-80 rounded-full bg-frost-primary/[0.04] blur-[100px] pointer-events-none" />
+      <div className="absolute bottom-20 -right-32 w-96 h-96 rounded-full bg-frost-secondary/[0.03] blur-[100px] pointer-events-none" />
+
+      <div className="relative z-10 mx-auto max-w-7xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12 items-center">
+        {/* Left Column: Content */}
+        <div className="text-center md:text-left order-2 md:order-1">
+          {/* Title block */}
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, ease: 'easeOut' }}
           >
-            <Sparkles className="h-4 w-4" />
-            Mint Warrior
-          </Link>
-          <Link
-            href="/battle"
-            className="btn-neon btn-neon-purple flex items-center gap-2 text-base px-8 py-3.5"
-          >
-            <Swords className="h-4 w-4" />
-            Enter Frostbite
-          </Link>
-        </motion.div>
+            <h1 className="font-display font-black leading-none tracking-tight mb-2">
+              <span className="gradient-text text-5xl sm:text-6xl md:text-6xl lg:text-7xl">
+                FROSTBITE
+              </span>
+              <br />
+              <span className="text-frost-primary text-6xl sm:text-7xl md:text-7xl lg:text-8xl drop-shadow-[0_0_20px_rgba(255,32,32,0.3)]">
+                ARENA
+              </span>
+            </h1>
+          </motion.div>
 
-        {/* Stats Row */}
+          {/* Description */}
+          <motion.p
+            className="text-base sm:text-lg md:text-xl text-white/50 max-w-lg mx-auto md:mx-0 mb-6 leading-relaxed"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.15 }}
+          >
+            Mint unique NFT warriors on Avalanche.{' '}
+            <span className="text-frost-primary font-semibold">
+              Battle PvP
+            </span>{' '}
+            for AVAX rewards.
+          </motion.p>
+
+          {/* Fuji badge */}
+          <motion.div
+            className="flex justify-center md:justify-start mb-6"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.25 }}
+          >
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-orange/10 border border-frost-orange/30 text-frost-orange text-[10px] font-pixel uppercase tracking-wider">
+              <span className="w-1.5 h-1.5 rounded-full bg-frost-orange animate-pulse" />
+              Fuji Testnet
+            </span>
+          </motion.div>
+
+          {/* CTA Buttons */}
+          <motion.div
+            className="flex flex-col sm:flex-row items-center md:items-start gap-3 mb-10"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.35 }}
+          >
+            <Link
+              href="/mint"
+              className="btn-neon btn-neon-cyan flex items-center gap-2 text-sm sm:text-base px-7 py-3"
+            >
+              <Sparkles className="h-4 w-4" />
+              Mint Warrior
+            </Link>
+            <Link
+              href="/battle"
+              className="btn-neon btn-neon-purple flex items-center gap-2 text-sm sm:text-base px-7 py-3"
+            >
+              <Swords className="h-4 w-4" />
+              Enter Arena
+            </Link>
+          </motion.div>
+
+          {/* Stats Row */}
+          <motion.div
+            className="grid grid-cols-3 gap-3 max-w-sm mx-auto md:mx-0"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.5 }}
+          >
+            {[
+              { label: 'Warriors', value: stats.warriorsMinted, icon: Shield },
+              { label: 'Battles', value: stats.totalBattles, icon: Swords },
+              { label: 'AVAX Won', value: stats.avaxVolume, icon: Coins },
+            ].map((stat) => {
+              const Icon = stat.icon;
+              return (
+                <div key={stat.label} className="text-center md:text-left">
+                  <div className="flex items-center justify-center md:justify-start gap-1.5 mb-1">
+                    <Icon className="h-3.5 w-3.5 text-white/25" />
+                    <AnimatedCounter target={stat.value} />
+                  </div>
+                  <p className="text-[10px] text-white/30 uppercase tracking-wider font-pixel">
+                    {stat.label}
+                  </p>
+                </div>
+              );
+            })}
+          </motion.div>
+        </div>
+
+        {/* Right Column: Battle Showcase */}
         <motion.div
-          className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.65 }}
+          className="order-1 md:order-2"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.8, delay: 0.2 }}
         >
-          {[
-            { label: 'Warriors Minted', value: 8472 },
-            { label: 'Total Battles', value: 34219 },
-            { label: 'AVAX Staked', value: 127650, prefix: '' },
-          ].map((stat) => (
-            <div key={stat.label} className="stat-card">
-              <AnimatedCounter
-                target={stat.value}
-                prefix={stat.prefix}
-              />
-              <p className="text-xs sm:text-sm text-white/40 mt-1.5 uppercase tracking-wider">
-                {stat.label}
-              </p>
-            </div>
-          ))}
+          <WarriorShowdown />
         </motion.div>
       </div>
 
       {/* Bottom fade */}
-      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-frost-bg to-transparent pointer-events-none" />
+      <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-frost-bg to-transparent pointer-events-none" />
     </section>
+  );
+}
+
+/* ===========================================================================
+ * Live Activity Ticker
+ * ========================================================================= */
+
+const TICKER_ITEMS = [
+  '\u2694\uFE0F 0x12..ab won 0.05 AVAX in Battle #42',
+  '\uD83C\uDF89 New warrior minted! #15',
+  '\uD83C\uDFC6 0xCD..ef is on a 3-win streak',
+  '\uD83D\uDD25 Fire warrior #8 defeated Ice warrior #3',
+  '\uD83D\uDCA7 0xFA..92 staked 0.1 AVAX on Battle #55',
+  '\u26A1 Thunder warrior #21 leveled up!',
+  '\uD83C\uDF0A Water warrior #6 won by element advantage',
+  '\uD83C\uDF1F 0x3B..d7 minted a Shadow warrior',
+  '\uD83D\uDEE1\uFE0F Earth warrior #11 survived 5 battles',
+  '\uD83C\uDFAF 0xA1..c4 claimed 0.08 AVAX rewards',
+];
+
+function LiveTicker() {
+  const items = TICKER_ITEMS;
+  // Duplicate for seamless loop
+  const doubled = [...items, ...items];
+
+  return (
+    <div className="w-full py-2 bg-frost-surface/50 border-y border-white/[0.04] overflow-hidden">
+      <div
+        className="flex whitespace-nowrap"
+        style={{
+          animation: 'ticker-scroll 40s linear infinite',
+          width: 'max-content',
+        }}
+      >
+        {doubled.map((item, i) => (
+          <span key={i} className="font-pixel text-[11px] text-white/50 mx-1">
+            {item}
+            <span className="text-frost-cyan mx-3">&middot;</span>
+          </span>
+        ))}
+      </div>
+      <style jsx>{`
+        @keyframes ticker-scroll {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+      `}</style>
+    </div>
   );
 }
 
@@ -594,7 +964,7 @@ function AIAgentsSection() {
  * Stats Bar (bottom)
  * ========================================================================= */
 
-function StatsBar() {
+function StatsBar({ stats }: { stats: LiveStats }) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: '-40px' });
 
@@ -611,10 +981,10 @@ function StatsBar() {
           transition={{ duration: 0.7 }}
         >
           {[
-            { label: 'Warriors Minted', value: 8472, icon: Shield },
-            { label: 'Total Battles', value: 34219, icon: Swords },
-            { label: 'AVAX Won', value: 97340, icon: Coins },
-            { label: 'Active Agents', value: 1253, icon: Zap },
+            { label: 'Warriors Minted', value: stats.warriorsMinted, icon: Shield },
+            { label: 'Total Battles', value: stats.totalBattles, icon: Swords },
+            { label: 'AVAX Won', value: stats.avaxVolume, icon: Coins },
+            { label: 'Active Agents', value: stats.activeAgents, icon: Zap },
           ].map((stat) => {
             const Icon = stat.icon;
             return (
@@ -640,13 +1010,16 @@ function StatsBar() {
  * ========================================================================= */
 
 export default function HomePage() {
+  const stats = useLiveStats();
+
   return (
     <>
-      <HeroSection />
+      <HeroSection stats={stats} />
+      <LiveTicker />
       <HowItWorks />
       <ElementsShowcase />
       <AIAgentsSection />
-      <StatsBar />
+      <StatsBar stats={stats} />
     </>
   );
 }

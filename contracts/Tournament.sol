@@ -177,6 +177,35 @@ contract Tournament is Ownable, ReentrancyGuard {
     }
 
     /**
+     * @notice Refund entry fees for a tournament that ended without any scores.
+     *         Only callable after the tournament has ended (active == false)
+     *         and the end time has passed. Each player can claim their own refund.
+     * @param _id Tournament identifier.
+     */
+    function refundTournament(uint256 _id) external nonReentrant {
+        TournamentInfo storage t = tournaments[_id];
+        require(!t.active, "Tournament: still active");
+        require(block.timestamp > t.endTime, "Tournament: not ended yet");
+        require(hasJoined[_id][msg.sender], "Tournament: not a participant");
+        require(!t.claimed[msg.sender], "Tournament: already refunded");
+
+        // Verify no scores were submitted for any player
+        bool hasScores = false;
+        for (uint256 i = 0; i < t.players.length; i++) {
+            if (t.scores[t.players[i]] > 0) {
+                hasScores = true;
+                break;
+            }
+        }
+        require(!hasScores, "Tournament: scores exist, use claimPrize");
+
+        t.claimed[msg.sender] = true;
+
+        (bool success, ) = payable(msg.sender).call{value: t.entryFee}("");
+        require(success, "Tournament: refund transfer failed");
+    }
+
+    /**
      * @notice Claim prize winnings for a finished tournament.
      *         Prizes: 1st = 60 %, 2nd = 25 %, 3rd = 15 % of prize pool.
      * @param _id Tournament identifier.
@@ -194,6 +223,7 @@ contract Tournament is Ownable, ReentrancyGuard {
 
         // Validate top players are actual tournament participants
         require(first != address(0), "Tournament: no valid winners");
+        require(hasJoined[_id][first], "Tournament: invalid 1st place");
         if (second != address(0)) require(hasJoined[_id][second], "Tournament: invalid 2nd place");
         if (third != address(0)) require(hasJoined[_id][third], "Tournament: invalid 3rd place");
 
