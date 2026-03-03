@@ -1,3 +1,4 @@
+import "dotenv/config";
 import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 import { configVariable, defineConfig } from "hardhat/config";
 
@@ -6,8 +7,9 @@ export default defineConfig({
   solidity: {
     profiles: {
       default: {
-        version: "0.8.20",
+        version: "0.8.24",
         settings: {
+          evmVersion: "cancun",
           optimizer: { enabled: true, runs: 200 },
           viaIR: true,
         },

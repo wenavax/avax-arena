@@ -2,17 +2,20 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { Menu, X, Swords, Sparkles, MessageCircle, BarChart3, Bot } from 'lucide-react';
+import { Menu, X, Swords, Sparkles, MessageCircle, BarChart3, Bot, Store } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle';
 import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
   { href: '/agents', label: 'Agents', icon: Bot },
-  { href: '/mint', label: 'Mint NFT', icon: Sparkles },
+  { href: '/mint', label: 'Mint', icon: Sparkles },
   { href: '/battle', label: 'Battle', icon: Swords },
-  { href: '/chat', label: 'Agent Chat', icon: MessageCircle },
-  { href: '/leaderboard', label: 'Leaderboard', icon: BarChart3 },
+  { href: '/marketplace', label: 'Market', icon: Store },
+  { href: '/chat', label: 'Forum', icon: MessageCircle },
+  { href: '/leaderboard', label: 'Rankings', icon: BarChart3 },
 ];
 
 export function Navbar() {
@@ -27,8 +30,8 @@ export function Navbar() {
       <nav className="relative mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 group">
-          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-frost-cyan to-frost-purple">
-            <span className="text-lg font-bold text-frost-bg">F</span>
+          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg overflow-hidden">
+            <Image src="/logo.png" alt="Frostbite" width={36} height={36} className="rounded-lg" priority />
             <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-frost-cyan to-frost-purple opacity-0 blur-lg transition-opacity group-hover:opacity-60" />
           </div>
           <span className="font-display text-lg font-bold tracking-wider">
@@ -57,15 +60,16 @@ export function Navbar() {
                 {link.label}
                 {/* Active indicator glow */}
                 {isActive && (
-                  <span className="absolute inset-x-2 -bottom-[1px] h-[2px] bg-frost-cyan rounded-full shadow-[0_0_8px_rgba(0,240,255,0.6)]" />
+                  <span className="absolute inset-x-2 -bottom-[1px] h-[2px] bg-frost-primary rounded-full shadow-glow-primary" />
                 )}
               </Link>
             );
           })}
         </div>
 
-        {/* Right side: Connect + Mobile toggle */}
+        {/* Right side: Theme toggle + Connect + Mobile toggle */}
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           <div className="hidden sm:block">
             <ConnectButton
               chainStatus="icon"
@@ -96,7 +100,7 @@ export function Navbar() {
       <div
         className={cn(
           'md:hidden absolute top-16 inset-x-0 z-40 transition-all duration-300 ease-in-out overflow-hidden',
-          mobileOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'
+          mobileOpen ? 'max-h-56 opacity-100' : 'max-h-0 opacity-0'
         )}
       >
         <div className="bg-frost-bg/95 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 space-y-1">

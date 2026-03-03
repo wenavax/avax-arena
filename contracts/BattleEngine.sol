@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 interface IArenaWarrior {
     struct Warrior {
@@ -11,7 +15,7 @@ interface IArenaWarrior {
         uint8 speed;
         uint8 element;
         uint8 specialPower;
-        uint8 level;
+        uint16 level;
         uint256 experience;
         uint256 battleWins;
         uint256 battleLosses;
@@ -23,7 +27,14 @@ interface IArenaWarrior {
     function recordBattle(uint256 tokenId, bool won, uint256 expGained) external;
 }
 
-contract BattleEngine is Ownable, ReentrancyGuard {
+contract BattleEngine is
+    OwnableUpgradeable,
+    ReentrancyGuard,
+    PausableUpgradeable,
+    UUPSUpgradeable
+{
+    using ECDSA for bytes32;
+
     // -------------------------------------------------------------------------
     // Constants
     // -------------------------------------------------------------------------
@@ -41,9 +52,9 @@ contract BattleEngine is Ownable, ReentrancyGuard {
 
     // Element constants
     uint8 public constant ELEMENT_FIRE = 0;
-    uint8 public constant ELEMENT_WIND = 1;
-    uint8 public constant ELEMENT_ICE = 2;
-    uint8 public constant ELEMENT_WATER = 3;
+    uint8 public constant ELEMENT_WATER = 1;
+    uint8 public constant ELEMENT_WIND = 2;
+    uint8 public constant ELEMENT_ICE = 3;
     uint8 public constant ELEMENT_EARTH = 4;
     uint8 public constant ELEMENT_THUNDER = 5;
     uint8 public constant ELEMENT_SHADOW = 6;
@@ -85,6 +96,22 @@ contract BattleEngine is Ownable, ReentrancyGuard {
     uint256[] private openBattleIds;
     mapping(uint256 => uint256) private openBattleIndex; // battleId => index in openBattleIds
 
+    // NEW: Multi-admin
+    mapping(address => bool) public admins;
+
+    // NEW: Platform stats
+    uint256 public totalWagered;
+
+    // NEW: Resolved battles tracking (for pagination)
+    uint256[] private resolvedBattleIds;
+
+    // NEW: Signature verification
+    address public trustedSigner;
+    mapping(address => uint256) public nonces;
+
+    // NEW: Storage gap for future upgrades
+    uint256[44] private __gap;
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
@@ -111,6 +138,13 @@ contract BattleEngine is Ownable, ReentrancyGuard {
 
     event BattleCancelled(uint256 indexed battleId, address indexed player);
 
+    // NEW: Admin events
+    event AdminAdded(address indexed admin);
+    event AdminRemoved(address indexed admin);
+    event TrustedSignerUpdated(address indexed signer);
+    event ContractPaused(address indexed by);
+    event ContractUnpaused(address indexed by);
+
     // -------------------------------------------------------------------------
     // Errors
     // -------------------------------------------------------------------------
@@ -129,32 +163,91 @@ contract BattleEngine is Ownable, ReentrancyGuard {
     error StakeMismatch();
     error NoFeesToWithdraw();
     error TransferFailed();
+    error NotAdmin();
+    error InvalidSignature();
 
     // -------------------------------------------------------------------------
-    // Constructor
+    // Modifiers
     // -------------------------------------------------------------------------
 
-    constructor(
+    modifier onlyAdmin() {
+        if (msg.sender != owner() && !admins[msg.sender]) revert NotAdmin();
+        _;
+    }
+
+    // -------------------------------------------------------------------------
+    // Initializer (replaces constructor)
+    // -------------------------------------------------------------------------
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         address _arenaWarrior,
         address _feeRecipient
-    ) Ownable(msg.sender) {
+    ) public initializer {
         if (_feeRecipient == address(0)) revert InvalidAddress();
+
+        __Ownable_init(msg.sender);
+        __Pausable_init();
+
         arenaWarrior = IArenaWarrior(_arenaWarrior);
         feeRecipient = _feeRecipient;
+    }
+
+    // -------------------------------------------------------------------------
+    // UUPS Required
+    // -------------------------------------------------------------------------
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    // -------------------------------------------------------------------------
+    // Admin Functions
+    // -------------------------------------------------------------------------
+
+    function addAdmin(address admin) external onlyOwner {
+        if (admin == address(0)) revert InvalidAddress();
+        admins[admin] = true;
+        emit AdminAdded(admin);
+    }
+
+    function removeAdmin(address admin) external onlyOwner {
+        admins[admin] = false;
+        emit AdminRemoved(admin);
+    }
+
+    function pause() external onlyAdmin {
+        _pause();
+        emit ContractPaused(msg.sender);
+    }
+
+    function unpause() external onlyAdmin {
+        _unpause();
+        emit ContractUnpaused(msg.sender);
+    }
+
+    function setTrustedSigner(address _signer) external onlyOwner {
+        trustedSigner = _signer;
+        emit TrustedSignerUpdated(_signer);
     }
 
     // -------------------------------------------------------------------------
     // External / Public Functions
     // -------------------------------------------------------------------------
 
-    /**
-     * @notice Create a new battle by staking AVAX with your warrior NFT.
-     * @param tokenId The token ID of the ArenaWarrior NFT to use in battle.
-     */
-    function createBattle(uint256 tokenId) external payable nonReentrant {
+    function createBattle(
+        uint256 tokenId,
+        bytes calldata signature
+    ) external payable nonReentrant whenNotPaused {
         if (address(arenaWarrior) == address(0)) revert ArenaWarriorNotSet();
         if (msg.value < MIN_STAKE) revert InsufficientStake();
         if (arenaWarrior.ownerOf(tokenId) != msg.sender) revert NotNFTOwner();
+
+        // Signature verification (optional — skipped if trustedSigner not set)
+        _verifySignature(msg.sender, tokenId, nonces[msg.sender], signature);
+        nonces[msg.sender]++;
 
         uint256 battleId = battleCounter++;
 
@@ -177,19 +270,17 @@ contract BattleEngine is Ownable, ReentrancyGuard {
         openBattleIndex[battleId] = openBattleIds.length;
         openBattleIds.push(battleId);
 
+        // Update platform stats
+        totalWagered += msg.value;
+
         emit BattleCreated(battleId, msg.sender, tokenId, msg.value);
     }
 
-    /**
-     * @notice Join an existing battle with your warrior NFT. The battle resolves
-     *         automatically based on warrior attributes.
-     * @param battleId The ID of the battle to join.
-     * @param tokenId  The token ID of your ArenaWarrior NFT.
-     */
     function joinBattle(
         uint256 battleId,
-        uint256 tokenId
-    ) external payable nonReentrant {
+        uint256 tokenId,
+        bytes calldata signature
+    ) external payable nonReentrant whenNotPaused {
         Battle storage battle = battles[battleId];
 
         if (battle.player1 == address(0)) revert BattleNotFound();
@@ -199,6 +290,10 @@ contract BattleEngine is Ownable, ReentrancyGuard {
         if (msg.value != battle.stake) revert StakeMismatch();
         if (arenaWarrior.ownerOf(tokenId) != msg.sender) revert NotNFTOwner();
 
+        // Signature verification (optional)
+        _verifySignature(msg.sender, tokenId, nonces[msg.sender], signature);
+        nonces[msg.sender]++;
+
         battle.player2 = msg.sender;
         battle.nft2 = tokenId;
 
@@ -207,17 +302,16 @@ contract BattleEngine is Ownable, ReentrancyGuard {
         // Remove from open battles
         _removeOpenBattle(battleId);
 
+        // Update platform stats
+        totalWagered += msg.value;
+
         emit BattleJoined(battleId, msg.sender, tokenId);
 
         // Resolve the battle immediately
         _resolveBattle(battleId);
     }
 
-    /**
-     * @notice Cancel a battle that has not been joined yet. Refunds the stake.
-     * @param battleId The ID of the battle to cancel.
-     */
-    function cancelBattle(uint256 battleId) external nonReentrant {
+    function cancelBattle(uint256 battleId) external nonReentrant whenNotPaused {
         Battle storage battle = battles[battleId];
 
         if (battle.player1 == address(0)) revert BattleNotFound();
@@ -238,12 +332,7 @@ contract BattleEngine is Ownable, ReentrancyGuard {
         if (!success) revert TransferFailed();
     }
 
-    /**
-     * @notice Claim a timeout refund if a battle has been open for more than 1 hour
-     *         without an opponent joining.
-     * @param battleId The ID of the timed-out battle.
-     */
-    function claimTimeout(uint256 battleId) external nonReentrant {
+    function claimTimeout(uint256 battleId) external nonReentrant whenNotPaused {
         Battle storage battle = battles[battleId];
 
         if (battle.player1 == address(0)) revert BattleNotFound();
@@ -265,9 +354,6 @@ contract BattleEngine is Ownable, ReentrancyGuard {
         if (!success) revert TransferFailed();
     }
 
-    /**
-     * @notice Withdraw accumulated platform fees to the fee recipient.
-     */
     function withdrawFees() external onlyOwner {
         uint256 fees = accumulatedFees;
         if (fees == 0) revert NoFeesToWithdraw();
@@ -278,19 +364,11 @@ contract BattleEngine is Ownable, ReentrancyGuard {
         if (!success) revert TransferFailed();
     }
 
-    /**
-     * @notice Set the ArenaWarrior NFT contract address.
-     * @param _arenaWarrior The new ArenaWarrior contract address.
-     */
     function setArenaWarrior(address _arenaWarrior) external onlyOwner {
         if (_arenaWarrior == address(0)) revert InvalidAddress();
         arenaWarrior = IArenaWarrior(_arenaWarrior);
     }
 
-    /**
-     * @notice Set the fee recipient address.
-     * @param _feeRecipient The new fee recipient address.
-     */
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
         if (_feeRecipient == address(0)) revert InvalidAddress();
         feeRecipient = _feeRecipient;
@@ -300,12 +378,6 @@ contract BattleEngine is Ownable, ReentrancyGuard {
     // View Functions
     // -------------------------------------------------------------------------
 
-    /**
-     * @notice Get a paginated slice of currently open (unjoined) battle IDs.
-     * @param offset The starting index in the openBattleIds array.
-     * @param limit  The maximum number of IDs to return.
-     * @return ids An array of battle IDs that are waiting for an opponent.
-     */
     function getOpenBattles(uint256 offset, uint256 limit) external view returns (uint256[] memory ids) {
         uint256 total = openBattleIds.length;
         if (offset >= total) {
@@ -324,48 +396,127 @@ contract BattleEngine is Ownable, ReentrancyGuard {
         }
     }
 
-    /**
-     * @notice Return the total number of open battles (useful for pagination).
-     * @return The length of the openBattleIds array.
-     */
     function getOpenBattleCount() external view returns (uint256) {
         return openBattleIds.length;
     }
 
-    /**
-     * @notice Get the full details of a battle.
-     * @param battleId The ID of the battle.
-     * @return The Battle struct.
-     */
     function getBattle(
         uint256 battleId
     ) external view returns (Battle memory) {
         return battles[battleId];
     }
 
-    /**
-     * @notice Get all battle IDs a player has participated in.
-     * @param player The player address.
-     * @return An array of battle IDs.
-     */
     function getBattleHistory(
         address player
     ) external view returns (uint256[] memory) {
         return playerBattles[player];
     }
 
+    // NEW: Platform Stats
+    function getPlatformStats()
+        external
+        view
+        returns (
+            uint256 _totalBattles,
+            uint256 _totalWagered,
+            uint256 _totalFees
+        )
+    {
+        return (battleCounter, totalWagered, accumulatedFees);
+    }
+
+    // NEW: Resolved battles pagination
+    function getResolvedBattles(uint256 offset, uint256 limit) external view returns (uint256[] memory ids) {
+        uint256 total = resolvedBattleIds.length;
+        if (offset >= total) {
+            return new uint256[](0);
+        }
+
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+
+        uint256 count = end - offset;
+        ids = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            ids[i] = resolvedBattleIds[offset + i];
+        }
+    }
+
+    function getResolvedBattleCount() external view returns (uint256) {
+        return resolvedBattleIds.length;
+    }
+
+    // NEW: Player battles pagination
+    function getPlayerBattlesPaginated(
+        address player,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (uint256[] memory ids) {
+        uint256 total = playerBattles[player].length;
+        if (offset >= total) {
+            return new uint256[](0);
+        }
+
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+
+        uint256 count = end - offset;
+        ids = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            ids[i] = playerBattles[player][offset + i];
+        }
+    }
+
+    function getPlayerBattleCount(address player) external view returns (uint256) {
+        return playerBattles[player].length;
+    }
+
     // -------------------------------------------------------------------------
     // Internal Functions
     // -------------------------------------------------------------------------
 
-    /**
-     * @dev Resolve a battle between two warriors based on their attributes.
-     *      Calculates combat scores with element advantages and a random factor,
-     *      then distributes winnings.
-     * @param battleId The ID of the battle to resolve.
-     */
+    function _verifySignature(
+        address player,
+        uint256 tokenId,
+        uint256 nonce,
+        bytes calldata signature
+    ) internal view {
+        if (trustedSigner == address(0)) return; // disabled
+
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(
+                "\x19Ethereum Signed Message:\n32",
+                keccak256(
+                    abi.encodePacked(
+                        player,
+                        tokenId,
+                        nonce,
+                        block.chainid,
+                        address(this)
+                    )
+                )
+            )
+        );
+        if (ECDSA.recover(messageHash, signature) != trustedSigner)
+            revert InvalidSignature();
+    }
+
     function _resolveBattle(uint256 battleId) internal {
         Battle storage battle = battles[battleId];
+
+        // Re-verify NFT ownership at resolution time
+        require(
+            arenaWarrior.ownerOf(battle.nft1) == battle.player1,
+            "BattleEngine: player1 no longer owns NFT"
+        );
+        require(
+            arenaWarrior.ownerOf(battle.nft2) == battle.player2,
+            "BattleEngine: player2 no longer owns NFT"
+        );
 
         IArenaWarrior.Warrior memory warrior1 = arenaWarrior.getWarrior(
             battle.nft1
@@ -390,28 +541,45 @@ contract BattleEngine is Ownable, ReentrancyGuard {
             2
         );
 
-        // Determine winner (player1 wins ties)
+        // Determine winner
         address winnerAddr;
         address loserAddr;
         uint256 winnerNft;
         uint256 loserNft;
 
-        if (score1 >= score2) {
+        if (score1 > score2) {
             winnerAddr = battle.player1;
             loserAddr = battle.player2;
             winnerNft = battle.nft1;
             loserNft = battle.nft2;
-        } else {
+        } else if (score2 > score1) {
             winnerAddr = battle.player2;
             loserAddr = battle.player1;
             winnerNft = battle.nft2;
             loserNft = battle.nft1;
+        } else {
+            // Tie: random coin flip
+            uint256 tieBreaker = _pseudoRandom(battle.nft1, battle.nft2, battleId) % 2;
+            if (tieBreaker == 0) {
+                winnerAddr = battle.player1;
+                loserAddr = battle.player2;
+                winnerNft = battle.nft1;
+                loserNft = battle.nft2;
+            } else {
+                winnerAddr = battle.player2;
+                loserAddr = battle.player1;
+                winnerNft = battle.nft2;
+                loserNft = battle.nft1;
+            }
         }
 
         // --- Effects: all state changes BEFORE external calls ---
         battle.winner = winnerAddr;
         battle.resolved = true;
         battle.resolvedAt = block.timestamp;
+
+        // Track resolved battle for pagination
+        resolvedBattleIds.push(battleId);
 
         // Calculate payout: total pot minus platform fee
         uint256 totalPot = battle.stake * 2;
@@ -433,19 +601,6 @@ contract BattleEngine is Ownable, ReentrancyGuard {
         if (!success) revert TransferFailed();
     }
 
-    /**
-     * @dev Calculate the combat score for a warrior.
-     *      score = (attack * ATTACK_WEIGHT + defense * DEFENSE_WEIGHT +
-     *               speed * SPEED_WEIGHT + specialPower * SPECIAL_WEIGHT +
-     *               element_bonus) * level_multiplier + random_factor
-     *
-     * @param warrior       The warrior's stats.
-     * @param opponentElement The opponent's element type.
-     * @param selfTokenId   This warrior's token ID (for randomness).
-     * @param otherTokenId  Opponent's token ID (for randomness).
-     * @param salt          Additional salt to differentiate random rolls.
-     * @return The computed combat score.
-     */
     function _calculateCombatScore(
         IArenaWarrior.Warrior memory warrior,
         uint8 opponentElement,
@@ -481,11 +636,6 @@ contract BattleEngine is Ownable, ReentrancyGuard {
         return levelMultipliedScore + randomFactor;
     }
 
-    /**
-     * @dev Determine if attackerElement has an advantage over defenderElement.
-     *      Fire > Wind, Wind > Ice, Ice > Water, Water > Fire,
-     *      Earth > Thunder, Thunder > Shadow, Shadow > Light, Light > Earth.
-     */
     function _hasElementAdvantage(
         uint8 attackerElement,
         uint8 defenderElement
@@ -526,10 +676,6 @@ contract BattleEngine is Ownable, ReentrancyGuard {
         return false;
     }
 
-    /**
-     * @dev Generate a pseudo-random number using block.prevrandao, block.timestamp,
-     *      and both token IDs.
-     */
     function _pseudoRandom(
         uint256 tokenId1,
         uint256 tokenId2,
@@ -541,18 +687,19 @@ contract BattleEngine is Ownable, ReentrancyGuard {
                     abi.encodePacked(
                         block.prevrandao,
                         block.timestamp,
+                        block.number,
+                        msg.sender,
                         tokenId1,
                         tokenId2,
-                        salt
+                        salt,
+                        battleCounter,
+                        address(this).balance,
+                        gasleft()
                     )
                 )
             );
     }
 
-    /**
-     * @dev Remove a battle from the open battles array using swap-and-pop.
-     * @param battleId The battle ID to remove.
-     */
     function _removeOpenBattle(uint256 battleId) internal {
         uint256 index = openBattleIndex[battleId];
         uint256 lastIndex = openBattleIds.length - 1;

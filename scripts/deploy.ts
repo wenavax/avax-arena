@@ -47,17 +47,66 @@ const arenaWarriorAddress = await arenaWarrior.getAddress();
 console.log("ArenaWarrior deployed to:", arenaWarriorAddress);
 
 // ---------------------------------------------------------------------------
-// 4. BattleEngine (constructor: arenaWarrior address, feeRecipient address)
+// 4. BattleEngine (UUPS Proxy)
 // ---------------------------------------------------------------------------
-console.log("\n--- Deploying BattleEngine ---");
-const BattleEngine = await ethers.getContractFactory("BattleEngine");
-const battleEngine = await BattleEngine.deploy(
+console.log("\n--- Deploying BattleEngine (UUPS Proxy) ---");
+
+// Deploy implementation
+const BattleEngineImpl = await ethers.getContractFactory("BattleEngine");
+const battleEngineImpl = await BattleEngineImpl.deploy();
+await battleEngineImpl.waitForDeployment();
+const battleEngineImplAddress = await battleEngineImpl.getAddress();
+console.log("BattleEngine implementation:", battleEngineImplAddress);
+
+// Encode initialize call
+const initData = BattleEngineImpl.interface.encodeFunctionData("initialize", [
   arenaWarriorAddress,
-  deployer.address
+  deployer.address,
+]);
+
+// Deploy proxy
+const BattleEngineProxy = await ethers.getContractFactory("BattleEngineProxy");
+const battleEngineProxy = await BattleEngineProxy.deploy(
+  battleEngineImplAddress,
+  initData
 );
-await battleEngine.waitForDeployment();
-const battleEngineAddress = await battleEngine.getAddress();
-console.log("BattleEngine deployed to:", battleEngineAddress);
+await battleEngineProxy.waitForDeployment();
+const battleEngineAddress = await battleEngineProxy.getAddress();
+console.log("BattleEngine proxy:", battleEngineAddress);
+
+// Attach ABI to proxy address for subsequent calls
+const battleEngine = BattleEngineImpl.attach(battleEngineAddress);
+
+// ---------------------------------------------------------------------------
+// 4b. TeamBattleEngine (UUPS Proxy)
+// ---------------------------------------------------------------------------
+console.log("\n--- Deploying TeamBattleEngine (UUPS Proxy) ---");
+
+// Deploy implementation
+const TeamBattleEngineImpl = await ethers.getContractFactory("TeamBattleEngine");
+const teamBattleEngineImpl = await TeamBattleEngineImpl.deploy();
+await teamBattleEngineImpl.waitForDeployment();
+const teamBattleEngineImplAddress = await teamBattleEngineImpl.getAddress();
+console.log("TeamBattleEngine implementation:", teamBattleEngineImplAddress);
+
+// Encode initialize call
+const teamInitData = TeamBattleEngineImpl.interface.encodeFunctionData("initialize", [
+  arenaWarriorAddress,
+  deployer.address,
+]);
+
+// Deploy proxy
+const TeamBattleEngineProxy = await ethers.getContractFactory("TeamBattleEngineProxy");
+const teamBattleEngineProxy = await TeamBattleEngineProxy.deploy(
+  teamBattleEngineImplAddress,
+  teamInitData
+);
+await teamBattleEngineProxy.waitForDeployment();
+const teamBattleEngineAddress = await teamBattleEngineProxy.getAddress();
+console.log("TeamBattleEngine proxy:", teamBattleEngineAddress);
+
+// Attach ABI to proxy address
+const teamBattleEngine = TeamBattleEngineImpl.attach(teamBattleEngineAddress);
 
 // ---------------------------------------------------------------------------
 // 5. AgentChat (constructor: agentRegistry address)
@@ -90,14 +139,44 @@ const rewardVaultAddress = await rewardVault.getAddress();
 console.log("RewardVault deployed to:", rewardVaultAddress);
 
 // ---------------------------------------------------------------------------
+// 8. FrostbiteMarketplace (constructor: arenaWarrior address, feeRecipient)
+// ---------------------------------------------------------------------------
+console.log("\n--- Deploying FrostbiteMarketplace ---");
+const FrostbiteMarketplace = await ethers.getContractFactory(
+  "FrostbiteMarketplace"
+);
+const marketplace = await FrostbiteMarketplace.deploy(
+  arenaWarriorAddress,
+  deployer.address
+);
+await marketplace.waitForDeployment();
+const marketplaceAddress = await marketplace.getAddress();
+console.log("FrostbiteMarketplace deployed to:", marketplaceAddress);
+
+// ---------------------------------------------------------------------------
+// 9. Tournament (no constructor args)
+// ---------------------------------------------------------------------------
+console.log("\n--- Deploying Tournament ---");
+const Tournament = await ethers.getContractFactory("Tournament");
+const tournament = await Tournament.deploy();
+await tournament.waitForDeployment();
+const tournamentAddress = await tournament.getAddress();
+console.log("Tournament deployed to:", tournamentAddress);
+
+// ---------------------------------------------------------------------------
 // Post-Deployment Configuration
 // ---------------------------------------------------------------------------
 console.log("\n--- Configuring contracts ---");
 
 // ArenaWarrior: authorize BattleEngine to record battle results
-console.log("Setting ArenaWarrior.setBattleContract(BattleEngine)...");
-const tx1 = await arenaWarrior.setBattleContract(battleEngineAddress);
+console.log("Setting ArenaWarrior.addBattleContract(BattleEngine)...");
+const tx1 = await arenaWarrior.addBattleContract(battleEngineAddress);
 await tx1.wait();
+
+// ArenaWarrior: authorize TeamBattleEngine to record battle results
+console.log("Setting ArenaWarrior.addBattleContract(TeamBattleEngine)...");
+const tx1b = await arenaWarrior.addBattleContract(teamBattleEngineAddress);
+await tx1b.wait();
 
 // BattleEngine: set ArenaWarrior NFT contract
 console.log("Setting BattleEngine.setArenaWarrior(ArenaWarrior)...");
@@ -109,6 +188,16 @@ console.log("Setting BattleEngine.setFeeRecipient(deployer)...");
 const tx3 = await battleEngine.setFeeRecipient(deployer.address);
 await tx3.wait();
 
+// TeamBattleEngine: set ArenaWarrior NFT contract
+console.log("Setting TeamBattleEngine.setArenaWarrior(ArenaWarrior)...");
+const tx3b = await teamBattleEngine.setArenaWarrior(arenaWarriorAddress);
+await tx3b.wait();
+
+// TeamBattleEngine: set fee recipient to deployer
+console.log("Setting TeamBattleEngine.setFeeRecipient(deployer)...");
+const tx3c = await teamBattleEngine.setFeeRecipient(deployer.address);
+await tx3c.wait();
+
 // AgentChat: set agent registry
 console.log("Setting AgentChat.setAgentRegistry(AgentRegistry)...");
 const tx4 = await agentChat.setAgentRegistry(agentRegistryAddress);
@@ -119,6 +208,21 @@ console.log("Setting AgentRegistry.setAuthorizedCaller(BattleEngine, true)...");
 const tx5 = await agentRegistry.setAuthorizedCaller(battleEngineAddress, true);
 await tx5.wait();
 
+// Leaderboard: authorize BattleEngine as game engine
+console.log("Setting Leaderboard.setGameEngine(BattleEngine)...");
+const tx6 = await leaderboard.setGameEngine(battleEngineAddress);
+await tx6.wait();
+
+// ArenaToken: authorize BattleEngine as game engine for minting rewards
+console.log("Setting ArenaToken.setGameEngine(BattleEngine)...");
+const tx7 = await arenaToken.setGameEngine(battleEngineAddress);
+await tx7.wait();
+
+// ArenaToken: authorize Tournament for minting rewards
+console.log("Setting ArenaToken.setTournament(Tournament)...");
+const tx8 = await arenaToken.setTournament(tournamentAddress);
+await tx8.wait();
+
 console.log("All post-deployment configuration complete.");
 
 // ---------------------------------------------------------------------------
@@ -127,13 +231,18 @@ console.log("All post-deployment configuration complete.");
 console.log("\n========================================");
 console.log("Deployment Summary");
 console.log("========================================");
-console.log("ArenaToken:    ", arenaTokenAddress);
-console.log("AgentRegistry: ", agentRegistryAddress);
-console.log("ArenaWarrior:  ", arenaWarriorAddress);
-console.log("BattleEngine:  ", battleEngineAddress);
-console.log("AgentChat:     ", agentChatAddress);
-console.log("Leaderboard:   ", leaderboardAddress);
-console.log("RewardVault:   ", rewardVaultAddress);
+console.log("ArenaToken:              ", arenaTokenAddress);
+console.log("AgentRegistry:           ", agentRegistryAddress);
+console.log("ArenaWarrior:            ", arenaWarriorAddress);
+console.log("BattleEngine (proxy):    ", battleEngineAddress);
+console.log("BattleEngine (impl):     ", battleEngineImplAddress);
+console.log("TeamBattleEngine (proxy):", teamBattleEngineAddress);
+console.log("TeamBattleEngine (impl): ", teamBattleEngineImplAddress);
+console.log("AgentChat:               ", agentChatAddress);
+console.log("Leaderboard:             ", leaderboardAddress);
+console.log("RewardVault:             ", rewardVaultAddress);
+console.log("FrostbiteMarketplace:    ", marketplaceAddress);
+console.log("Tournament:              ", tournamentAddress);
 console.log("========================================\n");
 
 // ---------------------------------------------------------------------------
@@ -149,18 +258,28 @@ const addresses = {
     AgentRegistry: agentRegistryAddress,
     ArenaWarrior: arenaWarriorAddress,
     BattleEngine: battleEngineAddress,
+    BattleEngineImpl: battleEngineImplAddress,
+    TeamBattleEngine: teamBattleEngineAddress,
+    TeamBattleEngineImpl: teamBattleEngineImplAddress,
     AgentChat: agentChatAddress,
     Leaderboard: leaderboardAddress,
     RewardVault: rewardVaultAddress,
+    FrostbiteMarketplace: marketplaceAddress,
+    Tournament: tournamentAddress,
   },
   constructorArgs: {
     ArenaToken: [],
     AgentRegistry: [],
     ArenaWarrior: [],
-    BattleEngine: [arenaWarriorAddress, deployer.address],
+    BattleEngineImpl: [],
+    BattleEngineProxy: [battleEngineImplAddress, "initialize(address,address)"],
+    TeamBattleEngineImpl: [],
+    TeamBattleEngineProxy: [teamBattleEngineImplAddress, "initialize(address,address)"],
     AgentChat: [agentRegistryAddress],
     Leaderboard: [],
     RewardVault: [arenaTokenAddress],
+    FrostbiteMarketplace: [arenaWarriorAddress, deployer.address],
+    Tournament: [],
   },
 };
 

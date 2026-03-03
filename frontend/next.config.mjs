@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  output: "standalone",
   eslint: {
     ignoreDuringBuilds: false,
   },
@@ -30,7 +29,7 @@ const nextConfig = {
         {
           key: "Content-Security-Policy",
           value:
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://api.app.layer.ai https://*.walletconnect.com; connect-src 'self' https://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.com wss://*.walletconnect.org https://api.avax.network https://api.avax-test.network https://*.infura.io https://*.alchemy.com https://rpc.ankr.com https://explorer-api.walletconnect.com https://api.app.layer.ai https://*.layer.ai; frame-src 'self' https://*.walletconnect.com https://*.walletconnect.org;",
+            "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://api.app.layer.ai https://*.walletconnect.com https://*.web3modal.org https://*.web3modal.com; connect-src 'self' https://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.com wss://*.walletconnect.org https://api.avax.network https://api.avax-test.network https://*.infura.io https://*.alchemy.com https://rpc.ankr.com https://explorer-api.walletconnect.com https://api.web3modal.org https://api.web3modal.com https://api.app.layer.ai https://*.layer.ai; frame-src 'self' https://*.walletconnect.com https://*.walletconnect.org;",
         },
       ],
     },

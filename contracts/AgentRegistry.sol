@@ -296,7 +296,11 @@ contract AgentRegistry is Ownable, ReentrancyGuard {
         if (agentId == 0) revert AgentNotFound();
         Agent storage a = agents[agentId];
         if (a.owner != msg.sender) revert NotAgentOwner();
-        require(address(this).balance >= _amount, "Insufficient balance");
+
+        // Enforce per-agent balance: cannot withdraw more than deposited minus already withdrawn
+        uint256 agentBalance = a.totalDeposited - a.profitWithdrawn;
+        if (_amount > agentBalance) revert InsufficientAgentBalance();
+        require(address(this).balance >= _amount, "Insufficient contract balance");
 
         // Transfer from contract to owner
         a.profitWithdrawn += _amount;

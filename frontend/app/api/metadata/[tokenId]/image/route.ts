@@ -13,42 +13,290 @@ const ELEMENT_COLORS: Record<number, { primary: string; secondary: string; bg: s
 };
 
 const ELEMENT_NAMES = ['Fire', 'Water', 'Wind', 'Ice', 'Earth', 'Thunder', 'Shadow', 'Light'];
-const ELEMENT_EMOJIS = ['🔥', '💧', '🌪️', '❄️', '🌍', '⚡', '🌑', '✨'];
+
+// 16x20 pixel art warrior grids per element (1=primary, 2=secondary, 3=dark accent, 4=highlight/eye)
+// Each warrior has a distinct silhouette based on their element
+const WARRIOR_SPRITES: Record<number, number[][]> = {
+  // Fire — horned helmet, sword right hand, flame accents
+  0: [
+    [0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,1,1,0,0,0,1,1,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,3,3,3,1,0,0,0,0,0,0],
+    [0,0,0,0,1,3,4,3,4,3,1,0,0,0,0,0],
+    [0,0,0,0,0,3,3,1,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,3,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,1,1,2,1,2,1,1,0,0,0,0,0],
+    [0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0],
+    [0,0,2,0,0,1,1,1,1,1,0,0,2,0,0,0],
+    [0,2,2,0,0,1,1,1,1,1,0,0,2,2,0,0],
+    [0,0,2,0,0,0,1,1,1,0,0,0,2,0,0,0],
+    [0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,1,1,0,0,0,1,1,0,0,0,0,0],
+    [0,0,0,0,1,1,0,0,0,1,1,0,0,0,0,0],
+    [0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  ],
+  // Water — trident, flowing cape
+  1: [
+    [0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,2,1,2,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,3,3,3,1,0,0,0,0,0,0],
+    [0,0,0,0,1,3,4,3,4,3,1,0,0,0,0,0],
+    [0,0,0,0,0,3,3,1,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,3,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0],
+    [0,0,0,1,1,1,2,1,2,1,1,1,0,0,0,0],
+    [0,0,2,0,1,1,1,1,1,1,1,0,2,0,0,0],
+    [0,2,1,2,0,1,1,1,1,1,0,2,1,2,0,0],
+    [0,2,1,2,0,0,1,1,1,0,0,2,1,2,0,0],
+    [0,0,2,0,0,0,1,0,1,0,0,0,2,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,1,1,0,0,0,1,1,0,0,0,0,0],
+    [0,0,0,0,1,2,0,0,0,2,1,0,0,0,0,0],
+    [0,0,0,1,2,2,0,0,0,2,2,1,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  ],
+  // Wind — feathered helm, dual daggers
+  2: [
+    [0,0,0,0,0,2,2,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,2,2,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,3,3,3,1,0,0,0,0,0,0],
+    [0,0,0,0,1,3,4,3,4,3,1,0,0,0,0,0],
+    [0,0,0,0,0,3,3,1,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,3,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,2,1,1,1,1,1,1,1,2,0,0,0,0],
+    [0,0,2,0,0,1,1,1,1,1,0,0,2,0,0,0],
+    [0,2,0,0,0,1,2,1,2,1,0,0,0,2,0,0],
+    [2,0,0,0,0,1,1,1,1,1,0,0,0,0,2,0],
+    [0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0],
+    [0,0,0,0,1,1,0,0,0,1,1,0,0,0,0,0],
+    [0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,1,1,0,0,0,0,0,1,1,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  ],
+  // Ice — crystal crown, shield + mace
+  3: [
+    [0,0,0,0,0,2,0,2,0,2,0,0,0,0,0,0],
+    [0,0,0,0,0,0,2,1,2,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,3,3,3,1,0,0,0,0,0,0],
+    [0,0,0,0,1,3,4,3,4,3,1,0,0,0,0,0],
+    [0,0,0,0,0,3,3,1,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,3,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,1,1,2,1,2,1,1,0,0,0,0,0],
+    [0,0,2,1,1,1,1,1,1,1,1,1,2,0,0,0],
+    [0,0,2,2,0,1,1,1,1,1,0,2,2,0,0,0],
+    [0,0,2,2,0,1,1,1,1,1,0,2,2,0,0,0],
+    [0,0,2,2,0,0,1,1,1,0,0,0,2,0,0,0],
+    [0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,1,2,1,0,1,2,1,0,0,0,0,0],
+    [0,0,0,0,1,2,1,0,1,2,1,0,0,0,0,0],
+    [0,0,0,1,1,2,1,0,1,2,1,1,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  ],
+  // Earth — heavy armor, tower shield, hammer
+  4: [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0],
+    [0,0,0,0,0,1,3,3,3,1,0,0,0,0,0,0],
+    [0,0,0,0,1,3,4,3,4,3,1,0,0,0,0,0],
+    [0,0,0,0,0,3,3,1,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,3,0,0,0,0,0,0,0],
+    [0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0],
+    [0,0,0,1,1,1,2,1,2,1,1,1,0,0,0,0],
+    [0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+    [0,0,2,2,1,1,1,1,1,1,1,2,2,2,0,0],
+    [0,0,2,2,0,1,1,1,1,1,0,2,2,2,0,0],
+    [0,0,2,2,0,0,1,1,1,0,0,0,2,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,1,1,1,0,1,1,1,0,0,0,0,0],
+    [0,0,0,0,1,1,1,0,1,1,1,0,0,0,0,0],
+    [0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0],
+    [0,0,1,1,1,1,0,0,0,1,1,1,1,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  ],
+  // Thunder — lightning bolt crown, electrified hands
+  5: [
+    [0,0,0,0,0,2,0,0,0,2,0,0,0,0,0,0],
+    [0,0,0,0,0,0,2,0,2,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,2,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,3,3,3,1,0,0,0,0,0,0],
+    [0,0,0,0,1,3,4,3,4,3,1,0,0,0,0,0],
+    [0,0,0,0,0,3,3,1,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,3,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,1,1,2,1,2,1,1,0,0,0,0,0],
+    [0,0,2,1,1,1,1,1,1,1,1,1,2,0,0,0],
+    [0,2,2,0,0,1,1,1,1,1,0,0,2,2,0,0],
+    [2,2,0,0,0,1,1,1,1,1,0,0,0,2,2,0],
+    [0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,2,1,0,0,0,1,2,0,0,0,0,0],
+    [0,0,0,0,1,1,0,0,0,1,1,0,0,0,0,0],
+    [0,0,0,2,1,1,0,0,0,1,1,2,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  ],
+  // Shadow — hooded cloak, scythe
+  6: [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0],
+    [0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0],
+    [0,0,0,1,1,3,3,3,3,3,1,1,0,0,0,0],
+    [0,0,0,0,1,3,4,3,4,3,1,0,0,0,0,0],
+    [0,0,0,0,0,3,3,2,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,3,0,0,0,0,0,0,0],
+    [0,0,0,1,1,1,1,1,1,1,1,1,0,0,0,0],
+    [0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+    [0,0,1,1,0,1,1,1,1,1,0,1,1,0,0,0],
+    [0,0,1,0,0,1,1,1,1,1,0,0,1,2,2,0],
+    [0,0,1,0,0,1,1,1,1,1,0,0,0,2,0,0],
+    [0,0,0,0,0,0,1,1,1,0,0,0,0,2,0,0],
+    [0,0,0,0,0,0,1,0,1,0,0,0,0,2,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,2,0,0],
+    [0,0,0,0,0,1,0,0,0,1,0,0,2,0,0,0],
+    [0,0,0,0,1,1,0,0,0,1,1,2,0,0,0,0],
+    [0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,1,1,0,0,0,0,0,1,1,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  ],
+  // Light — halo, staff, radiant wings
+  7: [
+    [0,0,0,0,0,2,2,2,2,2,0,0,0,0,0,0],
+    [0,0,0,0,2,0,0,0,0,0,2,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,3,3,3,1,0,0,0,0,0,0],
+    [0,0,0,0,1,3,4,3,4,3,1,0,0,0,0,0],
+    [0,0,0,0,0,3,3,1,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,3,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0],
+    [0,0,2,0,1,1,2,1,2,1,1,0,2,0,0,0],
+    [0,2,0,0,1,1,1,1,1,1,1,0,0,2,0,0],
+    [2,0,0,0,0,1,1,1,1,1,0,0,0,0,2,0],
+    [0,2,0,0,0,1,1,1,1,1,0,0,0,2,0,0],
+    [0,0,2,0,0,0,1,1,1,0,0,0,2,0,0,0],
+    [0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,1,1,0,0,0,1,1,0,0,0,0,0],
+    [0,0,0,0,1,2,0,0,0,2,1,0,0,0,0,0],
+    [0,0,0,1,1,2,0,0,0,2,1,1,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  ],
+};
 
 /**
- * Generate a fallback SVG warrior card when no AI image is available.
+ * Render a pixel grid as SVG rect elements.
+ */
+function renderPixelWarrior(
+  grid: number[][],
+  colors: { primary: string; secondary: string; bg: string },
+  offsetX: number,
+  offsetY: number,
+  pixelSize: number,
+): string {
+  const colorMap: Record<number, string> = {
+    1: colors.primary,
+    2: colors.secondary,
+    3: '#1a1a2e',
+    4: '#ffffff',
+  };
+
+  let rects = '';
+  for (let row = 0; row < grid.length; row++) {
+    for (let col = 0; col < grid[row].length; col++) {
+      const val = grid[row][col];
+      if (val === 0) continue;
+      const fill = colorMap[val] ?? colors.primary;
+      const x = offsetX + col * pixelSize;
+      const y = offsetY + row * pixelSize;
+      rects += `<rect x="${x}" y="${y}" width="${pixelSize}" height="${pixelSize}" fill="${fill}"/>`;
+    }
+  }
+  return rects;
+}
+
+/**
+ * Generate a pixel-art frame border.
+ */
+function renderPixelBorder(
+  color: string,
+  secondary: string,
+  size: number,
+  pixelSize: number,
+): string {
+  let rects = '';
+  const count = Math.floor(size / pixelSize);
+  for (let i = 0; i < count; i++) {
+    const c = i % 4 === 0 ? secondary : color;
+    const o = i % 2 === 0 ? '0.6' : '0.3';
+    // Top
+    rects += `<rect x="${i * pixelSize}" y="0" width="${pixelSize}" height="${pixelSize}" fill="${c}" opacity="${o}"/>`;
+    // Bottom
+    rects += `<rect x="${i * pixelSize}" y="${size - pixelSize}" width="${pixelSize}" height="${pixelSize}" fill="${c}" opacity="${o}"/>`;
+    // Left
+    rects += `<rect x="0" y="${i * pixelSize}" width="${pixelSize}" height="${pixelSize}" fill="${c}" opacity="${o}"/>`;
+    // Right
+    rects += `<rect x="${size - pixelSize}" y="${i * pixelSize}" width="${pixelSize}" height="${pixelSize}" fill="${c}" opacity="${o}"/>`;
+  }
+  return rects;
+}
+
+/**
+ * Generate a fallback pixel-art SVG warrior card.
  */
 function generateFallbackSvg(tokenId: number, element: number): string {
   const colors = ELEMENT_COLORS[element] ?? ELEMENT_COLORS[0];
   const elementName = ELEMENT_NAMES[element] ?? 'Unknown';
-  const emoji = ELEMENT_EMOJIS[element] ?? '⚔️';
+  const grid = WARRIOR_SPRITES[element] ?? WARRIOR_SPRITES[0];
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <defs>
-    <radialGradient id="bg" cx="50%" cy="50%" r="70%">
-      <stop offset="0%" stop-color="${colors.bg}" stop-opacity="1"/>
-      <stop offset="100%" stop-color="#0a0a0f" stop-opacity="1"/>
-    </radialGradient>
-    <radialGradient id="glow" cx="50%" cy="40%" r="40%">
-      <stop offset="0%" stop-color="${colors.primary}" stop-opacity="0.3"/>
-      <stop offset="100%" stop-color="${colors.primary}" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="border" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="${colors.primary}"/>
-      <stop offset="50%" stop-color="${colors.secondary}"/>
-      <stop offset="100%" stop-color="${colors.primary}"/>
-    </linearGradient>
-  </defs>
-  <rect width="1024" height="1024" fill="url(#bg)" rx="40"/>
-  <rect x="8" y="8" width="1008" height="1008" fill="none" stroke="url(#border)" stroke-width="4" rx="36" opacity="0.8"/>
-  <rect width="1024" height="1024" fill="url(#glow)" rx="40"/>
-  <text x="512" y="340" text-anchor="middle" font-family="system-ui,sans-serif" font-size="200" fill="${colors.primary}" opacity="0.9">⚔️</text>
-  <text x="512" y="520" text-anchor="middle" font-family="system-ui,sans-serif" font-size="72" fill="${colors.primary}" opacity="0.8">${emoji} ${elementName}</text>
-  <text x="512" y="620" text-anchor="middle" font-family="system-ui,sans-serif" font-size="48" fill="white" opacity="0.5">Frostbite Warrior</text>
-  <text x="512" y="700" text-anchor="middle" font-family="system-ui,sans-serif" font-size="96" fill="white" font-weight="bold" opacity="0.9">#${tokenId}</text>
-  <text x="512" y="800" text-anchor="middle" font-family="system-ui,sans-serif" font-size="28" fill="${colors.secondary}" opacity="0.4">FROSTBITE</text>
-  <line x1="200" y1="850" x2="824" y2="850" stroke="${colors.primary}" stroke-width="1" opacity="0.2"/>
-  <text x="512" y="900" text-anchor="middle" font-family="system-ui,sans-serif" font-size="22" fill="white" opacity="0.25">Generating AI artwork...</text>
+  const size = 1024;
+  const pixelSize = 32;
+  const gridCols = grid[0].length;
+  const gridRows = grid.length;
+  const warriorW = gridCols * pixelSize;
+  const warriorH = gridRows * pixelSize;
+  const offsetX = Math.floor((size - warriorW) / 2);
+  const offsetY = Math.floor((size - warriorH) / 2) - 60;
+
+  const borderPixels = renderPixelBorder(colors.primary, colors.secondary, size, 16);
+  const warriorPixels = renderPixelWarrior(grid, colors, offsetX, offsetY, pixelSize);
+
+  // Small background pixel grid pattern
+  let bgGrid = '';
+  for (let y = 0; y < size; y += 48) {
+    for (let x = 0; x < size; x += 48) {
+      bgGrid += `<rect x="${x}" y="${y}" width="2" height="2" fill="${colors.primary}" opacity="0.06"/>`;
+    }
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="image-rendering:pixelated">
+  <rect width="${size}" height="${size}" fill="${colors.bg}"/>
+  <rect width="${size}" height="${size}" fill="#0a0a0f" opacity="0.7"/>
+  ${bgGrid}
+  ${borderPixels}
+  ${warriorPixels}
+  <text x="${size / 2}" y="${offsetY + warriorH + 70}" text-anchor="middle" font-family="monospace" font-size="56" fill="${colors.primary}" font-weight="bold" letter-spacing="4">${elementName.toUpperCase()}</text>
+  <text x="${size / 2}" y="${offsetY + warriorH + 130}" text-anchor="middle" font-family="monospace" font-size="80" fill="white" font-weight="bold" opacity="0.9">#${tokenId}</text>
+  <text x="${size / 2}" y="${size - 40}" text-anchor="middle" font-family="monospace" font-size="24" fill="${colors.secondary}" opacity="0.4" letter-spacing="8">FROSTBITE</text>
 </svg>`;
 }
 

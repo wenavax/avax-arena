@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { startAgentLoop, stopAgentLoop } from '@/lib/agent-engine';
 import { getStoredAgent } from '@/lib/wallet-manager';
+import { authenticateRequest } from '@/lib/api-auth';
 
 const ETHEREUM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -48,26 +49,48 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!ownerAddress || !ETHEREUM_ADDRESS_RE.test(ownerAddress)) {
-      return NextResponse.json(
-        { error: 'ownerAddress must be a valid Ethereum address', code: 'INVALID_OWNER' },
-        { status: 400, headers: securityHeaders() }
-      );
+    // Auth: prefer Bearer token authentication via API key
+    const authHeader = req.headers.get('authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const auth = authenticateRequest(req, 'write');
+      if (!auth.valid) {
+        return auth.response;
+      }
+      // Token auth succeeded — agent identity derived from API key
+    } else {
+      // DEPRECATED: ownerAddress-based auth — should be replaced with wallet signature verification.
+      // This path is kept as a fallback for frontend calls that do not yet send a Bearer token.
+      console.warn('[agent-loop] DEPRECATION: ownerAddress-based auth used. Migrate to Bearer token auth.');
+
+      if (!ownerAddress || !ETHEREUM_ADDRESS_RE.test(ownerAddress)) {
+        return NextResponse.json(
+          { error: 'ownerAddress must be a valid Ethereum address', code: 'INVALID_OWNER' },
+          { status: 400, headers: securityHeaders() }
+        );
+      }
+
+      const storedAgent = getStoredAgent(walletAddress);
+      if (!storedAgent) {
+        return NextResponse.json(
+          { error: 'Agent wallet not found', code: 'AGENT_NOT_FOUND' },
+          { status: 404, headers: securityHeaders() }
+        );
+      }
+
+      if (storedAgent.ownerAddress.toLowerCase() !== ownerAddress.toLowerCase()) {
+        return NextResponse.json(
+          { error: 'Unauthorized: ownerAddress does not match agent owner', code: 'UNAUTHORIZED' },
+          { status: 403, headers: securityHeaders() }
+        );
+      }
     }
 
-    // Auth: check that ownerAddress matches the stored agent's owner
+    // Verify agent wallet exists (needed for both auth paths)
     const storedAgent = getStoredAgent(walletAddress);
     if (!storedAgent) {
       return NextResponse.json(
         { error: 'Agent wallet not found', code: 'AGENT_NOT_FOUND' },
         { status: 404, headers: securityHeaders() }
-      );
-    }
-
-    if (storedAgent.ownerAddress.toLowerCase() !== ownerAddress.toLowerCase()) {
-      return NextResponse.json(
-        { error: 'Unauthorized: ownerAddress does not match agent owner', code: 'UNAUTHORIZED' },
-        { status: 403, headers: securityHeaders() }
       );
     }
 
@@ -97,10 +120,9 @@ export async function POST(req: NextRequest) {
       { headers: securityHeaders() }
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    console.error('[agent-loop]', message);
+    console.error('[agent-loop]', err instanceof Error ? err.message : err);
     return NextResponse.json(
-      { error: message, code: 'INTERNAL_ERROR' },
+      { error: 'Internal server error', code: 'INTERNAL_ERROR' },
       { status: 500, headers: securityHeaders() }
     );
   }

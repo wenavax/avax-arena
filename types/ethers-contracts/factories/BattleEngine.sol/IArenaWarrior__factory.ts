@@ -44,9 +44,9 @@
             "type": "uint8"
           },
           {
-            "internalType": "uint8",
+            "internalType": "uint16",
             "name": "level",
-            "type": "uint8"
+            "type": "uint16"
           },
           {
             "internalType": "uint256",
