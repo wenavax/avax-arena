@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, http } from 'viem';
 import { avalancheFuji } from 'viem/chains';
 import { FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
-import { CONTRACT_ADDRESSES } from '@/lib/constants';
+import { CONTRACT_ADDRESSES, FUJI_RPC_URL } from '@/lib/constants';
 import { getWarriorName, getWarriorDescription } from '@/lib/warrior-prompts';
 import { imageCache } from '@/lib/image-cache';
 
 const client = createPublicClient({
   chain: avalancheFuji,
-  transport: http('https://api.avax-test.network/ext/bc/C/rpc'),
+  transport: http(FUJI_RPC_URL),
 });
 
 interface WarriorData {
@@ -94,7 +94,7 @@ export async function GET(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    if (message.includes('TokenDoesNotExist')) {
+    if (message.includes('TokenDoesNotExist') || message.includes('revert') || message.includes('0xceea21b6')) {
       return NextResponse.json({ error: 'Token does not exist' }, { status: 404 });
     }
     return NextResponse.json({ error: 'Failed to fetch warrior data' }, { status: 500 });

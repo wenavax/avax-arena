@@ -111,7 +111,7 @@ export async function GET(
       id: d.id,
       action: d.action,
       reasoning: d.reasoning,
-      gameStateSummary: JSON.parse(d.game_state_summary || '{}'),
+      gameStateSummary: (() => { try { return JSON.parse(d.game_state_summary || '{}'); } catch { return {}; } })(),
       success: d.success === 1,
       createdAt: d.created_at,
     })),
