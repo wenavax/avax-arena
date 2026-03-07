@@ -553,6 +553,16 @@ function NFTListingCard({
           </h3>
         </Link>
 
+        {/* Stats row */}
+        <div className="flex items-center justify-between mt-2.5">
+          <div className="flex items-center gap-3 text-[10px] font-pixel text-white/50">
+            <span className="text-red-400">{warrior.attack} ATK</span>
+            <span className="text-blue-400">{warrior.defense} DEF</span>
+            <span className="text-green-400">{warrior.speed} SPD</span>
+          </div>
+          <div className="font-pixel text-xs text-frost-cyan font-bold">{warrior.powerScore}</div>
+        </div>
+
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/[0.06]">
           <div>
             <div className="text-[9px] text-white/40 uppercase tracking-wider font-pixel">Price</div>
@@ -647,6 +657,16 @@ function NFTAuctionCard({
             Warrior #{warrior.tokenId}
           </h3>
         </Link>
+
+        {/* Stats row */}
+        <div className="flex items-center justify-between mt-2.5">
+          <div className="flex items-center gap-3 text-[10px] font-pixel text-white/50">
+            <span className="text-red-400">{warrior.attack} ATK</span>
+            <span className="text-blue-400">{warrior.defense} DEF</span>
+            <span className="text-green-400">{warrior.speed} SPD</span>
+          </div>
+          <div className="font-pixel text-xs text-frost-purple font-bold">{warrior.powerScore}</div>
+        </div>
 
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/[0.06]">
           <div>

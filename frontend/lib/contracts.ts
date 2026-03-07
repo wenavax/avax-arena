@@ -146,6 +146,30 @@ export const MARKETPLACE_ABI = parseAbi([
   'event AuctionCancelled(uint256 indexed tokenId, address indexed seller)',
 ]);
 
+export const QUEST_ENGINE_ABI = parseAbi([
+  'function updateQuest(uint256 questId, uint256 duration, uint256 winXP, uint256 lossXP, uint16 minLevel, uint256 minPowerScore, uint16 baseDifficulty) external',
+  'function startQuest(uint256 tokenId, uint256 questId) external',
+  'function completeQuest(uint256 tokenId) external',
+  'function abandonQuest(uint256 tokenId) external',
+  'function getQuest(uint256 questId) external view returns ((uint256 id, string name, uint8 zone, uint8 difficulty, uint256 duration, uint256 winXP, uint256 lossXP, uint16 minLevel, uint256 minPowerScore, uint16 baseDifficulty, bool active))',
+  'function getActiveQuest(uint256 tokenId) external view returns ((uint256 questId, uint256 tokenId, address player, uint256 startedAt, uint256 endsAt, bool completed, bool won))',
+  'function isWarriorOnQuest(uint256 tokenId) external view returns (bool)',
+  'function getQuestsByZone(uint8 zone) external view returns ((uint256 id, string name, uint8 zone, uint8 difficulty, uint256 duration, uint256 winXP, uint256 lossXP, uint16 minLevel, uint256 minPowerScore, uint16 baseDifficulty, bool active)[])',
+  'function getQuestStats() external view returns (uint256 totalStarted, uint256 totalCompleted, uint256 totalWon, uint256 questCount)',
+  'function getSuccessChance(uint256 tokenId, uint256 questId) external view returns (uint256)',
+  'function questCount() external view returns (uint256)',
+  'event QuestStarted(uint256 indexed questId, uint256 indexed tokenId, address indexed player, uint256 endsAt)',
+  'event QuestCompleted(uint256 indexed questId, uint256 indexed tokenId, address indexed player, bool won, uint256 xpGained)',
+  'event QuestAbandoned(uint256 indexed questId, uint256 indexed tokenId, address indexed player)',
+]);
+
+export const BATCH_MINTER_ABI = parseAbi([
+  'function batchMint(uint256 quantity) external payable',
+  'function MINT_PRICE() external view returns (uint256)',
+  'function MAX_BATCH_SIZE() external view returns (uint256)',
+  'event BatchMinted(address indexed to, uint256 quantity, uint256[] tokenIds)',
+]);
+
 export const AGENT_REGISTRY_ABI = parseAbi([
   'function registerAgent(address wallet, string name, uint8 strategyType) external returns (uint256)',
   'function grantSessionKey(uint256 duration) external',

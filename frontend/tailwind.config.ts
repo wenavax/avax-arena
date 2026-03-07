@@ -22,11 +22,11 @@ const config: Config = {
           cyan: "rgb(var(--frost-primary) / <alpha-value>)",
           purple: "rgb(var(--frost-secondary) / <alpha-value>)",
           pink: "rgb(var(--frost-accent) / <alpha-value>)",
-          // Sabit renkler (status/game)
-          green: "#00ff88",
-          orange: "#ff8800",
-          red: "#ff3366",
-          gold: "#ffd700",
+          // Status / game colors (CSS var driven for theme support)
+          green: "var(--frost-green)",
+          orange: "var(--frost-orange)",
+          red: "var(--frost-red)",
+          gold: "var(--frost-gold)",
         },
       },
       fontFamily: {
@@ -40,10 +40,6 @@ const config: Config = {
         "gradient-conic": "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
       },
       boxShadow: {
-        "glow-primary": "0 0 20px rgb(var(--frost-primary) / 0.3), 0 0 60px rgb(var(--frost-primary) / 0.1)",
-        "glow-secondary": "0 0 20px rgb(var(--frost-secondary) / 0.3), 0 0 60px rgb(var(--frost-secondary) / 0.1)",
-        "glow-accent": "0 0 20px rgb(var(--frost-accent) / 0.2), 0 0 60px rgb(var(--frost-accent) / 0.06)",
-        // Aliases
         "glow-cyan": "0 0 20px rgb(var(--frost-primary) / 0.3), 0 0 60px rgb(var(--frost-primary) / 0.1)",
         "glow-purple": "0 0 20px rgb(var(--frost-secondary) / 0.3), 0 0 60px rgb(var(--frost-secondary) / 0.1)",
         "glow-pink": "0 0 20px rgb(var(--frost-accent) / 0.2), 0 0 60px rgb(var(--frost-accent) / 0.06)",

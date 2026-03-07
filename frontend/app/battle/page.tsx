@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sword,
@@ -130,23 +130,23 @@ function parseBattleData(raw: Record<string, unknown>): Battle {
 }
 
 function parseTeamBattleData(raw: readonly unknown[]): TeamBattle {
-  const team1Raw = raw[3] as readonly bigint[];
-  const team2Raw = raw[4] as readonly bigint[];
-  const matchupsRaw = raw[8] as readonly number[];
+  const team1Raw = Array.isArray(raw[3]) ? raw[3] : [];
+  const team2Raw = Array.isArray(raw[4]) ? raw[4] : [];
+  const matchupsRaw = Array.isArray(raw[8]) ? raw[8] : [];
   return {
-    id: Number(raw[0]),
-    player1: String(raw[1]),
-    player2: String(raw[2]),
-    team1: [Number(team1Raw[0]), Number(team1Raw[1]), Number(team1Raw[2])],
-    team2: [Number(team2Raw[0]), Number(team2Raw[1]), Number(team2Raw[2])],
-    stake: BigInt(String(raw[5])),
-    score1: Number(raw[6]),
-    score2: Number(raw[7]),
-    matchups: [Number(matchupsRaw[0]), Number(matchupsRaw[1]), Number(matchupsRaw[2])],
-    winner: String(raw[9]),
-    resolved: Boolean(raw[10]),
-    createdAt: Number(raw[11]),
-    resolvedAt: Number(raw[12]),
+    id: Number(raw[0] ?? 0),
+    player1: String(raw[1] ?? ''),
+    player2: String(raw[2] ?? ''),
+    team1: [Number(team1Raw[0] ?? 0), Number(team1Raw[1] ?? 0), Number(team1Raw[2] ?? 0)],
+    team2: [Number(team2Raw[0] ?? 0), Number(team2Raw[1] ?? 0), Number(team2Raw[2] ?? 0)],
+    stake: BigInt(String(raw[5] ?? 0)),
+    score1: Number(raw[6] ?? 0),
+    score2: Number(raw[7] ?? 0),
+    matchups: [Number(matchupsRaw[0] ?? 0), Number(matchupsRaw[1] ?? 0), Number(matchupsRaw[2] ?? 0)],
+    winner: String(raw[9] ?? ''),
+    resolved: Boolean(raw[10] ?? false),
+    createdAt: Number(raw[11] ?? 0),
+    resolvedAt: Number(raw[12] ?? 0),
   };
 }
 
@@ -625,11 +625,13 @@ function WarriorMiniCard({
   selected,
   onClick,
   size = 'normal',
+  animationDelay = 0,
 }: {
   warrior: Warrior;
   selected?: boolean;
   onClick?: () => void;
   size?: 'normal' | 'small';
+  animationDelay?: number;
 }) {
   const element = getElement(warrior.element);
   const isSmall = size === 'small';
@@ -637,6 +639,13 @@ function WarriorMiniCard({
   return (
     <motion.button
       type="button"
+      initial={{ opacity: 0, y: 15, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{
+        delay: animationDelay,
+        duration: 0.3,
+        ease: 'easeOut',
+      }}
       whileHover={{ scale: 1.03 }}
       whileTap={{ scale: 0.97 }}
       onClick={onClick}
@@ -644,7 +653,7 @@ function WarriorMiniCard({
         'relative rounded-xl text-left transition-all overflow-hidden',
         isSmall ? 'p-2.5' : 'p-3',
         selected
-          ? 'ring-2 ring-frost-cyan shadow-glow-primary'
+          ? 'ring-2 ring-frost-cyan shadow-glow-cyan'
           : 'ring-1 ring-white/10 hover:ring-white/20',
         'bg-gradient-to-br from-white/[0.04] to-transparent',
       )}
@@ -689,11 +698,29 @@ function WarriorMiniCard({
       </div>
 
       {selected && (
-        <motion.div
-          layoutId="warrior-selected"
-          className="absolute inset-0 rounded-xl ring-2 ring-frost-cyan pointer-events-none"
-          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-        />
+        <>
+          <motion.div
+            layoutId="warrior-selected"
+            className="absolute inset-0 rounded-xl ring-2 ring-frost-cyan pointer-events-none"
+            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+          />
+          {/* Pulsing glow ring on selected warrior */}
+          <motion.div
+            className="absolute inset-0 rounded-xl pointer-events-none"
+            animate={{
+              boxShadow: [
+                '0 0 8px rgba(0,255,255,0.2), inset 0 0 8px rgba(0,255,255,0.05)',
+                '0 0 20px rgba(0,255,255,0.4), inset 0 0 15px rgba(0,255,255,0.1)',
+                '0 0 8px rgba(0,255,255,0.2), inset 0 0 8px rgba(0,255,255,0.05)',
+              ],
+            }}
+            transition={{
+              duration: 2,
+              repeat: Infinity,
+              ease: 'easeInOut',
+            }}
+          />
+        </>
       )}
     </motion.button>
   );
@@ -800,6 +827,64 @@ function BattleResultModal({
   const myBonus = iHaveAdvantage ? Math.round(myBaseScore * 0.15) : 0;
   const theirBonus = theyHaveAdvantage ? Math.round(theirBaseScore * 0.15) : 0;
 
+  // Animated score counter for the result modal
+  const [animatedMyScore, setAnimatedMyScore] = useState(0);
+  const [animatedTheirScore, setAnimatedTheirScore] = useState(0);
+  const [animatedMyBonus, setAnimatedMyBonus] = useState(0);
+  const [animatedTheirBonus, setAnimatedTheirBonus] = useState(0);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setAnimatedMyScore(0);
+      setAnimatedTheirScore(0);
+      setAnimatedMyBonus(0);
+      setAnimatedTheirBonus(0);
+      return;
+    }
+
+    // Start counting after 0.8s delay
+    const timeout = setTimeout(() => {
+      const duration = 1200;
+      const startTime = performance.now();
+      let rafId: number;
+
+      const animate = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+
+        setAnimatedMyScore(Math.round(myBaseScore * eased));
+        setAnimatedTheirScore(Math.round(theirBaseScore * eased));
+        setAnimatedMyBonus(Math.round(myBonus * eased));
+        setAnimatedTheirBonus(Math.round(theirBonus * eased));
+
+        if (progress < 1) {
+          rafId = requestAnimationFrame(animate);
+        }
+      };
+      rafId = requestAnimationFrame(animate);
+
+      return () => cancelAnimationFrame(rafId);
+    }, 800);
+
+    return () => clearTimeout(timeout);
+  }, [isOpen, myBaseScore, theirBaseScore, myBonus, theirBonus]);
+
+  // Confetti shapes for sparkle variety
+  const confettiShapes = useMemo(() => {
+    return Array.from({ length: 50 }).map((_, i) => ({
+      isSparkle: i % 4 === 0, // every 4th particle is a sparkle
+      color: ['#ff2020', '#ff6b6b', '#ffffff', '#ffd700', '#00ff88', '#00ffff', '#ff69b4'][i % 7],
+      left: `${Math.random() * 100}%`,
+      endY: `${60 + Math.random() * 40}vh`,
+      endX: (Math.random() - 0.5) * 250,
+      rotation: Math.random() * 720,
+      duration: 2 + Math.random() * 2.5,
+      delay: Math.random() * 1,
+      size: i % 4 === 0 ? 3 : 2,
+    }));
+  }, []);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -817,198 +902,232 @@ function BattleResultModal({
             exit={{ opacity: 0 }}
           />
 
+          {/* Outer wrapper for screen shake on defeat */}
           <motion.div
-            className="relative w-full max-w-2xl glass-card p-6 sm:p-8 overflow-hidden"
-            initial={{ scale: 0.8, opacity: 0, y: 40 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.8, opacity: 0, y: 40 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-          >
-            {isWinner && (
-              <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                {Array.from({ length: 30 }).map((_, i) => (
-                  <motion.div
-                    key={i}
-                    className="absolute w-2 h-2 rounded-full"
-                    style={{
-                      background: ['#ff2020', '#ff6b6b', '#ffffff', '#ffd700', '#00ff88'][i % 5],
-                      left: `${Math.random() * 100}%`,
-                      top: `-5%`,
-                    }}
-                    animate={{
-                      y: ['0vh', `${60 + Math.random() * 40}vh`],
-                      x: [0, (Math.random() - 0.5) * 200],
-                      rotate: [0, Math.random() * 720],
-                      opacity: [1, 0],
-                    }}
-                    transition={{
-                      duration: 2 + Math.random() * 2,
-                      delay: Math.random() * 0.8,
-                      ease: 'easeOut',
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Result Header */}
-            <motion.div
-              className="text-center mb-6"
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.3, type: 'spring', stiffness: 400 }}
-            >
-              {isWinner ? (
-                <>
-                  <Trophy className="w-12 h-12 text-frost-gold mx-auto mb-2" />
-                  <h2 className="font-pixel text-3xl sm:text-4xl font-black text-frost-gold text-glow-green">
-                    VICTORY!
-                  </h2>
-                  <p className="text-frost-green text-sm mt-1 font-semibold">
-                    +{stakeAmount} AVAX earned
-                  </p>
-                </>
-              ) : (
-                <>
-                  <Shield className="w-12 h-12 text-frost-red mx-auto mb-2" />
-                  <h2 className="font-pixel text-3xl sm:text-4xl font-black text-frost-red">
-                    DEFEAT
-                  </h2>
-                  <p className="text-white/40 text-sm mt-1">
-                    -{stakeAmount} AVAX
-                  </p>
-                </>
-              )}
-            </motion.div>
-
-            {/* VS Screen */}
-            <div className="flex items-center gap-4 sm:gap-6 justify-center mb-6">
-              <motion.div
-                className={cn(
-                  'flex-1 glass-card p-4 text-center',
-                  isWinner ? 'ring-2 ring-frost-green/50' : 'ring-1 ring-frost-red/30 opacity-70',
-                )}
-                initial={{ x: -100, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.1, type: 'spring' }}
-                style={{ boxShadow: isWinner ? `0 0 30px ${myElement.glowColor}` : 'none' }}
-              >
-                <div className="flex justify-center mb-2">
-                  <WarriorImage
-                    tokenId={myWarrior.tokenId}
-                    element={myWarrior.element}
-                    size={80}
-                    className="rounded-xl ring-2 ring-white/10"
-                  />
-                </div>
-                <span className="text-xs font-mono text-frost-cyan">#{myWarrior.tokenId}</span>
-                <div className={cn(
-                  'text-xs font-semibold mt-1 bg-gradient-to-r bg-clip-text text-transparent',
-                  myElement.color,
-                )}>
-                  {myElement.name}
-                </div>
-                <div className="text-lg font-mono font-bold text-white mt-1">{myWarrior.powerScore}</div>
-                <div className="text-[10px] text-white/30 uppercase">Power</div>
-              </motion.div>
-
-              <motion.div
-                className="flex-shrink-0"
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ delay: 0.4, type: 'spring', stiffness: 300 }}
-              >
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-frost-pink to-frost-purple flex items-center justify-center">
-                  <span className="font-pixel font-black text-white text-lg sm:text-xl">VS</span>
-                </div>
-              </motion.div>
-
-              <motion.div
-                className={cn(
-                  'flex-1 glass-card p-4 text-center',
-                  !isWinner ? 'ring-2 ring-frost-green/50' : 'ring-1 ring-frost-red/30 opacity-70',
-                )}
-                initial={{ x: 100, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.1, type: 'spring' }}
-                style={{ boxShadow: !isWinner ? `0 0 30px ${theirElement.glowColor}` : 'none' }}
-              >
-                <div className="flex justify-center mb-2">
-                  <WarriorImage
-                    tokenId={theirWarrior.tokenId}
-                    element={theirWarrior.element}
-                    size={80}
-                    className="rounded-xl ring-2 ring-white/10"
-                  />
-                </div>
-                <span className="text-xs font-mono text-white/60">#{theirWarrior.tokenId}</span>
-                <div className={cn(
-                  'text-xs font-semibold mt-1 bg-gradient-to-r bg-clip-text text-transparent',
-                  theirElement.color,
-                )}>
-                  {theirElement.name}
-                </div>
-                <div className="text-lg font-mono font-bold text-white mt-1">{theirWarrior.powerScore}</div>
-                <div className="text-[10px] text-white/30 uppercase">Power</div>
-              </motion.div>
-            </div>
-
-            {/* Combat Score Breakdown */}
-            <motion.div
-              className="bg-white/[0.03] rounded-xl p-4 mb-6 border border-white/5"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6 }}
-            >
-              <h4 className="font-pixel text-xs uppercase tracking-wider text-white/40 mb-3">
-                Combat Breakdown
-              </h4>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <div className="text-white/40 text-xs mb-1">Your Score</div>
-                  <div className="font-mono">
-                    <span className="text-white font-bold">{myBaseScore}</span>
-                    {myBonus > 0 && (
-                      <span className="text-frost-green ml-1">+{myBonus}</span>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-white/40 text-xs mb-1">Opponent Score</div>
-                  <div className="font-mono">
-                    <span className="text-white font-bold">{theirBaseScore}</span>
-                    {theirBonus > 0 && (
-                      <span className="text-frost-green ml-1">+{theirBonus}</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {(iHaveAdvantage || theyHaveAdvantage) && (
-                <div className={cn(
-                  'mt-3 pt-3 border-t border-white/5 flex items-center gap-2 text-xs',
-                  iHaveAdvantage ? 'text-frost-green' : 'text-frost-red',
-                )}>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  {iHaveAdvantage
-                    ? `${myElement.name} has advantage over ${theirElement.name}! (+15% bonus)`
-                    : `${theirElement.name} has advantage over ${myElement.name}! (+15% bonus)`
+            className="relative w-full max-w-2xl"
+            animate={
+              !isWinner
+                ? {
+                    x: [0, -5, 5, -5, 5, -3, 3, 0],
+                    transition: { duration: 0.5, delay: 0.3, ease: 'easeInOut' },
                   }
+                : {}
+            }
+          >
+            <motion.div
+              className="relative w-full glass-card p-6 sm:p-8 overflow-hidden"
+              initial={{ scale: 0.8, opacity: 0, y: 40 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.8, opacity: 0, y: 40 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            >
+              {isWinner && (
+                <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                  {confettiShapes.map((particle, i) => (
+                    <motion.div
+                      key={i}
+                      className="absolute"
+                      style={{
+                        background: particle.color,
+                        left: particle.left,
+                        top: `-5%`,
+                        width: particle.size,
+                        height: particle.size,
+                        borderRadius: particle.isSparkle ? '0' : '50%',
+                        clipPath: particle.isSparkle
+                          ? 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)'
+                          : 'none',
+                        boxShadow: particle.isSparkle
+                          ? `0 0 4px ${particle.color}, 0 0 8px ${particle.color}`
+                          : 'none',
+                      }}
+                      animate={{
+                        y: ['0vh', particle.endY],
+                        x: [0, particle.endX],
+                        rotate: [0, particle.rotation],
+                        opacity: [1, 0],
+                        scale: particle.isSparkle ? [1, 1.5, 0.5] : [1, 1],
+                      }}
+                      transition={{
+                        duration: particle.duration,
+                        delay: particle.delay,
+                        ease: 'easeOut',
+                      }}
+                    />
+                  ))}
                 </div>
               )}
-            </motion.div>
 
-            <motion.button
-              onClick={onClose}
-              className="w-full btn-primary text-center"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.8 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {isWinner ? 'Claim Victory' : 'Return to Frostbite'}
-            </motion.button>
+              {/* Defeat red flash overlay */}
+              {!isWinner && (
+                <motion.div
+                  className="absolute inset-0 pointer-events-none rounded-xl"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: [0, 0.15, 0] }}
+                  transition={{ duration: 0.6, delay: 0.3 }}
+                  style={{ background: 'radial-gradient(circle, rgba(255,32,32,0.3), transparent)' }}
+                />
+              )}
+
+              {/* Result Header */}
+              <motion.div
+                className="text-center mb-6"
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.3, type: 'spring', stiffness: 400 }}
+              >
+                {isWinner ? (
+                  <>
+                    <Trophy className="w-12 h-12 text-frost-gold mx-auto mb-2" />
+                    <h2 className="font-pixel text-3xl sm:text-4xl font-black text-frost-gold text-glow-green">
+                      VICTORY!
+                    </h2>
+                    <p className="text-frost-green text-sm mt-1 font-semibold">
+                      +{stakeAmount} AVAX earned
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Shield className="w-12 h-12 text-frost-red mx-auto mb-2" />
+                    <h2 className="font-pixel text-3xl sm:text-4xl font-black text-frost-red">
+                      DEFEAT
+                    </h2>
+                    <p className="text-white/40 text-sm mt-1">
+                      -{stakeAmount} AVAX
+                    </p>
+                  </>
+                )}
+              </motion.div>
+
+              {/* VS Screen */}
+              <div className="flex items-center gap-4 sm:gap-6 justify-center mb-6">
+                <motion.div
+                  className={cn(
+                    'flex-1 glass-card p-4 text-center',
+                    isWinner ? 'ring-2 ring-frost-green/50' : 'ring-1 ring-frost-red/30 opacity-70',
+                  )}
+                  initial={{ x: -100, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.1, type: 'spring' }}
+                  style={{ boxShadow: isWinner ? `0 0 30px ${myElement.glowColor}` : 'none' }}
+                >
+                  <div className="flex justify-center mb-2">
+                    <WarriorImage
+                      tokenId={myWarrior.tokenId}
+                      element={myWarrior.element}
+                      size={80}
+                      className="rounded-xl ring-2 ring-white/10"
+                    />
+                  </div>
+                  <span className="text-xs font-mono text-frost-cyan">#{myWarrior.tokenId}</span>
+                  <div className={cn(
+                    'text-xs font-semibold mt-1 bg-gradient-to-r bg-clip-text text-transparent',
+                    myElement.color,
+                  )}>
+                    {myElement.name}
+                  </div>
+                  <div className="text-lg font-mono font-bold text-white mt-1">{myWarrior.powerScore}</div>
+                  <div className="text-[10px] text-white/30 uppercase">Power</div>
+                </motion.div>
+
+                <motion.div
+                  className="flex-shrink-0"
+                  initial={{ scale: 0, rotate: -180 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ delay: 0.4, type: 'spring', stiffness: 300 }}
+                >
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-frost-pink to-frost-purple flex items-center justify-center">
+                    <span className="font-pixel font-black text-white text-lg sm:text-xl">VS</span>
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  className={cn(
+                    'flex-1 glass-card p-4 text-center',
+                    !isWinner ? 'ring-2 ring-frost-green/50' : 'ring-1 ring-frost-red/30 opacity-70',
+                  )}
+                  initial={{ x: 100, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.1, type: 'spring' }}
+                  style={{ boxShadow: !isWinner ? `0 0 30px ${theirElement.glowColor}` : 'none' }}
+                >
+                  <div className="flex justify-center mb-2">
+                    <WarriorImage
+                      tokenId={theirWarrior.tokenId}
+                      element={theirWarrior.element}
+                      size={80}
+                      className="rounded-xl ring-2 ring-white/10"
+                    />
+                  </div>
+                  <span className="text-xs font-mono text-white/60">#{theirWarrior.tokenId}</span>
+                  <div className={cn(
+                    'text-xs font-semibold mt-1 bg-gradient-to-r bg-clip-text text-transparent',
+                    theirElement.color,
+                  )}>
+                    {theirElement.name}
+                  </div>
+                  <div className="text-lg font-mono font-bold text-white mt-1">{theirWarrior.powerScore}</div>
+                  <div className="text-[10px] text-white/30 uppercase">Power</div>
+                </motion.div>
+              </div>
+
+              {/* Combat Score Breakdown */}
+              <motion.div
+                className="bg-white/[0.03] rounded-xl p-4 mb-6 border border-white/5"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+              >
+                <h4 className="font-pixel text-xs uppercase tracking-wider text-white/40 mb-3">
+                  Combat Breakdown
+                </h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <div className="text-white/40 text-xs mb-1">Your Score</div>
+                    <div className="font-mono">
+                      <span className="text-white font-bold">{animatedMyScore}</span>
+                      {myBonus > 0 && (
+                        <span className="text-frost-green ml-1">+{animatedMyBonus}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-white/40 text-xs mb-1">Opponent Score</div>
+                    <div className="font-mono">
+                      <span className="text-white font-bold">{animatedTheirScore}</span>
+                      {theirBonus > 0 && (
+                        <span className="text-frost-green ml-1">+{animatedTheirBonus}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {(iHaveAdvantage || theyHaveAdvantage) && (
+                  <div className={cn(
+                    'mt-3 pt-3 border-t border-white/5 flex items-center gap-2 text-xs',
+                    iHaveAdvantage ? 'text-frost-green' : 'text-frost-red',
+                  )}>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {iHaveAdvantage
+                      ? `${myElement.name} has advantage over ${theirElement.name}! (+15% bonus)`
+                      : `${theirElement.name} has advantage over ${myElement.name}! (+15% bonus)`
+                    }
+                  </div>
+                )}
+              </motion.div>
+
+              <motion.button
+                onClick={onClose}
+                className="w-full btn-primary text-center"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.8 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {isWinner ? 'Claim Victory' : 'Return to Frostbite'}
+              </motion.button>
+            </motion.div>
           </motion.div>
         </motion.div>
       )}
@@ -1062,6 +1181,80 @@ function ArenaBackground() {
  * Arena Stats Bar
  * ------------------------------------------------------------------------- */
 
+/**
+ * Animated counter that counts from 0 to a target value over ~1.5s.
+ * Handles both integer and decimal string values (e.g. "12", "0.530", "3/5").
+ */
+function AnimatedStatValue({ value, className }: { value: string; className?: string }) {
+  const [displayed, setDisplayed] = useState(value);
+  const prevValueRef = useRef(value);
+  const frameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // If value contains "/" (win/loss format), animate each part separately
+    if (value.includes('/')) {
+      const parts = value.split('/');
+      const target1 = parseInt(parts[0], 10);
+      const target2 = parseInt(parts[1], 10);
+      if (isNaN(target1) || isNaN(target2)) {
+        setDisplayed(value);
+        return;
+      }
+      const duration = 1500;
+      const startTime = performance.now();
+      const animate = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+        const cur1 = Math.round(target1 * eased);
+        const cur2 = Math.round(target2 * eased);
+        setDisplayed(`${cur1}/${cur2}`);
+        if (progress < 1) {
+          frameRef.current = requestAnimationFrame(animate);
+        }
+      };
+      frameRef.current = requestAnimationFrame(animate);
+      prevValueRef.current = value;
+      return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
+    }
+
+    // If value is "—" or non-numeric, just set it directly
+    const target = parseFloat(value);
+    if (isNaN(target) || value === '—') {
+      setDisplayed(value);
+      prevValueRef.current = value;
+      return;
+    }
+
+    // Determine decimal places to preserve formatting
+    const decimalMatch = value.match(/\.(\d+)/);
+    const decimals = decimalMatch ? decimalMatch[1].length : 0;
+
+    const duration = 1500;
+    const startTime = performance.now();
+
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+      const current = target * eased;
+      setDisplayed(decimals > 0 ? current.toFixed(decimals) : String(Math.round(current)));
+      if (progress < 1) {
+        frameRef.current = requestAnimationFrame(animate);
+      }
+    };
+
+    frameRef.current = requestAnimationFrame(animate);
+    prevValueRef.current = value;
+
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    };
+  }, [value]);
+
+  return <span className={className}>{displayed}</span>;
+}
+
 function ArenaStatsBar({
   openBattles,
   battleHistory,
@@ -1107,7 +1300,10 @@ function ArenaStatsBar({
             <div className="flex items-center gap-2">
               <stat.icon className={cn('w-3.5 h-3.5', stat.color)} />
               <div className="flex flex-col">
-                <span className="font-pixel text-xs text-white leading-none">{stat.value}</span>
+                <AnimatedStatValue
+                  value={stat.value}
+                  className="font-pixel text-xs text-white leading-none"
+                />
                 <span className="font-pixel text-[8px] text-white/30 leading-none mt-0.5">{stat.label}</span>
               </div>
             </div>
@@ -1168,6 +1364,17 @@ function BattleFeedSidebar({
   }, [openBattles, battleHistory, currentAddress]);
 
   const dotColor = { win: 'bg-frost-green', loss: 'bg-frost-red', new: 'bg-frost-cyan' };
+  const glowColor = { win: 'shadow-[0_0_12px_rgba(0,255,136,0.15)]', loss: 'shadow-none', new: 'shadow-none' };
+
+  // Identify feed items that are the user's own battles (wins)
+  const isOwnBattle = useCallback(
+    (event: FeedEvent) => {
+      if (!currentAddress) return false;
+      // win events where the shortened address matches
+      return event.type === 'win';
+    },
+    [currentAddress],
+  );
 
   return (
     <div className="w-[280px] hidden lg:flex flex-col bg-frost-surface/60 backdrop-blur-sm border-r border-white/[0.06]">
@@ -1185,20 +1392,54 @@ function BattleFeedSidebar({
             <span className="text-[10px] text-white/20 font-pixel">Waiting for battles...</span>
           </div>
         ) : (
-          events.map((event) => (
-            <motion.div
-              key={event.id}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.02] transition-colors"
-            >
-              <div className={cn('w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0', dotColor[event.type])} />
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] text-white/50 leading-snug break-words">{event.message}</p>
-                <span className="text-[9px] text-white/20">{event.time}</span>
-              </div>
-            </motion.div>
-          ))
+          events.map((event, index) => {
+            const isOwn = isOwnBattle(event);
+            return (
+              <motion.div
+                key={event.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{
+                  delay: 0.05 * index,
+                  duration: 0.35,
+                  ease: 'easeOut',
+                }}
+                className={cn(
+                  'flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.02] transition-colors',
+                  isOwn && 'bg-frost-cyan/[0.04] border border-frost-cyan/10',
+                  isOwn && glowColor[event.type],
+                )}
+              >
+                <div className={cn(
+                  'w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0',
+                  dotColor[event.type],
+                  isOwn && 'animate-pulse',
+                )} />
+                <div className="min-w-0 flex-1">
+                  <p className={cn(
+                    'text-[11px] leading-snug break-words',
+                    isOwn ? 'text-frost-cyan/70' : 'text-white/50',
+                  )}>
+                    {event.message}
+                  </p>
+                  <span className="text-[9px] text-white/20">{event.time}</span>
+                </div>
+                {isOwn && (
+                  <motion.div
+                    className="w-1 h-1 rounded-full bg-frost-cyan flex-shrink-0 mt-2"
+                    animate={{
+                      boxShadow: [
+                        '0 0 2px rgba(0,255,255,0.3)',
+                        '0 0 8px rgba(0,255,255,0.6)',
+                        '0 0 2px rgba(0,255,255,0.3)',
+                      ],
+                    }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                )}
+              </motion.div>
+            );
+          })
         )}
       </div>
     </div>
@@ -1671,12 +1912,13 @@ function WarriorSelectionDrawer({
                       Select Your Warrior
                     </label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[35vh] overflow-y-auto pr-1">
-                      {warriors.map((w) => (
+                      {warriors.map((w, idx) => (
                         <WarriorMiniCard
                           key={w.tokenId}
                           warrior={w}
                           selected={selectedWarrior?.tokenId === w.tokenId}
                           onClick={() => setSelectedWarrior(w)}
+                          animationDelay={0.03 * idx}
                         />
                       ))}
                     </div>
@@ -2086,12 +2328,13 @@ function TeamWarriorSelectionDrawer({
                       Select 3 Warriors ({selectedWarriors.length}/3)
                     </label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[35vh] overflow-y-auto pr-1">
-                      {warriors.map((w) => (
+                      {warriors.map((w, idx) => (
                         <WarriorMiniCard
                           key={w.tokenId}
                           warrior={w}
                           selected={!!selectedWarriors.find((sw) => sw.tokenId === w.tokenId)}
                           onClick={() => toggleWarrior(w)}
+                          animationDelay={0.03 * idx}
                         />
                       ))}
                     </div>

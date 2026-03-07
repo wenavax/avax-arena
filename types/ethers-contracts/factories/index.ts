@@ -4,10 +4,12 @@
 export * as agentChatSol from './AgentChat.sol/index.js';
 export * as battleEngineSol from './BattleEngine.sol/index.js';
 export * as gameEngineSol from './GameEngine.sol/index.js';
+export * as questEngineSol from './QuestEngine.sol/index.js';
 export * as teamBattleEngineSol from './TeamBattleEngine.sol/index.js';
 export { AgentRegistry__factory } from './AgentRegistry__factory.js';
 export { ArenaToken__factory } from './ArenaToken__factory.js';
 export { ArenaWarrior__factory } from './ArenaWarrior__factory.js';
+export { BatchMinter__factory } from './BatchMinter__factory.js';
 export { BattleEngineProxy__factory } from './BattleEngineProxy__factory.js';
 export { FrostbiteMarketplace__factory } from './FrostbiteMarketplace__factory.js';
 export { Leaderboard__factory } from './Leaderboard__factory.js';

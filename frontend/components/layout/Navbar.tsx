@@ -5,7 +5,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { Menu, X, Swords, Sparkles, MessageCircle, BarChart3, Bot, Store } from 'lucide-react';
+import { useAccount } from 'wagmi';
+import { Menu, X, Swords, Sparkles, MessageCircle, BarChart3, Bot, Store, GitMerge, User, Map } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { cn } from '@/lib/utils';
 
@@ -13,6 +14,8 @@ const NAV_LINKS = [
   { href: '/agents', label: 'Agents', icon: Bot },
   { href: '/mint', label: 'Mint', icon: Sparkles },
   { href: '/battle', label: 'Battle', icon: Swords },
+  { href: '/merge', label: 'Fusion', icon: GitMerge },
+  { href: '/quests', label: 'Quests', icon: Map },
   { href: '/marketplace', label: 'Market', icon: Store },
   { href: '/chat', label: 'Forum', icon: MessageCircle },
   { href: '/leaderboard', label: 'Rankings', icon: BarChart3 },
@@ -21,6 +24,11 @@ const NAV_LINKS = [
 export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+  const { address, isConnected } = useAccount();
+
+  const navLinks = isConnected && address
+    ? [...NAV_LINKS, { href: `/profile/${address}`, label: 'Profile', icon: User }]
+    : NAV_LINKS;
 
   return (
     <header className="sticky top-0 z-50 w-full">
@@ -42,7 +50,7 @@ export function Navbar() {
 
         {/* Desktop Navigation */}
         <div className="hidden md:flex items-center gap-1">
-          {NAV_LINKS.map((link) => {
+          {navLinks.map((link) => {
             const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
             const Icon = link.icon;
             return (
@@ -60,7 +68,7 @@ export function Navbar() {
                 {link.label}
                 {/* Active indicator glow */}
                 {isActive && (
-                  <span className="absolute inset-x-2 -bottom-[1px] h-[2px] bg-frost-primary rounded-full shadow-glow-primary" />
+                  <span className="absolute inset-x-2 -bottom-[1px] h-[2px] bg-frost-primary rounded-full shadow-glow-cyan" />
                 )}
               </Link>
             );
@@ -100,11 +108,11 @@ export function Navbar() {
       <div
         className={cn(
           'md:hidden absolute top-16 inset-x-0 z-40 transition-all duration-300 ease-in-out overflow-hidden',
-          mobileOpen ? 'max-h-56 opacity-100' : 'max-h-0 opacity-0'
+          mobileOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
         )}
       >
         <div className="bg-frost-bg/95 backdrop-blur-xl border-b border-white/[0.06] px-4 py-3 space-y-1">
-          {NAV_LINKS.map((link) => {
+          {navLinks.map((link) => {
             const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
             const Icon = link.icon;
             return (

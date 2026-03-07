@@ -77,7 +77,7 @@ function getLoops(): GlobalLoops {
  * Constants
  * ------------------------------------------------------------------------- */
 
-const RPC_URL = 'https://api.avax-test.network/ext/bc/C/rpc';
+const RPC_URL = process.env.NEXT_PUBLIC_FUJI_RPC_URL || 'https://avalanche-fuji-c-chain-rpc.publicnode.com';
 const LOOP_INTERVAL_MS = 30_000; // 30 seconds
 const MAX_CONSECUTIVE_ERRORS = 3;
 const MIN_BALANCE_RESERVE = parseEther('0.01'); // Keep 0.01 AVAX for gas

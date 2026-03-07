@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
         agentName: e.agent_name,
         opponentId: e.opponent_id,
         opponentName: e.opponent_name,
-        data: JSON.parse(e.data || '{}'),
+        data: (() => { try { return JSON.parse(e.data || '{}'); } catch { return {}; } })(),
         createdAt: e.created_at,
       })),
     }, { headers: securityHeaders() });

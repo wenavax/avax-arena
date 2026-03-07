@@ -20,17 +20,20 @@ import {
   Hash,
   Trophy,
   Skull,
+  Minus,
+  Plus,
+  Layers,
 } from 'lucide-react';
 import Image from 'next/image';
 import { ELEMENTS, MINT_PRICE } from '@/lib/constants';
-import { FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
+import { FROSTBITE_WARRIOR_ABI, BATCH_MINTER_ABI } from '@/lib/contracts';
 import {
   useAccount,
   useWriteContract,
   useReadContract,
   useWaitForTransactionReceipt,
 } from 'wagmi';
-import { parseEther } from 'viem';
+import { parseEther, decodeEventLog } from 'viem';
 import { CONTRACT_ADDRESSES } from '@/lib/constants';
 
 /* ---------------------------------------------------------------------------
@@ -86,10 +89,26 @@ interface WarriorStats {
   element: number;
   specialPower: number;
   level: number;
-  experience: bigint;
-  battleWins: bigint;
-  battleLosses: bigint;
-  powerScore: bigint;
+  experience: number;
+  battleWins: number;
+  battleLosses: number;
+  powerScore: number;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseWarrior(raw: any): WarriorStats {
+  return {
+    attack: Number(raw.attack ?? raw[0] ?? 0),
+    defense: Number(raw.defense ?? raw[1] ?? 0),
+    speed: Number(raw.speed ?? raw[2] ?? 0),
+    element: Number(raw.element ?? raw[3] ?? 0),
+    specialPower: Number(raw.specialPower ?? raw[4] ?? 0),
+    level: Number(raw.level ?? raw[5] ?? 0),
+    experience: Number(raw.experience ?? raw[6] ?? 0),
+    battleWins: Number(raw.battleWins ?? raw[7] ?? 0),
+    battleLosses: Number(raw.battleLosses ?? raw[8] ?? 0),
+    powerScore: Number(raw.powerScore ?? raw[9] ?? 0),
+  };
 }
 
 /* ---------------------------------------------------------------------------
@@ -432,7 +451,7 @@ function GalleryWarriorCard({
     args: [BigInt(tokenId)],
   });
 
-  const warrior = warriorData as WarriorStats | undefined;
+  const warrior = warriorData ? parseWarrior(warriorData) : undefined;
 
   if (!warrior) {
     return (
@@ -535,6 +554,102 @@ function GalleryWarriorCard({
 }
 
 /* ---------------------------------------------------------------------------
+ * Quantity Selector
+ * ------------------------------------------------------------------------- */
+
+function QuantitySelector({
+  quantity,
+  setQuantity,
+  disabled,
+}: {
+  quantity: number;
+  setQuantity: (q: number) => void;
+  disabled: boolean;
+}) {
+  const quickSelects = [1, 5, 10, 20];
+  const totalCost = (quantity * 0.01).toFixed(2);
+
+  return (
+    <div className="glass-card p-5 space-y-4" style={{ transform: 'none' }}>
+      <div className="flex items-center justify-between">
+        <h3 className="font-display text-sm font-bold text-white/60 uppercase tracking-wider">
+          Quantity
+        </h3>
+        <div className="flex items-center gap-1 text-xs text-white/30">
+          <Layers className="w-3.5 h-3.5" />
+          <span>Max 20 per TX</span>
+        </div>
+      </div>
+
+      {/* +/- controls */}
+      <div className="flex items-center justify-center gap-4">
+        <motion.button
+          onClick={() => setQuantity(Math.max(1, quantity - 1))}
+          disabled={disabled || quantity <= 1}
+          className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          whileTap={{ scale: 0.9 }}
+        >
+          <Minus className="w-4 h-4" />
+        </motion.button>
+
+        <div className="w-20 text-center">
+          <span className="font-display text-3xl font-black text-frost-cyan text-glow-cyan">
+            {quantity}
+          </span>
+        </div>
+
+        <motion.button
+          onClick={() => setQuantity(Math.min(20, quantity + 1))}
+          disabled={disabled || quantity >= 20}
+          className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          whileTap={{ scale: 0.9 }}
+        >
+          <Plus className="w-4 h-4" />
+        </motion.button>
+      </div>
+
+      {/* Quick select */}
+      <div className="flex items-center justify-center gap-2">
+        {quickSelects.map((q) => (
+          <motion.button
+            key={q}
+            onClick={() => setQuantity(q)}
+            disabled={disabled}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              quantity === q
+                ? 'bg-frost-cyan/20 border border-frost-cyan/40 text-frost-cyan'
+                : 'bg-white/5 border border-white/10 text-white/50 hover:bg-white/10 hover:text-white/70'
+            } disabled:opacity-30 disabled:cursor-not-allowed`}
+            whileTap={{ scale: 0.95 }}
+          >
+            {q}x
+          </motion.button>
+        ))}
+      </div>
+
+      {/* Total cost */}
+      <div className="flex items-center justify-between pt-3 border-t border-white/5">
+        <span className="text-sm text-white/50">Total Cost</span>
+        <span className="font-display text-lg font-bold text-frost-cyan text-glow-cyan">
+          {totalCost} AVAX
+        </span>
+      </div>
+
+      {/* Batch note */}
+      {quantity > 1 && (
+        <motion.p
+          className="text-[11px] text-white/30 text-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          Batch mint via helper contract (single TX)
+        </motion.p>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
  * Main Mint Page
  * ------------------------------------------------------------------------- */
 
@@ -544,6 +659,8 @@ export default function MintPage() {
   const [showWarrior, setShowWarrior] = useState(false);
   const [warriorImageUrl, setWarriorImageUrl] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [quantity, setQuantity] = useState(1);
+  const [batchMintedTokenIds, setBatchMintedTokenIds] = useState<number[]>([]);
 
   /* ---- Contract Writes ---- */
   const {
@@ -551,9 +668,10 @@ export default function MintPage() {
     data: mintTxHash,
     isPending: isMintPending,
     error: mintError,
+    reset: resetMint,
   } = useWriteContract();
 
-  const { isLoading: isTxConfirming, isSuccess: isTxSuccess } =
+  const { isLoading: isTxConfirming, isSuccess: isTxSuccess, data: txReceipt } =
     useWaitForTransactionReceipt({
       hash: mintTxHash,
     });
@@ -587,24 +705,55 @@ export default function MintPage() {
 
   /* ---- Handle mint success ---- */
   useEffect(() => {
-    if (isTxSuccess && totalSupply !== undefined) {
-      const newTokenId = Number(totalSupply);
-      setMintedTokenId(newTokenId);
-      setShowWarrior(true);
+    if (isTxSuccess && txReceipt) {
+      // Parse Transfer events to extract minted token IDs
+      const transferEventSig = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+      const mintedIds: number[] = [];
+
+      for (const log of txReceipt.logs) {
+        if (
+          log.address.toLowerCase() === CONTRACT_ADDRESSES.frostbiteWarrior.toLowerCase() &&
+          log.topics[0] === transferEventSig &&
+          log.topics[2]?.toLowerCase() === `0x${address?.toLowerCase().slice(2).padStart(64, '0')}`
+        ) {
+          const tokenId = parseInt(log.topics[3]!, 16);
+          mintedIds.push(tokenId);
+        }
+      }
+
+      if (mintedIds.length > 1) {
+        // Batch mint result
+        setBatchMintedTokenIds(mintedIds);
+        setMintedTokenId(null);
+        setShowWarrior(false);
+      } else if (mintedIds.length === 1) {
+        // Single mint result
+        setMintedTokenId(mintedIds[0]);
+        setShowWarrior(true);
+        setBatchMintedTokenIds([]);
+      } else {
+        // Fallback: use totalSupply
+        const newTokenId = Number(totalSupply);
+        setMintedTokenId(newTokenId);
+        setShowWarrior(true);
+        setBatchMintedTokenIds([]);
+      }
+
       setWarriorImageUrl(null);
       refetchSupply();
       refetchOwned();
       refetchWarrior();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTxSuccess]);
+  }, [isTxSuccess, txReceipt]);
 
   const isMinting = isMintPending || isTxConfirming;
-  const warrior = warriorData as WarriorStats | undefined;
+  const warrior = warriorData ? parseWarrior(warriorData) : undefined;
   const supply = totalSupply !== undefined ? Number(totalSupply) : '---';
   const tokenIds = (ownedTokenIds as bigint[] | undefined) ?? [];
+  const totalCost = (quantity * 0.01).toFixed(2);
 
-  /* ---- Generate AI image after warrior data is available ---- */
+  /* ---- Generate AI image after warrior data is available (single mint only) ---- */
   useEffect(() => {
     if (!showWarrior || !warrior || mintedTokenId === null || warriorImageUrl || isGeneratingImage) return;
 
@@ -642,13 +791,34 @@ export default function MintPage() {
   /* ---- Mint Handler ---- */
   function handleMint() {
     if (!isConnected) return;
-    mint({
-      address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
-      abi: FROSTBITE_WARRIOR_ABI,
-      functionName: 'mint',
-      value: parseEther(MINT_PRICE),
-      chainId: 43113, // Avalanche Fuji
-    });
+
+    // Reset previous state
+    resetMint();
+    setBatchMintedTokenIds([]);
+    setMintedTokenId(null);
+    setShowWarrior(false);
+    setWarriorImageUrl(null);
+
+    if (quantity === 1) {
+      // Single mint: direct ArenaWarrior.mint() (cheaper gas)
+      mint({
+        address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+        abi: FROSTBITE_WARRIOR_ABI,
+        functionName: 'mint',
+        value: parseEther(MINT_PRICE),
+        chainId: 43113,
+      });
+    } else {
+      // Batch mint: BatchMinter.batchMint(quantity)
+      mint({
+        address: CONTRACT_ADDRESSES.batchMinter as `0x${string}`,
+        abi: BATCH_MINTER_ABI,
+        functionName: 'batchMint',
+        args: [BigInt(quantity)],
+        value: parseEther(totalCost),
+        chainId: 43113,
+      });
+    }
   }
 
   return (
@@ -737,14 +907,45 @@ export default function MintPage() {
       <section className="relative px-4 pb-20">
         <div className="max-w-5xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            {/* Left: Preview / Warrior Card */}
+            {/* Left: Preview / Warrior Card / Batch Result */}
             <motion.div
               initial={{ opacity: 0, x: -30 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
             >
               <AnimatePresence mode="wait">
-                {showWarrior && warrior && latestTokenId !== null ? (
+                {/* Batch mint result grid */}
+                {batchMintedTokenIds.length > 1 ? (
+                  <motion.div
+                    key="batch-result"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="space-y-4"
+                  >
+                    <div className="text-center">
+                      <motion.div
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-frost-green/10 border border-frost-green/20"
+                        initial={{ scale: 0.8 }}
+                        animate={{ scale: 1 }}
+                      >
+                        <Layers className="w-4 h-4 text-frost-green" />
+                        <span className="text-sm font-bold text-frost-green">
+                          {batchMintedTokenIds.length} Warriors Minted!
+                        </span>
+                      </motion.div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 max-h-[600px] overflow-y-auto pr-1">
+                      {batchMintedTokenIds.map((id, index) => (
+                        <GalleryWarriorCard
+                          key={id}
+                          tokenId={id}
+                          index={index}
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                ) : showWarrior && warrior && latestTokenId !== null ? (
                   <motion.div
                     key="warrior"
                     initial={{ opacity: 0 }}
@@ -869,6 +1070,14 @@ export default function MintPage() {
                 </motion.div>
               ) : (
                 <div className="space-y-4">
+                  {/* Quantity selector */}
+                  <QuantitySelector
+                    quantity={quantity}
+                    setQuantity={setQuantity}
+                    disabled={isMinting}
+                  />
+
+                  {/* Mint button */}
                   <motion.button
                     onClick={handleMint}
                     disabled={isMinting}
@@ -892,12 +1101,16 @@ export default function MintPage() {
                           <Loader2 className="w-5 h-5 animate-spin" />
                           {isMintPending
                             ? 'Confirm in Wallet...'
+                            : quantity > 1
+                            ? `Minting ${quantity} Warriors...`
                             : 'Minting Warrior...'}
                         </>
                       ) : (
                         <>
                           <Sparkles className="w-5 h-5" />
-                          Mint Warrior - {MINT_PRICE} AVAX
+                          {quantity > 1
+                            ? `Mint ${quantity} Warriors - ${totalCost} AVAX`
+                            : `Mint Warrior - ${MINT_PRICE} AVAX`}
                         </>
                       )}
                     </span>
@@ -915,7 +1128,7 @@ export default function MintPage() {
                         {mintError.message.includes('User rejected')
                           ? 'Transaction rejected by user'
                           : mintError.message.includes('InsufficientPayment')
-                          ? 'Insufficient AVAX. Mint costs 0.01 AVAX.'
+                          ? `Insufficient AVAX. Mint costs ${totalCost} AVAX.`
                           : mintError.message.includes('insufficient funds')
                           ? 'Not enough AVAX in your wallet.'
                           : mintError.message.includes('chain')
@@ -934,7 +1147,9 @@ export default function MintPage() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
                       >
-                        Warrior minted successfully! Welcome to Frostbite.
+                        {batchMintedTokenIds.length > 1
+                          ? `${batchMintedTokenIds.length} warriors minted successfully!`
+                          : 'Warrior minted successfully! Welcome to Frostbite.'}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -985,7 +1200,7 @@ export default function MintPage() {
       )}
 
       {/* Empty state for connected but no warriors */}
-      {isConnected && tokenIds.length === 0 && !showWarrior && (
+      {isConnected && tokenIds.length === 0 && !showWarrior && batchMintedTokenIds.length === 0 && (
         <section className="relative px-4 pb-24">
           <div className="max-w-md mx-auto text-center">
             <motion.div

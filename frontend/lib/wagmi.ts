@@ -21,7 +21,7 @@ export const config = getDefaultConfig({
   projectId,
   chains: [avalancheFuji, avalanche],
   transports: {
-    [avalancheFuji.id]: http('https://api.avax-test.network/ext/bc/C/rpc', {
+    [avalancheFuji.id]: http(process.env.NEXT_PUBLIC_FUJI_RPC_URL || 'https://avalanche-fuji-c-chain-rpc.publicnode.com', {
       timeout: 30_000,
     }),
     [avalanche.id]: http('https://api.avax.network/ext/bc/C/rpc', {

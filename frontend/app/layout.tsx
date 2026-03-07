@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Inter, Orbitron, JetBrains_Mono, Silkscreen } from 'next/font/google';
 import { ThemeProvider } from '@/providers/ThemeProvider';
 import { Web3Provider } from '@/providers/Web3Provider';
-import { Navbar } from '@/components/layout/Navbar';
+import { Sidebar, MobileTopBar } from '@/components/layout/Sidebar';
 import { Footer } from '@/components/layout/Footer';
 import { ParticleBackground } from '@/components/layout/ParticleBackground';
 import './globals.css';
@@ -76,7 +76,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.variable} ${orbitron.variable} ${jetbrainsMono.variable} ${silkscreen.variable}`} suppressHydrationWarning>
-      <body className="font-sans antialiased min-h-screen flex flex-col">
+      <body className="font-sans antialiased min-h-screen">
         <ThemeProvider>
           <Web3Provider>
             {/* Background layers */}
@@ -84,10 +84,15 @@ export default function RootLayout({
             <ParticleBackground />
             <div className="scanlines" aria-hidden="true" />
 
-            {/* App shell */}
-            <Navbar />
-            <main className="relative z-10 flex-1">{children}</main>
-            <Footer />
+            {/* App shell: sidebar + main */}
+            <div className="flex min-h-screen">
+              <Sidebar />
+              <div className="flex-1 flex flex-col min-h-screen lg:ml-56">
+                <MobileTopBar />
+                <main className="relative z-10 flex-1">{children}</main>
+                <Footer />
+              </div>
+            </div>
           </Web3Provider>
         </ThemeProvider>
       </body>

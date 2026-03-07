@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
         type: n.type,
         title: n.title,
         message: n.message,
-        data: n.data ? JSON.parse(n.data) : null,
+        data: n.data ? (() => { try { return JSON.parse(n.data); } catch { return null; } })() : null,
         read: n.read === 1,
         createdAt: n.created_at,
       })),

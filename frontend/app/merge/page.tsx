@@ -90,10 +90,26 @@ interface WarriorStats {
   element: number;
   specialPower: number;
   level: number;
-  experience: bigint;
-  battleWins: bigint;
-  battleLosses: bigint;
-  powerScore: bigint;
+  experience: number;
+  battleWins: number;
+  battleLosses: number;
+  powerScore: number;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseWarrior(raw: any): WarriorStats {
+  return {
+    attack: Number(raw.attack ?? raw[0] ?? 0),
+    defense: Number(raw.defense ?? raw[1] ?? 0),
+    speed: Number(raw.speed ?? raw[2] ?? 0),
+    element: Number(raw.element ?? raw[3] ?? 0),
+    specialPower: Number(raw.specialPower ?? raw[4] ?? 0),
+    level: Number(raw.level ?? raw[5] ?? 0),
+    experience: Number(raw.experience ?? raw[6] ?? 0),
+    battleWins: Number(raw.battleWins ?? raw[7] ?? 0),
+    battleLosses: Number(raw.battleLosses ?? raw[8] ?? 0),
+    powerScore: Number(raw.powerScore ?? raw[9] ?? 0),
+  };
 }
 
 interface MergedStats {
@@ -159,15 +175,97 @@ function MiniStatBar({
           {value}
         </span>
       </div>
-      <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-white/5 overflow-hidden relative">
         <motion.div
-          className={`h-full rounded-full bg-gradient-to-r ${colors.bar}`}
+          className={`h-full rounded-full bg-gradient-to-r ${colors.bar} relative`}
           initial={{ width: 0 }}
           animate={{ width: `${percentage}%` }}
-          transition={{ duration: 0.8, delay: delay + 0.2, ease: 'easeOut' }}
-        />
+          transition={{
+            duration: 1.0,
+            delay: delay + 0.2,
+            ease: [0.175, 0.885, 0.32, 1.275], // elastic-like cubic bezier
+          }}
+        >
+          {/* Glow flash at the tip when bar reaches target */}
+          <motion.div
+            className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+            style={{
+              background: `radial-gradient(circle, ${
+                statKey === 'attack' ? 'rgba(239,68,68,0.8)' :
+                statKey === 'defense' ? 'rgba(59,130,246,0.8)' :
+                statKey === 'speed' ? 'rgba(34,197,94,0.8)' :
+                'rgba(168,85,247,0.8)'
+              }, transparent)`,
+            }}
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ opacity: [0, 1, 0], scale: [0, 2.5, 0] }}
+            transition={{
+              duration: 0.6,
+              delay: delay + 1.0,
+              ease: 'easeOut',
+            }}
+          />
+        </motion.div>
       </div>
     </motion.div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Power Score Counter (count-up animation for celebration)
+ * ------------------------------------------------------------------------- */
+
+function PowerScoreCounter({
+  targetValue,
+  colorClass,
+  delay = 0,
+}: {
+  targetValue: number;
+  colorClass: string;
+  delay?: number;
+}) {
+  const [displayValue, setDisplayValue] = useState(0);
+  const [started, setStarted] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setStarted(true), delay * 1000);
+    return () => clearTimeout(timer);
+  }, [delay]);
+
+  useEffect(() => {
+    if (!started || targetValue === 0) return;
+
+    const duration = 1200; // ms
+    const steps = 30;
+    const stepTime = duration / steps;
+    let current = 0;
+    const increment = targetValue / steps;
+
+    const interval = setInterval(() => {
+      current += increment;
+      if (current >= targetValue) {
+        setDisplayValue(targetValue);
+        clearInterval(interval);
+      } else {
+        setDisplayValue(Math.floor(current));
+      }
+    }, stepTime);
+
+    return () => clearInterval(interval);
+  }, [started, targetValue]);
+
+  return (
+    <motion.p
+      className={colorClass}
+      initial={{ opacity: 0, scale: 0.5 }}
+      animate={{ opacity: 1, scale: started && displayValue === targetValue ? [1, 1.15, 1] : 1 }}
+      transition={{
+        opacity: { delay, duration: 0.3 },
+        scale: { delay: delay + 1.3, duration: 0.4, type: 'spring', bounce: 0.5 },
+      }}
+    >
+      {displayValue}
+    </motion.p>
   );
 }
 
@@ -195,7 +293,7 @@ function WarriorSelectCard({
     args: [BigInt(tokenId)],
   });
 
-  const warrior = warriorData as WarriorStats | undefined;
+  const warrior = warriorData ? parseWarrior(warriorData) : undefined;
 
   if (!warrior) {
     return (
@@ -317,7 +415,7 @@ function SelectedWarriorSlot({
     args: tokenId !== null ? [BigInt(tokenId)] : undefined,
   });
 
-  const warrior = tokenId !== null ? (warriorData as WarriorStats | undefined) : undefined;
+  const warrior = tokenId !== null && warriorData ? parseWarrior(warriorData) : undefined;
 
   // Empty slot
   if (tokenId === null) {
@@ -485,55 +583,330 @@ function MergeResultPreview({
   const el1 = warrior1Data ? ELEMENTS[warrior1Data.element] ?? ELEMENTS[0] : null;
   const el2 = warrior2Data ? ELEMENTS[warrior2Data.element] ?? ELEMENTS[0] : null;
 
-  // Success state
+  // Fetch new warrior data after merge
+  const { data: resultWarriorData } = useReadContract({
+    address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+    abi: FROSTBITE_WARRIOR_ABI,
+    functionName: 'getWarrior',
+    args: mergeSuccess && resultTokenId !== null ? [BigInt(resultTokenId)] : undefined,
+  });
+  const resultWarrior = resultWarriorData ? parseWarrior(resultWarriorData) : undefined;
+
+  // Success state — show new warrior image + stats
   if (mergeSuccess && resultTokenId !== null) {
+    const rElement = resultWarrior ? ELEMENTS[resultWarrior.element] ?? ELEMENTS[0] : null;
+    const RElementIcon = resultWarrior ? ELEMENT_ICONS[resultWarrior.element] ?? Sparkles : Sparkles;
+    const rPowerScore = resultWarrior ? Number(resultWarrior.powerScore) : 0;
+
+    // Confetti particle config
+    const confettiColors = [
+      'bg-frost-cyan', 'bg-frost-purple', 'bg-frost-pink',
+      'bg-frost-green', 'bg-frost-gold', 'bg-yellow-400',
+      'bg-red-400', 'bg-blue-400', 'bg-emerald-400', 'bg-orange-400',
+    ];
+    const confettiParticles = Array.from({ length: 28 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 200 - 100, // -100 to 100
+      delay: Math.random() * 0.8,
+      duration: 1.5 + Math.random() * 1.5,
+      size: 3 + Math.random() * 5,
+      color: confettiColors[i % confettiColors.length],
+      drift: (Math.random() - 0.5) * 80,
+    }));
+
     return (
       <motion.div
-        className="flex flex-col items-center gap-4"
+        className="w-full space-y-4 relative"
         initial={{ scale: 0.5, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: 'spring', bounce: 0.4 }}
+        transition={{ type: 'spring', bounce: 0.3 }}
       >
+        {/* Confetti particles */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none -top-10" style={{ height: '120%' }}>
+          {confettiParticles.map((p) => (
+            <motion.div
+              key={`confetti-${p.id}`}
+              className={`absolute rounded-sm ${p.color}`}
+              style={{
+                width: p.size,
+                height: p.size,
+                left: `calc(50% + ${p.x}px)`,
+                top: -10,
+              }}
+              initial={{ y: -10, opacity: 1, rotate: 0 }}
+              animate={{
+                y: [0, 300 + Math.random() * 100],
+                x: [0, p.drift],
+                opacity: [1, 1, 0],
+                rotate: [0, 360 + Math.random() * 360],
+              }}
+              transition={{
+                duration: p.duration,
+                delay: p.delay,
+                ease: 'easeIn',
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Success header */}
+        <div className="text-center">
+          <motion.div
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-frost-green/10 border border-frost-green/20"
+            animate={{ boxShadow: ['0 0 0px rgba(34,197,94,0)', '0 0 20px rgba(34,197,94,0.3)', '0 0 0px rgba(34,197,94,0)'] }}
+            transition={{ duration: 2, repeat: Infinity }}
+          >
+            <motion.div
+              initial={{ rotate: -180, scale: 0 }}
+              animate={{ rotate: 0, scale: 1 }}
+              transition={{ type: 'spring', bounce: 0.5, delay: 0.2 }}
+            >
+              <Check className="w-4 h-4 text-frost-green" />
+            </motion.div>
+            <span className="font-display text-xs font-bold text-frost-green uppercase">
+              Fusion Complete
+            </span>
+          </motion.div>
+        </div>
+
+        {/* Warrior image - dramatic flip + zoom entrance */}
         <motion.div
-          className="relative"
-          animate={{ rotate: [0, 360] }}
-          transition={{ duration: 1, ease: 'easeOut' }}
+          className="relative w-full max-w-[200px] mx-auto aspect-square rounded-xl overflow-hidden border-2 border-frost-green/30"
+          style={{ perspective: 800 }}
+          initial={{ rotateY: -180, scale: 0.3, opacity: 0 }}
+          animate={{ rotateY: 0, scale: 1, opacity: 1 }}
+          transition={{
+            duration: 0.8,
+            delay: 0.3,
+            type: 'spring',
+            bounce: 0.35,
+          }}
         >
-          <div className="w-20 h-20 rounded-full bg-frost-green/20 border-2 border-frost-green/40 flex items-center justify-center">
-            <Check className="w-10 h-10 text-frost-green" />
-          </div>
-          <div className="absolute -inset-2 rounded-full bg-frost-green/10 animate-pulse-glow" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/metadata/${resultTokenId}/image?element=${resultWarrior?.element ?? 0}`}
+            alt={`Warrior #${resultTokenId}`}
+            className="w-full h-full object-cover"
+          />
+          {/* Glow overlay */}
+          {rElement && (
+            <motion.div
+              className="absolute inset-0"
+              initial={{ opacity: 0.5 }}
+              animate={{ opacity: [0.5, 0.15] }}
+              transition={{ duration: 1.0, delay: 0.3 }}
+              style={{ background: `radial-gradient(circle, ${rElement.glowColor}, transparent 70%)` }}
+            />
+          )}
+          {/* Flash overlay on entrance */}
+          <motion.div
+            className="absolute inset-0 bg-white"
+            initial={{ opacity: 0.8 }}
+            animate={{ opacity: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+          />
+          {/* Token ID badge */}
+          <span className="absolute top-2 right-2 text-[10px] font-mono text-white bg-black/60 backdrop-blur-sm px-2 py-0.5 rounded-full">
+            #{resultTokenId}
+          </span>
         </motion.div>
 
-        <div className="text-center">
-          <p className="font-display text-lg font-bold text-frost-green">FUSION COMPLETE</p>
-          <p className="text-sm text-white/50 mt-1">
-            New Warrior <span className="text-frost-cyan font-mono font-bold">#{resultTokenId}</span> created!
-          </p>
-        </div>
+        {/* Element + Power Score */}
+        {resultWarrior && rElement && (
+          <motion.div
+            className="rounded-xl bg-frost-card/80 backdrop-blur-lg border border-frost-green/20 p-4 space-y-3"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+          >
+            {/* Element badge */}
+            <div className="flex items-center justify-center">
+              <motion.div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r ${rElement.bgGradient} border border-white/10`}
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', bounce: 0.4, delay: 0.7 }}
+              >
+                <RElementIcon className="w-3.5 h-3.5" />
+                <span className={`text-xs font-display font-bold bg-gradient-to-r ${rElement.color} bg-clip-text text-transparent`}>
+                  {rElement.emoji} {rElement.name}
+                </span>
+              </motion.div>
+            </div>
+
+            {/* Stats */}
+            <MiniStatBar label="Attack" value={resultWarrior.attack} statKey="attack" icon={Sword} delay={0.1} />
+            <MiniStatBar label="Defense" value={resultWarrior.defense} statKey="defense" icon={Shield} delay={0.2} />
+            <MiniStatBar label="Speed" value={resultWarrior.speed} statKey="speed" icon={Zap} delay={0.3} />
+            <MiniStatBar label="Special" value={resultWarrior.specialPower} maxValue={50} statKey="specialPower" icon={Sparkles} delay={0.4} />
+
+            {/* Power Score with count-up animation */}
+            <div className="text-center pt-2 border-t border-white/5">
+              <p className="text-[8px] uppercase tracking-widest text-white/20 mb-1">Power Score</p>
+              <PowerScoreCounter
+                targetValue={rPowerScore}
+                colorClass={`font-display text-2xl font-black bg-gradient-to-r ${rElement.color} bg-clip-text text-transparent`}
+                delay={0.6}
+              />
+            </div>
+
+            {/* Level */}
+            <div className="text-center">
+              <span className="text-[10px] font-mono text-white/40">
+                Level {resultWarrior.level}
+              </span>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Loading state while warrior data fetches */}
+        {!resultWarrior && (
+          <div className="flex justify-center py-4">
+            <Loader2 className="w-6 h-6 text-frost-cyan animate-spin" />
+          </div>
+        )}
       </motion.div>
     );
   }
 
   // Merging state
   if (isMerging) {
+    const orbitColors = [
+      'bg-frost-cyan',
+      'bg-frost-purple',
+      'bg-frost-pink',
+      'bg-frost-green',
+      'bg-frost-gold',
+      'bg-frost-cyan',
+    ];
+    const mergeElementColors = [
+      'text-frost-cyan',
+      'text-frost-purple',
+      'text-frost-pink',
+      'text-frost-green',
+      'text-frost-gold',
+    ];
     return (
       <motion.div
         className="flex flex-col items-center gap-4"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
-        <motion.div
-          className="relative"
-          animate={{ rotate: 360 }}
+        <div className="relative w-32 h-32 flex items-center justify-center">
+          {/* Expanding light ring pulses */}
+          {[0, 1].map((ringIdx) => (
+            <motion.div
+              key={`ring-${ringIdx}`}
+              className="absolute inset-0 rounded-full border-2 border-frost-cyan/40"
+              initial={{ scale: 0.5, opacity: 0.8 }}
+              animate={{ scale: [0.5, 2.0], opacity: [0.8, 0] }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                delay: ringIdx * 1.0,
+                ease: 'easeOut',
+              }}
+            />
+          ))}
+
+          {/* Orbiting energy particles */}
+          {orbitColors.map((color, i) => (
+            <motion.div
+              key={`orbit-${i}`}
+              className="absolute"
+              style={{
+                width: '100%',
+                height: '100%',
+              }}
+              animate={{ rotate: 360 }}
+              transition={{
+                duration: 2.5 + i * 0.3,
+                repeat: Infinity,
+                ease: 'linear',
+                delay: i * 0.15,
+              }}
+            >
+              <motion.div
+                className={`absolute w-2.5 h-2.5 rounded-full ${color}`}
+                style={{
+                  top: '0%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  boxShadow: `0 0 8px currentColor`,
+                }}
+                animate={{
+                  scale: [1, 1.5, 1],
+                  opacity: [0.6, 1, 0.6],
+                }}
+                transition={{
+                  duration: 1.2,
+                  repeat: Infinity,
+                  delay: i * 0.2,
+                }}
+              />
+            </motion.div>
+          ))}
+
+          {/* Central icon with color shift */}
+          <motion.div
+            className="relative z-10"
+            animate={{ rotate: 360, scale: [1, 1.15, 1] }}
+            transition={{
+              rotate: { duration: 3, repeat: Infinity, ease: 'linear' },
+              scale: { duration: 1.5, repeat: Infinity, ease: 'easeInOut' },
+            }}
+          >
+            <motion.div
+              animate={{
+                color: [
+                  'rgb(var(--frost-primary, 0 240 255))',
+                  'rgb(168 85 247)',
+                  'rgb(236 72 153)',
+                  'rgb(34 197 94)',
+                  'rgb(234 179 8)',
+                  'rgb(var(--frost-primary, 0 240 255))',
+                ],
+              }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+            >
+              <GitMerge className="w-14 h-14" />
+            </motion.div>
+            {/* Core glow */}
+            <motion.div
+              className="absolute -inset-3 rounded-full"
+              animate={{
+                boxShadow: [
+                  '0 0 20px rgba(0,240,255,0.4)',
+                  '0 0 35px rgba(168,85,247,0.5)',
+                  '0 0 20px rgba(236,72,153,0.4)',
+                  '0 0 35px rgba(34,197,94,0.5)',
+                  '0 0 20px rgba(0,240,255,0.4)',
+                ],
+              }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+            />
+          </motion.div>
+        </div>
+
+        <motion.p
+          className="font-display text-sm font-bold uppercase tracking-wider"
+          animate={{
+            color: [
+              'rgb(0 240 255)',
+              'rgb(168 85 247)',
+              'rgb(236 72 153)',
+              'rgb(0 240 255)',
+            ],
+          }}
           transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
         >
-          <GitMerge className="w-16 h-16 text-frost-cyan" />
-          <div className="absolute -inset-4 rounded-full bg-frost-cyan/10 animate-pulse-glow" />
-        </motion.div>
-        <p className="font-display text-sm font-bold text-frost-cyan animate-pulse">
-          FUSING WARRIORS...
-        </p>
+          <motion.span
+            animate={{ opacity: [1, 0.4, 1] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          >
+            FUSING WARRIORS...
+          </motion.span>
+        </motion.p>
       </motion.div>
     );
   }
@@ -700,7 +1073,7 @@ function useWarriorData(tokenId: number | null): WarriorStats | null {
     args: tokenId !== null ? [BigInt(tokenId)] : undefined,
   });
 
-  return tokenId !== null ? (data as WarriorStats | undefined) ?? null : null;
+  return tokenId !== null && data ? parseWarrior(data) : null;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1094,14 +1467,29 @@ export default function MergePage() {
                   onClick={handleFuse}
                   disabled={!bothSlotsFilled || isMerging}
                   className="w-full relative group overflow-hidden rounded-xl font-display text-lg font-bold uppercase tracking-wider py-4 px-8 transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50"
-                  whileHover={bothSlotsFilled && !isMerging ? { scale: 1.02 } : {}}
+                  whileHover={bothSlotsFilled && !isMerging ? { scale: 1.03, boxShadow: '0 0 30px rgba(0,240,255,0.3)' } : {}}
                   whileTap={bothSlotsFilled && !isMerging ? { scale: 0.98 } : {}}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.6 }}
                 >
+                  {/* Animated gradient rotation background when both slots filled */}
+                  {bothSlotsFilled ? (
+                    <motion.div
+                      className="absolute -inset-[2px]"
+                      animate={{ rotate: [0, 360] }}
+                      transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+                      style={{
+                        background: 'conic-gradient(from 0deg, #00f0ff, #a855f7, #ec4899, #22c55e, #eab308, #00f0ff)',
+                        borderRadius: '0.75rem',
+                      }}
+                    >
+                      <div className="absolute inset-[2px] bg-frost-surface rounded-[0.65rem]" />
+                    </motion.div>
+                  ) : null}
+
                   {/* Button background */}
-                  <div className={`absolute inset-0 transition-opacity ${
+                  <div className={`absolute inset-0 rounded-xl transition-opacity ${
                     bothSlotsFilled
                       ? 'bg-gradient-to-r from-frost-cyan via-frost-purple to-frost-pink opacity-90 group-hover:opacity-100'
                       : 'bg-white/5 opacity-100'
@@ -1109,6 +1497,22 @@ export default function MergePage() {
 
                   {/* Shimmer */}
                   {bothSlotsFilled && <div className="absolute inset-0 shimmer" />}
+
+                  {/* Hover pulse glow */}
+                  {bothSlotsFilled && (
+                    <motion.div
+                      className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                      animate={{
+                        boxShadow: [
+                          '0 0 10px rgba(0,240,255,0.2)',
+                          '0 0 25px rgba(168,85,247,0.3)',
+                          '0 0 10px rgba(236,72,153,0.2)',
+                          '0 0 25px rgba(0,240,255,0.2)',
+                        ],
+                      }}
+                      transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                    />
+                  )}
 
                   {/* Glow */}
                   {bothSlotsFilled && (
@@ -1128,7 +1532,12 @@ export default function MergePage() {
                       </>
                     ) : (
                       <>
-                        <GitMerge className="w-5 h-5" />
+                        <motion.div
+                          animate={bothSlotsFilled ? { rotate: [0, 10, -10, 0] } : {}}
+                          transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                        >
+                          <GitMerge className="w-5 h-5" />
+                        </motion.div>
                         Fuse Warriors - {MERGE_PRICE} AVAX
                       </>
                     )}

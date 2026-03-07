@@ -488,6 +488,191 @@ function migrate(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_agent_listings_status ON agent_listings(status);
     CREATE INDEX IF NOT EXISTS idx_agent_listings_agent ON agent_listings(agent_id);
+
+    /* --- PvE Quest System --- */
+
+    CREATE TABLE IF NOT EXISTS quest_zones (
+      id          INTEGER PRIMARY KEY,
+      name        TEXT NOT NULL,
+      element     TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      lore        TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS quest_definitions (
+      id              INTEGER PRIMARY KEY,
+      name            TEXT NOT NULL,
+      zone_id         INTEGER NOT NULL REFERENCES quest_zones(id),
+      difficulty      TEXT NOT NULL DEFAULT 'Easy',
+      duration_secs   INTEGER NOT NULL,
+      win_xp          INTEGER NOT NULL,
+      loss_xp         INTEGER NOT NULL,
+      min_level       INTEGER NOT NULL DEFAULT 1,
+      min_power_score INTEGER NOT NULL DEFAULT 0,
+      base_difficulty INTEGER NOT NULL DEFAULT 200,
+      description     TEXT NOT NULL DEFAULT '',
+      lore_intro      TEXT NOT NULL DEFAULT '',
+      lore_success    TEXT NOT NULL DEFAULT '',
+      lore_failure    TEXT NOT NULL DEFAULT '',
+      enemy_name      TEXT NOT NULL DEFAULT '',
+      active          INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quest_defs_zone ON quest_definitions(zone_id);
+    CREATE INDEX IF NOT EXISTS idx_quest_defs_difficulty ON quest_definitions(difficulty);
+
+    CREATE TABLE IF NOT EXISTS quest_runs (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id_onchain  INTEGER,
+      quest_id        INTEGER NOT NULL REFERENCES quest_definitions(id),
+      token_id        INTEGER NOT NULL,
+      wallet_address  TEXT NOT NULL,
+      zone_id         INTEGER NOT NULL,
+      difficulty      TEXT NOT NULL,
+      started_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      ends_at         TEXT NOT NULL,
+      completed_at    TEXT,
+      status          TEXT NOT NULL DEFAULT 'active',
+      result          TEXT,
+      xp_gained       INTEGER DEFAULT 0,
+      tx_hash_start   TEXT,
+      tx_hash_complete TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_quest_runs_wallet ON quest_runs(wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_quest_runs_token ON quest_runs(token_id);
+    CREATE INDEX IF NOT EXISTS idx_quest_runs_status ON quest_runs(status);
+    CREATE INDEX IF NOT EXISTS idx_quest_runs_created ON quest_runs(started_at DESC);
+  `);
+
+  // --- Quest System v2: Blockchain-themed 999 quests ---
+  // Add chain_quest_id column if not exists
+  try { db.exec("ALTER TABLE quest_definitions ADD COLUMN chain_quest_id INTEGER DEFAULT 0"); } catch { /* already exists */ }
+
+  // Check if v2 migration already ran (look for quest ID 100+)
+  const v2Check = db.prepare('SELECT COUNT(*) as cnt FROM quest_definitions WHERE id >= 100').get() as { cnt: number };
+  if (v2Check.cnt === 0) {
+    // Import zone & quest seed data
+    const { ZONE_SEEDS, generateAllQuests } = require('@/data/quest-seed');
+
+    // 1) Soft-delete old 32 quests (preserve quest_runs history)
+    db.prepare('UPDATE quest_definitions SET active = 0 WHERE id < 100').run();
+
+    // 2) Upsert zones (INSERT on fresh DB, UPDATE on existing)
+    const upsertZone = db.prepare(`INSERT INTO quest_zones (id, name, element, description, lore)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, lore = excluded.lore`);
+    for (const z of ZONE_SEEDS) {
+      upsertZone.run(z.id, z.name, z.element, z.description, z.lore);
+    }
+
+    // 3) Seed 999 new quests
+    const insertQuest = db.prepare(`INSERT OR IGNORE INTO quest_definitions
+      (id, name, zone_id, difficulty, duration_secs, win_xp, loss_xp, min_level, min_power_score, base_difficulty, description, lore_intro, lore_success, lore_failure, enemy_name, chain_quest_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+
+    const allQuests = generateAllQuests();
+    const insertMany = db.transaction((quests: typeof allQuests) => {
+      for (const q of quests) {
+        insertQuest.run(
+          q.id, q.name, q.zone_id, q.difficulty, q.duration_secs,
+          q.win_xp, q.loss_xp, q.min_level, q.min_power_score, q.base_difficulty,
+          q.description, q.lore_intro, q.lore_success, q.lore_failure, q.enemy_name, q.chain_quest_id
+        );
+      }
+    });
+    insertMany(allQuests);
+
+    // 4) Backfill chain_quest_id for old quests (just in case)
+    const DIFF_MAP: Record<string, number> = { Easy: 0, Medium: 1, Hard: 2, Boss: 3 };
+    const oldQuests = db.prepare('SELECT id, zone_id, difficulty FROM quest_definitions WHERE id < 100').all() as { id: number; zone_id: number; difficulty: string }[];
+    const updateChainId = db.prepare('UPDATE quest_definitions SET chain_quest_id = ? WHERE id = ?');
+    for (const oq of oldQuests) {
+      updateChainId.run(oq.zone_id * 4 + (DIFF_MAP[oq.difficulty] ?? 0), oq.id);
+    }
+
+    console.log('[db] Quest v2 migration complete: 999 blockchain quests seeded');
+  }
+
+  // --- Quest System v3: Turkish → English lore migration ---
+  const v3Check = db.prepare('SELECT lore FROM quest_zones WHERE id = 0').get() as { lore: string } | undefined;
+  if (v3Check && /[İıöüçşğ]/i.test(v3Check.lore)) {
+    const { ZONE_SEEDS: zoneSeedsV3, generateAllQuests: genQuestsV3 } = require('@/data/quest-seed');
+
+    const updateZoneV3 = db.prepare('UPDATE quest_zones SET lore = ? WHERE id = ?');
+    for (const z of zoneSeedsV3) {
+      updateZoneV3.run(z.lore, z.id);
+    }
+
+    const updateQuestLore = db.prepare('UPDATE quest_definitions SET lore_intro = ?, lore_success = ?, lore_failure = ? WHERE id = ?');
+    const allQuestsV3 = genQuestsV3();
+    const updateLoreMany = db.transaction((quests: typeof allQuestsV3) => {
+      for (const q of quests) {
+        updateQuestLore.run(q.lore_intro, q.lore_success, q.lore_failure, q.id);
+      }
+    });
+    updateLoreMany(allQuestsV3);
+
+    console.log('[db] Quest v3 migration complete: lore converted to English');
+  }
+
+  // --- Quest System v4: Make Easy quests easier (lower baseDifficulty + shorter durations) ---
+  const v4Check = db.prepare("SELECT base_difficulty FROM quest_definitions WHERE difficulty = 'Easy' AND id >= 100 LIMIT 1").get() as { base_difficulty: number } | undefined;
+  if (v4Check && v4Check.base_difficulty > 80) {
+    const { generateAllQuests: genQuestsV4 } = require('@/data/quest-seed');
+    const allQuestsV4 = genQuestsV4();
+    const easyQuests = allQuestsV4.filter((q: { difficulty: string }) => q.difficulty === 'Easy');
+
+    const updateEasy = db.prepare(`UPDATE quest_definitions SET base_difficulty = ?, duration_secs = ? WHERE id = ?`);
+    const updateMany = db.transaction((quests: { id: number; base_difficulty: number; duration_secs: number }[]) => {
+      for (const q of quests) updateEasy.run(q.base_difficulty, q.duration_secs, q.id);
+    });
+    updateMany(easyQuests);
+
+    console.log(`[db] Quest v4 migration complete: ${easyQuests.length} Easy quests made easier (baseDifficulty: 80, durations: 5-15 min)`);
+  }
+
+  // --- Quest System v5: Uniform Easy duration (all 300s / 5min) ---
+  const v5Check = db.prepare("SELECT duration_secs FROM quest_definitions WHERE difficulty = 'Easy' AND id >= 100 AND duration_secs > 300 LIMIT 1").get() as { duration_secs: number } | undefined;
+  if (v5Check) {
+    db.prepare("UPDATE quest_definitions SET duration_secs = 300 WHERE difficulty = 'Easy' AND id >= 100").run();
+    console.log('[db] Quest v5 migration complete: all Easy quests set to 300s (5 min)');
+  }
+
+  // --- Quest System v6: Progressive per-wallet quest system ---
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS wallet_progression (
+      wallet_address  TEXT PRIMARY KEY,
+      current_tier    INTEGER DEFAULT 0,
+      total_completed INTEGER DEFAULT 0,
+      total_won       INTEGER DEFAULT 0,
+      total_xp        INTEGER DEFAULT 0,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS tier_quests (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      wallet_address  TEXT NOT NULL,
+      tier            INTEGER NOT NULL,
+      slot            INTEGER NOT NULL,
+      chain_quest_id  INTEGER NOT NULL,
+      zone_id         INTEGER NOT NULL,
+      difficulty      TEXT NOT NULL,
+      status          TEXT DEFAULT 'available',
+      result          TEXT,
+      token_id        INTEGER,
+      xp_gained       INTEGER DEFAULT 0,
+      started_at      TEXT,
+      completed_at    TEXT,
+      tx_hash_start   TEXT,
+      tx_hash_complete TEXT,
+      UNIQUE(wallet_address, tier, slot)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tier_quests_wallet ON tier_quests(wallet_address);
+    CREATE INDEX IF NOT EXISTS idx_tier_quests_status ON tier_quests(status);
+    CREATE INDEX IF NOT EXISTS idx_wallet_progression_tier ON wallet_progression(current_tier);
   `);
 
   const alterStatements = [
@@ -495,13 +680,13 @@ function migrate(db: Database.Database): void {
     "ALTER TABLE agents ADD COLUMN total_decisions INTEGER DEFAULT 0",
     "ALTER TABLE agents ADD COLUMN favorite_action TEXT DEFAULT 'wait'",
     "ALTER TABLE challenges ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0",
-    // Modül 1: ELO
+    // Module 1: ELO
     "ALTER TABLE agents ADD COLUMN elo_rating INTEGER DEFAULT 1200",
-    // Modül 2: XP/Level
+    // Module 2: XP/Level
     "ALTER TABLE agents ADD COLUMN xp INTEGER DEFAULT 0",
     "ALTER TABLE agents ADD COLUMN level INTEGER DEFAULT 0",
     "ALTER TABLE agents ADD COLUMN prestige INTEGER DEFAULT 0",
-    // Modül 5: Referral
+    // Module 5: Referral
     "ALTER TABLE agents ADD COLUMN referral_code TEXT",
     "ALTER TABLE agents ADD COLUMN referred_by TEXT",
   ];

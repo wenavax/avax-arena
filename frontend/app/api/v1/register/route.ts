@@ -19,7 +19,12 @@ function securityHeaders(): Record<string, string> {
 }
 
 function stripHtmlTags(value: string): string {
-  return value.replace(/<[^>]*>/g, '');
+  // Remove HTML tags, then collapse entities like &lt; &gt; &amp; and script-like patterns
+  return value
+    .replace(/<[^>]*>?/g, '')
+    .replace(/&(?:#?\w+);/g, '')
+    .replace(/javascript\s*:/gi, '')
+    .replace(/on\w+\s*=/gi, '');
 }
 
 /* ---------------------------------------------------------------------------

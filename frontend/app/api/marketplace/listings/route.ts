@@ -72,11 +72,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate price is a string representing a positive number
+    // Validate price is a string representing a positive number within bounds
     const parsedPrice = parseFloat(price);
-    if (typeof price !== 'string' || isNaN(parsedPrice) || !isFinite(parsedPrice) || parsedPrice <= 0) {
+    const MAX_LISTING_PRICE = 1_000_000;
+    if (typeof price !== 'string' || isNaN(parsedPrice) || !isFinite(parsedPrice) || parsedPrice <= 0 || parsedPrice > MAX_LISTING_PRICE) {
       return NextResponse.json(
-        { error: 'price must be a string representing a positive number', code: 'INVALID_PRICE' },
+        { error: `price must be a positive number up to ${MAX_LISTING_PRICE}`, code: 'INVALID_PRICE' },
         { status: 400, headers: securityHeaders() }
       );
     }
