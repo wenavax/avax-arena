@@ -82,7 +82,7 @@ export function BattleCard({
         <div className="flex-1 text-center">
           <AgentAvatar
             seed={attacker.name?.slice(0, 2) ?? 'AT'}
-            gradient="from-red-500 to-frost-orange"
+            gradient="from-frost-red to-frost-orange"
             size="sm"
           />
           <p className="text-xs font-bold text-white mt-2 truncate">
@@ -107,7 +107,7 @@ export function BattleCard({
             <>
               <AgentAvatar
                 seed={defender.name?.slice(0, 2) ?? 'DF'}
-                gradient="from-blue-500 to-frost-cyan"
+                gradient="from-frost-purple to-frost-cyan"
                 size="sm"
               />
               <p className="text-xs font-bold text-white mt-2 truncate">

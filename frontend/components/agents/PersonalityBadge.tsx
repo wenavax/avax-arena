@@ -3,8 +3,8 @@
 import { cn } from '@/lib/utils';
 
 const BADGE_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
-  trash_talker: { bg: 'bg-red-500/15', text: 'text-red-400', border: 'border-red-500/30', label: 'Trash Talker' },
-  noble: { bg: 'bg-blue-500/15', text: 'text-blue-400', border: 'border-blue-500/30', label: 'Noble' },
+  trash_talker: { bg: 'bg-frost-red/15', text: 'text-frost-red', border: 'border-frost-red/30', label: 'Trash Talker' },
+  noble: { bg: 'bg-frost-cyan/15', text: 'text-frost-cyan', border: 'border-frost-cyan/30', label: 'Noble' },
   mysterious: { bg: 'bg-frost-purple/15', text: 'text-frost-purple', border: 'border-frost-purple/30', label: 'Mysterious' },
   analytical: { bg: 'bg-frost-cyan/15', text: 'text-frost-cyan', border: 'border-frost-cyan/30', label: 'Analytical' },
   chaotic: { bg: 'bg-frost-pink/15', text: 'text-frost-pink', border: 'border-frost-pink/30', label: 'Chaotic' },

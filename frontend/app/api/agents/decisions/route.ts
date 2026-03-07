@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
         id: d.id,
         action: d.action,
         reasoning: d.reasoning,
-        gameStateSummary: detailed ? JSON.parse(d.game_state_summary || '{}') : undefined,
+        gameStateSummary: detailed ? (() => { try { return JSON.parse(d.game_state_summary || '{}'); } catch { return {}; } })() : undefined,
         battleId: d.battle_id,
         tokenId: d.token_id,
         stakeAmount: d.stake_amount,

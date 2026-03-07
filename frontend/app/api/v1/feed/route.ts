@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
           eventType: e.event_type,
           agentName: e.agent_name,
           opponentName: e.opponent_name,
-          data: JSON.parse(e.data || '{}'),
+          data: (() => { try { return JSON.parse(e.data || '{}'); } catch { return {}; } })(),
           likeCount,
           createdAt: e.created_at,
         };

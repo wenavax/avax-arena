@@ -1902,3 +1902,201 @@ export function getReputationProfile(agentId: string): Record<string, unknown> |
     generatedAt: new Date().toISOString(),
   };
 }
+
+/* ===========================================================================
+ * MODULE 9: PvE Quest System
+ * ========================================================================= */
+
+export interface DbQuestZone {
+  id: number;
+  name: string;
+  element: string;
+  description: string;
+  lore: string;
+}
+
+export interface DbQuestDefinition {
+  id: number;
+  name: string;
+  zone_id: number;
+  difficulty: string;
+  duration_secs: number;
+  win_xp: number;
+  loss_xp: number;
+  min_level: number;
+  min_power_score: number;
+  base_difficulty: number;
+  description: string;
+  lore_intro: string;
+  lore_success: string;
+  lore_failure: string;
+  enemy_name: string;
+  active: number;
+  chain_quest_id: number;
+}
+
+export interface DbQuestRun {
+  id: number;
+  run_id_onchain: number | null;
+  quest_id: number;
+  token_id: number;
+  wallet_address: string;
+  zone_id: number;
+  difficulty: string;
+  started_at: string;
+  ends_at: string;
+  completed_at: string | null;
+  status: string;
+  result: string | null;
+  xp_gained: number;
+  tx_hash_start: string | null;
+  tx_hash_complete: string | null;
+}
+
+export function getQuestZones(): DbQuestZone[] {
+  const db = getDb();
+  return db.prepare('SELECT * FROM quest_zones ORDER BY id').all() as DbQuestZone[];
+}
+
+export function getQuestDefinitions(zoneId?: number): DbQuestDefinition[] {
+  const db = getDb();
+  if (zoneId !== undefined) {
+    return db.prepare('SELECT * FROM quest_definitions WHERE zone_id = ? AND active = 1 ORDER BY id')
+      .all(zoneId) as DbQuestDefinition[];
+  }
+  return db.prepare('SELECT * FROM quest_definitions WHERE active = 1 ORDER BY zone_id, id')
+    .all() as DbQuestDefinition[];
+}
+
+export function getQuestDefinitionById(questId: number): DbQuestDefinition | null {
+  const db = getDb();
+  return db.prepare('SELECT * FROM quest_definitions WHERE id = ?').get(questId) as DbQuestDefinition | null;
+}
+
+export function createQuestRun(data: {
+  questId: number;
+  tokenId: number;
+  walletAddress: string;
+  zoneId: number;
+  difficulty: string;
+  endsAt: string;
+  txHashStart?: string;
+}): number {
+  const db = getDb();
+  const result = db.prepare(`
+    INSERT INTO quest_runs (quest_id, token_id, wallet_address, zone_id, difficulty, ends_at, tx_hash_start)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    data.questId,
+    data.tokenId,
+    data.walletAddress.toLowerCase(),
+    data.zoneId,
+    data.difficulty,
+    data.endsAt,
+    data.txHashStart ?? null
+  );
+  return result.lastInsertRowid as number;
+}
+
+export function completeQuestRun(data: {
+  questId: number;
+  tokenId: number;
+  walletAddress: string;
+  result: 'success' | 'failure';
+  xpGained: number;
+  txHashComplete?: string;
+}): void {
+  const db = getDb();
+  db.prepare(`
+    UPDATE quest_runs
+    SET status = 'completed', result = ?, xp_gained = ?, completed_at = datetime('now'), tx_hash_complete = ?
+    WHERE quest_id = ? AND token_id = ? AND wallet_address = ? AND status = 'active'
+  `).run(
+    data.result,
+    data.xpGained,
+    data.txHashComplete ?? null,
+    data.questId,
+    data.tokenId,
+    data.walletAddress.toLowerCase()
+  );
+}
+
+export function abandonQuestRun(tokenId: number, walletAddress: string): void {
+  const db = getDb();
+  db.prepare(`
+    UPDATE quest_runs
+    SET status = 'abandoned', completed_at = datetime('now')
+    WHERE token_id = ? AND wallet_address = ? AND status = 'active'
+  `).run(tokenId, walletAddress.toLowerCase());
+}
+
+export function getActiveQuestsByWallet(wallet: string): (DbQuestRun & { quest_name?: string; zone_name?: string; enemy_name?: string })[] {
+  const db = getDb();
+  return db.prepare(`
+    SELECT qr.*, qd.name as quest_name, qz.name as zone_name, qd.enemy_name
+    FROM quest_runs qr
+    JOIN quest_definitions qd ON qr.quest_id = qd.id
+    JOIN quest_zones qz ON qr.zone_id = qz.id
+    WHERE qr.wallet_address = ? AND qr.status = 'active'
+    ORDER BY qr.ends_at ASC
+  `).all(wallet.toLowerCase()) as (DbQuestRun & { quest_name: string; zone_name: string; enemy_name: string })[];
+}
+
+export function getActiveQuestByToken(tokenId: number): DbQuestRun | null {
+  const db = getDb();
+  return db.prepare("SELECT * FROM quest_runs WHERE token_id = ? AND status = 'active' LIMIT 1")
+    .get(tokenId) as DbQuestRun | null;
+}
+
+export function getQuestHistory(wallet: string, limit = 20, offset = 0): { runs: (DbQuestRun & { quest_name?: string; zone_name?: string })[]; total: number } {
+  const db = getDb();
+  const runs = db.prepare(`
+    SELECT qr.*, qd.name as quest_name, qz.name as zone_name
+    FROM quest_runs qr
+    JOIN quest_definitions qd ON qr.quest_id = qd.id
+    JOIN quest_zones qz ON qr.zone_id = qz.id
+    WHERE qr.wallet_address = ? AND qr.status != 'active'
+    ORDER BY qr.completed_at DESC
+    LIMIT ? OFFSET ?
+  `).all(wallet.toLowerCase(), limit, offset) as (DbQuestRun & { quest_name: string; zone_name: string })[];
+  const { total } = db.prepare(
+    "SELECT COUNT(*) as total FROM quest_runs WHERE wallet_address = ? AND status != 'active'"
+  ).get(wallet.toLowerCase()) as { total: number };
+  return { runs, total };
+}
+
+export function getPlayerQuestStats(wallet: string): { totalQuests: number; completed: number; won: number; abandoned: number; totalXp: number } {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) as totalQuests,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+      SUM(CASE WHEN result = 'success' THEN 1 ELSE 0 END) as won,
+      SUM(CASE WHEN status = 'abandoned' THEN 1 ELSE 0 END) as abandoned,
+      COALESCE(SUM(xp_gained), 0) as totalXp
+    FROM quest_runs WHERE wallet_address = ?
+  `).get(wallet.toLowerCase()) as { totalQuests: number; completed: number; won: number; abandoned: number; totalXp: number };
+  return row;
+}
+
+/**
+ * Get daily quest rotation — returns 8 quests (one per zone) for the given date.
+ * Uses deterministic RNG so all players see the same quests.
+ */
+export function getDailyQuests(date?: Date): DbQuestDefinition[] {
+  const db = getDb();
+  const { getDailyQuestIds } = require('@/lib/daily-rotation');
+
+  // Get all active quest summaries for rotation selection
+  const allActive = db.prepare(
+    'SELECT id, zone_id, difficulty FROM quest_definitions WHERE active = 1 ORDER BY id'
+  ).all() as { id: number; zone_id: number; difficulty: string }[];
+
+  const dailyIds = getDailyQuestIds(allActive, date) as number[];
+  if (dailyIds.length === 0) return [];
+
+  const placeholders = dailyIds.map(() => '?').join(',');
+  return db.prepare(
+    `SELECT * FROM quest_definitions WHERE id IN (${placeholders}) ORDER BY zone_id`
+  ).all(...dailyIds) as DbQuestDefinition[];
+}

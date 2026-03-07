@@ -142,9 +142,9 @@ function useLeaderboard(publicClient: ReturnType<typeof usePublicClient>) {
  * ------------------------------------------------------------------------- */
 
 const podiumColors = [
-  { bg: 'from-yellow-500/20 to-amber-600/5', border: 'border-yellow-500/40', glow: 'shadow-glow-gold', icon: Crown, label: '1st' },
-  { bg: 'from-gray-300/20 to-gray-400/5', border: 'border-gray-400/40', glow: '', icon: Medal, label: '2nd' },
-  { bg: 'from-amber-700/20 to-orange-800/5', border: 'border-amber-700/40', glow: '', icon: Medal, label: '3rd' },
+  { bg: 'from-frost-gold/20 to-frost-gold/5', border: 'border-frost-gold/40', glow: 'shadow-glow-gold', icon: Crown, label: '1st' },
+  { bg: 'from-white/10 to-white/[0.02]', border: 'border-white/20', glow: '', icon: Medal, label: '2nd' },
+  { bg: 'from-frost-orange/20 to-frost-orange/5', border: 'border-frost-orange/30', glow: '', icon: Medal, label: '3rd' },
 ];
 
 /* ---------------------------------------------------------------------------

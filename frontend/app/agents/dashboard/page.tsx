@@ -317,7 +317,7 @@ function AgentCard({
 
   return (
     <motion.div
-      className="glass-card p-6 transition-all duration-300 ring-1 ring-frost-primary/50 shadow-glow-primary"
+      className="glass-card p-6 transition-all duration-300 ring-1 ring-frost-primary/50 shadow-glow-cyan"
       style={{ transform: 'none' }}
       layout
     >

@@ -13,23 +13,26 @@ interface ParticleConfig {
   opacity: number;
 }
 
-const DARK_COLORS = [
-  '#ff2020',
-  '#ff6b6b',
-  '#ffffff',
-  '#ff4444',
-  '#ff8888',
-  '#ffcccc',
-];
-
-const LIGHT_COLORS = [
-  '#dc2626',
-  '#ef4444',
-  '#9ca3af',
-  '#f87171',
-  '#d1d5db',
-  '#fca5a5',
-];
+function getThemeColors(theme: string | undefined): string[] {
+  if (theme === 'light') {
+    return [
+      'rgb(var(--frost-primary))',
+      'rgb(var(--frost-secondary))',
+      'rgb(var(--frost-accent) / 0.4)',
+      'rgb(var(--frost-primary) / 0.7)',
+      'rgb(var(--frost-accent) / 0.3)',
+      'rgb(var(--frost-secondary) / 0.5)',
+    ];
+  }
+  return [
+    'rgb(var(--frost-primary))',
+    'rgb(var(--frost-secondary))',
+    'rgb(var(--frost-accent))',
+    'rgb(var(--frost-primary) / 0.7)',
+    'rgb(var(--frost-secondary) / 0.6)',
+    'rgb(var(--frost-accent) / 0.5)',
+  ];
+}
 
 export function ParticleBackground() {
   const { resolvedTheme } = useTheme();
@@ -37,7 +40,7 @@ export function ParticleBackground() {
 
   useEffect(() => setMounted(true), []);
 
-  const colors = mounted && resolvedTheme === 'light' ? LIGHT_COLORS : DARK_COLORS;
+  const colors = mounted ? getThemeColors(resolvedTheme) : getThemeColors('dark');
 
   const particles = useMemo<ParticleConfig[]>(() => {
     return Array.from({ length: 50 }, (_, i) => ({

@@ -4,7 +4,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { avalancheFuji } from 'viem/chains';
 import { getDailyFunded, addDailyFunded, addLiveEvent, getAgentByWallet } from '@/lib/db-queries';
 
-const RPC_URL = 'https://api.avax-test.network/ext/bc/C/rpc';
+const RPC_URL = process.env.NEXT_PUBLIC_FUJI_RPC_URL || 'https://avalanche-fuji-c-chain-rpc.publicnode.com';
 const FUND_AMOUNT = parseEther('0.05');
 const DAILY_FUND_LIMIT = parseEther('0.1'); // max 0.1 AVAX per agent per day
 

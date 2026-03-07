@@ -51,7 +51,7 @@ export async function GET() {
         eventType: e.event_type,
         agentName: e.agent_name,
         opponentName: e.opponent_name,
-        data: JSON.parse(e.data || '{}'),
+        data: (() => { try { return JSON.parse(e.data || '{}'); } catch { return {}; } })(),
         createdAt: e.created_at,
       })),
     }, { headers: securityHeaders() });
