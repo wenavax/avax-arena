@@ -104,6 +104,7 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable, ReentrancyGuard {
     event BattleContractRemoved(address indexed battleContract);
 
     event BaseURIUpdated(string newBaseURI);
+    event MergePriceUpdated(uint256 newPrice);
 
     event WarriorsMerged(
         address indexed owner,
@@ -418,6 +419,7 @@ contract ArenaWarrior is ERC721, ERC721Enumerable, Ownable, ReentrancyGuard {
      */
     function setMergePrice(uint256 _mergePrice) external onlyOwner {
         mergePrice = _mergePrice;
+        emit MergePriceUpdated(_mergePrice);
     }
 
     /**

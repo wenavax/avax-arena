@@ -20,7 +20,7 @@ export declare namespace QuestEngine {
   export interface QuestEngineInterface extends Interface {
     getFunction(nameOrSignature: "abandonQuest" | "activeQuests" | "addQuest" | "arenaWarrior" | "completeQuest" | "getActiveQuest" | "getQuest" | "getQuestStats" | "getQuestsByZone" | "getSuccessChance" | "isWarriorOnQuest" | "owner" | "pause" | "paused" | "questCount" | "quests" | "renounceOwnership" | "startQuest" | "toggleQuest" | "totalQuestsCompleted" | "totalQuestsStarted" | "totalQuestsWon" | "transferOwnership" | "unpause" | "updateQuest"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "OwnershipTransferred" | "Paused" | "QuestAbandoned" | "QuestAdded" | "QuestCompleted" | "QuestStarted" | "QuestToggled" | "Unpaused"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "OwnershipTransferred" | "Paused" | "QuestAbandoned" | "QuestAdded" | "QuestCompleted" | "QuestStarted" | "QuestToggled" | "QuestUpdated" | "Unpaused"): EventFragment;
 
     encodeFunctionData(functionFragment: 'abandonQuest', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'activeQuests', values: [BigNumberish]): string;
@@ -152,6 +152,18 @@ decodeFunctionResult(functionFragment: 'updateQuest', data: BytesLike): Result;
       export type InputTuple = [questId: BigNumberish, active: boolean];
       export type OutputTuple = [questId: bigint, active: boolean];
       export interface OutputObject {questId: bigint, active: boolean };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace QuestUpdatedEvent {
+      export type InputTuple = [questId: BigNumberish];
+      export type OutputTuple = [questId: bigint];
+      export interface OutputObject {questId: bigint };
       export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
       export type Filter = TypedDeferredTopicFilter<Event>
       export type Log = TypedEventLog<Event>
@@ -541,6 +553,7 @@ getEvent(key: 'QuestAdded'): TypedContractEvent<QuestAddedEvent.InputTuple, Ques
 getEvent(key: 'QuestCompleted'): TypedContractEvent<QuestCompletedEvent.InputTuple, QuestCompletedEvent.OutputTuple, QuestCompletedEvent.OutputObject>;
 getEvent(key: 'QuestStarted'): TypedContractEvent<QuestStartedEvent.InputTuple, QuestStartedEvent.OutputTuple, QuestStartedEvent.OutputObject>;
 getEvent(key: 'QuestToggled'): TypedContractEvent<QuestToggledEvent.InputTuple, QuestToggledEvent.OutputTuple, QuestToggledEvent.OutputObject>;
+getEvent(key: 'QuestUpdated'): TypedContractEvent<QuestUpdatedEvent.InputTuple, QuestUpdatedEvent.OutputTuple, QuestUpdatedEvent.OutputObject>;
 getEvent(key: 'Unpaused'): TypedContractEvent<UnpausedEvent.InputTuple, UnpausedEvent.OutputTuple, UnpausedEvent.OutputObject>;
 
     filters: {
@@ -571,6 +584,10 @@ getEvent(key: 'Unpaused'): TypedContractEvent<UnpausedEvent.InputTuple, Unpaused
 
       'QuestToggled(uint256,bool)': TypedContractEvent<QuestToggledEvent.InputTuple, QuestToggledEvent.OutputTuple, QuestToggledEvent.OutputObject>;
       QuestToggled: TypedContractEvent<QuestToggledEvent.InputTuple, QuestToggledEvent.OutputTuple, QuestToggledEvent.OutputObject>;
+    
+
+      'QuestUpdated(uint256)': TypedContractEvent<QuestUpdatedEvent.InputTuple, QuestUpdatedEvent.OutputTuple, QuestUpdatedEvent.OutputObject>;
+      QuestUpdated: TypedContractEvent<QuestUpdatedEvent.InputTuple, QuestUpdatedEvent.OutputTuple, QuestUpdatedEvent.OutputObject>;
     
 
       'Unpaused(address)': TypedContractEvent<UnpausedEvent.InputTuple, UnpausedEvent.OutputTuple, UnpausedEvent.OutputObject>;

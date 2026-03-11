@@ -49,6 +49,10 @@ export const BATTLE_ENGINE_ABI = parseAbi([
   // Admin
   'function admins(address) external view returns (bool)',
 
+  // Payout
+  'function withdrawPayout() external',
+  'function pendingPayouts(address) external view returns (uint256)',
+
   // Nonce
   'function nonces(address) external view returns (uint256)',
 
@@ -87,6 +91,10 @@ export const TEAM_BATTLE_ABI = parseAbi([
   // Pausable
   'function paused() external view returns (bool)',
 
+  // Payout
+  'function withdrawPayout() external',
+  'function pendingPayouts(address) external view returns (uint256)',
+
   // Nonce
   'function nonces(address) external view returns (uint256)',
 
@@ -95,18 +103,6 @@ export const TEAM_BATTLE_ABI = parseAbi([
   'event TeamBattleJoined(uint256 indexed battleId, address indexed player2, uint256[3] team)',
   'event TeamBattleResolved(uint256 indexed battleId, address indexed winner, address indexed loser, uint8 score1, uint8 score2, uint256 payout)',
   'event TeamBattleCancelled(uint256 indexed battleId, address indexed player)',
-]);
-
-export const AGENT_CHAT_ABI = parseAbi([
-  'function postMessage(string content, uint256 parentId, uint8 category) external returns (uint256)',
-  'function likeMessage(uint256 messageId) external',
-  'function getMessage(uint256 messageId) external view returns ((uint256 id, address author, string content, uint256 timestamp, uint256 parentId, uint256 likes, uint256 replyCount, string agentName, uint8 category))',
-  'function getThread(uint256 threadId) external view returns ((uint256 id, address author, string content, uint256 timestamp, uint256 parentId, uint256 likes, uint256 replyCount, string agentName, uint8 category), (uint256 id, address author, string content, uint256 timestamp, uint256 parentId, uint256 likes, uint256 replyCount, string agentName, uint8 category)[])',
-  'function getThreadIds(uint256 offset, uint256 limit) external view returns (uint256[])',
-  'function getThreadCount() external view returns (uint256)',
-  'function getMessagesByAgent(address agent) external view returns (uint256[])',
-  'event MessagePosted(uint256 indexed messageId, address indexed author, uint256 parentId, string content, uint8 category, uint256 timestamp)',
-  'event MessageLiked(uint256 indexed messageId, address indexed liker, uint256 newLikeCount)',
 ]);
 
 export const FROSTBITE_TOKEN_ABI = parseAbi([
@@ -170,11 +166,3 @@ export const BATCH_MINTER_ABI = parseAbi([
   'event BatchMinted(address indexed to, uint256 quantity, uint256[] tokenIds)',
 ]);
 
-export const AGENT_REGISTRY_ABI = parseAbi([
-  'function registerAgent(address wallet, string name, uint8 strategyType) external returns (uint256)',
-  'function grantSessionKey(uint256 duration) external',
-  'function isAgentAuthorized(address agent) external view returns (bool)',
-  'function getAgentByWallet(address wallet) external view returns ((uint256 id, address owner, address agentWallet, string name, uint8 strategy, uint256 wins, uint256 losses, uint256 totalGames, uint256 totalTxGenerated, uint256 createdAt, bool active, uint256 sessionKeyExpiry, uint256 dailySpendLimit, uint256 dailySpent, uint256 lastSpendReset, uint256 maxStakePerGame, uint256 totalDeposited, uint256 profitWithdrawn))',
-  'function fundAgent() external payable',
-  'function emergencyStop() external',
-]);

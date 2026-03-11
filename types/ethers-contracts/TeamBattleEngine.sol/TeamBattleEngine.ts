@@ -6,9 +6,9 @@ import type { TypedContractEvent, TypedDeferredTopicFilter, TypedEventLog, Typed
   
 
   export interface TeamBattleEngineInterface extends Interface {
-    getFunction(nameOrSignature: "ATTACK_WEIGHT" | "BASIS_POINTS" | "BATTLE_TIMEOUT" | "DEFENSE_WEIGHT" | "ELEMENT_EARTH" | "ELEMENT_FIRE" | "ELEMENT_ICE" | "ELEMENT_LIGHT" | "ELEMENT_SHADOW" | "ELEMENT_THUNDER" | "ELEMENT_WATER" | "ELEMENT_WIND" | "FEE_BASIS_POINTS" | "LOSS_EXPERIENCE" | "MIN_STAKE" | "SPECIAL_WEIGHT" | "SPEED_WEIGHT" | "TEAM_SIZE" | "UPGRADE_INTERFACE_VERSION" | "WINS_TO_WIN" | "WIN_EXPERIENCE" | "accumulatedFees" | "addAdmin" | "admins" | "arenaWarrior" | "battleCounter" | "cancelTeamBattle" | "claimTimeout" | "createTeamBattle" | "feeRecipient" | "getOpenTeamBattleCount" | "getOpenTeamBattles" | "getPlatformStats" | "getPlayerTeamBattleCount" | "getPlayerTeamBattlesPaginated" | "getResolvedTeamBattleCount" | "getResolvedTeamBattles" | "getTeamBattle" | "getTeamBattleHistory" | "initialize" | "joinTeamBattle" | "nonces" | "owner" | "pause" | "paused" | "proxiableUUID" | "removeAdmin" | "renounceOwnership" | "setArenaWarrior" | "setFeeRecipient" | "setTrustedSigner" | "teamBattles" | "totalWagered" | "transferOwnership" | "trustedSigner" | "unpause" | "upgradeToAndCall" | "withdrawFees"): FunctionFragment;
+    getFunction(nameOrSignature: "ATTACK_WEIGHT" | "BASIS_POINTS" | "BATTLE_TIMEOUT" | "DEFENSE_WEIGHT" | "ELEMENT_EARTH" | "ELEMENT_FIRE" | "ELEMENT_ICE" | "ELEMENT_LIGHT" | "ELEMENT_SHADOW" | "ELEMENT_THUNDER" | "ELEMENT_WATER" | "ELEMENT_WIND" | "FEE_BASIS_POINTS" | "LOSS_EXPERIENCE" | "MIN_STAKE" | "SPECIAL_WEIGHT" | "SPEED_WEIGHT" | "TEAM_SIZE" | "UPGRADE_INTERFACE_VERSION" | "WINS_TO_WIN" | "WIN_EXPERIENCE" | "accumulatedFees" | "addAdmin" | "admins" | "arenaWarrior" | "battleCounter" | "cancelTeamBattle" | "claimTimeout" | "createTeamBattle" | "feeRecipient" | "getOpenTeamBattleCount" | "getOpenTeamBattles" | "getPlatformStats" | "getPlayerTeamBattleCount" | "getPlayerTeamBattlesPaginated" | "getResolvedTeamBattleCount" | "getResolvedTeamBattles" | "getTeamBattle" | "getTeamBattleHistory" | "initialize" | "joinTeamBattle" | "nonces" | "owner" | "pause" | "paused" | "pendingPayouts" | "proxiableUUID" | "removeAdmin" | "renounceOwnership" | "setArenaWarrior" | "setFeeRecipient" | "setTrustedSigner" | "teamBattles" | "totalWagered" | "transferOwnership" | "trustedSigner" | "unpause" | "upgradeToAndCall" | "withdrawFees" | "withdrawPayout"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "AdminAdded" | "AdminRemoved" | "ContractPaused" | "ContractUnpaused" | "Initialized" | "OwnershipTransferred" | "Paused" | "TeamBattleCancelled" | "TeamBattleCreated" | "TeamBattleJoined" | "TeamBattleResolved" | "TrustedSignerUpdated" | "Unpaused" | "Upgraded"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "AdminAdded" | "AdminRemoved" | "ArenaWarriorUpdated" | "ContractPaused" | "ContractUnpaused" | "FeeRecipientUpdated" | "Initialized" | "OwnershipTransferred" | "Paused" | "PayoutWithdrawn" | "TeamBattleCancelled" | "TeamBattleCreated" | "TeamBattleJoined" | "TeamBattleResolved" | "TrustedSignerUpdated" | "Unpaused" | "Upgraded"): EventFragment;
 
     encodeFunctionData(functionFragment: 'ATTACK_WEIGHT', values?: undefined): string;
 encodeFunctionData(functionFragment: 'BASIS_POINTS', values?: undefined): string;
@@ -55,6 +55,7 @@ encodeFunctionData(functionFragment: 'nonces', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'owner', values?: undefined): string;
 encodeFunctionData(functionFragment: 'pause', values?: undefined): string;
 encodeFunctionData(functionFragment: 'paused', values?: undefined): string;
+encodeFunctionData(functionFragment: 'pendingPayouts', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'proxiableUUID', values?: undefined): string;
 encodeFunctionData(functionFragment: 'removeAdmin', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'renounceOwnership', values?: undefined): string;
@@ -68,6 +69,7 @@ encodeFunctionData(functionFragment: 'trustedSigner', values?: undefined): strin
 encodeFunctionData(functionFragment: 'unpause', values?: undefined): string;
 encodeFunctionData(functionFragment: 'upgradeToAndCall', values: [AddressLike, BytesLike]): string;
 encodeFunctionData(functionFragment: 'withdrawFees', values?: undefined): string;
+encodeFunctionData(functionFragment: 'withdrawPayout', values?: undefined): string;
 
     decodeFunctionResult(functionFragment: 'ATTACK_WEIGHT', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'BASIS_POINTS', data: BytesLike): Result;
@@ -114,6 +116,7 @@ decodeFunctionResult(functionFragment: 'nonces', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'owner', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'pause', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'paused', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'pendingPayouts', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'proxiableUUID', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'removeAdmin', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'renounceOwnership', data: BytesLike): Result;
@@ -127,6 +130,7 @@ decodeFunctionResult(functionFragment: 'trustedSigner', data: BytesLike): Result
 decodeFunctionResult(functionFragment: 'unpause', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'upgradeToAndCall', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'withdrawPayout', data: BytesLike): Result;
   }
 
   
@@ -154,6 +158,18 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
 
   
 
+    export namespace ArenaWarriorUpdatedEvent {
+      export type InputTuple = [newAddress: AddressLike];
+      export type OutputTuple = [newAddress: string];
+      export interface OutputObject {newAddress: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
     export namespace ContractPausedEvent {
       export type InputTuple = [by: AddressLike];
       export type OutputTuple = [by: string];
@@ -170,6 +186,18 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
       export type InputTuple = [by: AddressLike];
       export type OutputTuple = [by: string];
       export interface OutputObject {by: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace FeeRecipientUpdatedEvent {
+      export type InputTuple = [newAddress: AddressLike];
+      export type OutputTuple = [newAddress: string];
+      export interface OutputObject {newAddress: string };
       export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
       export type Filter = TypedDeferredTopicFilter<Event>
       export type Log = TypedEventLog<Event>
@@ -206,6 +234,18 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
       export type InputTuple = [account: AddressLike];
       export type OutputTuple = [account: string];
       export interface OutputObject {account: string };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace PayoutWithdrawnEvent {
+      export type InputTuple = [player: AddressLike, amount: BigNumberish];
+      export type OutputTuple = [player: string, amount: bigint];
+      export interface OutputObject {player: string, amount: bigint };
       export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
       export type Filter = TypedDeferredTopicFilter<Event>
       export type Log = TypedEventLog<Event>
@@ -692,6 +732,14 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
     
 
     
+    pendingPayouts: TypedContractMethod<
+      [arg0: AddressLike, ],
+      [bigint],
+      'view'
+    >
+    
+
+    
     proxiableUUID: TypedContractMethod<
       [],
       [string],
@@ -789,6 +837,14 @@ decodeFunctionResult(functionFragment: 'withdrawFees', data: BytesLike): Result;
 
     
     withdrawFees: TypedContractMethod<
+      [],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
+    withdrawPayout: TypedContractMethod<
       [],
       [void],
       'nonpayable'
@@ -1023,6 +1079,11 @@ getFunction(nameOrSignature: 'paused'): TypedContractMethod<
       [boolean],
       'view'
     >;
+getFunction(nameOrSignature: 'pendingPayouts'): TypedContractMethod<
+      [arg0: AddressLike, ],
+      [bigint],
+      'view'
+    >;
 getFunction(nameOrSignature: 'proxiableUUID'): TypedContractMethod<
       [],
       [string],
@@ -1088,14 +1149,22 @@ getFunction(nameOrSignature: 'withdrawFees'): TypedContractMethod<
       [void],
       'nonpayable'
     >;
+getFunction(nameOrSignature: 'withdrawPayout'): TypedContractMethod<
+      [],
+      [void],
+      'nonpayable'
+    >;
 
     getEvent(key: 'AdminAdded'): TypedContractEvent<AdminAddedEvent.InputTuple, AdminAddedEvent.OutputTuple, AdminAddedEvent.OutputObject>;
 getEvent(key: 'AdminRemoved'): TypedContractEvent<AdminRemovedEvent.InputTuple, AdminRemovedEvent.OutputTuple, AdminRemovedEvent.OutputObject>;
+getEvent(key: 'ArenaWarriorUpdated'): TypedContractEvent<ArenaWarriorUpdatedEvent.InputTuple, ArenaWarriorUpdatedEvent.OutputTuple, ArenaWarriorUpdatedEvent.OutputObject>;
 getEvent(key: 'ContractPaused'): TypedContractEvent<ContractPausedEvent.InputTuple, ContractPausedEvent.OutputTuple, ContractPausedEvent.OutputObject>;
 getEvent(key: 'ContractUnpaused'): TypedContractEvent<ContractUnpausedEvent.InputTuple, ContractUnpausedEvent.OutputTuple, ContractUnpausedEvent.OutputObject>;
+getEvent(key: 'FeeRecipientUpdated'): TypedContractEvent<FeeRecipientUpdatedEvent.InputTuple, FeeRecipientUpdatedEvent.OutputTuple, FeeRecipientUpdatedEvent.OutputObject>;
 getEvent(key: 'Initialized'): TypedContractEvent<InitializedEvent.InputTuple, InitializedEvent.OutputTuple, InitializedEvent.OutputObject>;
 getEvent(key: 'OwnershipTransferred'): TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
 getEvent(key: 'Paused'): TypedContractEvent<PausedEvent.InputTuple, PausedEvent.OutputTuple, PausedEvent.OutputObject>;
+getEvent(key: 'PayoutWithdrawn'): TypedContractEvent<PayoutWithdrawnEvent.InputTuple, PayoutWithdrawnEvent.OutputTuple, PayoutWithdrawnEvent.OutputObject>;
 getEvent(key: 'TeamBattleCancelled'): TypedContractEvent<TeamBattleCancelledEvent.InputTuple, TeamBattleCancelledEvent.OutputTuple, TeamBattleCancelledEvent.OutputObject>;
 getEvent(key: 'TeamBattleCreated'): TypedContractEvent<TeamBattleCreatedEvent.InputTuple, TeamBattleCreatedEvent.OutputTuple, TeamBattleCreatedEvent.OutputObject>;
 getEvent(key: 'TeamBattleJoined'): TypedContractEvent<TeamBattleJoinedEvent.InputTuple, TeamBattleJoinedEvent.OutputTuple, TeamBattleJoinedEvent.OutputObject>;
@@ -1114,12 +1183,20 @@ getEvent(key: 'Upgraded'): TypedContractEvent<UpgradedEvent.InputTuple, Upgraded
       AdminRemoved: TypedContractEvent<AdminRemovedEvent.InputTuple, AdminRemovedEvent.OutputTuple, AdminRemovedEvent.OutputObject>;
     
 
+      'ArenaWarriorUpdated(address)': TypedContractEvent<ArenaWarriorUpdatedEvent.InputTuple, ArenaWarriorUpdatedEvent.OutputTuple, ArenaWarriorUpdatedEvent.OutputObject>;
+      ArenaWarriorUpdated: TypedContractEvent<ArenaWarriorUpdatedEvent.InputTuple, ArenaWarriorUpdatedEvent.OutputTuple, ArenaWarriorUpdatedEvent.OutputObject>;
+    
+
       'ContractPaused(address)': TypedContractEvent<ContractPausedEvent.InputTuple, ContractPausedEvent.OutputTuple, ContractPausedEvent.OutputObject>;
       ContractPaused: TypedContractEvent<ContractPausedEvent.InputTuple, ContractPausedEvent.OutputTuple, ContractPausedEvent.OutputObject>;
     
 
       'ContractUnpaused(address)': TypedContractEvent<ContractUnpausedEvent.InputTuple, ContractUnpausedEvent.OutputTuple, ContractUnpausedEvent.OutputObject>;
       ContractUnpaused: TypedContractEvent<ContractUnpausedEvent.InputTuple, ContractUnpausedEvent.OutputTuple, ContractUnpausedEvent.OutputObject>;
+    
+
+      'FeeRecipientUpdated(address)': TypedContractEvent<FeeRecipientUpdatedEvent.InputTuple, FeeRecipientUpdatedEvent.OutputTuple, FeeRecipientUpdatedEvent.OutputObject>;
+      FeeRecipientUpdated: TypedContractEvent<FeeRecipientUpdatedEvent.InputTuple, FeeRecipientUpdatedEvent.OutputTuple, FeeRecipientUpdatedEvent.OutputObject>;
     
 
       'Initialized(uint64)': TypedContractEvent<InitializedEvent.InputTuple, InitializedEvent.OutputTuple, InitializedEvent.OutputObject>;
@@ -1132,6 +1209,10 @@ getEvent(key: 'Upgraded'): TypedContractEvent<UpgradedEvent.InputTuple, Upgraded
 
       'Paused(address)': TypedContractEvent<PausedEvent.InputTuple, PausedEvent.OutputTuple, PausedEvent.OutputObject>;
       Paused: TypedContractEvent<PausedEvent.InputTuple, PausedEvent.OutputTuple, PausedEvent.OutputObject>;
+    
+
+      'PayoutWithdrawn(address,uint256)': TypedContractEvent<PayoutWithdrawnEvent.InputTuple, PayoutWithdrawnEvent.OutputTuple, PayoutWithdrawnEvent.OutputObject>;
+      PayoutWithdrawn: TypedContractEvent<PayoutWithdrawnEvent.InputTuple, PayoutWithdrawnEvent.OutputTuple, PayoutWithdrawnEvent.OutputObject>;
     
 
       'TeamBattleCancelled(uint256,address)': TypedContractEvent<TeamBattleCancelledEvent.InputTuple, TeamBattleCancelledEvent.OutputTuple, TeamBattleCancelledEvent.OutputObject>;

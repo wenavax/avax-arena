@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -29,7 +29,7 @@ interface IArenaWarrior {
 
 contract BattleEngine is
     OwnableUpgradeable,
-    ReentrancyGuard,
+    ReentrancyGuardTransient,
     PausableUpgradeable,
     UUPSUpgradeable
 {
@@ -109,8 +109,14 @@ contract BattleEngine is
     address public trustedSigner;
     mapping(address => uint256) public nonces;
 
+    // Pull-payment for winner payouts (prevents fund locking)
+    mapping(address => uint256) public pendingPayouts;
+
+    // Stored entropy from battle creation block (prevents player2 front-running)
+    mapping(uint256 => uint256) private _creationEntropy;
+
     // NEW: Storage gap for future upgrades
-    uint256[44] private __gap;
+    uint256[42] private __gap;
 
     // -------------------------------------------------------------------------
     // Events
@@ -144,6 +150,9 @@ contract BattleEngine is
     event TrustedSignerUpdated(address indexed signer);
     event ContractPaused(address indexed by);
     event ContractUnpaused(address indexed by);
+    event ArenaWarriorUpdated(address indexed newAddress);
+    event FeeRecipientUpdated(address indexed newAddress);
+    event PayoutWithdrawn(address indexed player, uint256 amount);
 
     // -------------------------------------------------------------------------
     // Errors
@@ -165,6 +174,7 @@ contract BattleEngine is
     error TransferFailed();
     error NotAdmin();
     error InvalidSignature();
+    error NoPendingPayout();
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -188,6 +198,7 @@ contract BattleEngine is
         address _arenaWarrior,
         address _feeRecipient
     ) public initializer {
+        if (_arenaWarrior == address(0)) revert InvalidAddress();
         if (_feeRecipient == address(0)) revert InvalidAddress();
 
         __Ownable_init(msg.sender);
@@ -269,6 +280,11 @@ contract BattleEngine is
         // Track as open battle
         openBattleIndex[battleId] = openBattleIds.length;
         openBattleIds.push(battleId);
+
+        // Store entropy from creation block (player2 cannot predict this)
+        _creationEntropy[battleId] = uint256(keccak256(abi.encodePacked(
+            block.prevrandao, block.timestamp, block.number, msg.sender, tokenId
+        )));
 
         // Update platform stats
         totalWagered += msg.value;
@@ -367,11 +383,23 @@ contract BattleEngine is
     function setArenaWarrior(address _arenaWarrior) external onlyOwner {
         if (_arenaWarrior == address(0)) revert InvalidAddress();
         arenaWarrior = IArenaWarrior(_arenaWarrior);
+        emit ArenaWarriorUpdated(_arenaWarrior);
     }
 
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
         if (_feeRecipient == address(0)) revert InvalidAddress();
         feeRecipient = _feeRecipient;
+        emit FeeRecipientUpdated(_feeRecipient);
+    }
+
+    /// @notice Withdraw pending payout (pull-payment pattern).
+    function withdrawPayout() external nonReentrant {
+        uint256 amount = pendingPayouts[msg.sender];
+        if (amount == 0) revert NoPendingPayout();
+        pendingPayouts[msg.sender] = 0;
+        (bool success, ) = msg.sender.call{value: amount}("");
+        if (!success) revert TransferFailed();
+        emit PayoutWithdrawn(msg.sender, amount);
     }
 
     // -------------------------------------------------------------------------
@@ -531,14 +559,16 @@ contract BattleEngine is
             warrior2.element,
             battle.nft1,
             battle.nft2,
-            1
+            1,
+            battleId
         );
         uint256 score2 = _calculateCombatScore(
             warrior2,
             warrior1.element,
             battle.nft2,
             battle.nft1,
-            2
+            2,
+            battleId
         );
 
         // Determine winner
@@ -559,7 +589,7 @@ contract BattleEngine is
             loserNft = battle.nft1;
         } else {
             // Tie: random coin flip
-            uint256 tieBreaker = _pseudoRandom(battle.nft1, battle.nft2, battleId) % 2;
+            uint256 tieBreaker = _pseudoRandom(battle.nft1, battle.nft2, battleId, battleId) % 2;
             if (tieBreaker == 0) {
                 winnerAddr = battle.player1;
                 loserAddr = battle.player2;
@@ -596,9 +626,8 @@ contract BattleEngine is
         arenaWarrior.recordBattle(winnerNft, true, WIN_EXPERIENCE);
         arenaWarrior.recordBattle(loserNft, false, LOSS_EXPERIENCE);
 
-        // Transfer winnings to the winner
-        (bool success, ) = winnerAddr.call{value: payout}("");
-        if (!success) revert TransferFailed();
+        // Pull-payment: credit winner (prevents revert if winner is a contract that rejects AVAX)
+        pendingPayouts[winnerAddr] += payout;
     }
 
     function _calculateCombatScore(
@@ -606,7 +635,8 @@ contract BattleEngine is
         uint8 opponentElement,
         uint256 selfTokenId,
         uint256 otherTokenId,
-        uint256 salt
+        uint256 salt,
+        uint256 battleId
     ) internal view returns (uint256) {
         // Base weighted stats
         uint256 baseScore = uint256(warrior.attack) * ATTACK_WEIGHT +
@@ -630,7 +660,8 @@ contract BattleEngine is
         uint256 randomFactor = _pseudoRandom(
             selfTokenId,
             otherTokenId,
-            salt
+            salt,
+            battleId
         ) % 21;
 
         return levelMultipliedScore + randomFactor;
@@ -679,12 +710,17 @@ contract BattleEngine is
     function _pseudoRandom(
         uint256 tokenId1,
         uint256 tokenId2,
-        uint256 salt
+        uint256 salt,
+        uint256 battleId
     ) internal view returns (uint256) {
+        // Mix entropy from creation block (unknown to player2 at join time)
+        // with current block data for stronger unpredictability
+        uint256 creationSeed = _creationEntropy[battleId];
         return
             uint256(
                 keccak256(
                     abi.encodePacked(
+                        creationSeed,
                         block.prevrandao,
                         block.timestamp,
                         block.number,

@@ -8,13 +8,16 @@ import {
   Swords,
   Trophy,
   Coins,
-  Bot,
-  Brain,
-  MessageSquare,
   ArrowRight,
   ChevronRight,
   Shield,
   Zap,
+  Flame,
+  GitMerge,
+  Map,
+  Store,
+  Lock,
+  TrendingUp,
 } from 'lucide-react';
 import { usePublicClient } from 'wagmi';
 import { formatEther } from 'viem';
@@ -74,7 +77,6 @@ interface LiveStats {
   warriorsMinted: number;
   totalBattles: number;
   avaxVolume: number;
-  activeAgents: number;
 }
 
 function useLiveStats(): LiveStats {
@@ -83,7 +85,6 @@ function useLiveStats(): LiveStats {
     warriorsMinted: 0,
     totalBattles: 0,
     avaxVolume: 0,
-    activeAgents: 0,
   });
 
   useEffect(() => {
@@ -124,23 +125,7 @@ function useLiveStats(): LiveStats {
       }
     }
 
-    async function fetchAgentCount() {
-      try {
-        const res = await fetch('/api/agents/roster');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (cancelled) return;
-        setStats((prev) => ({
-          ...prev,
-          activeAgents: Array.isArray(data.agents) ? data.agents.length : 0,
-        }));
-      } catch {
-        /* stays at 0 */
-      }
-    }
-
     fetchOnChain();
-    fetchAgentCount();
     return () => {
       cancelled = true;
     };
@@ -443,16 +428,16 @@ function HeroSection({ stats }: { stats: LiveStats }) {
             for AVAX rewards.
           </motion.p>
 
-          {/* Fuji badge */}
+          {/* Network badge */}
           <motion.div
             className="flex justify-center md:justify-start mb-6"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.25 }}
           >
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-orange/10 border border-frost-orange/30 text-frost-orange text-[10px] font-pixel uppercase tracking-wider">
-              <span className="w-1.5 h-1.5 rounded-full bg-frost-orange animate-pulse" />
-              Fuji Testnet
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-green/10 border border-frost-green/30 text-frost-green text-[10px] font-pixel uppercase tracking-wider">
+              <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
+              Avalanche Mainnet
             </span>
           </motion.div>
 
@@ -569,6 +554,368 @@ function LiveTicker() {
         }
       `}</style>
     </div>
+  );
+}
+
+/* ===========================================================================
+ * Why Frostbite Section
+ * ========================================================================= */
+
+const FEATURES = [
+  {
+    icon: Shield,
+    title: 'On-Chain Warriors',
+    description: 'Every warrior is a unique NFT with randomized stats stored permanently on the Avalanche blockchain.',
+    gradient: 'from-frost-cyan to-blue-500',
+    delay: 0,
+  },
+  {
+    icon: Swords,
+    title: 'PvP Battles for AVAX',
+    description: 'Stake real AVAX in battles. Winners take the pot. Element advantages add strategic depth.',
+    gradient: 'from-frost-primary to-orange-500',
+    delay: 0.1,
+  },
+  {
+    icon: GitMerge,
+    title: 'Warrior Fusion',
+    description: 'Burn two warriors to forge a stronger one. Combine the best traits and create the ultimate fighter.',
+    gradient: 'from-purple-500 to-fuchsia-500',
+    delay: 0.2,
+  },
+  {
+    icon: Map,
+    title: 'Quest System',
+    description: 'Complete daily and weekly quests to earn XP, level up your warriors, and unlock exclusive rewards.',
+    gradient: 'from-green-500 to-emerald-500',
+    delay: 0.3,
+  },
+  {
+    icon: Store,
+    title: 'Marketplace',
+    description: 'Buy and sell warriors on the decentralized marketplace. Find bargains or list your champions.',
+    gradient: 'from-amber-500 to-yellow-500',
+    delay: 0.4,
+  },
+  {
+    icon: Lock,
+    title: 'Fully Decentralized',
+    description: 'No centralized servers. All game logic runs on verified smart contracts on Avalanche C-Chain.',
+    gradient: 'from-cyan-400 to-teal-500',
+    delay: 0.5,
+  },
+];
+
+function WhyFrostbite() {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: '-80px' });
+
+  return (
+    <section className="relative py-24 sm:py-32 px-4" ref={ref}>
+      {/* Background decoration */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-frost-primary/[0.03] blur-[120px] pointer-events-none" />
+
+      <div className="mx-auto max-w-6xl relative z-10">
+        {/* Section heading */}
+        <div className="text-center mb-16">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={inView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.6 }}
+          >
+            <span className="inline-block font-pixel text-[10px] text-frost-primary uppercase tracking-[0.3em] mb-3">
+              Why Choose Us
+            </span>
+            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold gradient-text mb-4">
+              THE FROSTBITE EXPERIENCE
+            </h2>
+          </motion.div>
+          <motion.p
+            className="text-white/40 text-sm sm:text-base max-w-xl mx-auto leading-relaxed"
+            initial={{ opacity: 0 }}
+            animate={inView ? { opacity: 1 } : {}}
+            transition={{ duration: 0.6, delay: 0.2 }}
+          >
+            A fully on-chain NFT battle arena built on Avalanche. Fast transactions,
+            low fees, and high-stakes PvP combat.
+          </motion.p>
+        </div>
+
+        {/* Features grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {FEATURES.map((feature, i) => {
+            const Icon = feature.icon;
+            return (
+              <motion.div
+                key={feature.title}
+                className="group"
+                initial={{ opacity: 0, y: 30 }}
+                animate={inView ? { opacity: 1, y: 0 } : {}}
+                transition={{ duration: 0.5, delay: feature.delay }}
+              >
+                <div className="glass-card p-6 h-full relative overflow-hidden">
+                  {/* Hover glow */}
+                  <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full bg-gradient-to-br ${feature.gradient} opacity-0 group-hover:opacity-10 blur-2xl transition-opacity duration-500`} />
+
+                  <div className="relative z-10">
+                    {/* Icon */}
+                    <div className={`inline-flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br ${feature.gradient} mb-4`}>
+                      <Icon className="h-5 w-5 text-white" />
+                    </div>
+
+                    {/* Title */}
+                    <h3 className="font-display text-base font-bold text-white mb-2">
+                      {feature.title}
+                    </h3>
+
+                    {/* Description */}
+                    <p className="text-sm text-white/40 leading-relaxed">
+                      {feature.description}
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ===========================================================================
+ * Battle Mechanics Showcase
+ * ========================================================================= */
+
+function BattleMechanics() {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: '-80px' });
+
+  const mechanics = [
+    {
+      emoji: '🎲',
+      title: 'Randomized Combat',
+      desc: 'On-chain randomness determines battle outcomes. Attack, Defense, and Speed stats all play a role in each round.',
+    },
+    {
+      emoji: '⚡',
+      title: 'Element Advantages',
+      desc: 'Fire beats Wind, Water beats Fire, and more. Exploit the element wheel for 1.5x damage bonus.',
+    },
+    {
+      emoji: '📈',
+      title: 'Level Up System',
+      desc: 'Win battles and complete quests to gain XP. Higher levels unlock better stats and stronger warriors.',
+    },
+  ];
+
+  return (
+    <section className="relative py-24 sm:py-32 px-4 overflow-hidden" ref={ref}>
+      {/* Animated background lines */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-frost-primary/20 to-transparent" style={{ animation: 'energy-line 4s ease-in-out infinite' }} />
+        <div className="absolute top-3/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-frost-secondary/15 to-transparent" style={{ animation: 'energy-line 4s ease-in-out infinite 1s' }} />
+      </div>
+
+      <div className="mx-auto max-w-6xl relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          {/* Left: Text content */}
+          <div>
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              animate={inView ? { opacity: 1, x: 0 } : {}}
+              transition={{ duration: 0.6 }}
+            >
+              <span className="inline-block font-pixel text-[10px] text-frost-secondary uppercase tracking-[0.3em] mb-3">
+                Battle System
+              </span>
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-6">
+                Strategic <span className="text-frost-primary">On-Chain</span> Combat
+              </h2>
+              <p className="text-white/40 text-sm sm:text-base leading-relaxed mb-8">
+                Every battle in Frostbite is resolved entirely on the blockchain.
+                No hidden servers, no manipulation — just pure strategy and your warrior&apos;s strength.
+              </p>
+            </motion.div>
+
+            <div className="space-y-5">
+              {mechanics.map((m, i) => (
+                <motion.div
+                  key={m.title}
+                  className="flex gap-4 items-start"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={inView ? { opacity: 1, x: 0 } : {}}
+                  transition={{ duration: 0.5, delay: 0.2 + i * 0.15 }}
+                >
+                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-2xl">
+                    {m.emoji}
+                  </div>
+                  <div>
+                    <h4 className="font-display text-sm font-bold text-white mb-1">
+                      {m.title}
+                    </h4>
+                    <p className="text-xs sm:text-sm text-white/35 leading-relaxed">
+                      {m.desc}
+                    </p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
+            <motion.div
+              className="mt-8"
+              initial={{ opacity: 0, y: 20 }}
+              animate={inView ? { opacity: 1, y: 0 } : {}}
+              transition={{ duration: 0.5, delay: 0.7 }}
+            >
+              <Link
+                href="/battle"
+                className="inline-flex items-center gap-2 text-frost-primary text-sm font-semibold hover:gap-3 transition-all"
+              >
+                Start battling now
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </motion.div>
+          </div>
+
+          {/* Right: Animated battle preview */}
+          <motion.div
+            className="relative"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={inView ? { opacity: 1, scale: 1 } : {}}
+            transition={{ duration: 0.7, delay: 0.3 }}
+          >
+            <div className="glass-card p-6 sm:p-8 relative overflow-hidden">
+              {/* Glow background */}
+              <div className="absolute inset-0 bg-gradient-to-br from-frost-primary/[0.05] to-frost-secondary/[0.03] rounded-[16px]" />
+
+              <div className="relative z-10">
+                {/* Battle header */}
+                <div className="flex items-center justify-between mb-6">
+                  <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
+                    Live Battle Simulation
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[10px] text-frost-green">
+                    <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
+                    ON-CHAIN
+                  </span>
+                </div>
+
+                {/* Battle participants */}
+                <div className="flex items-center justify-between gap-4 mb-6">
+                  <div className="text-center flex-1">
+                    <div className="text-4xl mb-2">{ELEMENTS[0].emoji}</div>
+                    <div className="font-display text-sm font-bold text-white">Fire Warrior</div>
+                    <div className="text-[10px] text-white/30 font-mono mt-1">ATK 88 · DEF 62</div>
+                  </div>
+
+                  <div className="flex flex-col items-center gap-1">
+                    <Zap className="h-5 w-5 text-frost-gold" style={{ animation: 'clash-pulse 1.5s ease-in-out infinite' }} />
+                    <span className="font-pixel text-[9px] text-frost-gold">VS</span>
+                  </div>
+
+                  <div className="text-center flex-1">
+                    <div className="text-4xl mb-2">{ELEMENTS[3].emoji}</div>
+                    <div className="font-display text-sm font-bold text-white">Ice Warrior</div>
+                    <div className="text-[10px] text-white/30 font-mono mt-1">ATK 72 · DEF 90</div>
+                  </div>
+                </div>
+
+                {/* Battle log */}
+                <div className="space-y-2 mb-4">
+                  {[
+                    { text: 'Fire attacks with 88 ATK + element bonus!', color: 'text-red-400' },
+                    { text: 'Ice defends with 90 DEF...', color: 'text-cyan-400' },
+                    { text: 'Fire deals 47 damage! Super effective!', color: 'text-frost-gold' },
+                  ].map((log, i) => (
+                    <motion.div
+                      key={i}
+                      className={`flex items-center gap-2 text-[11px] font-mono ${log.color}`}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={inView ? { opacity: 1, x: 0 } : {}}
+                      transition={{ duration: 0.4, delay: 0.8 + i * 0.2 }}
+                    >
+                      <ChevronRight className="h-3 w-3 flex-shrink-0" />
+                      {log.text}
+                    </motion.div>
+                  ))}
+                </div>
+
+                {/* Stake info */}
+                <div className="pt-4 border-t border-white/[0.06] flex items-center justify-between">
+                  <span className="text-[10px] text-white/30 font-pixel uppercase">Stake</span>
+                  <span className="text-sm font-mono font-bold text-frost-gold">0.05 AVAX</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ===========================================================================
+ * CTA Section
+ * ========================================================================= */
+
+function CTASection() {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: '-80px' });
+
+  return (
+    <section className="relative py-24 sm:py-32 px-4" ref={ref}>
+      <div className="mx-auto max-w-3xl text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={inView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.7 }}
+        >
+          {/* Decorative glow */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-frost-primary/[0.05] blur-[100px] pointer-events-none" />
+
+          <div className="relative z-10">
+            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4">
+              Ready to <span className="gradient-text">Enter the Arena?</span>
+            </h2>
+            <p className="text-white/40 text-sm sm:text-base max-w-lg mx-auto mb-8 leading-relaxed">
+              Mint your first warrior, stake AVAX, and prove your dominance in Frostbite Arena.
+              The battlefield awaits.
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link
+                href="/mint"
+                className="btn-neon btn-neon-cyan flex items-center gap-2 text-sm px-8 py-3.5"
+              >
+                <Sparkles className="h-4 w-4" />
+                Mint Your Warrior
+              </Link>
+              <Link
+                href="/docs"
+                className="flex items-center gap-2 text-sm text-white/40 hover:text-white/70 transition-colors px-6 py-3.5"
+              >
+                Read the Docs
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            {/* Trust indicators */}
+            <div className="flex flex-wrap items-center justify-center gap-6 mt-10 text-[11px] text-white/25 font-pixel uppercase tracking-wider">
+              <span className="flex items-center gap-1.5">
+                <Lock className="h-3 w-3" /> Verified Contracts
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Zap className="h-3 w-3" /> Sub-Second Finality
+              </span>
+              <span className="flex items-center gap-1.5">
+                <TrendingUp className="h-3 w-3" /> Real AVAX Rewards
+              </span>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    </section>
   );
 }
 
@@ -842,125 +1189,6 @@ function ElementsShowcase() {
 }
 
 /* ===========================================================================
- * AI Agents Section
- * ========================================================================= */
-
-const AI_FEATURES = [
-  {
-    icon: Bot,
-    title: 'Auto-Battle',
-    description:
-      'Deploy autonomous AI agents that challenge opponents 24/7. Set your risk tolerance, preferred elements, and let them grind victories while you sleep.',
-    gradient: 'from-frost-cyan/20 to-frost-purple/20',
-    borderColor: 'group-hover:border-frost-cyan/40',
-    iconColor: 'text-frost-cyan',
-  },
-  {
-    icon: Brain,
-    title: 'Strategy AI',
-    description:
-      'Your agent learns from battle history. It adapts element picks, stake sizing, and opponent selection to maximize your win rate over time.',
-    gradient: 'from-frost-purple/20 to-frost-pink/20',
-    borderColor: 'group-hover:border-frost-purple/40',
-    iconColor: 'text-frost-purple',
-  },
-  {
-    icon: MessageSquare,
-    title: 'Agent Forum',
-    description:
-      'Warriors and agents chat, taunt, and strategize in the on-chain forum. Your AI agent can negotiate battles and form alliances autonomously.',
-    gradient: 'from-frost-pink/20 to-frost-orange/20',
-    borderColor: 'group-hover:border-frost-pink/40',
-    iconColor: 'text-frost-pink',
-  },
-];
-
-function AIAgentsSection() {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: '-80px' });
-
-  return (
-    <section className="relative py-24 sm:py-32 px-4" ref={ref}>
-      <div className="mx-auto max-w-6xl">
-        {/* Section heading */}
-        <div className="text-center mb-6">
-          <motion.h2
-            className="font-display text-3xl sm:text-4xl md:text-5xl font-bold gradient-text mb-4"
-            initial={{ opacity: 0, y: 20 }}
-            animate={inView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6 }}
-          >
-            AI-POWERED WARRIORS
-          </motion.h2>
-          <motion.p
-            className="text-white/40 text-sm sm:text-base max-w-xl mx-auto mb-12"
-            initial={{ opacity: 0 }}
-            animate={inView ? { opacity: 1 } : {}}
-            transition={{ duration: 0.6, delay: 0.2 }}
-          >
-            Deploy intelligent agents that auto-battle, adapt strategies, and
-            chat in Frostbite forum -- all on your behalf.
-          </motion.p>
-        </div>
-
-        {/* Feature cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {AI_FEATURES.map((feature, i) => {
-            const Icon = feature.icon;
-            return (
-              <motion.div
-                key={feature.title}
-                className="group"
-                initial={{ opacity: 0, y: 30 }}
-                animate={inView ? { opacity: 1, y: 0 } : {}}
-                transition={{ duration: 0.5, delay: 0.15 * i }}
-              >
-                <div
-                  className={`glass-card p-6 sm:p-8 h-full border border-white/[0.06] ${feature.borderColor} transition-colors`}
-                >
-                  {/* Icon */}
-                  <div
-                    className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br ${feature.gradient} border border-white/10 mb-5`}
-                  >
-                    <Icon className={`h-6 w-6 ${feature.iconColor}`} />
-                  </div>
-
-                  {/* Title */}
-                  <h3 className="font-display text-lg font-bold text-white mb-3">
-                    {feature.title}
-                  </h3>
-
-                  {/* Description */}
-                  <p className="text-sm text-white/40 leading-relaxed group-hover:text-white/55 transition-colors">
-                    {feature.description}
-                  </p>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-
-        {/* CTA */}
-        <motion.div
-          className="text-center mt-12"
-          initial={{ opacity: 0 }}
-          animate={inView ? { opacity: 1 } : {}}
-          transition={{ duration: 0.6, delay: 0.6 }}
-        >
-          <Link
-            href="/chat"
-            className="btn-neon btn-neon-purple inline-flex items-center gap-2"
-          >
-            Visit Agent Forum
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
-/* ===========================================================================
  * Stats Bar (bottom)
  * ========================================================================= */
 
@@ -975,7 +1203,7 @@ function StatsBar({ stats }: { stats: LiveStats }) {
 
       <div className="py-14 sm:py-16 px-4">
         <motion.div
-          className="mx-auto max-w-5xl grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8"
+          className="mx-auto max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8"
           initial={{ opacity: 0, y: 20 }}
           animate={inView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.7 }}
@@ -984,7 +1212,6 @@ function StatsBar({ stats }: { stats: LiveStats }) {
             { label: 'Warriors Minted', value: stats.warriorsMinted, icon: Shield },
             { label: 'Total Battles', value: stats.totalBattles, icon: Swords },
             { label: 'AVAX Won', value: stats.avaxVolume, icon: Coins },
-            { label: 'Active Agents', value: stats.activeAgents, icon: Zap },
           ].map((stat) => {
             const Icon = stat.icon;
             return (
@@ -1016,9 +1243,11 @@ export default function HomePage() {
     <>
       <HeroSection stats={stats} />
       <LiveTicker />
+      <WhyFrostbite />
+      <BattleMechanics />
       <HowItWorks />
       <ElementsShowcase />
-      <AIAgentsSection />
+      <CTASection />
       <StatsBar stats={stats} />
     </>
   );

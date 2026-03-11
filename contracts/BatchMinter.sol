@@ -3,13 +3,14 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title BatchMinter
  * @notice Stateless helper that calls ArenaWarrior.mint() N times in a single
  *         transaction, collects the minted NFTs, and transfers them to the caller.
  */
-contract BatchMinter is ERC721Holder {
+contract BatchMinter is ERC721Holder, ReentrancyGuard {
     // -------------------------------------------------------------------------
     // Constants
     // -------------------------------------------------------------------------
@@ -48,6 +49,7 @@ contract BatchMinter is ERC721Holder {
     error InsufficientPayment();
     error MintFailed();
     error TransferFailed();
+    error UnauthorizedNFT();
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -66,7 +68,7 @@ contract BatchMinter is ERC721Holder {
      * @notice Mint `quantity` warriors in a single transaction.
      * @param quantity Number of warriors to mint (1-20).
      */
-    function batchMint(uint256 quantity) external payable {
+    function batchMint(uint256 quantity) external payable nonReentrant {
         if (quantity == 0 || quantity > MAX_BATCH_SIZE) revert InvalidQuantity();
         if (msg.value < quantity * MINT_PRICE) revert InsufficientPayment();
 
@@ -110,6 +112,8 @@ contract BatchMinter is ERC721Holder {
         uint256 tokenId,
         bytes memory
     ) public override returns (bytes4) {
+        // Only accept NFTs from the ArenaWarrior contract
+        if (msg.sender != arenaWarriorAddress) revert UnauthorizedNFT();
         _mintedTokenIds.push(tokenId);
         return this.onERC721Received.selector;
     }

@@ -13,9 +13,9 @@ export declare namespace AgentRegistry {
     }
 
   export interface AgentRegistryInterface extends Interface {
-    getFunction(nameOrSignature: "agentCount" | "agents" | "authorizedCallers" | "checkAndRecordSpend" | "emergencyStop" | "fundAgent" | "getAgent" | "getAgentBalance" | "getAgentByWallet" | "getMyAgent" | "grantSessionKey" | "isAgentAuthorized" | "owner" | "ownerToAgent" | "reactivateAgent" | "recordGameResult" | "registerAgent" | "renounceOwnership" | "setAuthorizedCaller" | "setSpendLimits" | "transferOwnership" | "updateStrategy" | "walletToAgent" | "withdrawFromAgent"): FunctionFragment;
+    getFunction(nameOrSignature: "agentCount" | "agents" | "authorizedCallers" | "checkAndRecordSpend" | "emergencyStop" | "fundAgent" | "getAgent" | "getAgentBalance" | "getAgentByWallet" | "getMyAgent" | "grantSessionKey" | "isAgentAuthorized" | "owner" | "ownerToAgent" | "reactivateAgent" | "recordGameResult" | "registerAgent" | "renounceOwnership" | "setAuthorizedCaller" | "setSpendLimits" | "totalAllocated" | "transferOwnership" | "updateStrategy" | "walletToAgent" | "withdrawFromAgent"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "AgentFunded" | "AgentRegistered" | "AgentStatsUpdated" | "AgentWithdrawn" | "EmergencyStop" | "OwnershipTransferred" | "SessionKeyGranted" | "SpendLimitUpdated" | "StrategyUpdated"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "AgentFunded" | "AgentReactivated" | "AgentRegistered" | "AgentStatsUpdated" | "AgentWithdrawn" | "EmergencyStop" | "OwnershipTransferred" | "SessionKeyGranted" | "SpendLimitUpdated" | "StrategyUpdated"): EventFragment;
 
     encodeFunctionData(functionFragment: 'agentCount', values?: undefined): string;
 encodeFunctionData(functionFragment: 'agents', values: [BigNumberish]): string;
@@ -37,6 +37,7 @@ encodeFunctionData(functionFragment: 'registerAgent', values: [AddressLike, stri
 encodeFunctionData(functionFragment: 'renounceOwnership', values?: undefined): string;
 encodeFunctionData(functionFragment: 'setAuthorizedCaller', values: [AddressLike, boolean]): string;
 encodeFunctionData(functionFragment: 'setSpendLimits', values: [BigNumberish, BigNumberish]): string;
+encodeFunctionData(functionFragment: 'totalAllocated', values?: undefined): string;
 encodeFunctionData(functionFragment: 'transferOwnership', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'updateStrategy', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'walletToAgent', values: [AddressLike]): string;
@@ -62,6 +63,7 @@ decodeFunctionResult(functionFragment: 'registerAgent', data: BytesLike): Result
 decodeFunctionResult(functionFragment: 'renounceOwnership', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'setAuthorizedCaller', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'setSpendLimits', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'totalAllocated', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'transferOwnership', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'updateStrategy', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'walletToAgent', data: BytesLike): Result;
@@ -73,6 +75,18 @@ decodeFunctionResult(functionFragment: 'withdrawFromAgent', data: BytesLike): Re
       export type InputTuple = [agentId: BigNumberish, amount: BigNumberish];
       export type OutputTuple = [agentId: bigint, amount: bigint];
       export interface OutputObject {agentId: bigint, amount: bigint };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace AgentReactivatedEvent {
+      export type InputTuple = [agentId: BigNumberish];
+      export type OutputTuple = [agentId: bigint];
+      export interface OutputObject {agentId: bigint };
       export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
       export type Filter = TypedDeferredTopicFilter<Event>
       export type Log = TypedEventLog<Event>
@@ -371,6 +385,14 @@ decodeFunctionResult(functionFragment: 'withdrawFromAgent', data: BytesLike): Re
     
 
     
+    totalAllocated: TypedContractMethod<
+      [],
+      [bigint],
+      'view'
+    >
+    
+
+    
     transferOwnership: TypedContractMethod<
       [newOwner: AddressLike, ],
       [void],
@@ -505,6 +527,11 @@ getFunction(nameOrSignature: 'setSpendLimits'): TypedContractMethod<
       [void],
       'nonpayable'
     >;
+getFunction(nameOrSignature: 'totalAllocated'): TypedContractMethod<
+      [],
+      [bigint],
+      'view'
+    >;
 getFunction(nameOrSignature: 'transferOwnership'): TypedContractMethod<
       [newOwner: AddressLike, ],
       [void],
@@ -527,6 +554,7 @@ getFunction(nameOrSignature: 'withdrawFromAgent'): TypedContractMethod<
     >;
 
     getEvent(key: 'AgentFunded'): TypedContractEvent<AgentFundedEvent.InputTuple, AgentFundedEvent.OutputTuple, AgentFundedEvent.OutputObject>;
+getEvent(key: 'AgentReactivated'): TypedContractEvent<AgentReactivatedEvent.InputTuple, AgentReactivatedEvent.OutputTuple, AgentReactivatedEvent.OutputObject>;
 getEvent(key: 'AgentRegistered'): TypedContractEvent<AgentRegisteredEvent.InputTuple, AgentRegisteredEvent.OutputTuple, AgentRegisteredEvent.OutputObject>;
 getEvent(key: 'AgentStatsUpdated'): TypedContractEvent<AgentStatsUpdatedEvent.InputTuple, AgentStatsUpdatedEvent.OutputTuple, AgentStatsUpdatedEvent.OutputObject>;
 getEvent(key: 'AgentWithdrawn'): TypedContractEvent<AgentWithdrawnEvent.InputTuple, AgentWithdrawnEvent.OutputTuple, AgentWithdrawnEvent.OutputObject>;
@@ -540,6 +568,10 @@ getEvent(key: 'StrategyUpdated'): TypedContractEvent<StrategyUpdatedEvent.InputT
       
       'AgentFunded(uint256,uint256)': TypedContractEvent<AgentFundedEvent.InputTuple, AgentFundedEvent.OutputTuple, AgentFundedEvent.OutputObject>;
       AgentFunded: TypedContractEvent<AgentFundedEvent.InputTuple, AgentFundedEvent.OutputTuple, AgentFundedEvent.OutputObject>;
+    
+
+      'AgentReactivated(uint256)': TypedContractEvent<AgentReactivatedEvent.InputTuple, AgentReactivatedEvent.OutputTuple, AgentReactivatedEvent.OutputObject>;
+      AgentReactivated: TypedContractEvent<AgentReactivatedEvent.InputTuple, AgentReactivatedEvent.OutputTuple, AgentReactivatedEvent.OutputObject>;
     
 
       'AgentRegistered(uint256,address,address,string,uint8)': TypedContractEvent<AgentRegisteredEvent.InputTuple, AgentRegisteredEvent.OutputTuple, AgentRegisteredEvent.OutputObject>;

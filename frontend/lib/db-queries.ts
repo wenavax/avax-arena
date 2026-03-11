@@ -2100,3 +2100,121 @@ export function getDailyQuests(date?: Date): DbQuestDefinition[] {
     `SELECT * FROM quest_definitions WHERE id IN (${placeholders}) ORDER BY zone_id`
   ).all(...dailyIds) as DbQuestDefinition[];
 }
+
+/* ---------------------------------------------------------------------------
+ * Agent Skills
+ * ------------------------------------------------------------------------- */
+
+export function getAgentSkills(agentId: string | number): { skill_id: string; enabled: number }[] {
+  const db = getDb();
+  return db.prepare('SELECT skill_id, enabled FROM agent_skills WHERE agent_id = ?').all(agentId) as any[];
+}
+
+export function setAgentSkills(agentId: string | number, skillIds: string[]): void {
+  const db = getDb();
+  const del = db.prepare('DELETE FROM agent_skills WHERE agent_id = ?');
+  const ins = db.prepare('INSERT INTO agent_skills (agent_id, skill_id, enabled) VALUES (?, ?, 1)');
+  const tx = db.transaction(() => {
+    del.run(agentId);
+    for (const skillId of skillIds) {
+      ins.run(agentId, skillId);
+    }
+  });
+  tx();
+}
+
+export function toggleAgentSkill(agentId: string | number, skillId: string, enabled: boolean): void {
+  const db = getDb();
+  db.prepare(
+    'INSERT INTO agent_skills (agent_id, skill_id, enabled) VALUES (?, ?, ?) ON CONFLICT(agent_id, skill_id) DO UPDATE SET enabled = ?'
+  ).run(agentId, skillId, enabled ? 1 : 0, enabled ? 1 : 0);
+}
+
+export function getEnabledSkillIds(agentId: string | number): string[] {
+  const db = getDb();
+  const rows = db.prepare('SELECT skill_id FROM agent_skills WHERE agent_id = ? AND enabled = 1').all(agentId) as { skill_id: string }[];
+  return rows.map((r) => r.skill_id);
+}
+
+/* ---------------------------------------------------------------------------
+ * Agent Heartbeat Config
+ * ------------------------------------------------------------------------- */
+
+export interface DbHeartbeatConfig {
+  agent_id: number;
+  interval_seconds: number;
+  enabled: number;
+  adaptive: number;
+  min_interval: number;
+  max_interval: number;
+  active_hours_start: number | null;
+  active_hours_end: number | null;
+}
+
+export function getHeartbeatConfig(agentId: string | number): DbHeartbeatConfig | null {
+  const db = getDb();
+  return db.prepare('SELECT * FROM agent_heartbeat_config WHERE agent_id = ?').get(agentId) as DbHeartbeatConfig | null;
+}
+
+export function upsertHeartbeatConfig(agentId: string | number, config: Partial<DbHeartbeatConfig>): void {
+  const db = getDb();
+  const existing = getHeartbeatConfig(agentId);
+  if (existing) {
+    const sets: string[] = [];
+    const vals: any[] = [];
+    for (const [key, val] of Object.entries(config)) {
+      if (key === 'agent_id') continue;
+      sets.push(`${key} = ?`);
+      vals.push(val);
+    }
+    sets.push("updated_at = datetime('now')");
+    vals.push(agentId);
+    db.prepare(`UPDATE agent_heartbeat_config SET ${sets.join(', ')} WHERE agent_id = ?`).run(...vals);
+  } else {
+    db.prepare(
+      `INSERT INTO agent_heartbeat_config (agent_id, interval_seconds, enabled, adaptive, min_interval, max_interval, active_hours_start, active_hours_end)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      agentId,
+      config.interval_seconds ?? 30,
+      config.enabled ?? 1,
+      config.adaptive ?? 1,
+      config.min_interval ?? 15,
+      config.max_interval ?? 120,
+      config.active_hours_start ?? null,
+      config.active_hours_end ?? null,
+    );
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Agent Heartbeat Tasks
+ * ------------------------------------------------------------------------- */
+
+export interface DbHeartbeatTask {
+  id: number;
+  agent_id: number;
+  task_id: string;
+  label: string;
+  check_prompt: string;
+  priority: string;
+  enabled: number;
+}
+
+export function getHeartbeatTasks(agentId: string | number): DbHeartbeatTask[] {
+  const db = getDb();
+  return db.prepare('SELECT * FROM agent_heartbeat_tasks WHERE agent_id = ? ORDER BY priority, id').all(agentId) as DbHeartbeatTask[];
+}
+
+export function upsertHeartbeatTask(agentId: string | number, task: { task_id: string; label: string; check_prompt: string; priority: string; enabled: boolean }): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO agent_heartbeat_tasks (agent_id, task_id, label, check_prompt, priority, enabled)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(agent_id, task_id) DO UPDATE SET label = ?, check_prompt = ?, priority = ?, enabled = ?`
+  ).run(
+    agentId, task.task_id, task.label, task.check_prompt, task.priority, task.enabled ? 1 : 0,
+    task.label, task.check_prompt, task.priority, task.enabled ? 1 : 0,
+  );
+}
+

@@ -26,13 +26,14 @@ import {
   Trophy,
   Skull,
 } from 'lucide-react';
-import { ELEMENTS, MERGE_PRICE, CONTRACT_ADDRESSES } from '@/lib/constants';
+import { ELEMENTS, MERGE_PRICE, CONTRACT_ADDRESSES, ACTIVE_CHAIN_ID } from '@/lib/constants';
 import { FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
 import {
   useAccount,
   useWriteContract,
   useReadContract,
   useWaitForTransactionReceipt,
+  useSwitchChain,
 } from 'wagmi';
 import { parseEther, decodeEventLog } from 'viem';
 import { usePublicClient } from 'wagmi';
@@ -1081,7 +1082,8 @@ function useWarriorData(tokenId: number | null): WarriorStats | null {
  * ------------------------------------------------------------------------- */
 
 export default function MergePage() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
   const publicClient = usePublicClient();
 
   // Selection state
@@ -1155,8 +1157,15 @@ export default function MergePage() {
   const bothSlotsFilled = slot1TokenId !== null && slot2TokenId !== null;
 
   // Handle fuse button click
-  function handleFuse() {
+  async function handleFuse() {
     if (!isConnected || !bothSlotsFilled) return;
+    if (chain?.id !== ACTIVE_CHAIN_ID) {
+      try {
+        await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+      } catch {
+        return;
+      }
+    }
     setMergeSuccess(false);
     setResultTokenId(null);
     setApiError(null);
@@ -1167,7 +1176,6 @@ export default function MergePage() {
       functionName: 'mergeWarriors',
       args: [BigInt(slot1TokenId!), BigInt(slot2TokenId!)],
       value: parseEther(MERGE_PRICE),
-      chainId: 43113,
     });
   }
 
@@ -1310,9 +1318,9 @@ export default function MergePage() {
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
           >
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-orange/10 border border-frost-orange/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-frost-orange animate-pulse" />
-              <span className="text-[10px] font-pixel text-frost-orange/80">FUJI</span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-green/10 border border-frost-green/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
+              <span className="text-[10px] font-pixel text-frost-green/80">MAINNET</span>
             </span>
           </motion.div>
         </div>
@@ -1580,8 +1588,6 @@ export default function MergePage() {
                       ? 'Cannot merge a warrior with itself.'
                       : fuseError.message.includes('insufficient funds')
                       ? 'Not enough AVAX in your wallet.'
-                      : fuseError.message.includes('chain')
-                      ? 'Please switch to Avalanche Fuji Testnet.'
                       : `Fusion failed: ${'shortMessage' in fuseError ? (fuseError as any).shortMessage : fuseError.message}`}
                   </motion.div>
                 )}

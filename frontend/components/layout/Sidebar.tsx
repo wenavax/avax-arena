@@ -5,34 +5,118 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount } from 'wagmi';
+import { useAccount, useDisconnect } from 'wagmi';
 import {
   Menu,
   X,
   Swords,
   Sparkles,
-  MessageCircle,
   BarChart3,
-  Bot,
   Store,
   GitMerge,
   User,
   Map,
   Wifi,
+  Wallet,
+  LogOut,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
-  { href: '/agents', label: 'Agents', icon: Bot },
   { href: '/mint', label: 'Mint', icon: Sparkles },
   { href: '/battle', label: 'Battle', icon: Swords },
   { href: '/merge', label: 'Fusion', icon: GitMerge },
   { href: '/quests', label: 'Quests', icon: Map },
   { href: '/marketplace', label: 'Market', icon: Store },
-  { href: '/chat', label: 'Forum', icon: MessageCircle },
   { href: '/leaderboard', label: 'Rankings', icon: BarChart3 },
 ];
+
+/* ---------- Custom Wallet Button ---------- */
+
+function WalletButton({ compact = false }: { compact?: boolean }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyAddress = (address: string) => {
+    navigator.clipboard.writeText(address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <ConnectButton.Custom>
+      {({ account, chain, openConnectModal, openAccountModal, mounted }) => {
+        const ready = mounted;
+        const connected = ready && account && chain;
+
+        return (
+          <div
+            {...(!ready && {
+              'aria-hidden': true,
+              style: { opacity: 0, pointerEvents: 'none' as const, userSelect: 'none' as const },
+            })}
+          >
+            {(() => {
+              if (!connected) {
+                return (
+                  <button
+                    onClick={openConnectModal}
+                    className={cn(
+                      'flex items-center justify-center gap-2 rounded-lg font-semibold transition-all duration-200',
+                      'bg-gradient-to-r from-frost-primary/20 to-frost-secondary/20',
+                      'border border-frost-primary/40 hover:border-frost-primary/60',
+                      'text-frost-primary hover:text-white',
+                      'hover:shadow-[0_0_20px_rgba(255,32,32,0.3)]',
+                      compact
+                        ? 'text-[11px] px-3 py-1.5'
+                        : 'text-xs px-4 py-2'
+                    )}
+                  >
+                    <Wallet className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+                    <span>Connect</span>
+                  </button>
+                );
+              }
+
+              return (
+                <div className="flex items-center gap-1.5">
+                  {/* Address button */}
+                  <button
+                    onClick={openAccountModal}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-lg transition-all duration-200',
+                      'bg-white/[0.06] border border-white/[0.08]',
+                      'hover:bg-white/[0.10] hover:border-white/[0.15]',
+                      compact
+                        ? 'text-[10px] px-2 py-1'
+                        : 'text-[11px] px-2.5 py-1.5'
+                    )}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-frost-green flex-shrink-0" />
+                    <span className="font-mono text-white/70">
+                      {account.displayName}
+                    </span>
+                  </button>
+
+                  {/* Copy button */}
+                  <button
+                    onClick={() => copyAddress(account.address)}
+                    className="flex items-center justify-center w-7 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-white/40 hover:text-white/70 transition-all"
+                    title="Copy address"
+                  >
+                    {copied ? <Check className="h-3 w-3 text-frost-green" /> : <Copy className="h-3 w-3" />}
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
+        );
+      }}
+    </ConnectButton.Custom>
+  );
+}
 
 /* ---------- Desktop Sidebar ---------- */
 
@@ -88,12 +172,14 @@ export function Sidebar() {
           <span>Avalanche C-Chain</span>
         </div>
 
-        {/* Theme + Wallet row */}
-        <div className="flex items-center gap-2 px-1">
+        {/* Wallet */}
+        <div className="px-2">
+          <WalletButton />
+        </div>
+
+        {/* Theme */}
+        <div className="px-2">
           <ThemeToggle />
-          <div className="flex-1 [&_button]:!text-xs [&_button]:!py-1.5 [&_button]:!px-2.5">
-            <ConnectButton chainStatus="none" accountStatus="avatar" showBalance={false} />
-          </div>
         </div>
       </div>
     </aside>
@@ -127,7 +213,7 @@ export function MobileTopBar() {
         </Link>
 
         <div className="flex items-center gap-2">
-          <ConnectButton chainStatus="none" accountStatus="avatar" showBalance={false} />
+          <WalletButton compact />
           <button
             onClick={() => setOpen(!open)}
             className="flex items-center justify-center w-9 h-9 rounded-lg text-white/60 hover:text-white hover:bg-white/[0.06] transition-colors"
@@ -195,12 +281,15 @@ export function MobileTopBar() {
         </nav>
 
         {/* Bottom */}
-        <div className="flex-shrink-0 px-3 pb-4 pt-3 border-t border-white/[0.04]">
-          <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-white/30 mb-2">
+        <div className="flex-shrink-0 px-3 pb-4 pt-3 border-t border-white/[0.04] space-y-2">
+          <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-white/30">
             <Wifi className="w-3 h-3 text-frost-green" />
             <span>Avalanche C-Chain</span>
           </div>
-          <div className="px-1">
+          <div className="px-2">
+            <WalletButton />
+          </div>
+          <div className="px-2">
             <ThemeToggle />
           </div>
         </div>

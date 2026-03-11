@@ -377,7 +377,7 @@ describe("GameEngine", function () {
       expect(game.winner).to.equal(player1.address);
     });
 
-    it("odd sum means player2 wins (1+2=3)", async function () {
+    it("odd sum means player2 wins (0+1=1)", async function () {
       const fixture = await networkHelpers.loadFixture(deployGameEngineFixture);
       const { gameEngine, player1, player2 } = fixture;
 
@@ -387,12 +387,12 @@ describe("GameEngine", function () {
 
       const salt1 = randomSalt();
       const salt2 = randomSalt();
-      // Player1 = Heads (1), Player2 = Tails (2). Sum = 3, odd => player2 wins
-      await gameEngine.connect(player1).commitMove(1, commitHash(1, salt1));
-      await gameEngine.connect(player2).commitMove(1, commitHash(2, salt2));
+      // Player1 = Heads (0), Player2 = Tails (1). Sum = 1, odd => player2 wins
+      await gameEngine.connect(player1).commitMove(1, commitHash(0, salt1));
+      await gameEngine.connect(player2).commitMove(1, commitHash(1, salt2));
 
-      await gameEngine.connect(player1).revealMove(1, 1, salt1);
-      await gameEngine.connect(player2).revealMove(1, 2, salt2);
+      await gameEngine.connect(player1).revealMove(1, 0, salt1);
+      await gameEngine.connect(player2).revealMove(1, 1, salt2);
 
       const game = await gameEngine.getGame(1);
       expect(game.winner).to.equal(player2.address);

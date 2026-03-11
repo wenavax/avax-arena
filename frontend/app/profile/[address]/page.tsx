@@ -3,14 +3,14 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Copy, ExternalLink, Trophy, Swords, TrendingUp,
-  Zap, Bot, Shield, Target, BarChart3, Sparkles, Loader2,
+  Zap, Shield, Target, BarChart3, Sparkles, Loader2,
   ChevronDown, SlidersHorizontal, ArrowUpDown, X,
 } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useState, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { ELEMENTS, CONTRACT_ADDRESSES } from '@/lib/constants';
-import { FROSTBITE_WARRIOR_ABI, BATTLE_ENGINE_ABI, AGENT_REGISTRY_ABI } from '@/lib/contracts';
+import { ELEMENTS, CONTRACT_ADDRESSES, EXPLORER_URL } from '@/lib/constants';
+import { FROSTBITE_WARRIOR_ABI, BATTLE_ENGINE_ABI } from '@/lib/contracts';
 import { usePublicClient } from 'wagmi';
 import { formatEther } from 'viem';
 
@@ -45,27 +45,6 @@ interface Battle {
   resolvedAt: number;
 }
 
-interface AgentInfo {
-  id: number;
-  owner: string;
-  agentWallet: string;
-  name: string;
-  strategy: number;
-  wins: number;
-  losses: number;
-  totalGames: number;
-  totalTxGenerated: number;
-  createdAt: number;
-  active: boolean;
-  sessionKeyExpiry: number;
-  dailySpendLimit: bigint;
-  dailySpent: bigint;
-  lastSpendReset: number;
-  maxStakePerGame: bigint;
-  totalDeposited: bigint;
-  profitWithdrawn: bigint;
-}
-
 interface ProfileStats {
   totalBattles: number;
   wins: number;
@@ -74,7 +53,7 @@ interface ProfileStats {
   warriorCount: number;
 }
 
-type ProfileTab = 'collection' | 'activity' | 'agent';
+type ProfileTab = 'collection' | 'activity';
 type SortOption = 'power-desc' | 'level-desc' | 'token-asc' | 'attack-desc' | 'defense-desc' | 'speed-desc';
 
 /* ---------------------------------------------------------------------------
@@ -129,37 +108,6 @@ function parseBattleData(raw: Record<string, unknown>): Battle {
   };
 }
 
-function parseAgentData(raw: Record<string, unknown>): AgentInfo {
-  return {
-    id: Number(raw.id ?? raw[0] ?? 0),
-    owner: String(raw.owner ?? raw[1] ?? ''),
-    agentWallet: String(raw.agentWallet ?? raw[2] ?? ''),
-    name: String(raw.name ?? raw[3] ?? ''),
-    strategy: Number(raw.strategy ?? raw[4] ?? 0),
-    wins: Number(raw.wins ?? raw[5] ?? 0),
-    losses: Number(raw.losses ?? raw[6] ?? 0),
-    totalGames: Number(raw.totalGames ?? raw[7] ?? 0),
-    totalTxGenerated: Number(raw.totalTxGenerated ?? raw[8] ?? 0),
-    createdAt: Number(raw.createdAt ?? raw[9] ?? 0),
-    active: Boolean(raw.active ?? raw[10] ?? false),
-    sessionKeyExpiry: Number(raw.sessionKeyExpiry ?? raw[11] ?? 0),
-    dailySpendLimit: BigInt(String(raw.dailySpendLimit ?? raw[12] ?? 0)),
-    dailySpent: BigInt(String(raw.dailySpent ?? raw[13] ?? 0)),
-    lastSpendReset: Number(raw.lastSpendReset ?? raw[14] ?? 0),
-    maxStakePerGame: BigInt(String(raw.maxStakePerGame ?? raw[15] ?? 0)),
-    totalDeposited: BigInt(String(raw.totalDeposited ?? raw[16] ?? 0)),
-    profitWithdrawn: BigInt(String(raw.profitWithdrawn ?? raw[17] ?? 0)),
-  };
-}
-
-const STRATEGY_NAMES: Record<number, string> = {
-  0: 'Aggressive',
-  1: 'Defensive',
-  2: 'Balanced',
-  3: 'Analytical',
-  4: 'Random',
-};
-
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'power-desc', label: 'Power: High → Low' },
   { value: 'level-desc', label: 'Level: High → Low' },
@@ -172,7 +120,6 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 const PROFILE_TABS: { id: ProfileTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'collection', label: 'Collection', icon: Sparkles },
   { id: 'activity', label: 'Activity', icon: Swords },
-  { id: 'agent', label: 'AI Agent', icon: Bot },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -579,7 +526,7 @@ function ProfileBanner({
                 <Copy className={cn('w-3.5 h-3.5', copied ? 'text-frost-green' : 'text-white/40')} />
               </button>
               <a
-                href={`https://testnet.snowtrace.io/address/${address}`}
+                href={`${EXPLORER_URL}/address/${address}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-1 rounded-md hover:bg-white/10 transition-colors"
@@ -624,18 +571,15 @@ function ProfileTabs({
   onTabChange,
   warriorCount,
   battleCount,
-  hasAgent,
 }: {
   activeTab: ProfileTab;
   onTabChange: (tab: ProfileTab) => void;
   warriorCount: number;
   battleCount: number;
-  hasAgent: boolean;
 }) {
   const counts: Record<ProfileTab, number | null> = {
     collection: warriorCount,
     activity: battleCount,
-    agent: hasAgent ? 1 : null,
   };
 
   return (
@@ -691,7 +635,6 @@ export default function ProfilePage() {
   // Data state
   const [warriors, setWarriors] = useState<Warrior[]>([]);
   const [battleHistory, setBattleHistory] = useState<Battle[]>([]);
-  const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null);
   const [stats, setStats] = useState<ProfileStats>({
     totalBattles: 0,
     wins: 0,
@@ -703,8 +646,6 @@ export default function ProfilePage() {
   // Loading state
   const [loadingWarriors, setLoadingWarriors] = useState(true);
   const [loadingBattles, setLoadingBattles] = useState(true);
-  const [loadingAgent, setLoadingAgent] = useState(true);
-
   // UI state
   const [activeTab, setActiveTab] = useState<ProfileTab>('collection');
   const [elementFilter, setElementFilter] = useState<number | null>(null);
@@ -766,7 +707,9 @@ export default function ProfilePage() {
 
         if (cancelled) return;
         setWarriors(
-          details.map((raw, i) => parseWarriorData(raw as Record<string, unknown>, Number(ids[i])))
+          details
+            .map((raw, i) => parseWarriorData(raw as Record<string, unknown>, Number(ids[i])))
+            .sort((a, b) => b.powerScore - a.powerScore)
         );
       } catch (err) {
         console.error('[profile] Failed to fetch warriors:', err);
@@ -884,44 +827,6 @@ export default function ProfilePage() {
     setStats((prev) => ({ ...prev, warriorCount: warriors.length }));
   }, [warriors]);
 
-  // Fetch agent info
-  useEffect(() => {
-    if (!publicClient || !isValidAddress) {
-      setLoadingAgent(false);
-      return;
-    }
-    let cancelled = false;
-
-    async function fetchAgent() {
-      setLoadingAgent(true);
-      try {
-        const raw = await publicClient!.readContract({
-          address: CONTRACT_ADDRESSES.agentRegistry as `0x${string}`,
-          abi: AGENT_REGISTRY_ABI,
-          functionName: 'getAgentByWallet',
-          args: [address as `0x${string}`],
-        });
-
-        if (cancelled) return;
-        const agent = parseAgentData(raw as Record<string, unknown>);
-
-        if (agent.id === 0 && agent.name === '') {
-          setAgentInfo(null);
-        } else {
-          setAgentInfo(agent);
-        }
-      } catch (err) {
-        console.error('[profile] Failed to fetch agent info:', err);
-        if (!cancelled) setAgentInfo(null);
-      } finally {
-        if (!cancelled) setLoadingAgent(false);
-      }
-    }
-
-    fetchAgent();
-    return () => { cancelled = true; };
-  }, [publicClient, address, isValidAddress]);
-
   /* -------------------------------------------------------------------------
    * Handlers
    * ----------------------------------------------------------------------- */
@@ -940,19 +845,6 @@ export default function ProfilePage() {
     setPowerMin('');
     setPowerMax('');
   };
-
-  /* -------------------------------------------------------------------------
-   * Session key time remaining
-   * ----------------------------------------------------------------------- */
-
-  function getSessionKeyTimeLeft(expiry: number): string {
-    const now = Math.floor(Date.now() / 1000);
-    const diff = expiry - now;
-    if (diff <= 0) return 'Expired';
-    const hours = Math.floor(diff / 3600);
-    const minutes = Math.floor((diff % 3600) / 60);
-    return `${hours}h ${minutes}m left`;
-  }
 
   /* -------------------------------------------------------------------------
    * Filtered + sorted warriors
@@ -1056,7 +948,6 @@ export default function ProfilePage() {
             onTabChange={setActiveTab}
             warriorCount={warriors.length}
             battleCount={battleHistory.length}
-            hasAgent={!!agentInfo}
           />
         </motion.div>
 
@@ -1263,90 +1154,14 @@ export default function ProfilePage() {
           </motion.div>
         )}
 
-        {/* ===== AI AGENT TAB ===== */}
-        {activeTab === 'agent' && (
+        {/* ===== ELEMENT DISTRIBUTION ===== */}
+        {activeTab === 'collection' && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.15 }}
-            className="max-w-4xl"
+            className="max-w-4xl mt-6"
           >
-            {/* Agent Info Card */}
-            <div className="glass-card p-6 rounded-2xl mb-6">
-              <div className="flex items-center gap-2 mb-6">
-                <Bot className="w-5 h-5 text-frost-purple" />
-                <h2 className="text-lg font-display font-bold text-white">AI Agent</h2>
-                {loadingAgent ? (
-                  <Loader2 className="ml-auto w-4 h-4 text-white/40 animate-spin" />
-                ) : agentInfo ? (
-                  <span className={cn(
-                    'ml-auto px-3 py-1 rounded-full text-xs font-semibold border',
-                    agentInfo.active
-                      ? 'bg-frost-green/20 text-frost-green border-frost-green/30'
-                      : 'bg-frost-red/20 text-frost-red border-frost-red/30'
-                  )}>
-                    {agentInfo.active ? 'Active' : 'Inactive'}
-                  </span>
-                ) : null}
-              </div>
-
-              {loadingAgent ? (
-                <LoadingSpinner label="Loading agent info..." />
-              ) : !agentInfo ? (
-                <EmptyState icon={Bot} message="No agent registered for this address" />
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div>
-                      <div className="text-xs text-white/40 mb-1">Agent Name</div>
-                      <div className="text-white font-semibold">{agentInfo.name || 'Unnamed'}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-white/40 mb-1">Strategy</div>
-                      <div className="text-frost-purple font-semibold">
-                        {STRATEGY_NAMES[agentInfo.strategy] ?? `Type ${agentInfo.strategy}`}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-white/40 mb-1">Session Key</div>
-                      <div className="text-frost-green font-mono text-sm">
-                        {getSessionKeyTimeLeft(agentInfo.sessionKeyExpiry)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-white/40 mb-1">Agent Wallet</div>
-                      <div className="text-frost-cyan font-mono text-sm">
-                        {shortenAddr(agentInfo.agentWallet)}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="stat-card">
-                      <div className="text-lg font-bold font-mono text-frost-cyan">{agentInfo.totalGames}</div>
-                      <div className="text-xs text-white/40">Agent Battles</div>
-                    </div>
-                    <div className="stat-card">
-                      <div className="text-lg font-bold font-mono text-frost-green">
-                        {agentInfo.totalGames > 0
-                          ? `${((agentInfo.wins / agentInfo.totalGames) * 100).toFixed(1)}%`
-                          : '0%'}
-                      </div>
-                      <div className="text-xs text-white/40">Agent Win Rate</div>
-                    </div>
-                    <div className="stat-card">
-                      <div className="text-lg font-bold font-mono text-frost-gold">
-                        {parseFloat(formatEther(agentInfo.totalDeposited > agentInfo.profitWithdrawn
-                          ? agentInfo.totalDeposited - agentInfo.profitWithdrawn
-                          : BigInt(0))).toFixed(3)} AVAX
-                      </div>
-                      <div className="text-xs text-white/40">Agent Balance</div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
             {/* Element Distribution */}
             <div className="glass-card p-6 rounded-2xl">
               <div className="flex items-center gap-2 mb-4">

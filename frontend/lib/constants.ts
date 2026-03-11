@@ -31,8 +31,6 @@ export const PLATFORM_FEE_PERCENT = 2.5;
 export const CONTRACT_ADDRESSES = {
   frostbiteWarrior: process.env.NEXT_PUBLIC_ARENA_WARRIOR_ADDRESS || '0x0000000000000000000000000000000000000000',
   battleEngine: process.env.NEXT_PUBLIC_BATTLE_ENGINE_ADDRESS || '0x0000000000000000000000000000000000000000',
-  agentRegistry: process.env.NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS || '0x0000000000000000000000000000000000000000',
-  agentChat: process.env.NEXT_PUBLIC_AGENT_CHAT_ADDRESS || '0x0000000000000000000000000000000000000000',
   frostbiteToken: process.env.NEXT_PUBLIC_ARENA_TOKEN_ADDRESS || '0x0000000000000000000000000000000000000000',
   tournament: process.env.NEXT_PUBLIC_TOURNAMENT_ADDRESS || '0x0000000000000000000000000000000000000000',
   leaderboard: process.env.NEXT_PUBLIC_LEADERBOARD_ADDRESS || '0x0000000000000000000000000000000000000000',
@@ -44,6 +42,15 @@ export const CONTRACT_ADDRESSES = {
 } as const;
 
 export const AVALANCHE_CHAIN_ID = 43114;
-export const FUJI_CHAIN_ID = 43113;
+export const IS_MAINNET = true;
+export const ACTIVE_CHAIN_ID = AVALANCHE_CHAIN_ID;
+export const ACTIVE_NETWORK_NAME = 'Avalanche C-Chain';
+export const EXPLORER_URL = 'https://snowtrace.io';
 
-export const FUJI_RPC_URL = process.env.NEXT_PUBLIC_FUJI_RPC_URL || 'https://avalanche-fuji-c-chain-rpc.publicnode.com';
+export const ACTIVE_RPC_URLS = [
+  process.env.NEXT_PUBLIC_MAINNET_RPC_URL || 'https://api.avax.network/ext/bc/C/rpc',
+  'https://rpc.ankr.com/avalanche',
+  'https://avalanche-c-chain-rpc.publicnode.com',
+];
+
+export const ACTIVE_RPC_URL = ACTIVE_RPC_URLS[0];

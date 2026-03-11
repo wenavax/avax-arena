@@ -60,6 +60,9 @@ contract AgentRegistry is Ownable, ReentrancyGuard {
     ///         (e.g., the GameEngine contract).
     mapping(address => bool) public authorizedCallers;
 
+    /// @notice Total AVAX allocated across all agents (sum of individual balances).
+    uint256 public totalAllocated;
+
     // -----------------------------------------------------------------------
     // Events
     // -----------------------------------------------------------------------
@@ -97,6 +100,7 @@ contract AgentRegistry is Ownable, ReentrancyGuard {
     event SpendLimitUpdated(uint256 indexed agentId, uint256 dailyLimit, uint256 maxStakePerGame);
 
     event EmergencyStop(uint256 indexed agentId);
+    event AgentReactivated(uint256 indexed agentId);
 
     // -----------------------------------------------------------------------
     // Errors
@@ -164,9 +168,10 @@ contract AgentRegistry is Ownable, ReentrancyGuard {
     // -----------------------------------------------------------------------
 
     /// @notice Grant a time-limited session key to the caller's agent.
-    /// @param _duration Duration in seconds from now until the key expires.
+    /// @param _duration Duration in seconds from now until the key expires (max 30 days).
     function grantSessionKey(uint256 _duration) external {
         if (_duration == 0) revert InvalidDuration();
+        if (_duration > 30 days) revert InvalidDuration();
 
         uint256 agentId = ownerToAgent[msg.sender];
         if (agentId == 0) revert AgentNotFound();
@@ -286,6 +291,7 @@ contract AgentRegistry is Ownable, ReentrancyGuard {
         uint256 agentId = ownerToAgent[msg.sender];
         if (agentId == 0) revert AgentNotFound();
         agents[agentId].totalDeposited += msg.value;
+        totalAllocated += msg.value;
         emit AgentFunded(agentId, msg.value);
     }
 
@@ -300,10 +306,14 @@ contract AgentRegistry is Ownable, ReentrancyGuard {
         // Enforce per-agent balance: cannot withdraw more than deposited minus already withdrawn
         uint256 agentBalance = a.totalDeposited - a.profitWithdrawn;
         if (_amount > agentBalance) revert InsufficientAgentBalance();
+
+        // Global invariant: ensure contract has enough after accounting for ALL agents
         require(address(this).balance >= _amount, "Insufficient contract balance");
+        require(totalAllocated >= _amount, "Invariant: totalAllocated underflow");
 
         // Transfer from contract to owner
         a.profitWithdrawn += _amount;
+        totalAllocated -= _amount;
         (bool success,) = msg.sender.call{value: _amount}("");
         if (!success) revert TransferFailed();
         emit AgentWithdrawn(agentId, msg.sender, _amount);
@@ -378,6 +388,7 @@ contract AgentRegistry is Ownable, ReentrancyGuard {
         Agent storage a = agents[agentId];
         if (a.owner != msg.sender) revert NotAgentOwner();
         a.active = true;
+        emit AgentReactivated(agentId);
     }
 
     // -----------------------------------------------------------------------

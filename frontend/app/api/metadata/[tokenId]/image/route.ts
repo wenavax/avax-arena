@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPublicClient, http } from 'viem';
-import { avalancheFuji } from 'viem/chains';
 import { FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
-import { CONTRACT_ADDRESSES, FUJI_RPC_URL } from '@/lib/constants';
+import { CONTRACT_ADDRESSES } from '@/lib/constants';
 import { imageCache } from '@/lib/image-cache';
 import { generateWarriorSVG, generateFallbackSVG } from '@/lib/warrior-generator';
+import { createActiveClient } from '@/lib/chain';
 
-const client = createPublicClient({
-  chain: avalancheFuji,
-  transport: http(FUJI_RPC_URL),
-});
+const client = createActiveClient();
 
 export async function GET(
   request: NextRequest,

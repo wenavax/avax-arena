@@ -127,6 +127,11 @@ contract GameEngine is Ownable, ReentrancyGuard {
      */
     function createGame(GameType _gameType) external payable nonReentrant {
         if (msg.value < MIN_STAKE) revert StakeTooLow();
+        // Only allow implemented game types
+        require(
+            _gameType == GameType.RPS || _gameType == GameType.CoinFlip,
+            "GameEngine: unimplemented game type"
+        );
 
         gameCounter++;
 

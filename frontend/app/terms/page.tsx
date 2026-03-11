@@ -37,8 +37,8 @@ export default function TermsPage() {
             <li>Participate in community chat</li>
           </ul>
           <p className="mt-2">
-            The Service operates on the Avalanche Fuji Testnet. All AVAX referenced on this
-            platform is testnet AVAX with no real monetary value.
+            The Service operates on the Avalanche C-Chain (Mainnet). All AVAX referenced on this
+            platform is real AVAX with real monetary value. Use the platform at your own risk.
           </p>
         </Section>
 
@@ -95,8 +95,8 @@ export default function TermsPage() {
           <h4 className="text-white/90 font-semibold mt-3 mb-1">5.3 No Guarantees of Value</h4>
           <p>
             NFTs and any associated tokens have no guaranteed value. The platform operates on
-            testnet and assets have no real-world monetary value. Do not treat interactions on
-            this platform as financial investments.
+            the Avalanche C-Chain mainnet. Do not treat interactions on
+            this platform as financial investments. You acknowledge that all transactions are final and irreversible.
           </p>
         </Section>
 
@@ -200,7 +200,7 @@ export default function TermsPage() {
             <li>We do not guarantee any returns or profits from battles</li>
             <li>We are not responsible for losses due to blockchain network issues, wallet
               compromises, or smart contract vulnerabilities</li>
-            <li>This is a testnet platform for educational and entertainment purposes</li>
+            <li>This platform operates on mainnet with real assets — use at your own risk</li>
           </ul>
         </Section>
 

@@ -3,6 +3,8 @@
 /* eslint-disable */
 import type * as agentChatSol from './AgentChat.sol/index.js';
 export type { agentChatSol };
+import type * as arenaTokenSol from './ArenaToken.sol/index.js';
+export type { arenaTokenSol };
 import type * as battleEngineSol from './BattleEngine.sol/index.js';
 export type { battleEngineSol };
 import type * as gameEngineSol from './GameEngine.sol/index.js';
@@ -12,7 +14,6 @@ export type { questEngineSol };
 import type * as teamBattleEngineSol from './TeamBattleEngine.sol/index.js';
 export type { teamBattleEngineSol };
 export type { AgentRegistry } from './AgentRegistry.js';
-export type { ArenaToken } from './ArenaToken.js';
 export type { ArenaWarrior } from './ArenaWarrior.js';
 export type { BatchMinter } from './BatchMinter.js';
 export type { BattleEngineProxy } from './BattleEngineProxy.js';
@@ -27,7 +28,8 @@ export { AgentChat__factory } from './factories/AgentChat.sol/AgentChat__factory
 export type { IAgentRegistry } from './AgentChat.sol/IAgentRegistry.js';
 export { IAgentRegistry__factory } from './factories/AgentChat.sol/IAgentRegistry__factory.js';
 export { AgentRegistry__factory } from './factories/AgentRegistry__factory.js';
-export { ArenaToken__factory } from './factories/ArenaToken__factory.js';
+export type { FrostbiteToken } from './ArenaToken.sol/FrostbiteToken.js';
+export { FrostbiteToken__factory } from './factories/ArenaToken.sol/FrostbiteToken__factory.js';
 export { ArenaWarrior__factory } from './factories/ArenaWarrior__factory.js';
 export { BatchMinter__factory } from './factories/BatchMinter__factory.js';
 export type { BattleEngine } from './BattleEngine.sol/BattleEngine.js';

@@ -65,6 +65,8 @@ contract Tournament is Ownable, ReentrancyGuard {
         uint256 amount
     );
 
+    event TournamentEnded(uint256 indexed tournamentId);
+
     // -----------------------------------------------------------------------
     //  Constructor
     // -----------------------------------------------------------------------
@@ -116,7 +118,7 @@ contract Tournament is Ownable, ReentrancyGuard {
      * @notice Join an active tournament by paying the entry fee.
      * @param _id Tournament identifier.
      */
-    function joinTournament(uint256 _id) external payable {
+    function joinTournament(uint256 _id) external payable nonReentrant {
         TournamentInfo storage t = tournaments[_id];
 
         require(t.active, "Tournament: not active");
@@ -132,6 +134,8 @@ contract Tournament is Ownable, ReentrancyGuard {
 
         // Prevent double-join using mapping (O(1) instead of O(n) loop)
         require(!hasJoined[_id][msg.sender], "Tournament: already joined");
+        // Prevent owner from joining their own tournament
+        require(msg.sender != owner(), "Tournament: owner cannot join");
         hasJoined[_id][msg.sender] = true;
 
         t.players.push(msg.sender);
@@ -159,6 +163,7 @@ contract Tournament is Ownable, ReentrancyGuard {
             block.timestamp >= t.startTime && block.timestamp <= t.endTime,
             "Tournament: outside play window"
         );
+        require(hasJoined[_id][_player], "Tournament: player not registered");
 
         t.scores[_player] = _score;
 
@@ -172,8 +177,10 @@ contract Tournament is Ownable, ReentrancyGuard {
     function endTournament(uint256 _id) external onlyOwner {
         TournamentInfo storage t = tournaments[_id];
         require(t.active, "Tournament: already ended");
+        require(block.timestamp >= t.endTime, "Tournament: not ended yet");
 
         t.active = false;
+        emit TournamentEnded(_id);
     }
 
     /**
@@ -213,6 +220,7 @@ contract Tournament is Ownable, ReentrancyGuard {
     function claimPrize(uint256 _id) external nonReentrant {
         TournamentInfo storage t = tournaments[_id];
         require(!t.active, "Tournament: still active");
+        require(block.timestamp > t.endTime, "Tournament: not ended yet");
         require(!t.claimed[msg.sender], "Tournament: already claimed");
 
         (

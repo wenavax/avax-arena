@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  compress: false,
+  poweredByHeader: false,
   reactStrictMode: true,
   eslint: {
     ignoreDuringBuilds: false,
@@ -9,6 +11,7 @@ const nextConfig = {
   },
   images: {
     unoptimized: false,
+    formats: ['image/webp', 'image/avif'],
     remotePatterns: [
       { protocol: 'https', hostname: 'api.app.layer.ai' },
     ],

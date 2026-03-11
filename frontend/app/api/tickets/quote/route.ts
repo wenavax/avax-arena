@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPublicClient, http, formatEther, parseAbi } from 'viem';
-import { avalancheFuji } from 'viem/chains';
+import { formatEther, parseAbi } from 'viem';
+import { withRpcFallback, networkLabel } from '@/lib/chain';
 
 export const dynamic = 'force-dynamic';
 
 function sec(): Record<string, string> {
   return { 'X-Content-Type-Options': 'nosniff' };
 }
-
-const RPC_URLS = [
-  'https://rpc.ankr.com/avalanche_fuji',
-  'https://avalanche-fuji-c-chain-rpc.publicnode.com',
-  'https://avalanche-fuji.drpc.org',
-];
 
 const TOURNAMENT_ADDRESS = process.env.NEXT_PUBLIC_TOURNAMENT_ADDRESS as `0x${string}` | undefined;
 
@@ -29,36 +23,29 @@ export async function GET(req: NextRequest) {
 
     // If tournament contract is configured, fetch on-chain data
     if (TOURNAMENT_ADDRESS && TOURNAMENT_ADDRESS !== '0x0000000000000000000000000000000000000000') {
-      let lastError: unknown;
-      for (const rpcUrl of RPC_URLS) {
-        try {
-          const client = createPublicClient({
-            chain: avalancheFuji,
-            transport: http(rpcUrl, { timeout: 10_000 }),
-          });
-
-          const entryFee = await client.readContract({
-            address: TOURNAMENT_ADDRESS,
+      try {
+        const entryFee = await withRpcFallback((client) =>
+          client.readContract({
+            address: TOURNAMENT_ADDRESS!,
             abi: tournamentAbi,
             functionName: 'entryFee',
-          });
+          }),
+        );
 
-          const pricePerTicket = formatEther(entryFee);
-          const totalPrice = formatEther(entryFee * BigInt(count));
+        const pricePerTicket = formatEther(entryFee);
+        const totalPrice = formatEther(entryFee * BigInt(count));
 
-          return NextResponse.json({
-            pricePerTicket,
-            count,
-            totalPrice,
-            currency: 'AVAX',
-            network: 'fuji-testnet',
-            tournamentContract: TOURNAMENT_ADDRESS,
-          }, { headers: sec() });
-        } catch (err) {
-          lastError = err;
-        }
+        return NextResponse.json({
+          pricePerTicket,
+          count,
+          totalPrice,
+          currency: 'AVAX',
+          network: networkLabel,
+          tournamentContract: TOURNAMENT_ADDRESS,
+        }, { headers: sec() });
+      } catch (err) {
+        console.error('[tickets/quote] RPC error:', err);
       }
-      console.error('[tickets/quote] RPC error:', lastError);
     }
 
     // Fallback: static pricing
@@ -70,7 +57,7 @@ export async function GET(req: NextRequest) {
       count,
       totalPrice,
       currency: 'AVAX',
-      network: 'fuji-testnet',
+      network: networkLabel,
       source: 'static',
     }, { headers: sec() });
   } catch (err) {

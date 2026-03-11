@@ -9,24 +9,6 @@ type Grid = number[][];
 const W = 24, H = 32;
 function empty(): Grid { return Array.from({ length: H }, () => new Array(W).fill(0)); }
 
-function drawBasicLegs(g: Grid) {
-  // Left leg
-  for (let r = 21; r <= 27; r++) { g[r][9] = 1; g[r][10] = 1; g[r][11] = 1; }
-  // Right leg
-  for (let r = 21; r <= 27; r++) { g[r][12] = 1; g[r][13] = 1; g[r][14] = 1; }
-  // Gap
-  for (let r = 21; r <= 27; r++) g[r][11] = 0;
-  // Left leg
-  for (let r = 21; r <= 27; r++) { g[r][9] = 1; g[r][10] = 1; }
-  // Right leg
-  for (let r = 21; r <= 27; r++) { g[r][13] = 1; g[r][14] = 1; }
-  // Boots
-  g[28][8] = 3; g[28][9] = 1; g[28][10] = 1;
-  g[28][13] = 1; g[28][14] = 1; g[28][15] = 3;
-  g[29][8] = 3; g[29][9] = 3; g[29][10] = 3;
-  g[29][13] = 3; g[29][14] = 3; g[29][15] = 3;
-}
-
 function clothLegA(): Grid {
   const g = empty();
   // Simple pants
