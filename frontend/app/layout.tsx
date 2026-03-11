@@ -2,9 +2,17 @@ import type { Metadata } from 'next';
 import { Inter, Orbitron, JetBrains_Mono, Silkscreen } from 'next/font/google';
 import { ThemeProvider } from '@/providers/ThemeProvider';
 import { Web3Provider } from '@/providers/Web3Provider';
+import { EventProvider } from '@/providers/EventProvider';
 import { Sidebar, MobileTopBar } from '@/components/layout/Sidebar';
 import { Footer } from '@/components/layout/Footer';
-import { ParticleBackground } from '@/components/layout/ParticleBackground';
+import { ChainGuard } from '@/components/ChainGuard';
+import dynamic from 'next/dynamic';
+
+const ParticleBackground = dynamic(
+  () => import('@/components/layout/ParticleBackground').then(mod => mod.ParticleBackground),
+  { ssr: false }
+);
+import '@rainbow-me/rainbowkit/styles.css';
 import './globals.css';
 
 const inter = Inter({
@@ -35,8 +43,8 @@ const silkscreen = Silkscreen({
 export const metadata: Metadata = {
   title: 'Frostbite | NFT Battle Arena on Avalanche',
   description:
-    'Mint cyber warriors, battle NFTs, and earn AVAX on Avalanche C-Chain. AI-powered agents, on-chain chat, and element-based PvP battles.',
-  keywords: ['Avalanche', 'AVAX', 'NFT', 'Battle', 'Web3', 'PvP', 'AI Agent', 'Blockchain Gaming', 'Frostbite', 'GameFi'],
+    'Mint cyber warriors, battle NFTs, and earn AVAX on Avalanche C-Chain. Element-based PvP battles, quests, and marketplace.',
+  keywords: ['Avalanche', 'AVAX', 'NFT', 'Battle', 'Web3', 'PvP', 'Blockchain Gaming', 'Frostbite', 'GameFi'],
   icons: {
     icon: [
       { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
@@ -47,13 +55,13 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Frostbite | NFT Battle Arena on Avalanche',
     description:
-      'Mint cyber warriors, battle NFTs, and earn AVAX. AI-powered agents with on-chain element-based PvP battles.',
+      'Mint cyber warriors, battle NFTs, and earn AVAX. Element-based PvP battles on Avalanche.',
     type: 'website',
     url: 'https://frostbite.pro',
     siteName: 'Frostbite',
     images: [
       {
-        url: 'https://frostbite.pro/og-image.png',
+        url: 'https://frostbite.pro/og-image.jpg',
         width: 1200,
         height: 630,
         alt: 'Frostbite — NFT Battle Arena on Avalanche',
@@ -63,8 +71,8 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Frostbite | NFT Battle Arena on Avalanche',
-    description: 'Mint cyber warriors, battle NFTs, and earn AVAX on Avalanche.',
-    images: ['https://frostbite.pro/og-image.png'],
+    description: 'Mint cyber warriors, battle NFTs, and earn AVAX. Element-based PvP battles on Avalanche.',
+    images: ['https://frostbite.pro/og-image.jpg'],
   },
   metadataBase: new URL('https://frostbite.pro'),
 };
@@ -79,6 +87,7 @@ export default function RootLayout({
       <body className="font-sans antialiased min-h-screen">
         <ThemeProvider>
           <Web3Provider>
+          <EventProvider>
             {/* Background layers */}
             <div className="mesh-bg" aria-hidden="true" />
             <ParticleBackground />
@@ -89,10 +98,12 @@ export default function RootLayout({
               <Sidebar />
               <div className="flex-1 flex flex-col min-h-screen lg:ml-56">
                 <MobileTopBar />
+                <ChainGuard />
                 <main className="relative z-10 flex-1">{children}</main>
                 <Footer />
               </div>
             </div>
+          </EventProvider>
           </Web3Provider>
         </ThemeProvider>
       </body>

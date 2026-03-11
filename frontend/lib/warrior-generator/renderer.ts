@@ -126,13 +126,14 @@ export function renderWarrior(
     c4: '#FFFFFF', // shine
   }));
 
-  // Render to SVG — upscale 24x32 → centered in 1024x1024
+  // Render to SVG — upscale 24x32 → centered horizontally, placed above stat bars
+  // Pixel size 20 keeps warrior compact; bottom 300px reserved for stats/labels
   const size = 1024;
-  const pixelSize = Math.floor(size / GRID_H); // 32px per pixel
-  const gridPixelW = GRID_W * pixelSize;
-  const gridPixelH = GRID_H * pixelSize;
+  const pixelSize = 20;
+  const gridPixelW = GRID_W * pixelSize; // 480
+  const gridPixelH = GRID_H * pixelSize; // 640
   const offsetX = Math.floor((size - gridPixelW) / 2);
-  const offsetY = Math.floor((size - gridPixelH) / 2) - 40;
+  const offsetY = Math.floor((size - 300 - gridPixelH) / 2) + 16; // centered in upper zone
 
   return renderGrid(composite, offsetX, offsetY, pixelSize);
 }

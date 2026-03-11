@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -29,7 +29,7 @@ interface IArenaWarriorTeam {
 
 contract TeamBattleEngine is
     OwnableUpgradeable,
-    ReentrancyGuard,
+    ReentrancyGuardTransient,
     PausableUpgradeable,
     UUPSUpgradeable
 {
@@ -114,8 +114,14 @@ contract TeamBattleEngine is
     address public trustedSigner;
     mapping(address => uint256) public nonces;
 
+    // Pull-payment for winner payouts
+    mapping(address => uint256) public pendingPayouts;
+
+    // Stored entropy from battle creation block
+    mapping(uint256 => uint256) private _creationEntropy;
+
     // Storage gap for future upgrades
-    uint256[44] private __gap;
+    uint256[42] private __gap;
 
     // -------------------------------------------------------------------------
     // Events
@@ -150,6 +156,9 @@ contract TeamBattleEngine is
     event TrustedSignerUpdated(address indexed signer);
     event ContractPaused(address indexed by);
     event ContractUnpaused(address indexed by);
+    event ArenaWarriorUpdated(address indexed newAddress);
+    event FeeRecipientUpdated(address indexed newAddress);
+    event PayoutWithdrawn(address indexed player, uint256 amount);
 
     // -------------------------------------------------------------------------
     // Errors
@@ -172,6 +181,7 @@ contract TeamBattleEngine is
     error NotAdmin();
     error InvalidSignature();
     error DuplicateTokenIds();
+    error NoPendingPayout();
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -195,6 +205,7 @@ contract TeamBattleEngine is
         address _arenaWarrior,
         address _feeRecipient
     ) public initializer {
+        if (_arenaWarrior == address(0)) revert InvalidAddress();
         if (_feeRecipient == address(0)) revert InvalidAddress();
 
         __Ownable_init(msg.sender);
@@ -272,6 +283,11 @@ contract TeamBattleEngine is
         // Track as open battle
         openBattleIndex[battleId] = openBattleIds.length;
         openBattleIds.push(battleId);
+
+        // Store entropy from creation block
+        _creationEntropy[battleId] = uint256(keccak256(abi.encodePacked(
+            block.prevrandao, block.timestamp, block.number, msg.sender, tokenIds[0]
+        )));
 
         // Update platform stats
         totalWagered += msg.value;
@@ -369,11 +385,23 @@ contract TeamBattleEngine is
     function setArenaWarrior(address _arenaWarrior) external onlyOwner {
         if (_arenaWarrior == address(0)) revert InvalidAddress();
         arenaWarrior = IArenaWarriorTeam(_arenaWarrior);
+        emit ArenaWarriorUpdated(_arenaWarrior);
     }
 
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
         if (_feeRecipient == address(0)) revert InvalidAddress();
         feeRecipient = _feeRecipient;
+        emit FeeRecipientUpdated(_feeRecipient);
+    }
+
+    /// @notice Withdraw pending payout (pull-payment pattern).
+    function withdrawPayout() external nonReentrant {
+        uint256 amount = pendingPayouts[msg.sender];
+        if (amount == 0) revert NoPendingPayout();
+        pendingPayouts[msg.sender] = 0;
+        (bool success, ) = msg.sender.call{value: amount}("");
+        if (!success) revert TransferFailed();
+        emit PayoutWithdrawn(msg.sender, amount);
     }
 
     // -------------------------------------------------------------------------
@@ -529,7 +557,8 @@ contract TeamBattleEngine is
             uint256 rand = _pseudoRandom(
                 tb.team1[0],
                 tb.team2[0],
-                battleId * 100 + i
+                battleId * 100 + i,
+                battleId
             );
             uint256 j = rand % (i + 1);
             // Swap
@@ -569,10 +598,10 @@ contract TeamBattleEngine is
             IArenaWarriorTeam.Warrior memory w2 = arenaWarrior.getWarrior(team2TokenId);
 
             uint256 score1 = _calculateCombatScore(
-                w1, w2.element, team1TokenId, team2TokenId, round + 1
+                w1, w2.element, team1TokenId, team2TokenId, round + 1, battleId
             );
             uint256 score2 = _calculateCombatScore(
-                w2, w1.element, team2TokenId, team1TokenId, round + 1 + TEAM_SIZE
+                w2, w1.element, team2TokenId, team1TokenId, round + 1 + TEAM_SIZE, battleId
             );
 
             if (score1 > score2) {
@@ -581,7 +610,7 @@ contract TeamBattleEngine is
                 s2++;
             } else {
                 // Tie: coin flip using pseudo-random
-                uint256 tieBreaker = _pseudoRandom(team1TokenId, team2TokenId, round + TEAM_SIZE * 2) % 2;
+                uint256 tieBreaker = _pseudoRandom(team1TokenId, team2TokenId, round + TEAM_SIZE * 2, battleId) % 2;
                 if (tieBreaker == 0) {
                     s1++;
                 } else {
@@ -634,9 +663,8 @@ contract TeamBattleEngine is
             arenaWarrior.recordBattle(tb.team2[i], !player1Won, !player1Won ? WIN_EXPERIENCE : LOSS_EXPERIENCE);
         }
 
-        // Transfer winnings
-        (bool success, ) = winnerAddr.call{value: payout}("");
-        if (!success) revert TransferFailed();
+        // Pull-payment: credit winner
+        pendingPayouts[winnerAddr] += payout;
     }
 
     function _calculateCombatScore(
@@ -644,7 +672,8 @@ contract TeamBattleEngine is
         uint8 opponentElement,
         uint256 selfTokenId,
         uint256 otherTokenId,
-        uint256 salt
+        uint256 salt,
+        uint256 battleId
     ) internal view returns (uint256) {
         uint256 baseScore = uint256(warrior.attack) * ATTACK_WEIGHT +
             uint256(warrior.defense) * DEFENSE_WEIGHT +
@@ -662,7 +691,8 @@ contract TeamBattleEngine is
         uint256 randomFactor = _pseudoRandom(
             selfTokenId,
             otherTokenId,
-            salt
+            salt,
+            battleId
         ) % 21;
 
         return levelMultipliedScore + randomFactor;
@@ -687,12 +717,15 @@ contract TeamBattleEngine is
     function _pseudoRandom(
         uint256 tokenId1,
         uint256 tokenId2,
-        uint256 salt
+        uint256 salt,
+        uint256 battleId
     ) internal view returns (uint256) {
+        uint256 creationSeed = _creationEntropy[battleId];
         return
             uint256(
                 keccak256(
                     abi.encodePacked(
+                        creationSeed,
                         block.prevrandao,
                         block.timestamp,
                         block.number,

@@ -13,7 +13,7 @@ declare module "@nomicfoundation/hardhat-ethers/types" {
   getContractFactory(name: 'AgentChat', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.AgentChat__factory>
 getContractFactory(name: 'IAgentRegistry', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IAgentRegistry__factory>
 getContractFactory(name: 'AgentRegistry', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.AgentRegistry__factory>
-getContractFactory(name: 'ArenaToken', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.ArenaToken__factory>
+getContractFactory(name: 'FrostbiteToken', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteToken__factory>
 getContractFactory(name: 'ArenaWarrior', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.ArenaWarrior__factory>
 getContractFactory(name: 'BatchMinter', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.BatchMinter__factory>
 getContractFactory(name: 'BattleEngine', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.BattleEngine__factory>
@@ -34,7 +34,7 @@ getContractFactory(name: 'Tournament', signerOrOptions?: ethers.Signer | Factory
   getContractAt(name: 'AgentChat', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.AgentChat>
 getContractAt(name: 'IAgentRegistry', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IAgentRegistry>
 getContractAt(name: 'AgentRegistry', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.AgentRegistry>
-getContractAt(name: 'ArenaToken', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.ArenaToken>
+getContractAt(name: 'FrostbiteToken', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteToken>
 getContractAt(name: 'ArenaWarrior', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.ArenaWarrior>
 getContractAt(name: 'BatchMinter', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.BatchMinter>
 getContractAt(name: 'BattleEngine', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.BattleEngine>
@@ -55,7 +55,7 @@ getContractAt(name: 'Tournament', address: string | ethers.Addressable, signer?:
   deployContract(name: 'AgentChat', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.AgentChat>
 deployContract(name: 'IAgentRegistry', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IAgentRegistry>
 deployContract(name: 'AgentRegistry', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.AgentRegistry>
-deployContract(name: 'ArenaToken', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.ArenaToken>
+deployContract(name: 'FrostbiteToken', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteToken>
 deployContract(name: 'ArenaWarrior', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.ArenaWarrior>
 deployContract(name: 'BatchMinter', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.BatchMinter>
 deployContract(name: 'BattleEngine', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.BattleEngine>
@@ -76,7 +76,7 @@ deployContract(name: 'Tournament', signerOrOptions?: ethers.Signer | DeployContr
   deployContract(name: 'AgentChat', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.AgentChat>
 deployContract(name: 'IAgentRegistry', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IAgentRegistry>
 deployContract(name: 'AgentRegistry', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.AgentRegistry>
-deployContract(name: 'ArenaToken', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.ArenaToken>
+deployContract(name: 'FrostbiteToken', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteToken>
 deployContract(name: 'ArenaWarrior', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.ArenaWarrior>
 deployContract(name: 'BatchMinter', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.BatchMinter>
 deployContract(name: 'BattleEngine', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.BattleEngine>

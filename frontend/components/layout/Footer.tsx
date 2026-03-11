@@ -26,7 +26,7 @@ export function Footer() {
             </div>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-frost-green/5 border border-frost-green/20">
               <div className="w-2 h-2 rounded-full bg-frost-green animate-pulse" />
-              <span className="text-xs font-pixel text-frost-green/80">Fuji Testnet</span>
+              <span className="text-xs font-pixel text-frost-green/80">Avalanche C-Chain</span>
             </div>
           </div>
 

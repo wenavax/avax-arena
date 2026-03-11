@@ -67,21 +67,30 @@ export async function POST(req: NextRequest) {
     }
 
     // Record the merge — use walletAddress as agentId for wallet users
-    const mergeId = recordMerge({
-      agentId: walletAddress,
-      tokenId1,
-      tokenId2,
-      resultTokenId,
-      element1,
-      element2,
-      resultElement,
-      txHash,
-      success: true,
-    });
+    let mergeId: number | null = null;
+    try {
+      mergeId = recordMerge({
+        agentId: walletAddress,
+        tokenId1,
+        tokenId2,
+        resultTokenId,
+        element1,
+        element2,
+        resultElement,
+        txHash,
+        success: true,
+      });
+    } catch (dbErr: any) {
+      console.warn('[POST /api/v1/merge] DB record failed (non-critical):', dbErr.message);
+    }
 
     // Award XP if agentId is provided
     if (agentId) {
-      addXp(agentId, 40, 'merge');
+      try {
+        addXp(agentId, 40, 'merge');
+      } catch {
+        // Non-critical — XP award failed
+      }
     }
 
     return NextResponse.json({

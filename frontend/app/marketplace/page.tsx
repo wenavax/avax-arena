@@ -28,6 +28,7 @@ import {
 } from 'wagmi';
 import { parseEther, formatEther } from 'viem';
 import { cn, shortenAddress } from '@/lib/utils';
+import { useOnContractEvent } from '@/hooks/useContractEvents';
 
 /* ---------------------------------------------------------------------------
  * Types
@@ -1144,7 +1145,9 @@ export default function MarketplacePage() {
           return w;
         })
       );
-      setMyWarriors(warriors.filter(Boolean) as Warrior[]);
+      setMyWarriors(
+        (warriors.filter(Boolean) as Warrior[]).sort((a, b) => b.powerScore - a.powerScore)
+      );
     } catch (err) {
       console.error('Failed to fetch user warriors:', err);
     }
@@ -1200,6 +1203,16 @@ export default function MarketplacePage() {
       setPending(false);
     }
   }, [txConfirmed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh when marketplace events arrive from the chain
+  useOnContractEvent(
+    ['ItemListed', 'ListingCancelled', 'ItemSold', 'OfferMade', 'OfferAccepted', 'AuctionCreated', 'BidPlaced', 'AuctionEnded'],
+    useCallback(() => {
+      fetchListings();
+      fetchAuctions();
+      fetchActivity();
+    }, [fetchListings, fetchAuctions, fetchActivity]),
+  );
 
   // ------ Actions ------
 

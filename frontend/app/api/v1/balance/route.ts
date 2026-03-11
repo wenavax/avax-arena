@@ -1,35 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateRequest } from '@/lib/api-auth';
 import { getAgentById } from '@/lib/db-queries';
-import { createPublicClient, http, formatEther } from 'viem';
-import { avalancheFuji } from 'viem/chains';
+import { formatEther } from 'viem';
+import { withRpcFallback, networkLabel } from '@/lib/chain';
 
 export const dynamic = 'force-dynamic';
 
 function sec(): Record<string, string> {
   return { 'X-Content-Type-Options': 'nosniff' };
-}
-
-const RPC_URLS = [
-  'https://rpc.ankr.com/avalanche_fuji',
-  'https://avalanche-fuji-c-chain-rpc.publicnode.com',
-  'https://avalanche-fuji.drpc.org',
-];
-
-async function getBalanceWithFallback(address: `0x${string}`): Promise<bigint> {
-  let lastError: unknown;
-  for (const rpcUrl of RPC_URLS) {
-    try {
-      const client = createPublicClient({
-        chain: avalancheFuji,
-        transport: http(rpcUrl, { timeout: 10_000 }),
-      });
-      return await client.getBalance({ address });
-    } catch (err) {
-      lastError = err;
-    }
-  }
-  throw lastError;
 }
 
 export async function GET(req: NextRequest) {
@@ -52,7 +30,9 @@ export async function GET(req: NextRequest) {
       walletAddress = agent.wallet_address;
     }
 
-    const balanceWei = await getBalanceWithFallback(walletAddress as `0x${string}`);
+    const balanceWei = await withRpcFallback((client) =>
+      client.getBalance({ address: walletAddress as `0x${string}` }),
+    );
     const balanceAvax = formatEther(balanceWei);
 
     return NextResponse.json({
@@ -60,7 +40,7 @@ export async function GET(req: NextRequest) {
       balance: balanceAvax,
       balanceWei: balanceWei.toString(),
       currency: 'AVAX',
-      network: 'fuji-testnet',
+      network: networkLabel,
     }, { headers: sec() });
   } catch (err) {
     console.error('[v1/balance]', err);

@@ -18,10 +18,11 @@ import {
   ChevronUp,
   Shield,
 } from 'lucide-react';
-import { ELEMENTS, ELEMENT_ADVANTAGES, CONTRACT_ADDRESSES, FUJI_CHAIN_ID } from '@/lib/constants';
+import { ELEMENTS, ELEMENT_ADVANTAGES, CONTRACT_ADDRESSES, ACTIVE_CHAIN_ID } from '@/lib/constants';
 import { QUEST_ENGINE_ABI, FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useSwitchChain } from 'wagmi';
 import { cn } from '@/lib/utils';
+import { useOnContractEvent } from '@/hooks/useContractEvents';
 
 /* ---------------------------------------------------------------------------
  * Types
@@ -581,13 +582,16 @@ function WarriorPickerModal({
 }) {
   if (!open || !quest) return null;
 
-  const eligible = warriors.filter(
-    (w) => !warriorsOnQuest.has(w.tokenId) && w.level >= quest.min_level && w.powerScore >= quest.min_power_score
-  );
-  const ineligible = warriors.filter(
-    (w) => !warriorsOnQuest.has(w.tokenId) && (w.level < quest.min_level || w.powerScore < quest.min_power_score)
-  );
-  const onQuest = warriors.filter((w) => warriorsOnQuest.has(w.tokenId));
+  const questParams = { baseDifficulty: quest.base_difficulty, minLevel: quest.min_level, zone: quest.zone_id };
+  const eligible = warriors
+    .filter((w) => !warriorsOnQuest.has(w.tokenId) && w.level >= quest.min_level && w.powerScore >= quest.min_power_score)
+    .sort((a, b) => calculateSuccessChance(b, questParams) - calculateSuccessChance(a, questParams));
+  const ineligible = warriors
+    .filter((w) => !warriorsOnQuest.has(w.tokenId) && (w.level < quest.min_level || w.powerScore < quest.min_power_score))
+    .sort((a, b) => b.powerScore - a.powerScore);
+  const onQuest = warriors
+    .filter((w) => warriorsOnQuest.has(w.tokenId))
+    .sort((a, b) => b.powerScore - a.powerScore);
 
   return (
     <AnimatePresence>
@@ -863,7 +867,8 @@ function QuestResultModal({
  * ------------------------------------------------------------------------- */
 
 export default function QuestsPage() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
   const publicClient = usePublicClient();
 
   // State
@@ -949,7 +954,11 @@ export default function QuestsPage() {
         )
       );
 
-      setWarriors(details.map((raw, i) => parseWarriorData(raw as Record<string, unknown>, Number(ids[i]))));
+      setWarriors(
+        details
+          .map((raw, i) => parseWarriorData(raw as Record<string, unknown>, Number(ids[i])))
+          .sort((a, b) => b.powerScore - a.powerScore)
+      );
     } catch (err) {
       console.error('[quests] Failed to fetch warriors:', err);
     } finally {
@@ -1028,14 +1037,21 @@ export default function QuestsPage() {
     const err = writeError || receiptError;
     if (!err) return;
 
-    let msg = 'Transaction failed';
     const errStr = err.message || String(err);
+    console.error('[quests] TX error:', errStr);
+
+    let msg = 'Transaction failed';
     if (errStr.includes('QuestNotFinished')) msg = 'Quest not finished yet — wait for the timer';
     else if (errStr.includes('QuestAlreadyCompleted')) msg = 'Quest already completed';
     else if (errStr.includes('WarriorAlreadyOnQuest')) msg = 'Warrior is already on a quest';
     else if (errStr.includes('QuestNotStarted')) msg = 'No active quest for this warrior';
     else if (errStr.includes('User rejected') || errStr.includes('user rejected')) msg = 'Transaction rejected';
     else if (errStr.includes('NotWarriorOwner')) msg = 'You do not own this warrior';
+    else if (errStr.includes('NotQuestPlayer')) msg = 'This quest belongs to a different wallet';
+    else if (errStr.includes('LevelTooLow')) msg = 'Warrior level is too low for this quest';
+    else if (errStr.includes('PowerScoreTooLow')) msg = 'Warrior power score is too low';
+    else if (errStr.includes('insufficient funds')) msg = 'Insufficient AVAX for gas';
+    else if (errStr.includes('reverted') || errStr.includes('execution reverted')) msg = 'Transaction reverted — check console for details';
 
     setTxError(msg);
     setPendingAction(null);
@@ -1170,6 +1186,15 @@ export default function QuestsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTxSuccess, txHash]);
 
+  // Auto-refresh when quest events arrive from the chain
+  useOnContractEvent(
+    ['QuestStarted', 'QuestCompleted'],
+    useCallback(() => {
+      fetchWarriors();
+      fetchActiveQuests();
+    }, [fetchWarriors, fetchActiveQuests]),
+  );
+
   // Handlers
   function handleStartQuest(slot: number) {
     const slotData = currentQuests.find((q) => q.slot === slot);
@@ -1179,8 +1204,15 @@ export default function QuestsPage() {
     setShowPicker(true);
   }
 
-  function handleSelectWarrior(warrior: Warrior) {
+  async function handleSelectWarrior(warrior: Warrior) {
     if (!selectedQuest || selectedSlot === null) return;
+    if (chain?.id !== ACTIVE_CHAIN_ID) {
+      try {
+        await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+      } catch {
+        return;
+      }
+    }
     setPendingAction('start');
     setPendingTokenId(warrior.tokenId);
     setPendingSlot(selectedSlot);
@@ -1190,11 +1222,18 @@ export default function QuestsPage() {
       abi: QUEST_ENGINE_ABI,
       functionName: 'startQuest',
       args: [BigInt(warrior.tokenId), BigInt(selectedQuest.chain_quest_id)],
-      chainId: FUJI_CHAIN_ID,
+      gas: 300_000n,
     });
   }
 
-  function handleCompleteQuest(tokenId: number) {
+  async function handleCompleteQuest(tokenId: number) {
+    if (chain?.id !== ACTIVE_CHAIN_ID) {
+      try {
+        await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+      } catch {
+        return;
+      }
+    }
     setPendingAction('complete');
     setPendingTokenId(tokenId);
 
@@ -1203,11 +1242,18 @@ export default function QuestsPage() {
       abi: QUEST_ENGINE_ABI,
       functionName: 'completeQuest',
       args: [BigInt(tokenId)],
-      chainId: FUJI_CHAIN_ID,
+      gas: 300_000n,
     });
   }
 
-  function handleAbandonQuest(tokenId: number) {
+  async function handleAbandonQuest(tokenId: number) {
+    if (chain?.id !== ACTIVE_CHAIN_ID) {
+      try {
+        await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+      } catch {
+        return;
+      }
+    }
     setPendingAction('abandon');
     setPendingTokenId(tokenId);
 
@@ -1216,7 +1262,7 @@ export default function QuestsPage() {
       abi: QUEST_ENGINE_ABI,
       functionName: 'abandonQuest',
       args: [BigInt(tokenId)],
-      chainId: FUJI_CHAIN_ID,
+      gas: 200_000n,
     });
   }
 

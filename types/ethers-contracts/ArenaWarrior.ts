@@ -15,7 +15,7 @@ export declare namespace ArenaWarrior {
   export interface ArenaWarriorInterface extends Interface {
     getFunction(nameOrSignature: "MINT_PRICE" | "WINS_PER_LEVEL" | "addBattleContract" | "approve" | "balanceOf" | "battleContracts" | "getApproved" | "getWarrior" | "getWarriorPowerScore" | "getWarriorsByOwner" | "isApprovedForAll" | "mergePrice" | "mergeWarriors" | "mint" | "name" | "owner" | "ownerOf" | "recordBattle" | "removeBattleContract" | "renounceOwnership" | "safeTransferFrom(address,address,uint256)" | "safeTransferFrom(address,address,uint256,bytes)" | "setApprovalForAll" | "setBaseURI" | "setMergePrice" | "setTokenURI" | "supportsInterface" | "symbol" | "tokenByIndex" | "tokenOfOwnerByIndex" | "tokenURI" | "totalSupply" | "transferFrom" | "transferOwnership" | "withdraw"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "Approval" | "ApprovalForAll" | "BaseURIUpdated" | "BattleContractAdded" | "BattleContractRemoved" | "BattleRecorded" | "LevelUp" | "OwnershipTransferred" | "Transfer" | "WarriorMinted" | "WarriorURIUpdated" | "WarriorsMerged"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "Approval" | "ApprovalForAll" | "BaseURIUpdated" | "BattleContractAdded" | "BattleContractRemoved" | "BattleRecorded" | "LevelUp" | "MergePriceUpdated" | "OwnershipTransferred" | "Transfer" | "WarriorMinted" | "WarriorURIUpdated" | "WarriorsMerged"): EventFragment;
 
     encodeFunctionData(functionFragment: 'MINT_PRICE', values?: undefined): string;
 encodeFunctionData(functionFragment: 'WINS_PER_LEVEL', values?: undefined): string;
@@ -167,6 +167,18 @@ decodeFunctionResult(functionFragment: 'withdraw', data: BytesLike): Result;
       export type InputTuple = [tokenId: BigNumberish, newLevel: BigNumberish, newPowerScore: BigNumberish];
       export type OutputTuple = [tokenId: bigint, newLevel: bigint, newPowerScore: bigint];
       export interface OutputObject {tokenId: bigint, newLevel: bigint, newPowerScore: bigint };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace MergePriceUpdatedEvent {
+      export type InputTuple = [newPrice: BigNumberish];
+      export type OutputTuple = [newPrice: bigint];
+      export interface OutputObject {newPrice: bigint };
       export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
       export type Filter = TypedDeferredTopicFilter<Event>
       export type Log = TypedEventLog<Event>
@@ -734,6 +746,7 @@ getEvent(key: 'BattleContractAdded'): TypedContractEvent<BattleContractAddedEven
 getEvent(key: 'BattleContractRemoved'): TypedContractEvent<BattleContractRemovedEvent.InputTuple, BattleContractRemovedEvent.OutputTuple, BattleContractRemovedEvent.OutputObject>;
 getEvent(key: 'BattleRecorded'): TypedContractEvent<BattleRecordedEvent.InputTuple, BattleRecordedEvent.OutputTuple, BattleRecordedEvent.OutputObject>;
 getEvent(key: 'LevelUp'): TypedContractEvent<LevelUpEvent.InputTuple, LevelUpEvent.OutputTuple, LevelUpEvent.OutputObject>;
+getEvent(key: 'MergePriceUpdated'): TypedContractEvent<MergePriceUpdatedEvent.InputTuple, MergePriceUpdatedEvent.OutputTuple, MergePriceUpdatedEvent.OutputObject>;
 getEvent(key: 'OwnershipTransferred'): TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
 getEvent(key: 'Transfer'): TypedContractEvent<TransferEvent.InputTuple, TransferEvent.OutputTuple, TransferEvent.OutputObject>;
 getEvent(key: 'WarriorMinted'): TypedContractEvent<WarriorMintedEvent.InputTuple, WarriorMintedEvent.OutputTuple, WarriorMintedEvent.OutputObject>;
@@ -768,6 +781,10 @@ getEvent(key: 'WarriorsMerged'): TypedContractEvent<WarriorsMergedEvent.InputTup
 
       'LevelUp(uint256,uint16,uint256)': TypedContractEvent<LevelUpEvent.InputTuple, LevelUpEvent.OutputTuple, LevelUpEvent.OutputObject>;
       LevelUp: TypedContractEvent<LevelUpEvent.InputTuple, LevelUpEvent.OutputTuple, LevelUpEvent.OutputObject>;
+    
+
+      'MergePriceUpdated(uint256)': TypedContractEvent<MergePriceUpdatedEvent.InputTuple, MergePriceUpdatedEvent.OutputTuple, MergePriceUpdatedEvent.OutputObject>;
+      MergePriceUpdated: TypedContractEvent<MergePriceUpdatedEvent.InputTuple, MergePriceUpdatedEvent.OutputTuple, MergePriceUpdatedEvent.OutputObject>;
     
 
       'OwnershipTransferred(address,address)': TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;

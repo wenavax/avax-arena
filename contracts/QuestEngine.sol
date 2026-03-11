@@ -100,6 +100,7 @@ contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
     event QuestCompleted(uint256 indexed questId, uint256 indexed tokenId, address indexed player, bool won, uint256 xpGained);
     event QuestAbandoned(uint256 indexed questId, uint256 indexed tokenId, address indexed player);
     event QuestToggled(uint256 indexed questId, bool active);
+    event QuestUpdated(uint256 indexed questId);
 
     // -------------------------------------------------------------------------
     // Errors
@@ -115,6 +116,8 @@ contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
     error QuestNotFinished();
     error QuestAlreadyCompleted();
     error NotQuestPlayer();
+    error InvalidZone();
+    error InvalidDuration();
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -151,6 +154,9 @@ contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
         uint256 minPowerScore,
         uint16 baseDifficulty
     ) external onlyOwner {
+        if (zone >= 8) revert InvalidZone();
+        if (duration == 0) revert InvalidDuration();
+
         uint256 questId = questCount;
         questCount++;
 
@@ -194,6 +200,7 @@ contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
         quest.minLevel = minLevel;
         quest.minPowerScore = minPowerScore;
         quest.baseDifficulty = baseDifficulty;
+        emit QuestUpdated(questId);
     }
 
     // -------------------------------------------------------------------------

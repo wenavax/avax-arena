@@ -26,15 +26,16 @@ export function generateWarriorSVG(stats: WarriorStats): string {
   // 1. Background
   const background = renderBackground(size, ep.bg, ep.primary);
 
-  // 2. Aura (centered on warrior)
-  const aura = renderAura(size / 2, size / 2 - 40, ep.primary, stats.level);
+  // 2. Aura (centered on warrior upper zone)
+  const warriorCenterY = Math.floor((size - 300) / 2);
+  const aura = renderAura(size / 2, warriorCenterY, ep.primary, stats.level);
 
   // 3. Warrior pixel art
   const warrior = renderWarrior(traits, stats);
 
-  // 4. Particles
+  // 4. Particles (constrained to warrior area)
   const particles = renderParticles(ep.secondary, rng, 12, {
-    x: 100, y: 100, w: size - 200, h: size - 200,
+    x: 100, y: 40, w: size - 200, h: size - 360,
   });
 
   // 5. Frame

@@ -15,13 +15,39 @@ import {
   XCircle,
   ChevronDown,
   Wallet,
+  CheckCircle,
+  Coins,
 } from 'lucide-react';
-import { ELEMENTS, MIN_BATTLE_STAKE, MIN_TEAM_BATTLE_STAKE, ELEMENT_ADVANTAGES, CONTRACT_ADDRESSES, FUJI_CHAIN_ID } from '@/lib/constants';
+import { ELEMENTS, MIN_BATTLE_STAKE, MIN_TEAM_BATTLE_STAKE, ELEMENT_ADVANTAGES, CONTRACT_ADDRESSES, ACTIVE_CHAIN_ID } from '@/lib/constants';
 import { BATTLE_ENGINE_ABI, TEAM_BATTLE_ABI, FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
 import { Users } from 'lucide-react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useSwitchChain } from 'wagmi';
 import { parseEther, formatEther } from 'viem';
 import { cn, shortenAddress } from '@/lib/utils';
+import { useOnContractEvent } from '@/hooks/useContractEvents';
+
+const BATTLE_TAUNTS = [
+  'Ready to rumble!',
+  'Seeking glory',
+  'Bring it on!',
+  'No mercy',
+  'Born to fight',
+  'Unstoppable',
+  'Fear me',
+  'Victory awaits',
+  'Let\'s dance',
+  'Come at me',
+  'Full power',
+  'All in',
+  'To the death',
+  'Show me what you got',
+  'Feeling lucky?',
+  'Warrior spirit',
+  'Blood & ice',
+  'Frost fury',
+  'Locked & loaded',
+  'Challenge accepted',
+];
 
 /* ---------------------------------------------------------------------------
  * Types
@@ -243,7 +269,9 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
 
         if (cancelled) return;
         setWarriors(
-          details.map((raw, i) => parseWarriorData(raw as Record<string, unknown>, Number(ids[i])))
+          details
+            .map((raw, i) => parseWarriorData(raw as Record<string, unknown>, Number(ids[i])))
+            .sort((a, b) => b.powerScore - a.powerScore)
         );
       } catch (err) {
         console.error('[battle] Failed to fetch warriors:', err);
@@ -415,6 +443,12 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
     fetch();
     return () => { cancelled = true; };
   }, [publicClient, address, isConnected, fetchCounter]);
+
+  // Auto-refetch when battle events arrive from the chain
+  useOnContractEvent(
+    ['BattleCreated', 'BattleJoined', 'BattleResolved', 'BattleCancelled'],
+    refetch,
+  );
 
   return {
     warriors,
@@ -606,6 +640,12 @@ function useTeamBattleData(address: string | undefined, isConnected: boolean) {
     fetch();
     return () => { cancelled = true; };
   }, [publicClient, address, isConnected, fetchCounter]);
+
+  // Auto-refetch when team battle events arrive from the chain
+  useOnContractEvent(
+    ['TeamBattleCreated', 'TeamBattleJoined', 'TeamBattleResolved', 'TeamBattleCancelled'],
+    refetch,
+  );
 
   return {
     openTeamBattles,
@@ -809,6 +849,9 @@ function BattleResultModal({
   theirWarrior,
   isWinner,
   stakeAmount,
+  onClaimPayout,
+  isClaiming,
+  isClaimSuccess,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -816,7 +859,11 @@ function BattleResultModal({
   theirWarrior: Warrior;
   isWinner: boolean;
   stakeAmount: string;
+  onClaimPayout?: () => void;
+  isClaiming?: boolean;
+  isClaimSuccess?: boolean;
 }) {
+  const payoutAmount = (parseFloat(stakeAmount) * 2 * 0.975).toFixed(4);
   const myElement = getElement(myWarrior.element);
   const theirElement = getElement(theirWarrior.element);
   const iHaveAdvantage = hasElementAdvantage(myWarrior.element, theirWarrior.element);
@@ -1116,17 +1163,58 @@ function BattleResultModal({
                 )}
               </motion.div>
 
-              <motion.button
-                onClick={onClose}
-                className="w-full btn-primary text-center"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.8 }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                {isWinner ? 'Claim Victory' : 'Return to Frostbite'}
-              </motion.button>
+              {/* Payout info for winner */}
+              {isWinner && (
+                <motion.div
+                  className="flex items-center justify-between p-3 rounded-lg bg-frost-gold/10 border border-frost-gold/20 text-sm"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.7 }}
+                >
+                  <span className="text-white/50 flex items-center gap-1.5">
+                    <Coins className="h-4 w-4 text-frost-gold" />
+                    Payout
+                  </span>
+                  <span className="font-mono font-bold text-frost-gold">{payoutAmount} AVAX</span>
+                </motion.div>
+              )}
+
+              {isWinner && onClaimPayout && !isClaimSuccess ? (
+                <motion.button
+                  onClick={onClaimPayout}
+                  disabled={isClaiming}
+                  className="w-full btn-primary text-center disabled:opacity-50 flex items-center justify-center gap-2"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.8 }}
+                  whileHover={{ scale: isClaiming ? 1 : 1.02 }}
+                  whileTap={{ scale: isClaiming ? 1 : 0.98 }}
+                >
+                  {isClaiming ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Claiming {payoutAmount} AVAX...
+                    </>
+                  ) : (
+                    <>
+                      <Wallet className="h-4 w-4" />
+                      Claim {payoutAmount} AVAX
+                    </>
+                  )}
+                </motion.button>
+              ) : (
+                <motion.button
+                  onClick={onClose}
+                  className="w-full btn-primary text-center"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.8 }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  {isClaimSuccess ? 'Close' : 'Return to Frostbite'}
+                </motion.button>
+              )}
             </motion.div>
           </motion.div>
         </motion.div>
@@ -1515,7 +1603,7 @@ function ArenaTable({
                 <tr>
                   <th>PLAYER</th>
                   <th>WARRIOR</th>
-                  <th className="hidden sm:table-cell">POWER</th>
+                  <th className="hidden sm:table-cell">STATUS</th>
                   <th>STAKE</th>
                   <th className="hidden sm:table-cell">TIME</th>
                   <th className="text-right">ACTION</th>
@@ -1558,7 +1646,7 @@ function ArenaTable({
                         </div>
                       </td>
                       <td className="hidden sm:table-cell">
-                        <span className="font-mono text-xs text-white/70">{battle.creatorWarrior.powerScore}</span>
+                        <span className="text-xs text-white/50 italic">{BATTLE_TAUNTS[battle.id % BATTLE_TAUNTS.length]}</span>
                       </td>
                       <td>
                         <span className="font-mono text-xs text-frost-gold font-semibold">{stakeFormatted}</span>
@@ -1853,84 +1941,145 @@ function WarriorSelectionDrawer({
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-40 flex items-end"
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
           {/* Backdrop */}
           <motion.div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/70 backdrop-blur-md"
             onClick={onClose}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           />
 
-          {/* Panel */}
+          {/* Modal */}
           <motion.div
-            className="relative w-full bg-frost-surface/95 backdrop-blur-xl border-t border-frost-cyan/20 rounded-t-2xl max-h-[70vh] drawer-shadow flex flex-col"
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="relative w-full max-w-4xl bg-frost-bg/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            initial={{ scale: 0.9, y: 30, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.95, y: 20, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
           >
-            {/* Drag handle */}
-            <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
-              <div className="w-10 h-1 rounded-full bg-white/10" />
-            </div>
-
-            {/* Title */}
-            <div className="px-6 pb-3 border-b border-white/[0.06] flex-shrink-0">
-              <h3 className="font-pixel text-sm text-white uppercase">
-                {mode === 'create' ? 'Create Battle' : 'Choose Your Fighter'}
-              </h3>
-              {mode === 'join' && targetBattle && (
-                <p className="text-[10px] text-white/30 mt-1">
-                  vs {shortenAddress(targetBattle.player1)} — #{targetBattle.creatorWarrior.tokenId} {getElement(targetBattle.creatorWarrior.element).emoji} — {formatEther(targetBattle.stake)} AVAX
-                </p>
-              )}
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06] flex-shrink-0">
+              <div>
+                <h3 className="font-display text-lg font-bold text-white">
+                  {mode === 'create' ? 'Create Battle' : 'Choose Your Fighter'}
+                </h3>
+                {mode === 'join' && targetBattle && (
+                  <p className="text-xs text-white/40 mt-0.5 flex items-center gap-2">
+                    <span>vs {shortenAddress(targetBattle.player1)}</span>
+                    <span className="text-white/20">•</span>
+                    <span>{getElement(targetBattle.creatorWarrior.element).emoji} #{targetBattle.creatorWarrior.tokenId}</span>
+                    <span className="text-white/20">•</span>
+                    <span className="text-frost-gold font-mono">{formatEther(targetBattle.stake)} AVAX</span>
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] flex items-center justify-center text-white/40 hover:text-white transition-colors"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-hidden">
               {isLoadingWarriors ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-6 h-6 text-frost-cyan animate-spin" />
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="w-8 h-8 text-frost-cyan animate-spin" />
                 </div>
               ) : warriors.length === 0 ? (
-                <div className="text-center py-12">
-                  <Shield className="w-10 h-10 text-white/15 mx-auto mb-3" />
-                  <p className="text-white/30 text-sm font-pixel">No Warriors Found</p>
-                  <p className="text-white/20 text-xs mt-1">Mint a warrior first!</p>
+                <div className="text-center py-20">
+                  <Shield className="w-12 h-12 text-white/10 mx-auto mb-4" />
+                  <p className="text-white/40 text-sm font-display font-bold">No Warriors Found</p>
+                  <p className="text-white/25 text-xs mt-1">Mint a warrior to enter the arena</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Left: Warrior Grid */}
-                  <div>
-                    <label className="text-[10px] uppercase tracking-wider text-white/40 font-pixel mb-3 block">
-                      Select Your Warrior
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[35vh] overflow-y-auto pr-1">
-                      {warriors.map((w, idx) => (
-                        <WarriorMiniCard
-                          key={w.tokenId}
-                          warrior={w}
-                          selected={selectedWarrior?.tokenId === w.tokenId}
-                          onClick={() => setSelectedWarrior(w)}
-                          animationDelay={0.03 * idx}
-                        />
-                      ))}
+                <div className="grid grid-cols-1 lg:grid-cols-5 h-full">
+                  {/* Left: Warrior List (3/5 width) */}
+                  <div className="lg:col-span-3 border-r border-white/[0.04] flex flex-col">
+                    <div className="px-5 py-3 border-b border-white/[0.04] flex items-center justify-between flex-shrink-0">
+                      <span className="text-[10px] uppercase tracking-wider text-white/40 font-pixel">
+                        Your Warriors ({warriors.length})
+                      </span>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 auto-rows-min content-start">
+                      {warriors.map((w, idx) => {
+                        const el = getElement(w.element);
+                        const isSelected = selectedWarrior?.tokenId === w.tokenId;
+                        return (
+                          <motion.button
+                            key={w.tokenId}
+                            type="button"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.02 * idx, duration: 0.25 }}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => setSelectedWarrior(w)}
+                            className={cn(
+                              'relative flex items-center gap-3 p-3 rounded-xl text-left transition-all',
+                              isSelected
+                                ? 'bg-frost-primary/10 ring-2 ring-frost-primary/50 shadow-[0_0_20px_rgba(255,32,32,0.15)]'
+                                : 'bg-white/[0.03] ring-1 ring-white/[0.06] hover:ring-white/[0.12] hover:bg-white/[0.05]',
+                            )}
+                          >
+                            <WarriorImage
+                              tokenId={w.tokenId}
+                              element={w.element}
+                              size={44}
+                              className="rounded-lg flex-shrink-0"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-sm text-white">
+                                  #{w.tokenId}
+                                </span>
+                                <span className={cn('text-xs font-semibold bg-gradient-to-r bg-clip-text text-transparent', el.color)}>
+                                  {el.emoji} {el.name}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 mt-0.5 text-[11px] text-white/40 font-mono">
+                                <span>PWR {w.powerScore}</span>
+                                <span>Lv.{w.level}</span>
+                                <span>{w.battleWins}W/{w.battleLosses}L</span>
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <CheckCircle className="h-5 w-5 text-frost-primary flex-shrink-0" />
+                            )}
+                          </motion.button>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {/* Right: Preview + Stake + Confirm */}
-                  <div className="flex flex-col">
+                  {/* Right: Preview + Config (2/5 width) */}
+                  <div className="lg:col-span-2 flex flex-col p-5 overflow-y-auto">
+                    {/* Selected warrior preview */}
+                    {selectedWarrior ? (
+                      <WarriorStatsPreview warrior={selectedWarrior} />
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
+                          <Sword className="w-10 h-10 text-white/10 mx-auto mb-3" />
+                          <p className="text-white/25 text-xs font-pixel">
+                            Select a warrior
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Stake Input (create mode only) */}
                     {mode === 'create' && (
-                      <div className="mb-4">
+                      <div className="mt-5">
                         <label className="text-[10px] uppercase tracking-wider text-white/40 font-pixel mb-2 block">
-                          Stake Amount (AVAX)
+                          Stake Amount
                         </label>
                         <div className="relative">
                           <input
@@ -1952,12 +2101,9 @@ function WarriorSelectionDrawer({
                             AVAX
                           </span>
                         </div>
-                        <p className="text-[9px] text-white/25 mt-1">
-                          Min: {MIN_BATTLE_STAKE} AVAX
-                        </p>
 
                         {/* Quick Stake Buttons */}
-                        <div className="flex gap-2 mt-2">
+                        <div className="flex gap-1.5 mt-2">
                           {['0.005', '0.01', '0.05', '0.1'].map((amount) => (
                             <button
                               key={amount}
@@ -1965,8 +2111,8 @@ function WarriorSelectionDrawer({
                               className={cn(
                                 'flex-1 py-1.5 rounded-lg text-[10px] font-mono transition-all',
                                 stakeAmount === amount
-                                  ? 'bg-frost-cyan/20 text-frost-cyan border border-frost-cyan/30'
-                                  : 'bg-white/[0.03] text-white/40 border border-white/5 hover:bg-white/[0.06] hover:text-white/60',
+                                  ? 'bg-frost-primary/20 text-frost-primary border border-frost-primary/30'
+                                  : 'bg-white/[0.03] text-white/40 border border-white/5 hover:bg-white/[0.06]',
                               )}
                             >
                               {amount}
@@ -1976,14 +2122,13 @@ function WarriorSelectionDrawer({
                       </div>
                     )}
 
-                    {/* Selected warrior preview */}
-                    {selectedWarrior ? (
-                      <WarriorStatsPreview warrior={selectedWarrior} />
-                    ) : (
-                      <div className="glass-card p-6 mt-4 flex items-center justify-center h-[160px]">
-                        <p className="text-white/20 text-xs text-center font-pixel">
-                          Select a warrior to see stats
-                        </p>
+                    {/* Join mode stake display */}
+                    {mode === 'join' && targetBattle && (
+                      <div className="mt-5 flex items-center justify-between p-3 rounded-xl bg-frost-gold/10 border border-frost-gold/20">
+                        <span className="text-xs text-white/50">Required Stake</span>
+                        <span className="font-mono font-bold text-frost-gold text-sm">
+                          {formatEther(targetBattle.stake)} AVAX
+                        </span>
                       </div>
                     )}
 
@@ -1992,7 +2137,7 @@ function WarriorSelectionDrawer({
                       onClick={handleConfirm}
                       disabled={!selectedWarrior || (mode === 'create' && !isValidStake) || isWorking}
                       className={cn(
-                        'mt-4 w-full py-3.5 rounded-xl font-pixel font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2',
+                        'mt-4 w-full py-3.5 rounded-xl font-display font-bold text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2',
                         selectedWarrior && (mode === 'join' || isValidStake) && !isWorking
                           ? 'btn-primary'
                           : 'bg-white/5 text-white/20 cursor-not-allowed',
@@ -2003,11 +2148,11 @@ function WarriorSelectionDrawer({
                       {isWorking ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          {isPending ? 'Confirm in Wallet...' : mode === 'create' ? 'Creating Battle...' : 'Joining Battle...'}
+                          {isPending ? 'Confirm in Wallet...' : mode === 'create' ? 'Creating...' : 'Joining...'}
                         </>
                       ) : (
                         <>
-                          <Sword className="w-4 h-4" />
+                          <Swords className="w-4 h-4" />
                           {mode === 'create'
                             ? `Create Battle (${stakeDisplay} AVAX)`
                             : `Fight (${stakeDisplay} AVAX)`
@@ -2093,7 +2238,7 @@ function TeamArenaTable({
                 <tr>
                   <th>PLAYER</th>
                   <th>TEAM</th>
-                  <th className="hidden sm:table-cell">AVG POWER</th>
+                  <th className="hidden sm:table-cell">STATUS</th>
                   <th>STAKE</th>
                   <th className="hidden sm:table-cell">TIME</th>
                   <th className="text-right">ACTION</th>
@@ -2101,9 +2246,6 @@ function TeamArenaTable({
               </thead>
               <tbody>
                 {battles.map((battle, i) => {
-                  const avgPower = Math.round(
-                    battle.creatorWarriors.reduce((sum, w) => sum + w.powerScore, 0) / 3
-                  );
                   const stakeFormatted = formatEther(battle.stake);
                   const isMyBattle = currentAddress && battle.player1.toLowerCase() === currentAddress.toLowerCase();
 
@@ -2137,7 +2279,7 @@ function TeamArenaTable({
                         </div>
                       </td>
                       <td className="hidden sm:table-cell">
-                        <span className="font-mono text-xs text-white/70">{avgPower}</span>
+                        <span className="text-xs text-white/50 italic">{BATTLE_TAUNTS[battle.id % BATTLE_TAUNTS.length]}</span>
                       </td>
                       <td>
                         <span className="font-mono text-xs text-frost-gold font-semibold">{stakeFormatted}</span>
@@ -2271,80 +2413,228 @@ function TeamWarriorSelectionDrawer({
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          className="fixed inset-0 z-40 flex items-end"
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
+          {/* Backdrop */}
           <motion.div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/70 backdrop-blur-md"
             onClick={onClose}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           />
 
+          {/* Modal */}
           <motion.div
-            className="relative w-full bg-frost-surface/95 backdrop-blur-xl border-t border-frost-purple/20 rounded-t-2xl max-h-[75vh] drawer-shadow flex flex-col"
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="relative w-full max-w-5xl bg-frost-bg/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            initial={{ scale: 0.9, y: 30, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.95, y: 20, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
           >
-            <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
-              <div className="w-10 h-1 rounded-full bg-white/10" />
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06] flex-shrink-0">
+              <div>
+                <h3 className="font-display text-lg font-bold text-white flex items-center gap-2">
+                  <Users className="w-5 h-5 text-frost-purple" />
+                  {mode === 'create' ? 'Create 3v3 Battle' : 'Choose Your Team'}
+                </h3>
+                <p className="text-xs text-white/40 mt-0.5">
+                  {mode === 'create'
+                    ? `Select 3 warriors for your team (${selectedWarriors.length}/3)`
+                    : targetBattle
+                      ? <>vs {shortenAddress(targetBattle.player1)} <span className="text-white/20">•</span> <span className="text-frost-gold font-mono">{formatEther(targetBattle.stake)} AVAX</span></>
+                      : `Select 3 warriors (${selectedWarriors.length}/3)`
+                  }
+                </p>
+              </div>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] flex items-center justify-center text-white/40 hover:text-white transition-colors"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
             </div>
 
-            <div className="px-6 pb-3 border-b border-white/[0.06] flex-shrink-0">
-              <h3 className="font-pixel text-sm text-white uppercase flex items-center gap-2">
-                <Users className="w-4 h-4 text-frost-purple" />
-                {mode === 'create' ? 'Create 3v3 Battle' : 'Choose Your Team'}
-              </h3>
-              <p className="text-[10px] text-white/30 mt-1">
-                {mode === 'create'
-                  ? `Select 3 warriors for your team (${selectedWarriors.length}/3)`
-                  : targetBattle
-                    ? `vs ${shortenAddress(targetBattle.player1)} — ${formatEther(targetBattle.stake)} AVAX`
-                    : `Select 3 warriors (${selectedWarriors.length}/3)`
-                }
-              </p>
+            {/* Slot indicators */}
+            <div className="px-6 py-3 border-b border-white/[0.04] flex-shrink-0">
+              <div className="flex items-center gap-3">
+                {[0, 1, 2].map((i) => {
+                  const w = selectedWarriors[i];
+                  const el = w ? getElement(w.element) : null;
+                  return (
+                    <div
+                      key={i}
+                      className={cn(
+                        'flex items-center gap-2 px-3 py-2 rounded-xl flex-1 transition-all',
+                        w
+                          ? 'bg-frost-purple/10 border border-frost-purple/30'
+                          : 'bg-white/[0.02] border border-dashed border-white/10',
+                      )}
+                    >
+                      {w ? (
+                        <>
+                          <WarriorImage tokenId={w.tokenId} element={w.element} size={28} className="rounded-md flex-shrink-0" />
+                          <div className="min-w-0">
+                            <span className="text-xs font-mono font-bold text-white">#{w.tokenId}</span>
+                            <span className={cn('ml-1.5 text-[10px] font-semibold bg-gradient-to-r bg-clip-text text-transparent', el!.color)}>
+                              {el!.emoji}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => toggleWarrior(w)}
+                            className="ml-auto text-white/30 hover:text-frost-red transition-colors"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-white/20 font-pixel w-full text-center">
+                          Slot {i + 1}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+                {teamReady && (
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-xs font-mono text-frost-purple font-bold">{avgPower}</div>
+                    <div className="text-[9px] text-white/30 uppercase">Avg PWR</div>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
+            {/* Content */}
+            <div className="flex-1 overflow-hidden">
               {isLoadingWarriors ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-6 h-6 text-frost-cyan animate-spin" />
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="w-8 h-8 text-frost-purple animate-spin" />
                 </div>
               ) : warriors.length < 3 ? (
-                <div className="text-center py-12">
-                  <Shield className="w-10 h-10 text-white/15 mx-auto mb-3" />
-                  <p className="text-white/30 text-sm font-pixel">Need at least 3 Warriors</p>
-                  <p className="text-white/20 text-xs mt-1">Mint more warriors to create a team!</p>
+                <div className="text-center py-20">
+                  <Shield className="w-12 h-12 text-white/10 mx-auto mb-4" />
+                  <p className="text-white/40 text-sm font-display font-bold">Need at least 3 Warriors</p>
+                  <p className="text-white/25 text-xs mt-1">Mint more warriors to create a team</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div>
-                    <label className="text-[10px] uppercase tracking-wider text-white/40 font-pixel mb-3 block">
-                      Select 3 Warriors ({selectedWarriors.length}/3)
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[35vh] overflow-y-auto pr-1">
-                      {warriors.map((w, idx) => (
-                        <WarriorMiniCard
-                          key={w.tokenId}
-                          warrior={w}
-                          selected={!!selectedWarriors.find((sw) => sw.tokenId === w.tokenId)}
-                          onClick={() => toggleWarrior(w)}
-                          animationDelay={0.03 * idx}
-                        />
-                      ))}
+                <div className="grid grid-cols-1 lg:grid-cols-5 h-full">
+                  {/* Left: Warrior List (3/5) */}
+                  <div className="lg:col-span-3 border-r border-white/[0.04] flex flex-col">
+                    <div className="px-5 py-3 border-b border-white/[0.04] flex-shrink-0">
+                      <span className="text-[10px] uppercase tracking-wider text-white/40 font-pixel">
+                        Your Warriors ({warriors.length})
+                      </span>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 auto-rows-min content-start">
+                      {warriors.map((w, idx) => {
+                        const el = getElement(w.element);
+                        const isSelected = !!selectedWarriors.find((sw) => sw.tokenId === w.tokenId);
+                        const isMaxed = selectedWarriors.length >= 3 && !isSelected;
+                        return (
+                          <motion.button
+                            key={w.tokenId}
+                            type="button"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.02 * idx, duration: 0.25 }}
+                            whileHover={!isMaxed ? { scale: 1.02 } : {}}
+                            whileTap={!isMaxed ? { scale: 0.98 } : {}}
+                            onClick={() => !isMaxed && toggleWarrior(w)}
+                            className={cn(
+                              'relative flex items-center gap-3 p-3 rounded-xl text-left transition-all',
+                              isSelected
+                                ? 'bg-frost-purple/10 ring-2 ring-frost-purple/50 shadow-[0_0_20px_rgba(168,85,247,0.15)]'
+                                : isMaxed
+                                  ? 'bg-white/[0.02] ring-1 ring-white/[0.04] opacity-40 cursor-not-allowed'
+                                  : 'bg-white/[0.03] ring-1 ring-white/[0.06] hover:ring-white/[0.12] hover:bg-white/[0.05]',
+                            )}
+                          >
+                            <WarriorImage
+                              tokenId={w.tokenId}
+                              element={w.element}
+                              size={44}
+                              className="rounded-lg flex-shrink-0"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-sm text-white">
+                                  #{w.tokenId}
+                                </span>
+                                <span className={cn('text-xs font-semibold bg-gradient-to-r bg-clip-text text-transparent', el.color)}>
+                                  {el.emoji} {el.name}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 mt-0.5 text-[11px] text-white/40 font-mono">
+                                <span>PWR {w.powerScore}</span>
+                                <span>Lv.{w.level}</span>
+                                <span>{w.battleWins}W/{w.battleLosses}L</span>
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <CheckCircle className="h-5 w-5 text-frost-purple flex-shrink-0" />
+                            )}
+                          </motion.button>
+                        );
+                      })}
                     </div>
                   </div>
 
-                  <div className="flex flex-col">
+                  {/* Right: Config + Confirm (2/5) */}
+                  <div className="lg:col-span-2 flex flex-col p-5 overflow-y-auto">
+                    {/* Team preview */}
+                    {teamReady ? (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="glass-card p-4"
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="font-pixel text-xs text-white/60 uppercase">Your Team</span>
+                          <span className="text-xs font-mono text-frost-purple font-bold">
+                            Avg Power: {avgPower}
+                          </span>
+                        </div>
+                        <div className="flex gap-3">
+                          {selectedWarriors.map((w) => {
+                            const el = getElement(w.element);
+                            return (
+                              <div key={w.tokenId} className="flex-1 text-center">
+                                <WarriorImage
+                                  tokenId={w.tokenId}
+                                  element={w.element}
+                                  size={52}
+                                  className="rounded-lg mx-auto ring-1 ring-white/10"
+                                />
+                                <div className="text-[10px] font-mono text-white mt-1.5">#{w.tokenId}</div>
+                                <div className={cn('text-[9px] font-semibold bg-gradient-to-r bg-clip-text text-transparent', el.color)}>
+                                  {el.emoji} {el.name}
+                                </div>
+                                <div className="text-[10px] font-mono text-white/50 mt-0.5">{w.powerScore}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center min-h-[140px]">
+                        <div className="text-center">
+                          <Users className="w-10 h-10 text-white/10 mx-auto mb-3" />
+                          <p className="text-white/25 text-xs font-pixel">
+                            Select 3 warriors
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Stake Input (create mode) */}
                     {mode === 'create' && (
-                      <div className="mb-4">
+                      <div className="mt-5">
                         <label className="text-[10px] uppercase tracking-wider text-white/40 font-pixel mb-2 block">
-                          Stake Amount (AVAX)
+                          Stake Amount
                         </label>
                         <div className="relative">
                           <input
@@ -2364,8 +2654,7 @@ function TeamWarriorSelectionDrawer({
                           />
                           <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-white/30 font-mono">AVAX</span>
                         </div>
-                        <p className="text-[9px] text-white/25 mt-1">Min: {MIN_TEAM_BATTLE_STAKE} AVAX</p>
-                        <div className="flex gap-2 mt-2">
+                        <div className="flex gap-1.5 mt-2">
                           {['0.01', '0.05', '0.1', '0.5'].map((amount) => (
                             <button
                               key={amount}
@@ -2374,7 +2663,7 @@ function TeamWarriorSelectionDrawer({
                                 'flex-1 py-1.5 rounded-lg text-[10px] font-mono transition-all',
                                 stakeAmount === amount
                                   ? 'bg-frost-purple/20 text-frost-purple border border-frost-purple/30'
-                                  : 'bg-white/[0.03] text-white/40 border border-white/5 hover:bg-white/[0.06] hover:text-white/60',
+                                  : 'bg-white/[0.03] text-white/40 border border-white/5 hover:bg-white/[0.06]',
                               )}
                             >
                               {amount}
@@ -2384,53 +2673,22 @@ function TeamWarriorSelectionDrawer({
                       </div>
                     )}
 
-                    {/* Team preview */}
-                    {teamReady ? (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="glass-card p-4 mt-2"
-                      >
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="font-pixel text-xs text-white/60 uppercase">Your Team</span>
-                          <span className="text-xs font-mono text-frost-purple">
-                            Avg Power: {avgPower}
-                          </span>
-                        </div>
-                        <div className="flex gap-2">
-                          {selectedWarriors.map((w) => {
-                            const el = getElement(w.element);
-                            return (
-                              <div key={w.tokenId} className="flex-1 text-center">
-                                <WarriorImage
-                                  tokenId={w.tokenId}
-                                  element={w.element}
-                                  size={48}
-                                  className="rounded-lg mx-auto ring-1 ring-white/10"
-                                />
-                                <div className="text-[10px] font-mono text-white mt-1">#{w.tokenId}</div>
-                                <div className={cn('text-[9px] font-semibold bg-gradient-to-r bg-clip-text text-transparent', el.color)}>
-                                  {el.name}
-                                </div>
-                                <div className="text-[10px] font-mono text-white/50">{w.powerScore}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <div className="glass-card p-6 mt-2 flex items-center justify-center h-[120px]">
-                        <p className="text-white/20 text-xs text-center font-pixel">
-                          Select 3 warriors to see team preview
-                        </p>
+                    {/* Join mode stake display */}
+                    {mode === 'join' && targetBattle && (
+                      <div className="mt-5 flex items-center justify-between p-3 rounded-xl bg-frost-gold/10 border border-frost-gold/20">
+                        <span className="text-xs text-white/50">Required Stake</span>
+                        <span className="font-mono font-bold text-frost-gold text-sm">
+                          {formatEther(targetBattle.stake)} AVAX
+                        </span>
                       </div>
                     )}
 
+                    {/* Confirm Button */}
                     <motion.button
                       onClick={handleConfirm}
                       disabled={!teamReady || (mode === 'create' && !isValidStake) || isWorking}
                       className={cn(
-                        'mt-4 w-full py-3.5 rounded-xl font-pixel font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2',
+                        'mt-4 w-full py-3.5 rounded-xl font-display font-bold text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2',
                         teamReady && (mode === 'join' || isValidStake) && !isWorking
                           ? 'bg-gradient-to-r from-frost-purple to-frost-pink text-white shadow-lg hover:shadow-frost-purple/20'
                           : 'bg-white/5 text-white/20 cursor-not-allowed',
@@ -2475,6 +2733,9 @@ function TeamBattleResultModal({
   myWarriors,
   theirWarriors,
   isWinner,
+  onClaimPayout,
+  isClaiming,
+  isClaimSuccess,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -2482,6 +2743,9 @@ function TeamBattleResultModal({
   myWarriors: Warrior[];
   theirWarriors: Warrior[];
   isWinner: boolean;
+  onClaimPayout?: () => void;
+  isClaiming?: boolean;
+  isClaimSuccess?: boolean;
 }) {
   const stakeAmount = formatEther(battle.stake);
   const isPlayer1 = battle.winner === battle.player1 ? isWinner : !isWinner;
@@ -2623,17 +2887,60 @@ function TeamBattleResultModal({
               </div>
             </motion.div>
 
-            <motion.button
-              onClick={onClose}
-              className="w-full btn-primary text-center"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.8 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {isWinner ? 'Claim Victory' : 'Return to Frostbite'}
-            </motion.button>
+            {/* Payout info for winner */}
+            {isWinner && (
+              <motion.div
+                className="flex items-center justify-between p-3 rounded-lg bg-frost-gold/10 border border-frost-gold/20 text-sm"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.7 }}
+              >
+                <span className="text-white/50 flex items-center gap-1.5">
+                  <Coins className="h-4 w-4 text-frost-gold" />
+                  Payout
+                </span>
+                <span className="font-mono font-bold text-frost-gold">
+                  {(parseFloat(stakeAmount) * 2 * 0.975).toFixed(4)} AVAX
+                </span>
+              </motion.div>
+            )}
+
+            {isWinner && onClaimPayout && !isClaimSuccess ? (
+              <motion.button
+                onClick={onClaimPayout}
+                disabled={isClaiming}
+                className="w-full btn-primary text-center disabled:opacity-50 flex items-center justify-center gap-2"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.8 }}
+                whileHover={{ scale: isClaiming ? 1 : 1.02 }}
+                whileTap={{ scale: isClaiming ? 1 : 0.98 }}
+              >
+                {isClaiming ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Claiming...
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="h-4 w-4" />
+                    Claim {(parseFloat(stakeAmount) * 2 * 0.975).toFixed(4)} AVAX
+                  </>
+                )}
+              </motion.button>
+            ) : (
+              <motion.button
+                onClick={onClose}
+                className="w-full btn-primary text-center"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.8 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {isClaimSuccess ? 'Close' : 'Return to Frostbite'}
+              </motion.button>
+            )}
           </motion.div>
         </motion.div>
       )}
@@ -2783,7 +3090,8 @@ function CompactTeamBattleHistory({
  * ------------------------------------------------------------------------- */
 
 export default function BattlePage() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'1v1' | '3v3'>('1v1');
@@ -2869,6 +3177,52 @@ export default function BattlePage() {
     error: joinTeamError,
     reset: resetJoinTeam,
   } = useWriteContract();
+
+  // Claim payout (withdrawPayout)
+  const {
+    writeContract: claimPayout,
+    data: claimTxHash,
+    isPending: isClaimPending,
+  } = useWriteContract();
+
+  const { isSuccess: isClaimSuccess } = useWaitForTransactionReceipt({ hash: claimTxHash });
+
+  // Toast state for claim success
+  const [claimToast, setClaimToast] = useState<{ amount: string; txHash: string } | null>(null);
+
+  useEffect(() => {
+    if (isClaimSuccess && claimTxHash) {
+      // Calculate payout from currently selected battle result
+      const stake = selectedBattleResult
+        ? parseFloat(formatEther(selectedBattleResult.stake))
+        : selectedTeamBattleResult
+        ? parseFloat(formatEther(selectedTeamBattleResult.stake))
+        : 0;
+      const payout = (stake * 2 * 0.975).toFixed(4);
+      setClaimToast({ amount: payout, txHash: claimTxHash });
+      // Auto-dismiss after 6 seconds
+      const timer = setTimeout(() => setClaimToast(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [isClaimSuccess, claimTxHash]);
+
+  const handleClaimPayout = useCallback(
+    async (contractAddress: string, abi: readonly unknown[]) => {
+      if (chain?.id !== ACTIVE_CHAIN_ID) {
+        try {
+          await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+        } catch {
+          return;
+        }
+      }
+      claimPayout({
+        address: contractAddress as `0x${string}`,
+        abi: abi as any,
+        functionName: 'withdrawPayout',
+      });
+    },
+    [claimPayout, chain, switchChainAsync],
+  );
 
   const {
     writeContract: cancelTeamBattleContract,
@@ -2998,47 +3352,65 @@ export default function BattlePage() {
   }, []);
 
   const handleCreateBattle = useCallback(
-    (warrior: Warrior, stake: string) => {
+    async (warrior: Warrior, stake: string) => {
       setError(null);
+      if (chain?.id !== ACTIVE_CHAIN_ID) {
+        try {
+          await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+        } catch {
+          return;
+        }
+      }
       createBattle({
         address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
         abi: BATTLE_ENGINE_ABI,
         functionName: 'createBattle',
         args: [BigInt(warrior.tokenId), '0x' as `0x${string}`],
         value: parseEther(stake),
-        chainId: FUJI_CHAIN_ID,
       });
     },
-    [createBattle],
+    [createBattle, chain, switchChainAsync],
   );
 
   const handleJoinBattle = useCallback(
-    (warrior: Warrior, battle: Battle & { creatorWarrior: Warrior }) => {
+    async (warrior: Warrior, battle: Battle & { creatorWarrior: Warrior }) => {
       setError(null);
+      if (chain?.id !== ACTIVE_CHAIN_ID) {
+        try {
+          await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+        } catch {
+          return;
+        }
+      }
       joinBattle({
         address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
         abi: BATTLE_ENGINE_ABI,
         functionName: 'joinBattle',
         args: [BigInt(battle.id), BigInt(warrior.tokenId), '0x' as `0x${string}`],
         value: battle.stake,
-        chainId: FUJI_CHAIN_ID,
       });
     },
-    [joinBattle],
+    [joinBattle, chain, switchChainAsync],
   );
 
   const handleCancelBattle = useCallback(
-    (battleId: number) => {
+    async (battleId: number) => {
       setError(null);
+      if (chain?.id !== ACTIVE_CHAIN_ID) {
+        try {
+          await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+        } catch {
+          return;
+        }
+      }
       cancelBattleContract({
         address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
         abi: BATTLE_ENGINE_ABI,
         functionName: 'cancelBattle',
         args: [BigInt(battleId)],
-        chainId: FUJI_CHAIN_ID,
       });
     },
-    [cancelBattleContract],
+    [cancelBattleContract, chain, switchChainAsync],
   );
 
   // 3v3 Handlers
@@ -3057,8 +3429,15 @@ export default function BattlePage() {
   }, []);
 
   const handleCreateTeamBattle = useCallback(
-    (team: Warrior[], stake: string) => {
+    async (team: Warrior[], stake: string) => {
       setError(null);
+      if (chain?.id !== ACTIVE_CHAIN_ID) {
+        try {
+          await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+        } catch {
+          return;
+        }
+      }
       const tokenIds = team.map((w) => BigInt(w.tokenId)) as [bigint, bigint, bigint];
       createTeamBattle({
         address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
@@ -3066,15 +3445,21 @@ export default function BattlePage() {
         functionName: 'createTeamBattle',
         args: [tokenIds, '0x' as `0x${string}`],
         value: parseEther(stake),
-        chainId: FUJI_CHAIN_ID,
       });
     },
-    [createTeamBattle],
+    [createTeamBattle, chain, switchChainAsync],
   );
 
   const handleJoinTeamBattle = useCallback(
-    (team: Warrior[], battle: TeamBattle & { creatorWarriors: Warrior[] }) => {
+    async (team: Warrior[], battle: TeamBattle & { creatorWarriors: Warrior[] }) => {
       setError(null);
+      if (chain?.id !== ACTIVE_CHAIN_ID) {
+        try {
+          await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+        } catch {
+          return;
+        }
+      }
       const tokenIds = team.map((w) => BigInt(w.tokenId)) as [bigint, bigint, bigint];
       joinTeamBattle({
         address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
@@ -3082,24 +3467,29 @@ export default function BattlePage() {
         functionName: 'joinTeamBattle',
         args: [BigInt(battle.id), tokenIds, '0x' as `0x${string}`],
         value: battle.stake,
-        chainId: FUJI_CHAIN_ID,
       });
     },
-    [joinTeamBattle],
+    [joinTeamBattle, chain, switchChainAsync],
   );
 
   const handleCancelTeamBattle = useCallback(
-    (battleId: number) => {
+    async (battleId: number) => {
       setError(null);
+      if (chain?.id !== ACTIVE_CHAIN_ID) {
+        try {
+          await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+        } catch {
+          return;
+        }
+      }
       cancelTeamBattleContract({
         address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
         abi: TEAM_BATTLE_ABI,
         functionName: 'cancelTeamBattle',
         args: [BigInt(battleId)],
-        chainId: FUJI_CHAIN_ID,
       });
     },
-    [cancelTeamBattleContract],
+    [cancelTeamBattleContract, chain, switchChainAsync],
   );
 
   const handleViewTeamResult = useCallback(
@@ -3314,6 +3704,9 @@ export default function BattlePage() {
               : false
           }
           stakeAmount={formatEther(selectedBattleResult.stake)}
+          onClaimPayout={() => handleClaimPayout(CONTRACT_ADDRESSES.battleEngine, BATTLE_ENGINE_ABI)}
+          isClaiming={isClaimPending}
+          isClaimSuccess={isClaimSuccess}
         />
       )}
 
@@ -3333,8 +3726,63 @@ export default function BattlePage() {
               ? selectedTeamBattleResult.winner.toLowerCase() === address.toLowerCase()
               : false
           }
+          onClaimPayout={() => handleClaimPayout(CONTRACT_ADDRESSES.teamBattleEngine, TEAM_BATTLE_ABI)}
+          isClaiming={isClaimPending}
+          isClaimSuccess={isClaimSuccess}
         />
       )}
+
+      {/* Claim Success Toast */}
+      <AnimatePresence>
+        {claimToast && (
+          <motion.div
+            className="fixed bottom-6 right-6 z-[200] max-w-sm"
+            initial={{ opacity: 0, y: 40, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+          >
+            <div className="glass-card p-4 border border-frost-green/30 shadow-[0_0_30px_rgba(0,255,136,0.15)]">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-frost-green/20 flex items-center justify-center">
+                  <CheckCircle className="h-5 w-5 text-frost-green" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-display text-sm font-bold text-white mb-0.5">
+                    AVAX Claimed!
+                  </h4>
+                  <p className="text-frost-green font-mono text-lg font-bold">
+                    +{claimToast.amount} AVAX
+                  </p>
+                  <a
+                    href={`https://snowtrace.io/tx/${claimToast.txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-white/40 hover:text-white/60 font-mono mt-1 inline-block"
+                  >
+                    View on Snowtrace &rarr;
+                  </a>
+                </div>
+                <button
+                  onClick={() => setClaimToast(null)}
+                  className="text-white/30 hover:text-white/60 transition-colors"
+                >
+                  <XCircle className="h-4 w-4" />
+                </button>
+              </div>
+              {/* Progress bar */}
+              <div className="mt-3 h-0.5 rounded-full bg-white/10 overflow-hidden">
+                <motion.div
+                  className="h-full bg-frost-green/50 rounded-full"
+                  initial={{ width: '100%' }}
+                  animate={{ width: '0%' }}
+                  transition={{ duration: 6, ease: 'linear' }}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

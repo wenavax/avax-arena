@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPublicClient, http } from 'viem';
-import { avalancheFuji } from 'viem/chains';
 import { FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
-import { CONTRACT_ADDRESSES, FUJI_RPC_URL } from '@/lib/constants';
+import { CONTRACT_ADDRESSES } from '@/lib/constants';
 import { getWarriorName, getWarriorDescription } from '@/lib/warrior-prompts';
 import { imageCache } from '@/lib/image-cache';
+import { createActiveClient } from '@/lib/chain';
 
-const client = createPublicClient({
-  chain: avalancheFuji,
-  transport: http(FUJI_RPC_URL),
-});
+const client = createActiveClient();
 
 interface WarriorData {
   attack: number;
@@ -71,7 +67,7 @@ export async function GET(
         tokenId,
       }),
       image: imageUrl,
-      external_url: `${baseUrl}/profile/${tokenId}`,
+      external_url: `${baseUrl}/marketplace/${tokenId}`,
       attributes: [
         { trait_type: 'Element', value: ELEMENT_NAMES[warrior.element] ?? 'Unknown' },
         { trait_type: 'Attack', value: warrior.attack, max_value: 100 },

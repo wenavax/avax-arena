@@ -27,6 +27,9 @@ contract RewardVault is Ownable, ReentrancyGuard {
     /// @notice Sum of all pending (unclaimed) rewards across all players.
     uint256 public totalPendingRewards;
 
+    /// @notice Authorized depositors (e.g., GameEngine) that can credit player rewards.
+    mapping(address => bool) public authorizedDepositors;
+
     // -----------------------------------------------------------------------
     //  Events
     // -----------------------------------------------------------------------
@@ -35,6 +38,7 @@ contract RewardVault is Ownable, ReentrancyGuard {
     event RewardClaimed(address indexed player, uint256 amount);
     event FundsWithdrawn(address indexed to, uint256 amount);
     event EmergencyWithdrawWarning(uint256 withdrawnAmount, uint256 remainingBalance, string message);
+    event AuthorizedDepositorUpdated(address indexed depositor, bool authorized);
 
     // -----------------------------------------------------------------------
     //  Constructor
@@ -61,17 +65,27 @@ contract RewardVault is Ownable, ReentrancyGuard {
     //  External Functions
     // -----------------------------------------------------------------------
 
+    /// @notice Add or remove an authorized depositor.
+    function setAuthorizedDepositor(address _depositor, bool _authorized) external onlyOwner {
+        require(_depositor != address(0), "RewardVault: zero address");
+        authorizedDepositors[_depositor] = _authorized;
+        emit AuthorizedDepositorUpdated(_depositor, _authorized);
+    }
+
     /**
      * @notice Credit a player with a pending reward.
-     *         The contract must already hold enough AVAX to cover all pending
-     *         rewards; this function only updates the accounting.
+     *         Callable by the owner or authorized depositors (e.g., GameEngine).
      * @param _player Player address to credit.
      * @param _amount Amount of AVAX (in wei) to credit.
      */
     function depositReward(
         address _player,
         uint256 _amount
-    ) external payable onlyOwner {
+    ) external payable {
+        require(
+            msg.sender == owner() || authorizedDepositors[msg.sender],
+            "RewardVault: not authorized"
+        );
         require(_player != address(0), "RewardVault: zero address");
         require(_amount > 0, "RewardVault: amount must be > 0");
         require(msg.value == _amount, "RewardVault: msg.value must equal _amount");

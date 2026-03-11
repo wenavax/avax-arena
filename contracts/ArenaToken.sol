@@ -4,10 +4,10 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @title ArenaToken
-/// @notice ERC-20 platform token for the AVAX Arena ecosystem.
+/// @title FrostbiteToken
+/// @notice ERC-20 platform token for the Frostbite ecosystem.
 ///         Used as a reward token minted by the GameEngine and Tournament contracts.
-contract ArenaToken is ERC20, Ownable {
+contract FrostbiteToken is ERC20, Ownable {
     // -----------------------------------------------------------------------
     // Constants
     // -----------------------------------------------------------------------
@@ -51,7 +51,7 @@ contract ArenaToken is ERC20, Ownable {
     /// @notice Deploys the token, sets the deployer as owner, and mints 10M
     ///         tokens to the deployer's address.
     constructor()
-        ERC20("Arena Token", "ARENA")
+        ERC20("Frostbite", "FSB")
         Ownable(msg.sender)
     {
         _mint(msg.sender, INITIAL_SUPPLY);

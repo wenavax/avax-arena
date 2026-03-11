@@ -32,9 +32,11 @@ import {
   useWriteContract,
   useReadContract,
   useWaitForTransactionReceipt,
+  useSwitchChain,
 } from 'wagmi';
 import { parseEther, decodeEventLog } from 'viem';
-import { CONTRACT_ADDRESSES } from '@/lib/constants';
+import { CONTRACT_ADDRESSES, ACTIVE_CHAIN_ID } from '@/lib/constants';
+import { useOnContractEvent } from '@/hooks/useContractEvents';
 
 /* ---------------------------------------------------------------------------
  * Element Icon Mapping
@@ -654,7 +656,8 @@ function QuantitySelector({
  * ------------------------------------------------------------------------- */
 
 export default function MintPage() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chain } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
   const [mintedTokenId, setMintedTokenId] = useState<number | null>(null);
   const [showWarrior, setShowWarrior] = useState(false);
   const [warriorImageUrl, setWarriorImageUrl] = useState<string | null>(null);
@@ -747,6 +750,11 @@ export default function MintPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTxSuccess, txReceipt]);
 
+  // Auto-refresh supply counter when anyone mints
+  useOnContractEvent(['WarriorMinted', 'BatchMinted'], () => {
+    refetchSupply();
+  });
+
   const isMinting = isMintPending || isTxConfirming;
   const warrior = warriorData ? parseWarrior(warriorData) : undefined;
   const supply = totalSupply !== undefined ? Number(totalSupply) : '---';
@@ -789,8 +797,17 @@ export default function MintPage() {
   }, [showWarrior, warrior, mintedTokenId]);
 
   /* ---- Mint Handler ---- */
-  function handleMint() {
+  async function handleMint() {
     if (!isConnected) return;
+
+    // Switch to correct chain if needed
+    if (chain?.id !== ACTIVE_CHAIN_ID) {
+      try {
+        await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+      } catch {
+        return; // user rejected chain switch
+      }
+    }
 
     // Reset previous state
     resetMint();
@@ -800,23 +817,19 @@ export default function MintPage() {
     setWarriorImageUrl(null);
 
     if (quantity === 1) {
-      // Single mint: direct ArenaWarrior.mint() (cheaper gas)
       mint({
         address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
         abi: FROSTBITE_WARRIOR_ABI,
         functionName: 'mint',
         value: parseEther(MINT_PRICE),
-        chainId: 43113,
       });
     } else {
-      // Batch mint: BatchMinter.batchMint(quantity)
       mint({
         address: CONTRACT_ADDRESSES.batchMinter as `0x${string}`,
         abi: BATCH_MINTER_ABI,
         functionName: 'batchMint',
         args: [BigInt(quantity)],
         value: parseEther(totalCost),
-        chainId: 43113,
       });
     }
   }
@@ -884,9 +897,9 @@ export default function MintPage() {
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
           >
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-orange/10 border border-frost-orange/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-frost-orange animate-pulse" />
-              <span className="text-[10px] font-pixel text-frost-orange/80">FUJI</span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-green/10 border border-frost-green/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
+              <span className="text-[10px] font-pixel text-frost-green/80">MAINNET</span>
             </span>
             <span className="font-mono flex items-center gap-1.5">
               <Sparkles className="w-4 h-4" />
@@ -1125,14 +1138,12 @@ export default function MintPage() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
                       >
-                        {mintError.message.includes('User rejected')
+                        {mintError.message.includes('User rejected') || mintError.message.includes('user rejected')
                           ? 'Transaction rejected by user'
                           : mintError.message.includes('InsufficientPayment')
                           ? `Insufficient AVAX. Mint costs ${totalCost} AVAX.`
                           : mintError.message.includes('insufficient funds')
                           ? 'Not enough AVAX in your wallet.'
-                          : mintError.message.includes('chain')
-                          ? 'Please switch to Avalanche Fuji Testnet.'
                           : `Mint failed: ${'shortMessage' in mintError ? (mintError as any).shortMessage : mintError.message}`}
                       </motion.div>
                     )}

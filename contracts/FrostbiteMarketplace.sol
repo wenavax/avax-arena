@@ -172,6 +172,8 @@ contract FrostbiteMarketplace is Ownable, ReentrancyGuard {
     error ItemInAuction();
     error TooManyOffers();
     error NoPendingReturns();
+    error ActiveListingsExist();
+    error ActiveAuctionsExist();
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -545,6 +547,8 @@ contract FrostbiteMarketplace is Ownable, ReentrancyGuard {
 
     function setNftContract(address _nftContract) external onlyOwner {
         if (_nftContract == address(0)) revert InvalidAddress();
+        if (_activeListingIds.length > 0) revert ActiveListingsExist();
+        if (_activeAuctionIds.length > 0) revert ActiveAuctionsExist();
         nftContract = IERC721(_nftContract);
     }
 
@@ -669,13 +673,11 @@ contract FrostbiteMarketplace is Ownable, ReentrancyGuard {
             uint256 amount = offers[tokenId][offerer].amount;
             if (amount > 0 && offerer != excludedAddress) {
                 offers[tokenId][offerer].amount = 0;
-                // Use low-level call; ignore failure so one bad refund
-                // does not revert the entire sale. Offerer can still
-                // call cancelOffer() to retry.
+                // Use pull-payment: credit pendingReturns so offerer can withdraw
+                // even if their address rejects direct transfers
                 (bool sent, ) = offerer.call{value: amount}("");
                 if (!sent) {
-                    // Restore amount so offerer can claim manually
-                    offers[tokenId][offerer].amount = amount;
+                    pendingReturns[offerer] += amount;
                 }
             }
         }

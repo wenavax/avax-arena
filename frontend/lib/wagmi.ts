@@ -1,6 +1,7 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit';
-import { avalanche, avalancheFuji } from 'wagmi/chains';
+import { avalanche } from 'wagmi/chains';
 import { http } from 'wagmi';
+import { ACTIVE_RPC_URL } from './constants';
 
 // RainbowKit requires a non-empty projectId at config time (including SSG).
 // In production, NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID must be set to a real
@@ -16,15 +17,14 @@ if (typeof window !== 'undefined' && projectId === BUILD_PLACEHOLDER) {
   );
 }
 
+const activeChain = avalanche;
+
 export const config = getDefaultConfig({
   appName: 'Frostbite',
   projectId,
-  chains: [avalancheFuji, avalanche],
+  chains: [activeChain],
   transports: {
-    [avalancheFuji.id]: http(process.env.NEXT_PUBLIC_FUJI_RPC_URL || 'https://avalanche-fuji-c-chain-rpc.publicnode.com', {
-      timeout: 30_000,
-    }),
-    [avalanche.id]: http('https://api.avax.network/ext/bc/C/rpc', {
+    [activeChain.id]: http(ACTIVE_RPC_URL, {
       timeout: 30_000,
     }),
   },

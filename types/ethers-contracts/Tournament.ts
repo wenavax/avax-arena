@@ -8,7 +8,7 @@ import type { TypedContractEvent, TypedDeferredTopicFilter, TypedEventLog, Typed
   export interface TournamentInterface extends Interface {
     getFunction(nameOrSignature: "claimPrize" | "createTournament" | "endTournament" | "getPlayerScore" | "getTournamentPlayers" | "hasJoined" | "joinTournament" | "owner" | "refundTournament" | "renounceOwnership" | "submitScore" | "tournamentCount" | "tournaments" | "transferOwnership"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "OwnershipTransferred" | "PlayerJoined" | "PrizeClaimed" | "ScoreSubmitted" | "TournamentCreated"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "OwnershipTransferred" | "PlayerJoined" | "PrizeClaimed" | "ScoreSubmitted" | "TournamentCreated" | "TournamentEnded"): EventFragment;
 
     encodeFunctionData(functionFragment: 'claimPrize', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'createTournament', values: [string, BigNumberish, BigNumberish, BigNumberish, BigNumberish]): string;
@@ -94,6 +94,18 @@ decodeFunctionResult(functionFragment: 'transferOwnership', data: BytesLike): Re
       export type InputTuple = [id: BigNumberish, name: string, entryFee: BigNumberish, maxPlayers: BigNumberish, startTime: BigNumberish, endTime: BigNumberish];
       export type OutputTuple = [id: bigint, name: string, entryFee: bigint, maxPlayers: bigint, startTime: bigint, endTime: bigint];
       export interface OutputObject {id: bigint, name: string, entryFee: bigint, maxPlayers: bigint, startTime: bigint, endTime: bigint };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace TournamentEndedEvent {
+      export type InputTuple = [tournamentId: BigNumberish];
+      export type OutputTuple = [tournamentId: bigint];
+      export interface OutputObject {tournamentId: bigint };
       export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
       export type Filter = TypedDeferredTopicFilter<Event>
       export type Log = TypedEventLog<Event>
@@ -326,6 +338,7 @@ getEvent(key: 'PlayerJoined'): TypedContractEvent<PlayerJoinedEvent.InputTuple, 
 getEvent(key: 'PrizeClaimed'): TypedContractEvent<PrizeClaimedEvent.InputTuple, PrizeClaimedEvent.OutputTuple, PrizeClaimedEvent.OutputObject>;
 getEvent(key: 'ScoreSubmitted'): TypedContractEvent<ScoreSubmittedEvent.InputTuple, ScoreSubmittedEvent.OutputTuple, ScoreSubmittedEvent.OutputObject>;
 getEvent(key: 'TournamentCreated'): TypedContractEvent<TournamentCreatedEvent.InputTuple, TournamentCreatedEvent.OutputTuple, TournamentCreatedEvent.OutputObject>;
+getEvent(key: 'TournamentEnded'): TypedContractEvent<TournamentEndedEvent.InputTuple, TournamentEndedEvent.OutputTuple, TournamentEndedEvent.OutputObject>;
 
     filters: {
       
@@ -347,6 +360,10 @@ getEvent(key: 'TournamentCreated'): TypedContractEvent<TournamentCreatedEvent.In
 
       'TournamentCreated(uint256,string,uint256,uint256,uint256,uint256)': TypedContractEvent<TournamentCreatedEvent.InputTuple, TournamentCreatedEvent.OutputTuple, TournamentCreatedEvent.OutputObject>;
       TournamentCreated: TypedContractEvent<TournamentCreatedEvent.InputTuple, TournamentCreatedEvent.OutputTuple, TournamentCreatedEvent.OutputObject>;
+    
+
+      'TournamentEnded(uint256)': TypedContractEvent<TournamentEndedEvent.InputTuple, TournamentEndedEvent.OutputTuple, TournamentEndedEvent.OutputObject>;
+      TournamentEnded: TypedContractEvent<TournamentEndedEvent.InputTuple, TournamentEndedEvent.OutputTuple, TournamentEndedEvent.OutputObject>;
     
     };
   }

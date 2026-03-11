@@ -2,28 +2,24 @@
  * Background, aura, and scanline SVG effects
  */
 
-/** Background pattern — element-themed grid with subtle dots */
+/** Background pattern — element-themed grid with subtle dots (uses SVG pattern for efficiency) */
 export function renderBackground(
   size: number,
   bgColor: string,
   elementColor: string,
 ): string {
-  let svg = `<rect width="${size}" height="${size}" fill="${bgColor}"/>`;
-  svg += `<rect width="${size}" height="${size}" fill="#0a0a0f" opacity="0.6"/>`;
-
-  // Pixel grid dots
-  for (let y = 0; y < size; y += 48) {
-    for (let x = 0; x < size; x += 48) {
-      svg += `<rect x="${x}" y="${y}" width="2" height="2" fill="${elementColor}" opacity="0.05"/>`;
-    }
-  }
-
-  // Diagonal lines pattern
-  for (let i = 0; i < size * 2; i += 96) {
-    svg += `<line x1="${i}" y1="0" x2="${i - size}" y2="${size}" stroke="${elementColor}" stroke-width="1" opacity="0.03"/>`;
-  }
-
-  return svg;
+  return `<defs>
+    <pattern id="bgDots" x="0" y="0" width="48" height="48" patternUnits="userSpaceOnUse">
+      <rect width="2" height="2" fill="${elementColor}" opacity="0.05"/>
+    </pattern>
+    <pattern id="bgLines" x="0" y="0" width="96" height="96" patternUnits="userSpaceOnUse" patternTransform="skewX(-45)">
+      <line x1="0" y1="0" x2="0" y2="96" stroke="${elementColor}" stroke-width="1" opacity="0.03"/>
+    </pattern>
+  </defs>
+  <rect width="${size}" height="${size}" fill="${bgColor}"/>
+  <rect width="${size}" height="${size}" fill="#0a0a0f" opacity="0.6"/>
+  <rect width="${size}" height="${size}" fill="url(#bgDots)"/>
+  <rect width="${size}" height="${size}" fill="url(#bgLines)"/>`;
 }
 
 /** Aura glow around warrior — element-colored, intensity by level */
@@ -47,13 +43,14 @@ export function renderAura(
   <ellipse cx="${cx}" cy="${cy}" rx="${r2}" ry="${r2}" fill="url(#aura)"/>`;
 }
 
-/** Scanline overlay for retro feel */
+/** Scanline overlay for retro feel (uses SVG pattern for efficiency) */
 export function renderScanlines(size: number): string {
-  let svg = '';
-  for (let y = 0; y < size; y += 4) {
-    svg += `<rect x="0" y="${y}" width="${size}" height="1" fill="#000" opacity="0.08"/>`;
-  }
-  return svg;
+  return `<defs>
+    <pattern id="scanlines" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="4" height="1" fill="#000" opacity="0.08"/>
+    </pattern>
+  </defs>
+  <rect width="${size}" height="${size}" fill="url(#scanlines)"/>`;
 }
 
 /** Floating particles around warrior */

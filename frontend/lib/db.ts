@@ -673,6 +673,45 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tier_quests_wallet ON tier_quests(wallet_address);
     CREATE INDEX IF NOT EXISTS idx_tier_quests_status ON tier_quests(status);
     CREATE INDEX IF NOT EXISTS idx_wallet_progression_tier ON wallet_progression(current_tier);
+
+    -- Agent Skills: which skills each agent has enabled
+    CREATE TABLE IF NOT EXISTS agent_skills (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id        INTEGER NOT NULL,
+      skill_id        TEXT NOT NULL,
+      enabled         INTEGER DEFAULT 1,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(agent_id, skill_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_skills_agent ON agent_skills(agent_id);
+
+    -- Agent Heartbeat Config: per-agent heartbeat settings
+    CREATE TABLE IF NOT EXISTS agent_heartbeat_config (
+      agent_id            INTEGER PRIMARY KEY,
+      interval_seconds    INTEGER DEFAULT 30,
+      enabled             INTEGER DEFAULT 1,
+      adaptive            INTEGER DEFAULT 1,
+      min_interval        INTEGER DEFAULT 15,
+      max_interval        INTEGER DEFAULT 120,
+      active_hours_start  INTEGER,
+      active_hours_end    INTEGER,
+      updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Agent Heartbeat Tasks: per-agent task checklist
+    CREATE TABLE IF NOT EXISTS agent_heartbeat_tasks (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id        INTEGER NOT NULL,
+      task_id         TEXT NOT NULL,
+      label           TEXT NOT NULL,
+      check_prompt    TEXT NOT NULL,
+      priority        TEXT DEFAULT 'medium',
+      enabled         INTEGER DEFAULT 1,
+      UNIQUE(agent_id, task_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_heartbeat_tasks_agent ON agent_heartbeat_tasks(agent_id);
   `);
 
   const alterStatements = [

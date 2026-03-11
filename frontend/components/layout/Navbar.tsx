@@ -6,18 +6,16 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount } from 'wagmi';
-import { Menu, X, Swords, Sparkles, MessageCircle, BarChart3, Bot, Store, GitMerge, User, Map } from 'lucide-react';
+import { Menu, X, Swords, Sparkles, BarChart3, Store, GitMerge, User, Map } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
-  { href: '/agents', label: 'Agents', icon: Bot },
   { href: '/mint', label: 'Mint', icon: Sparkles },
   { href: '/battle', label: 'Battle', icon: Swords },
   { href: '/merge', label: 'Fusion', icon: GitMerge },
   { href: '/quests', label: 'Quests', icon: Map },
   { href: '/marketplace', label: 'Market', icon: Store },
-  { href: '/chat', label: 'Forum', icon: MessageCircle },
   { href: '/leaderboard', label: 'Rankings', icon: BarChart3 },
 ];
 
