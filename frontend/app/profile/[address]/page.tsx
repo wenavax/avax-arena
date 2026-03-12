@@ -51,6 +51,8 @@ interface ProfileStats {
   winRate: number;
   avaxEarned: number;
   warriorCount: number;
+  totalXP: number;
+  avgLevel: number;
 }
 
 type ProfileTab = 'collection' | 'activity';
@@ -489,6 +491,8 @@ function ProfileBanner({
     { icon: TrendingUp, label: 'Win Rate', value: `${stats.winRate}%`, color: 'text-frost-purple' },
     { icon: Zap, label: 'AVAX Earned', value: stats.avaxEarned.toFixed(3), color: 'text-frost-gold' },
     { icon: Sparkles, label: 'Top Power', value: maxPower, color: 'text-frost-cyan' },
+    { icon: BarChart3, label: 'Total XP', value: stats.totalXP.toLocaleString(), color: 'text-frost-green' },
+    { icon: Shield, label: 'Avg Level', value: stats.avgLevel, color: 'text-frost-orange' },
   ];
 
   return (
@@ -641,6 +645,8 @@ export default function ProfilePage() {
     winRate: 0,
     avaxEarned: 0,
     warriorCount: 0,
+    totalXP: 0,
+    avgLevel: 0,
   });
 
   // Loading state
@@ -822,9 +828,11 @@ export default function ProfilePage() {
     return () => { cancelled = true; };
   }, [publicClient, address, isValidAddress]);
 
-  // Update warrior count in stats when warriors change
+  // Update warrior-derived stats when warriors change
   useEffect(() => {
-    setStats((prev) => ({ ...prev, warriorCount: warriors.length }));
+    const totalXP = warriors.reduce((sum, w) => sum + w.experience, 0);
+    const avgLevel = warriors.length > 0 ? Math.round(warriors.reduce((sum, w) => sum + w.level, 0) / warriors.length * 10) / 10 : 0;
+    setStats((prev) => ({ ...prev, warriorCount: warriors.length, totalXP, avgLevel }));
   }, [warriors]);
 
   /* -------------------------------------------------------------------------

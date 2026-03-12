@@ -3,9 +3,7 @@ import { FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
 import { CONTRACT_ADDRESSES } from '@/lib/constants';
 import { imageCache } from '@/lib/image-cache';
 import { generateWarriorSVG, generateFallbackSVG } from '@/lib/warrior-generator';
-import { createActiveClient } from '@/lib/chain';
-
-const client = createActiveClient();
+import { withRpcFallback } from '@/lib/chain';
 
 export async function GET(
   request: NextRequest,
@@ -41,12 +39,14 @@ export async function GET(
 
   // Try to fetch warrior stats from chain for procedural generation
   try {
-    const raw = await client.readContract({
-      address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
-      abi: FROSTBITE_WARRIOR_ABI,
-      functionName: 'getWarrior',
-      args: [BigInt(tokenId)],
-    }) as Record<string, unknown>;
+    const raw = await withRpcFallback((c) =>
+      c.readContract({
+        address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+        abi: FROSTBITE_WARRIOR_ABI,
+        functionName: 'getWarrior',
+        args: [BigInt(tokenId)],
+      })
+    ) as Record<string, unknown>;
 
     const svg = generateWarriorSVG({
       tokenId,
@@ -66,7 +66,8 @@ export async function GET(
         'X-Content-Type-Options': 'nosniff',
       },
     });
-  } catch {
+  } catch (chainErr) {
+    console.error(`[Image] Token #${tokenId} chain read failed:`, (chainErr as Error).message?.slice(0, 200));
     // Chain unreachable — fallback with element query param
     const element = parseInt(request.nextUrl.searchParams.get('element') ?? '0', 10);
     const svg = generateFallbackSVG(tokenId, element);
@@ -74,7 +75,7 @@ export async function GET(
     return new NextResponse(svg, {
       headers: {
         'Content-Type': 'image/svg+xml',
-        'Cache-Control': 'public, max-age=60',
+        'Cache-Control': 'no-cache, max-age=0',
         'X-Content-Type-Options': 'nosniff',
       },
     });
