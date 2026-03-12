@@ -15,12 +15,17 @@ export declare namespace QuestEngine {
 
     export type QuestDefStructOutput = [id: bigint, name: string, zone: bigint, difficulty: bigint, duration: bigint, winXP: bigint, lossXP: bigint, minLevel: bigint, minPowerScore: bigint, baseDifficulty: bigint, active: boolean] & {id: bigint, name: string, zone: bigint, difficulty: bigint, duration: bigint, winXP: bigint, lossXP: bigint, minLevel: bigint, minPowerScore: bigint, baseDifficulty: bigint, active: boolean }
   
+
+    export type WalletProgressionStruct = {tier: BigNumberish, questsCompleted: BigNumberish, questsWon: BigNumberish, totalXP: BigNumberish, tierProgress: BigNumberish}
+
+    export type WalletProgressionStructOutput = [tier: bigint, questsCompleted: bigint, questsWon: bigint, totalXP: bigint, tierProgress: bigint] & {tier: bigint, questsCompleted: bigint, questsWon: bigint, totalXP: bigint, tierProgress: bigint }
+  
     }
 
   export interface QuestEngineInterface extends Interface {
-    getFunction(nameOrSignature: "abandonQuest" | "activeQuests" | "addQuest" | "arenaWarrior" | "completeQuest" | "getActiveQuest" | "getQuest" | "getQuestStats" | "getQuestsByZone" | "getSuccessChance" | "isWarriorOnQuest" | "owner" | "pause" | "paused" | "questCount" | "quests" | "renounceOwnership" | "startQuest" | "toggleQuest" | "totalQuestsCompleted" | "totalQuestsStarted" | "totalQuestsWon" | "transferOwnership" | "unpause" | "updateQuest"): FunctionFragment;
+    getFunction(nameOrSignature: "abandonQuest" | "activeQuests" | "addQuest" | "arenaWarrior" | "completeQuest" | "getActiveQuest" | "getQuest" | "getQuestStats" | "getQuestsByZone" | "getSuccessChance" | "getWalletProgression" | "isWarriorOnQuest" | "owner" | "pause" | "paused" | "questCount" | "quests" | "questsPerTier" | "renounceOwnership" | "setQuestsPerTier" | "startQuest" | "toggleQuest" | "totalQuestsCompleted" | "totalQuestsStarted" | "totalQuestsWon" | "transferOwnership" | "unpause" | "updateQuest" | "walletProgression"): FunctionFragment;
 
-    getEvent(nameOrSignatureOrTopic: "OwnershipTransferred" | "Paused" | "QuestAbandoned" | "QuestAdded" | "QuestCompleted" | "QuestStarted" | "QuestToggled" | "QuestUpdated" | "Unpaused"): EventFragment;
+    getEvent(nameOrSignatureOrTopic: "OwnershipTransferred" | "Paused" | "QuestAbandoned" | "QuestAdded" | "QuestCompleted" | "QuestStarted" | "QuestToggled" | "QuestUpdated" | "TierAdvanced" | "Unpaused"): EventFragment;
 
     encodeFunctionData(functionFragment: 'abandonQuest', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'activeQuests', values: [BigNumberish]): string;
@@ -32,13 +37,16 @@ encodeFunctionData(functionFragment: 'getQuest', values: [BigNumberish]): string
 encodeFunctionData(functionFragment: 'getQuestStats', values?: undefined): string;
 encodeFunctionData(functionFragment: 'getQuestsByZone', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'getSuccessChance', values: [BigNumberish, BigNumberish]): string;
+encodeFunctionData(functionFragment: 'getWalletProgression', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'isWarriorOnQuest', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'owner', values?: undefined): string;
 encodeFunctionData(functionFragment: 'pause', values?: undefined): string;
 encodeFunctionData(functionFragment: 'paused', values?: undefined): string;
 encodeFunctionData(functionFragment: 'questCount', values?: undefined): string;
 encodeFunctionData(functionFragment: 'quests', values: [BigNumberish]): string;
+encodeFunctionData(functionFragment: 'questsPerTier', values?: undefined): string;
 encodeFunctionData(functionFragment: 'renounceOwnership', values?: undefined): string;
+encodeFunctionData(functionFragment: 'setQuestsPerTier', values: [BigNumberish]): string;
 encodeFunctionData(functionFragment: 'startQuest', values: [BigNumberish, BigNumberish]): string;
 encodeFunctionData(functionFragment: 'toggleQuest', values: [BigNumberish, boolean]): string;
 encodeFunctionData(functionFragment: 'totalQuestsCompleted', values?: undefined): string;
@@ -47,6 +55,7 @@ encodeFunctionData(functionFragment: 'totalQuestsWon', values?: undefined): stri
 encodeFunctionData(functionFragment: 'transferOwnership', values: [AddressLike]): string;
 encodeFunctionData(functionFragment: 'unpause', values?: undefined): string;
 encodeFunctionData(functionFragment: 'updateQuest', values: [BigNumberish, BigNumberish, BigNumberish, BigNumberish, BigNumberish, BigNumberish, BigNumberish]): string;
+encodeFunctionData(functionFragment: 'walletProgression', values: [AddressLike]): string;
 
     decodeFunctionResult(functionFragment: 'abandonQuest', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'activeQuests', data: BytesLike): Result;
@@ -58,13 +67,16 @@ decodeFunctionResult(functionFragment: 'getQuest', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getQuestStats', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getQuestsByZone', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'getSuccessChance', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'getWalletProgression', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'isWarriorOnQuest', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'owner', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'pause', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'paused', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'questCount', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'quests', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'questsPerTier', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'renounceOwnership', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'setQuestsPerTier', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'startQuest', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'toggleQuest', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'totalQuestsCompleted', data: BytesLike): Result;
@@ -73,6 +85,7 @@ decodeFunctionResult(functionFragment: 'totalQuestsWon', data: BytesLike): Resul
 decodeFunctionResult(functionFragment: 'transferOwnership', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'unpause', data: BytesLike): Result;
 decodeFunctionResult(functionFragment: 'updateQuest', data: BytesLike): Result;
+decodeFunctionResult(functionFragment: 'walletProgression', data: BytesLike): Result;
   }
 
   
@@ -164,6 +177,18 @@ decodeFunctionResult(functionFragment: 'updateQuest', data: BytesLike): Result;
       export type InputTuple = [questId: BigNumberish];
       export type OutputTuple = [questId: bigint];
       export interface OutputObject {questId: bigint };
+      export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
+      export type Filter = TypedDeferredTopicFilter<Event>
+      export type Log = TypedEventLog<Event>
+      export type LogDescription = TypedLogDescription<Event>
+    }
+
+  
+
+    export namespace TierAdvancedEvent {
+      export type InputTuple = [player: AddressLike, newTier: BigNumberish, totalCompleted: BigNumberish, totalXP: BigNumberish];
+      export type OutputTuple = [player: string, newTier: bigint, totalCompleted: bigint, totalXP: bigint];
+      export interface OutputObject {player: string, newTier: bigint, totalCompleted: bigint, totalXP: bigint };
       export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>
       export type Filter = TypedDeferredTopicFilter<Event>
       export type Log = TypedEventLog<Event>
@@ -298,6 +323,14 @@ decodeFunctionResult(functionFragment: 'updateQuest', data: BytesLike): Result;
     
 
     
+    getWalletProgression: TypedContractMethod<
+      [wallet: AddressLike, ],
+      [QuestEngine.WalletProgressionStructOutput],
+      'view'
+    >
+    
+
+    
     isWarriorOnQuest: TypedContractMethod<
       [arg0: BigNumberish, ],
       [boolean],
@@ -346,8 +379,24 @@ decodeFunctionResult(functionFragment: 'updateQuest', data: BytesLike): Result;
     
 
     
+    questsPerTier: TypedContractMethod<
+      [],
+      [bigint],
+      'view'
+    >
+    
+
+    
     renounceOwnership: TypedContractMethod<
       [],
+      [void],
+      'nonpayable'
+    >
+    
+
+    
+    setQuestsPerTier: TypedContractMethod<
+      [_questsPerTier: BigNumberish, ],
       [void],
       'nonpayable'
     >
@@ -417,6 +466,14 @@ decodeFunctionResult(functionFragment: 'updateQuest', data: BytesLike): Result;
     >
     
 
+    
+    walletProgression: TypedContractMethod<
+      [arg0: AddressLike, ],
+      [[bigint, bigint, bigint, bigint, bigint] & {tier: bigint, questsCompleted: bigint, questsWon: bigint, totalXP: bigint, tierProgress: bigint }],
+      'view'
+    >
+    
+
 
     getFunction<T extends ContractMethod = ContractMethod>(key: string | FunctionFragment): T;
 
@@ -470,6 +527,11 @@ getFunction(nameOrSignature: 'getSuccessChance'): TypedContractMethod<
       [bigint],
       'view'
     >;
+getFunction(nameOrSignature: 'getWalletProgression'): TypedContractMethod<
+      [wallet: AddressLike, ],
+      [QuestEngine.WalletProgressionStructOutput],
+      'view'
+    >;
 getFunction(nameOrSignature: 'isWarriorOnQuest'): TypedContractMethod<
       [arg0: BigNumberish, ],
       [boolean],
@@ -500,8 +562,18 @@ getFunction(nameOrSignature: 'quests'): TypedContractMethod<
       [[bigint, string, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, boolean] & {id: bigint, name: string, zone: bigint, difficulty: bigint, duration: bigint, winXP: bigint, lossXP: bigint, minLevel: bigint, minPowerScore: bigint, baseDifficulty: bigint, active: boolean }],
       'view'
     >;
+getFunction(nameOrSignature: 'questsPerTier'): TypedContractMethod<
+      [],
+      [bigint],
+      'view'
+    >;
 getFunction(nameOrSignature: 'renounceOwnership'): TypedContractMethod<
       [],
+      [void],
+      'nonpayable'
+    >;
+getFunction(nameOrSignature: 'setQuestsPerTier'): TypedContractMethod<
+      [_questsPerTier: BigNumberish, ],
       [void],
       'nonpayable'
     >;
@@ -545,6 +617,11 @@ getFunction(nameOrSignature: 'updateQuest'): TypedContractMethod<
       [void],
       'nonpayable'
     >;
+getFunction(nameOrSignature: 'walletProgression'): TypedContractMethod<
+      [arg0: AddressLike, ],
+      [[bigint, bigint, bigint, bigint, bigint] & {tier: bigint, questsCompleted: bigint, questsWon: bigint, totalXP: bigint, tierProgress: bigint }],
+      'view'
+    >;
 
     getEvent(key: 'OwnershipTransferred'): TypedContractEvent<OwnershipTransferredEvent.InputTuple, OwnershipTransferredEvent.OutputTuple, OwnershipTransferredEvent.OutputObject>;
 getEvent(key: 'Paused'): TypedContractEvent<PausedEvent.InputTuple, PausedEvent.OutputTuple, PausedEvent.OutputObject>;
@@ -554,6 +631,7 @@ getEvent(key: 'QuestCompleted'): TypedContractEvent<QuestCompletedEvent.InputTup
 getEvent(key: 'QuestStarted'): TypedContractEvent<QuestStartedEvent.InputTuple, QuestStartedEvent.OutputTuple, QuestStartedEvent.OutputObject>;
 getEvent(key: 'QuestToggled'): TypedContractEvent<QuestToggledEvent.InputTuple, QuestToggledEvent.OutputTuple, QuestToggledEvent.OutputObject>;
 getEvent(key: 'QuestUpdated'): TypedContractEvent<QuestUpdatedEvent.InputTuple, QuestUpdatedEvent.OutputTuple, QuestUpdatedEvent.OutputObject>;
+getEvent(key: 'TierAdvanced'): TypedContractEvent<TierAdvancedEvent.InputTuple, TierAdvancedEvent.OutputTuple, TierAdvancedEvent.OutputObject>;
 getEvent(key: 'Unpaused'): TypedContractEvent<UnpausedEvent.InputTuple, UnpausedEvent.OutputTuple, UnpausedEvent.OutputObject>;
 
     filters: {
@@ -588,6 +666,10 @@ getEvent(key: 'Unpaused'): TypedContractEvent<UnpausedEvent.InputTuple, Unpaused
 
       'QuestUpdated(uint256)': TypedContractEvent<QuestUpdatedEvent.InputTuple, QuestUpdatedEvent.OutputTuple, QuestUpdatedEvent.OutputObject>;
       QuestUpdated: TypedContractEvent<QuestUpdatedEvent.InputTuple, QuestUpdatedEvent.OutputTuple, QuestUpdatedEvent.OutputObject>;
+    
+
+      'TierAdvanced(address,uint256,uint256,uint256)': TypedContractEvent<TierAdvancedEvent.InputTuple, TierAdvancedEvent.OutputTuple, TierAdvancedEvent.OutputObject>;
+      TierAdvanced: TypedContractEvent<TierAdvancedEvent.InputTuple, TierAdvancedEvent.OutputTuple, TierAdvancedEvent.OutputObject>;
     
 
       'Unpaused(address)': TypedContractEvent<UnpausedEvent.InputTuple, UnpausedEvent.OutputTuple, UnpausedEvent.OutputObject>;

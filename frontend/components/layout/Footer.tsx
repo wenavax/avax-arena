@@ -1,11 +1,10 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Twitter, MessageCircle, Github, BookOpen, ExternalLink, Zap } from 'lucide-react';
+import { Twitter, Github, BookOpen, Zap } from 'lucide-react';
 
 const SOCIAL_LINKS = [
   { href: 'https://x.com/frostbitepro', label: 'X / Twitter', icon: Twitter },
-  { href: 'https://discord.gg/frostbite', label: 'Discord', icon: MessageCircle },
-  { href: 'https://github.com/frostbite-arena', label: 'GitHub', icon: Github },
+  { href: 'https://github.com/wenavax/avax-arena', label: 'GitHub', icon: Github },
 ];
 
 export function Footer() {

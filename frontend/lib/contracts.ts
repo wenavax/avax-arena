@@ -154,9 +154,11 @@ export const QUEST_ENGINE_ABI = parseAbi([
   'function getQuestStats() external view returns (uint256 totalStarted, uint256 totalCompleted, uint256 totalWon, uint256 questCount)',
   'function getSuccessChance(uint256 tokenId, uint256 questId) external view returns (uint256)',
   'function questCount() external view returns (uint256)',
+  'function getWalletProgression(address wallet) external view returns ((uint256 tier, uint256 questsCompleted, uint256 questsWon, uint256 totalXP, uint256 tierProgress))',
   'event QuestStarted(uint256 indexed questId, uint256 indexed tokenId, address indexed player, uint256 endsAt)',
   'event QuestCompleted(uint256 indexed questId, uint256 indexed tokenId, address indexed player, bool won, uint256 xpGained)',
   'event QuestAbandoned(uint256 indexed questId, uint256 indexed tokenId, address indexed player)',
+  'event TierAdvanced(address indexed player, uint256 newTier, uint256 totalCompleted, uint256 totalXP)',
 ]);
 
 export const BATCH_MINTER_ABI = parseAbi([

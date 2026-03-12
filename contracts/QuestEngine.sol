@@ -36,6 +36,7 @@ interface IArenaWarrior {
  * @notice PvE quest system for Frostbite Arena. Players send warriors on
  *         time-based quests across 8 elemental zones. Success is determined
  *         by warrior power, element advantage, and level bonus.
+ *         Includes on-chain tier progression per wallet.
  */
 contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
     // -------------------------------------------------------------------------
@@ -68,6 +69,14 @@ contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
         bool won;
     }
 
+    struct WalletProgression {
+        uint256 tier;
+        uint256 questsCompleted;
+        uint256 questsWon;
+        uint256 totalXP;
+        uint256 tierProgress;     // 0 or 1 — quests completed in current tier
+    }
+
     // -------------------------------------------------------------------------
     // State
     // -------------------------------------------------------------------------
@@ -91,6 +100,12 @@ contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
     /// @notice Element advantages: element => element it beats
     mapping(uint8 => uint8) private _elementAdvantages;
 
+    /// @notice Per-wallet tier progression
+    mapping(address => WalletProgression) public walletProgression;
+
+    /// @notice Quests required per tier to advance (default 2)
+    uint256 public questsPerTier = 2;
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
@@ -101,6 +116,7 @@ contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
     event QuestAbandoned(uint256 indexed questId, uint256 indexed tokenId, address indexed player);
     event QuestToggled(uint256 indexed questId, bool active);
     event QuestUpdated(uint256 indexed questId);
+    event TierAdvanced(address indexed player, uint256 newTier, uint256 totalCompleted, uint256 totalXP);
 
     // -------------------------------------------------------------------------
     // Errors
@@ -203,6 +219,10 @@ contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
         emit QuestUpdated(questId);
     }
 
+    function setQuestsPerTier(uint256 _questsPerTier) external onlyOwner {
+        questsPerTier = _questsPerTier;
+    }
+
     // -------------------------------------------------------------------------
     // Core Quest Functions
     // -------------------------------------------------------------------------
@@ -262,6 +282,19 @@ contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
         totalQuestsCompleted++;
         if (won) totalQuestsWon++;
 
+        // Update wallet tier progression
+        WalletProgression storage wp = walletProgression[msg.sender];
+        wp.questsCompleted++;
+        if (won) wp.questsWon++;
+        wp.totalXP += xpGained;
+        wp.tierProgress++;
+
+        if (wp.tierProgress >= questsPerTier) {
+            wp.tier++;
+            wp.tierProgress = 0;
+            emit TierAdvanced(msg.sender, wp.tier, wp.questsCompleted, wp.totalXP);
+        }
+
         emit QuestCompleted(aq.questId, tokenId, msg.sender, won, xpGained);
     }
 
@@ -289,6 +322,10 @@ contract QuestEngine is Ownable, ReentrancyGuard, Pausable {
 
     function getActiveQuest(uint256 tokenId) external view returns (ActiveQuest memory) {
         return activeQuests[tokenId];
+    }
+
+    function getWalletProgression(address wallet) external view returns (WalletProgression memory) {
+        return walletProgression[wallet];
     }
 
     function getQuestsByZone(uint8 zone) external view returns (QuestDef[] memory) {

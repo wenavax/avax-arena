@@ -88,6 +88,7 @@ interface Progression {
   totalCompleted: number;
   totalWon: number;
   totalXp: number;
+  tierProgress?: number;
 }
 
 interface TierHistoryEntry {
@@ -899,7 +900,7 @@ export default function QuestsPage() {
   const { data: txHash, writeContract, isPending: isWritePending, reset: resetWrite, error: writeError } = useWriteContract();
   const { isLoading: isTxPending, isSuccess: isTxSuccess, error: receiptError } = useWaitForTransactionReceipt({ hash: txHash });
 
-  // Fetch progression data from API
+  // Fetch progression data from on-chain + API
   const fetchProgression = useCallback(async () => {
     if (!address || !isConnected) {
       setProgression(null);
@@ -909,9 +910,39 @@ export default function QuestsPage() {
       return;
     }
     try {
+      // Read on-chain tier progression as source of truth
+      let onChainProg: Progression | null = null;
+      if (publicClient) {
+        try {
+          const raw = await publicClient.readContract({
+            address: CONTRACT_ADDRESSES.questEngine as `0x${string}`,
+            abi: QUEST_ENGINE_ABI,
+            functionName: 'getWalletProgression',
+            args: [address as `0x${string}`],
+          }) as Record<string, unknown>;
+          onChainProg = {
+            currentTier: Number(raw.tier ?? raw[0] ?? 0),
+            totalCompleted: Number(raw.questsCompleted ?? raw[1] ?? 0),
+            totalWon: Number(raw.questsWon ?? raw[2] ?? 0),
+            totalXp: Number(raw.totalXP ?? raw[3] ?? 0),
+            tierProgress: Number(raw.tierProgress ?? raw[4] ?? 0),
+          };
+        } catch (err) {
+          console.error('[quests] Failed to read on-chain progression:', err);
+        }
+      }
+
+      // Fetch quest slots and history from API
       const res = await fetch(`/api/v1/quests?wallet=${address}`);
       const data = await res.json();
-      if (data.progression) setProgression(data.progression);
+
+      // Use on-chain progression if available, otherwise fall back to API
+      if (onChainProg) {
+        setProgression(onChainProg);
+      } else if (data.progression) {
+        setProgression(data.progression);
+      }
+
       if (data.currentQuests) setCurrentQuests(data.currentQuests);
       if (data.history) setTierHistory(data.history);
     } catch (err) {
@@ -919,7 +950,7 @@ export default function QuestsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [address, isConnected]);
+  }, [address, isConnected, publicClient]);
 
   useEffect(() => { fetchProgression(); }, [fetchProgression]);
 
@@ -1037,21 +1068,25 @@ export default function QuestsPage() {
     const err = writeError || receiptError;
     if (!err) return;
 
-    const errStr = err.message || String(err);
-    console.error('[quests] TX error:', errStr);
+    const errStr = ('shortMessage' in err ? (err as any).shortMessage : err.message) || String(err);
+    const fullStr = err.message || String(err);
+    console.error('[quests] TX error:', fullStr);
 
     let msg = 'Transaction failed';
-    if (errStr.includes('QuestNotFinished')) msg = 'Quest not finished yet — wait for the timer';
-    else if (errStr.includes('QuestAlreadyCompleted')) msg = 'Quest already completed';
-    else if (errStr.includes('WarriorAlreadyOnQuest')) msg = 'Warrior is already on a quest';
-    else if (errStr.includes('QuestNotStarted')) msg = 'No active quest for this warrior';
-    else if (errStr.includes('User rejected') || errStr.includes('user rejected')) msg = 'Transaction rejected';
-    else if (errStr.includes('NotWarriorOwner')) msg = 'You do not own this warrior';
-    else if (errStr.includes('NotQuestPlayer')) msg = 'This quest belongs to a different wallet';
-    else if (errStr.includes('LevelTooLow')) msg = 'Warrior level is too low for this quest';
-    else if (errStr.includes('PowerScoreTooLow')) msg = 'Warrior power score is too low';
-    else if (errStr.includes('insufficient funds')) msg = 'Insufficient AVAX for gas';
-    else if (errStr.includes('reverted') || errStr.includes('execution reverted')) msg = 'Transaction reverted — check console for details';
+    const combined = errStr + ' ' + fullStr;
+    if (combined.includes('QuestNotFinished')) msg = 'Quest not finished yet — wait for the timer';
+    else if (combined.includes('QuestAlreadyCompleted')) msg = 'Quest already completed';
+    else if (combined.includes('WarriorAlreadyOnQuest')) msg = 'Warrior is already on a quest';
+    else if (combined.includes('QuestNotStarted')) msg = 'No active quest for this warrior';
+    else if (combined.includes('QuestNotFound')) msg = 'Quest not found on chain';
+    else if (combined.includes('QuestNotActive')) msg = 'This quest is not active';
+    else if (combined.includes('User rejected') || combined.includes('user rejected') || combined.includes('User denied')) msg = 'Transaction rejected';
+    else if (combined.includes('NotWarriorOwner')) msg = 'You do not own this warrior';
+    else if (combined.includes('NotQuestPlayer')) msg = 'This quest belongs to a different wallet';
+    else if (combined.includes('LevelTooLow')) msg = 'Warrior level is too low for this quest';
+    else if (combined.includes('PowerScoreTooLow')) msg = 'Warrior power score is too low';
+    else if (combined.includes('insufficient funds')) msg = 'Insufficient AVAX for gas';
+    else if (combined.includes('reverted')) msg = `Transaction reverted: ${errStr.slice(0, 120)}`;
 
     setTxError(msg);
     setPendingAction(null);
@@ -1090,6 +1125,8 @@ export default function QuestsPage() {
         }),
       }).then(() => {
         fetchProgression();
+        // Fetch on-chain endsAt so the timer uses the real contract deadline
+        setTimeout(() => fetchActiveQuests(), 2000);
       }).catch(console.error);
 
       setShowPicker(false);
@@ -1234,14 +1271,61 @@ export default function QuestsPage() {
         return;
       }
     }
+
+    // Pre-check: verify this token is actually on a quest on-chain
+    let actualTokenId = tokenId;
+    if (publicClient) {
+      try {
+        const isOnQuest = await publicClient.readContract({
+          address: CONTRACT_ADDRESSES.questEngine as `0x${string}`,
+          abi: QUEST_ENGINE_ABI,
+          functionName: 'isWarriorOnQuest',
+          args: [BigInt(tokenId)],
+        }) as boolean;
+
+        if (!isOnQuest) {
+          // Token not on quest — maybe DB is stale. Try to find the real on-quest token from activeQuests
+          const onChainQuest = activeQuests.find((aq) => !aq.completed);
+          if (onChainQuest) {
+            actualTokenId = onChainQuest.tokenId;
+          } else {
+            setTxError('This warrior is not on a quest. Try refreshing the page.');
+            setTimeout(() => setTxError(null), 5000);
+            fetchActiveQuests();
+            fetchProgression();
+            return;
+          }
+        }
+
+        // Check if quest is finished
+        const aq = await publicClient.readContract({
+          address: CONTRACT_ADDRESSES.questEngine as `0x${string}`,
+          abi: QUEST_ENGINE_ABI,
+          functionName: 'getActiveQuest',
+          args: [BigInt(actualTokenId)],
+        }) as Record<string, unknown>;
+        const endsAt = Number(aq.endsAt ?? aq[4] ?? 0);
+        const now = Math.floor(Date.now() / 1000);
+        if (endsAt > 0 && now < endsAt) {
+          const mins = Math.ceil((endsAt - now) / 60);
+          setTxError(`Quest not finished yet — ${mins} min remaining on-chain`);
+          setTimeout(() => setTxError(null), 5000);
+          fetchActiveQuests();
+          return;
+        }
+      } catch {
+        // If pre-check fails, let the tx attempt anyway
+      }
+    }
+
     setPendingAction('complete');
-    setPendingTokenId(tokenId);
+    setPendingTokenId(actualTokenId);
 
     writeContract({
       address: CONTRACT_ADDRESSES.questEngine as `0x${string}`,
       abi: QUEST_ENGINE_ABI,
       functionName: 'completeQuest',
-      args: [BigInt(tokenId)],
+      args: [BigInt(actualTokenId)],
       gas: 300_000n,
     });
   }
@@ -1254,14 +1338,43 @@ export default function QuestsPage() {
         return;
       }
     }
+
+    // Pre-check: use on-chain token if DB token is stale
+    let actualTokenId = tokenId;
+    if (publicClient) {
+      try {
+        const isOnQuest = await publicClient.readContract({
+          address: CONTRACT_ADDRESSES.questEngine as `0x${string}`,
+          abi: QUEST_ENGINE_ABI,
+          functionName: 'isWarriorOnQuest',
+          args: [BigInt(tokenId)],
+        }) as boolean;
+
+        if (!isOnQuest) {
+          const onChainQuest = activeQuests.find((aq) => !aq.completed);
+          if (onChainQuest) {
+            actualTokenId = onChainQuest.tokenId;
+          } else {
+            setTxError('This warrior is not on a quest.');
+            setTimeout(() => setTxError(null), 5000);
+            fetchActiveQuests();
+            fetchProgression();
+            return;
+          }
+        }
+      } catch {
+        // If check fails, try with original token
+      }
+    }
+
     setPendingAction('abandon');
-    setPendingTokenId(tokenId);
+    setPendingTokenId(actualTokenId);
 
     writeContract({
       address: CONTRACT_ADDRESSES.questEngine as `0x${string}`,
       abi: QUEST_ENGINE_ABI,
       functionName: 'abandonQuest',
-      args: [BigInt(tokenId)],
+      args: [BigInt(actualTokenId)],
       gas: 200_000n,
     });
   }
@@ -1283,8 +1396,8 @@ export default function QuestsPage() {
     fetchProgression();
   }
 
-  // Count completed in current tier
-  const completedInTier = currentQuests.filter((q) => q.status === 'completed').length;
+  // Count completed in current tier — prefer on-chain tierProgress
+  const completedInTier = progression?.tierProgress ?? currentQuests.filter((q) => q.status === 'completed').length;
 
   if (isLoading) {
     return (
@@ -1345,6 +1458,47 @@ export default function QuestsPage() {
             {/* ---- Progression Header ---- */}
             {progression && (
               <ProgressionHeader progression={progression} completedInTier={completedInTier} />
+            )}
+
+            {/* ---- Stuck On-Chain Quests Banner ---- */}
+            {activeQuests.length > 0 && activeQuests.some((aq) => !currentQuests.some((cq) => cq.tokenId === aq.tokenId)) && (
+              <div className="p-4 rounded-xl bg-frost-orange/10 border border-frost-orange/20 space-y-3">
+                <div className="flex items-center gap-2 text-frost-orange text-sm font-medium">
+                  <AlertTriangle className="w-4 h-4" />
+                  Warriors stuck on quest (not tracked in current tier)
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {activeQuests
+                    .filter((aq) => !aq.completed && !currentQuests.some((cq) => cq.tokenId === aq.tokenId))
+                    .map((aq) => {
+                      const now = Math.floor(Date.now() / 1000);
+                      const finished = now >= aq.endsAt;
+                      return (
+                        <div key={aq.tokenId} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
+                          <span className="font-mono text-xs text-white/70">#{aq.tokenId}</span>
+                          {finished ? (
+                            <button
+                              onClick={() => handleCompleteQuest(aq.tokenId)}
+                              disabled={isWritePending || isTxPending}
+                              className="px-2 py-1 text-xs font-semibold rounded-md bg-frost-green/20 text-frost-green hover:bg-frost-green/30 transition-colors disabled:opacity-50"
+                            >
+                              Complete
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-white/40">{Math.ceil((aq.endsAt - now) / 60)}m left</span>
+                          )}
+                          <button
+                            onClick={() => handleAbandonQuest(aq.tokenId)}
+                            disabled={isWritePending || isTxPending}
+                            className="px-2 py-1 text-xs font-semibold rounded-md bg-frost-red/20 text-frost-red hover:bg-frost-red/30 transition-colors disabled:opacity-50"
+                          >
+                            Abandon
+                          </button>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
             )}
 
             {/* ---- Quest Slots ---- */}
