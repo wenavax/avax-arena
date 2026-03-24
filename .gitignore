@@ -17,3 +17,8 @@ frontend/data/*.db-wal
 frontend/data/*.db-shm
 frontend/data/agents.json
 frontend/tsconfig.tsbuildinfo
+
+# Bot scripts (not part of the platform)
+scripts/activity-bot.mjs
+scripts/elite-bot.mjs
+scripts/auto-withdraw.mjs

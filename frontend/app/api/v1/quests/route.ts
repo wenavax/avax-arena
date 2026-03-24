@@ -6,6 +6,7 @@ import {
   getTierQuests,
   generateQuest,
   getTierHistory,
+  syncTierWithChain,
 } from '@/lib/quest-progression';
 
 export const dynamic = 'force-dynamic';
@@ -30,7 +31,13 @@ export async function GET(req: NextRequest) {
       }, { headers: sec() });
     }
 
-    // Get or create wallet progression
+    // Sync DB tier with on-chain tier if provided
+    const chainTier = searchParams.get('chainTier');
+    if (chainTier !== null) {
+      syncTierWithChain(wallet, Number(chainTier));
+    }
+
+    // Get or create wallet progression (now synced)
     const progression = getOrCreateProgression(wallet);
 
     // Ensure current tier quests exist (lazy init)

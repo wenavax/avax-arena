@@ -5,6 +5,7 @@ import {
   generateQuest,
   startTierQuest,
   getTierQuests,
+  syncTierWithChain,
 } from '@/lib/quest-progression';
 
 export const dynamic = 'force-dynamic';
@@ -25,14 +26,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate tier matches current progression
+    // Sync DB tier with on-chain tier, then validate
+    syncTierWithChain(wallet, tier);
     const progression = getOrCreateProgression(wallet);
-    if (tier !== progression.current_tier) {
-      return NextResponse.json(
-        { error: `Invalid tier. Current tier is ${progression.current_tier}` },
-        { status: 400, headers: sec() }
-      );
-    }
 
     // Check slot is valid and available
     const tierQuests = getTierQuests(wallet, tier);

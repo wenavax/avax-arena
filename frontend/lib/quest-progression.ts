@@ -80,6 +80,29 @@ export interface TierQuest {
 
 const ENEMY_PREFIXES = ['Elite', 'Veteran', 'Ancient', 'Mythic', 'Legendary'];
 
+/**
+ * On-chain quest durations indexed by chainQuestId (zoneId * 4 + diffIndex).
+ * Must match the values in the deploy script / QuestEngine contract.
+ */
+const CHAIN_QUEST_DURATIONS: Record<number, number> = {
+  // Zone 0: Inferno Caldera (Fire)
+  0: 300, 1: 7200, 2: 21600, 3: 64800,
+  // Zone 1: Abyssal Depths (Water)
+  4: 420, 5: 5400, 6: 18000, 7: 72000,
+  // Zone 2: Stormhowl Peaks (Wind)
+  8: 540, 9: 3600, 10: 14400, 11: 57600,
+  // Zone 3: Glacial Expanse (Ice)
+  12: 600, 13: 7200, 14: 28800, 15: 86400,
+  // Zone 4: Ironroot Badlands (Earth)
+  16: 720, 17: 5400, 18: 21600, 19: 64800,
+  // Zone 5: Voltspire Heights (Thunder)
+  20: 840, 21: 3600, 22: 18000, 23: 57600,
+  // Zone 6: Umbral Wastes (Shadow)
+  24: 900, 25: 7200, 26: 21600, 27: 72000,
+  // Zone 7: Solaris Citadel (Light)
+  28: 300, 29: 5400, 30: 14400, 31: 86400,
+};
+
 export function getTierDifficulties(tier: number): [Difficulty, Difficulty] {
   if (tier < 5)  return ['Easy', 'Easy'];
   if (tier < 8)  return ['Easy', 'Medium'];
@@ -144,7 +167,9 @@ export function generateQuest(wallet: string, tier: number, slot: 0 | 1): Genera
   const successIdx = Math.floor(rng() * zoneData.successes.length);
   const failureIdx = Math.floor(rng() * zoneData.failures.length);
 
-  const durationIdx = Math.floor(rng() * params.durations.length);
+  // Use on-chain duration (source of truth), fallback to DIFF_PARAMS
+  const chainDuration = CHAIN_QUEST_DURATIONS[chainQuestId];
+  const durationSecs = chainDuration ?? params.durations[0];
 
   return {
     chain_quest_id: chainQuestId,
@@ -152,7 +177,7 @@ export function generateQuest(wallet: string, tier: number, slot: 0 | 1): Genera
     zone_name: zone.name,
     zone_element: zone.element,
     difficulty,
-    duration_secs: params.durations[durationIdx],
+    duration_secs: durationSecs,
     win_xp: params.winXp,
     loss_xp: params.lossXp,
     min_level: params.minLevel,
@@ -183,6 +208,35 @@ export function getOrCreateProgression(wallet: string): WalletProgression {
   }
 
   return row;
+}
+
+/**
+ * Sync DB tier with on-chain tier. If on-chain tier is ahead,
+ * fast-forward the DB and ensure tier quest slots exist.
+ */
+export function syncTierWithChain(wallet: string, chainTier: number): void {
+  const db = getDb();
+  const addr = wallet.toLowerCase();
+  const prog = getOrCreateProgression(wallet);
+
+  if (chainTier > prog.current_tier) {
+    // Mark any active quests in old tiers as abandoned
+    db.prepare(`
+      UPDATE tier_quests
+      SET status = 'available', token_id = NULL, started_at = NULL, tx_hash_start = NULL
+      WHERE wallet_address = ? AND status = 'active'
+    `).run(addr);
+
+    // Advance DB tier to match on-chain
+    db.prepare(`
+      UPDATE wallet_progression
+      SET current_tier = ?, updated_at = datetime('now')
+      WHERE wallet_address = ?
+    `).run(chainTier, addr);
+
+    // Ensure quest slots exist for new tier
+    ensureTierQuests(wallet, chainTier);
+  }
 }
 
 /* ---------------------------------------------------------------------------

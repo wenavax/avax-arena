@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   GitMerge,
@@ -13,6 +13,7 @@ import {
   Check,
   Plus,
   ArrowRight,
+  ArrowUpDown,
   X,
   Flame,
   Droplets,
@@ -25,15 +26,18 @@ import {
   Hash,
   Trophy,
   Skull,
+  Layers,
+  CheckCircle2,
 } from 'lucide-react';
 import { ELEMENTS, MERGE_PRICE, CONTRACT_ADDRESSES, ACTIVE_CHAIN_ID } from '@/lib/constants';
-import { FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
+import { FROSTBITE_WARRIOR_ABI, BATTLE_ENGINE_ABI, TEAM_BATTLE_ABI, QUEST_ENGINE_ABI, MARKETPLACE_ABI } from '@/lib/contracts';
 import {
   useAccount,
   useWriteContract,
   useReadContract,
   useWaitForTransactionReceipt,
   useSwitchChain,
+  useWalletClient,
 } from 'wagmi';
 import { parseEther, decodeEventLog } from 'viem';
 import { usePublicClient } from 'wagmi';
@@ -118,6 +122,7 @@ interface MergedStats {
   defense: number;
   speed: number;
   specialPower: number;
+  level: number;
 }
 
 /* ---------------------------------------------------------------------------
@@ -133,7 +138,13 @@ function calculateMergedStats(w1: WarriorStats, w2: WarriorStats): MergedStats {
     defense: merge(w1.defense, w2.defense, 100),
     speed: merge(w1.speed, w2.speed, 100),
     specialPower: merge(w1.specialPower, w2.specialPower, 50),
+    level: Math.max(w1.level, w2.level) + 1,
   };
+}
+
+/** Matches Solidity: attack*3 + defense*2 + speed*2 + specialPower*5 */
+function calculatePowerScore(m: MergedStats): number {
+  return m.attack * 3 + m.defense * 2 + m.speed * 2 + m.specialPower * 5;
 }
 
 /* ---------------------------------------------------------------------------
@@ -386,7 +397,7 @@ function WarriorSelectCard({
           {/* Power Score */}
           <div className="text-center pt-1 border-t border-white/5">
             <p className="text-[9px] uppercase tracking-widest text-white/20">PWR</p>
-            <p className={`font-display text-sm font-bold bg-gradient-to-r ${element.color} bg-clip-text text-transparent`}>
+            <p className={`font-display text-sm font-bold text-frost-cyan`}>
               {powerScore}
             </p>
           </div>
@@ -500,7 +511,7 @@ function SelectedWarriorSlot({
         <div className="flex items-center justify-between">
           <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full bg-gradient-to-r ${element.bgGradient} border border-white/10`}>
             <ElementIcon className="w-3 h-3" />
-            <span className={`text-[10px] font-display font-bold bg-gradient-to-r ${element.color} bg-clip-text text-transparent`}>
+            <span className={`text-[10px] font-display font-bold text-frost-cyan`}>
               {element.emoji} {element.name}
             </span>
           </div>
@@ -532,7 +543,7 @@ function SelectedWarriorSlot({
         {/* Power Score */}
         <div className="text-center py-2 rounded-xl bg-white/[0.02] border border-white/5">
           <p className="text-[8px] uppercase tracking-widest text-white/25 mb-0.5">Power Score</p>
-          <p className={`font-display text-xl font-black bg-gradient-to-r ${element.color} bg-clip-text text-transparent`}>
+          <p className={`font-display text-xl font-black text-frost-cyan`}>
             {powerScore}
           </p>
         </div>
@@ -1038,17 +1049,32 @@ function MergeResultPreview({
           delay={0.4}
         />
 
-        {/* Estimated power score */}
+        {/* Estimated power score & level */}
         <div className="text-center pt-2 border-t border-white/5">
-          <p className="text-[8px] uppercase tracking-widest text-white/20 mb-1">Est. Power Score</p>
-          <motion.p
-            className="font-display text-2xl font-black gradient-text"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.5 }}
-          >
-            ~{merged.attack + merged.defense + merged.speed + merged.specialPower}
-          </motion.p>
+          <div className="flex items-center justify-center gap-4 mb-2">
+            <div>
+              <p className="text-[8px] uppercase tracking-widest text-white/20 mb-1">Level</p>
+              <motion.p
+                className="font-display text-lg font-bold text-frost-cyan"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.5 }}
+              >
+                Lv.{merged.level}
+              </motion.p>
+            </div>
+            <div>
+              <p className="text-[8px] uppercase tracking-widest text-white/20 mb-1">Est. Power Score</p>
+              <motion.p
+                className="font-display text-2xl font-black gradient-text"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.5 }}
+              >
+                ~{calculatePowerScore(merged)}
+              </motion.p>
+            </div>
+          </div>
         </div>
 
         {/* Element note */}
@@ -1108,6 +1134,154 @@ export default function MergePage() {
     () => ((ownedTokenIds as bigint[] | undefined) ?? []).map((id) => Number(id)),
     [ownedTokenIds]
   );
+
+  // Cross-filter: exclude warriors locked in battles, quests, or marketplace
+  const [lockedTokenIds, setLockedTokenIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (!publicClient || !address || tokenIds.length === 0) {
+      setLockedTokenIds(new Set());
+      return;
+    }
+    let cancelled = false;
+
+    async function checkLocked() {
+      const locked = new Set<number>();
+
+      try {
+        // Check open 1v1 battles
+        const battleIds = await publicClient!.readContract({
+          address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+          abi: BATTLE_ENGINE_ABI,
+          functionName: 'getOpenBattles',
+          args: [0n, 50n],
+        }) as bigint[];
+
+        if (battleIds && battleIds.length > 0) {
+          const battles = await Promise.allSettled(
+            battleIds.map((id) =>
+              publicClient!.readContract({
+                address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+                abi: BATTLE_ENGINE_ABI,
+                functionName: 'getBattle',
+                args: [id],
+              })
+            )
+          );
+          for (const r of battles) {
+            if (r.status !== 'fulfilled') continue;
+            const b = r.value as Record<string, unknown>;
+            const p1 = String(b.player1 ?? b[1] ?? '').toLowerCase();
+            if (p1 === address!.toLowerCase()) {
+              const nft1 = Number(b.nft1 ?? b[3] ?? 0);
+              if (nft1 > 0) locked.add(nft1);
+            }
+          }
+        }
+      } catch { /* ignore */ }
+
+      try {
+        // Check open 3v3 battles
+        const teamIds = await publicClient!.readContract({
+          address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
+          abi: TEAM_BATTLE_ABI,
+          functionName: 'getOpenTeamBattles',
+          args: [0n, 50n],
+        }) as bigint[];
+
+        if (teamIds && teamIds.length > 0) {
+          const teams = await Promise.allSettled(
+            teamIds.map((id) =>
+              publicClient!.readContract({
+                address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
+                abi: TEAM_BATTLE_ABI,
+                functionName: 'getTeamBattle',
+                args: [id],
+              })
+            )
+          );
+          for (const r of teams) {
+            if (r.status !== 'fulfilled') continue;
+            const raw = r.value as readonly unknown[];
+            const p1 = String(raw[1] ?? '').toLowerCase();
+            if (p1 === address!.toLowerCase()) {
+              const team1 = Array.isArray(raw[3]) ? raw[3] : [];
+              team1.forEach((id: unknown) => { const n = Number(id); if (n > 0) locked.add(n); });
+            }
+          }
+        }
+      } catch { /* ignore */ }
+
+      // Check quests and marketplace for each warrior
+      const checks = await Promise.allSettled(
+        tokenIds.flatMap((id) => [
+          publicClient!.readContract({
+            address: CONTRACT_ADDRESSES.questEngine as `0x${string}`,
+            abi: QUEST_ENGINE_ABI,
+            functionName: 'isWarriorOnQuest',
+            args: [BigInt(id)],
+          }).then((onQuest) => { if (onQuest) locked.add(id); }),
+          publicClient!.readContract({
+            address: CONTRACT_ADDRESSES.marketplace as `0x${string}`,
+            abi: MARKETPLACE_ABI,
+            functionName: 'getListing',
+            args: [BigInt(id)],
+          }).then((listing) => {
+            const l = listing as Record<string, unknown>;
+            const price = BigInt(String(l.price ?? l[1] ?? 0));
+            if (price > 0n) locked.add(id);
+          }),
+        ])
+      );
+
+      if (!cancelled) setLockedTokenIds(locked);
+    }
+
+    checkLocked();
+    return () => { cancelled = true; };
+  }, [publicClient, address, tokenIds]);
+
+  // Filter available warriors for fusion
+  const availableTokenIds = useMemo(
+    () => tokenIds.filter((id) => !lockedTokenIds.has(id)),
+    [tokenIds, lockedTokenIds]
+  );
+
+  // Fetch warrior power scores for sorting
+  const [warriorPowerScores, setWarriorPowerScores] = useState<Map<number, number>>(new Map());
+  const [pwrSortOrder, setPwrSortOrder] = useState<'desc' | 'asc' | null>(null);
+
+  const fetchPowerScores = useCallback(async () => {
+    if (!publicClient || tokenIds.length === 0) return;
+    const results = await Promise.allSettled(
+      tokenIds.map(async (id) => {
+        const raw = await publicClient.readContract({
+          address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+          abi: FROSTBITE_WARRIOR_ABI,
+          functionName: 'getWarrior',
+          args: [BigInt(id)],
+        });
+        const w = parseWarrior(raw);
+        return { id, powerScore: Number(w.powerScore) };
+      })
+    );
+    const map = new Map<number, number>();
+    for (const r of results) {
+      if (r.status === 'fulfilled') map.set(r.value.id, r.value.powerScore);
+    }
+    setWarriorPowerScores(map);
+  }, [publicClient, tokenIds]);
+
+  useEffect(() => { fetchPowerScores(); }, [fetchPowerScores]);
+
+  const sortedTokenIds = useMemo(() => {
+    if (!pwrSortOrder) return tokenIds;
+    return [...tokenIds].sort((a, b) => {
+      const pa = warriorPowerScores.get(a) ?? 0;
+      const pb = warriorPowerScores.get(b) ?? 0;
+      return pwrSortOrder === 'desc' ? pb - pa : pa - pb;
+    });
+  }, [tokenIds, pwrSortOrder, warriorPowerScores]);
 
   // Read warrior data for selected slots
   const warrior1Data = useWarriorData(slot1TokenId);
@@ -1191,6 +1365,7 @@ export default function MergePage() {
       try {
         // Get tx receipt and parse WarriorsMerged event
         const receipt = await publicClient!.getTransactionReceipt({ hash: fuseTxHash! });
+        if (!receipt) throw new Error('Transaction receipt not found');
 
         let newTokenId: number | null = null;
         for (const log of receipt.logs) {
@@ -1246,6 +1421,155 @@ export default function MergePage() {
     postMerge();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTxSuccess]);
+
+  // ================================================================
+  // BATCH FUSION STATE
+  // ================================================================
+  const [fusionMode, setFusionMode] = useState<'single' | 'batch'>('single');
+  const { data: walletClient } = useWalletClient();
+  const [batchSelected, setBatchSelected] = useState<Set<number>>(new Set());
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchComplete, setBatchComplete] = useState(false);
+  const [batchResults, setBatchResults] = useState<number[]>([]);
+  const BATCH_POWER_THRESHOLD = 700;
+
+  const batchPairs = useMemo(() => {
+    const sorted = [...batchSelected].sort((a, b) => {
+      const pa = warriorPowerScores.get(a) ?? 0;
+      const pb = warriorPowerScores.get(b) ?? 0;
+      return pa - pb;
+    });
+    const pairs: [number, number][] = [];
+    for (let i = 0; i + 1 < sorted.length; i += 2) {
+      pairs.push([sorted[i], sorted[i + 1]]);
+    }
+    return pairs;
+  }, [batchSelected, warriorPowerScores]);
+
+  const batchTotalCost = useMemo(() => {
+    return (batchPairs.length * parseFloat(MERGE_PRICE)).toFixed(4);
+  }, [batchPairs]);
+
+  function handleBatchToggle(tokenId: number) {
+    setBatchSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(tokenId)) {
+        next.delete(tokenId);
+      } else {
+        next.add(tokenId);
+      }
+      return next;
+    });
+  }
+
+  function handleSelectAllLowPower() {
+    const lowPower = availableTokenIds.filter((id) => {
+      const pwr = warriorPowerScores.get(id) ?? 0;
+      return pwr > 0 && pwr < BATCH_POWER_THRESHOLD;
+    });
+    // Ensure even number
+    if (lowPower.length % 2 !== 0) lowPower.pop();
+    setBatchSelected(new Set(lowPower));
+  }
+
+  function handleSelectAll() {
+    const all = [...availableTokenIds];
+    if (all.length % 2 !== 0) all.pop();
+    setBatchSelected(new Set(all));
+  }
+
+  function handleBatchClearSelection() {
+    setBatchSelected(new Set());
+  }
+
+  async function handleBatchFuse() {
+    if (!walletClient || !publicClient || batchPairs.length === 0) return;
+    if (!isConnected) return;
+
+    if (chain?.id !== ACTIVE_CHAIN_ID) {
+      try {
+        await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+      } catch {
+        return;
+      }
+    }
+
+    setBatchError(null);
+    setBatchComplete(false);
+    setBatchResults([]);
+    const newTokenIds: number[] = [];
+
+    for (let i = 0; i < batchPairs.length; i++) {
+      const pair = batchPairs[i];
+      setBatchProgress({ current: i + 1, total: batchPairs.length });
+
+      try {
+        const { request } = await publicClient.simulateContract({
+          address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+          abi: FROSTBITE_WARRIOR_ABI,
+          functionName: 'mergeWarriors',
+          args: [BigInt(pair[0]), BigInt(pair[1])],
+          value: parseEther(MERGE_PRICE),
+          account: walletClient.account,
+        });
+        const hash = await walletClient.writeContract(request);
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+        // Parse WarriorsMerged event
+        for (const log of receipt.logs) {
+          try {
+            const decoded = decodeEventLog({
+              abi: FROSTBITE_WARRIOR_ABI,
+              data: log.data,
+              topics: log.topics,
+            });
+            if (decoded.eventName === 'WarriorsMerged') {
+              const newId = Number((decoded.args as any).resultTokenId);
+              newTokenIds.push(newId);
+
+              // Post to API
+              try {
+                await fetch('/api/v1/merge', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    walletAddress: address,
+                    tokenId1: pair[0],
+                    tokenId2: pair[1],
+                    resultTokenId: newId,
+                    txHash: hash,
+                  }),
+                });
+              } catch { /* non-critical */ }
+              break;
+            }
+          } catch { /* not our event */ }
+        }
+      } catch (err: any) {
+        const msg = err?.message?.includes('User rejected')
+          ? 'Transaction rejected by user'
+          : err?.shortMessage || err?.message || 'Transaction failed';
+        setBatchError(`Pair ${i + 1} failed: ${msg}`);
+        break;
+      }
+    }
+
+    setBatchProgress(null);
+    setBatchResults(newTokenIds);
+    setBatchComplete(true);
+    setBatchSelected(new Set());
+    refetchOwned();
+    fetchPowerScores();
+  }
+
+  function handleBatchReset() {
+    setBatchSelected(new Set());
+    setBatchProgress(null);
+    setBatchError(null);
+    setBatchComplete(false);
+    setBatchResults([]);
+  }
 
   // Reset function
   function handleReset() {
@@ -1327,6 +1651,59 @@ export default function MergePage() {
       </section>
 
       {/* ================================================================
+       * FUSION MODE TABS
+       * ================================================================ */}
+      {isConnected && tokenIds.length >= 2 && (
+        <section className="relative px-4 pb-6">
+          <div className="max-w-md mx-auto">
+            <motion.div
+              className="flex rounded-xl bg-frost-card/60 backdrop-blur-lg border border-white/10 p-1"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+            >
+              <button
+                onClick={() => { setFusionMode('single'); handleBatchReset(); }}
+                className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-display font-bold uppercase tracking-wider transition-all duration-200 ${
+                  fusionMode === 'single'
+                    ? 'text-white'
+                    : 'text-white/40 hover:text-white/60'
+                }`}
+              >
+                {fusionMode === 'single' && (
+                  <motion.div
+                    className="absolute inset-0 rounded-lg bg-gradient-to-r from-frost-cyan/20 to-frost-purple/20 border border-frost-cyan/30"
+                    layoutId="fusionModeTab"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
+                  />
+                )}
+                <GitMerge className="w-4 h-4 relative z-10" />
+                <span className="relative z-10">Single Fusion</span>
+              </button>
+              <button
+                onClick={() => { setFusionMode('batch'); handleReset(); }}
+                className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-display font-bold uppercase tracking-wider transition-all duration-200 ${
+                  fusionMode === 'batch'
+                    ? 'text-white'
+                    : 'text-white/40 hover:text-white/60'
+                }`}
+              >
+                {fusionMode === 'batch' && (
+                  <motion.div
+                    className="absolute inset-0 rounded-lg bg-gradient-to-r from-frost-purple/20 to-frost-pink/20 border border-frost-purple/30"
+                    layoutId="fusionModeTab"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
+                  />
+                )}
+                <Layers className="w-4 h-4 relative z-10" />
+                <span className="relative z-10">Batch Fusion</span>
+              </button>
+            </motion.div>
+          </div>
+        </section>
+      )}
+
+      {/* ================================================================
        * WALLET NOT CONNECTED
        * ================================================================ */}
       {!isConnected && (
@@ -1392,7 +1769,7 @@ export default function MergePage() {
       {/* ================================================================
        * FUSION ARENA (main area, when wallet connected and >= 2 warriors)
        * ================================================================ */}
-      {isConnected && tokenIds.length >= 2 && (
+      {isConnected && tokenIds.length >= 2 && fusionMode === 'single' && (
         <>
           {/* Three-column fusion layout */}
           <section className="relative px-4 pb-8">
@@ -1400,6 +1777,7 @@ export default function MergePage() {
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-4 lg:gap-6 items-start">
                 {/* Slot 1 */}
                 <motion.div
+                  className="max-w-[260px] mx-auto w-full"
                   initial={{ opacity: 0, x: -30 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.6, delay: 0.2 }}
@@ -1453,6 +1831,7 @@ export default function MergePage() {
 
                 {/* Slot 2 */}
                 <motion.div
+                  className="max-w-[260px] mx-auto w-full"
                   initial={{ opacity: 0, x: 30 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.6, delay: 0.2 }}
@@ -1644,8 +2023,19 @@ export default function MergePage() {
                   <span className="text-frost-cyan font-bold font-mono">{tokenIds.length}</span>{' '}
                   {tokenIds.length === 1 ? 'warrior' : 'warriors'}.
                 </p>
-                {/* Selection hint */}
-                <div className="flex items-center justify-center gap-4 mt-3">
+                {/* Sort + legend */}
+                <div className="flex items-center justify-center gap-3 mt-3">
+                  <button
+                    onClick={() => setPwrSortOrder((prev) => prev === 'desc' ? 'asc' : 'desc')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-pixel uppercase tracking-wider transition-all ${
+                      pwrSortOrder
+                        ? 'bg-frost-cyan/15 border border-frost-cyan/30 text-frost-cyan'
+                        : 'bg-white/5 border border-white/10 text-white/40 hover:text-white/60'
+                    }`}
+                  >
+                    <ArrowUpDown className="w-3 h-3" />
+                    PWR {pwrSortOrder === 'asc' ? '↑' : pwrSortOrder === 'desc' ? '↓' : ''}
+                  </button>
                   <div className="flex items-center gap-1.5">
                     <div className="w-3 h-3 rounded-sm border-2 border-frost-cyan bg-frost-cyan/20" />
                     <span className="text-[10px] text-white/30">Selected</span>
@@ -1659,23 +2049,451 @@ export default function MergePage() {
 
               {/* Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-                {tokenIds.map((id) => {
+                {sortedTokenIds.map((id) => {
                   const isSelected = slot1TokenId === id || slot2TokenId === id;
                   const slotsAreFull = slot1TokenId !== null && slot2TokenId !== null;
+                  const isLocked = lockedTokenIds.has(id);
                   return (
-                    <WarriorSelectCard
-                      key={id}
-                      tokenId={id}
-                      selected={isSelected}
-                      slotNumber={getSlotNumber(id)}
-                      onClick={() => handleWarriorClick(id)}
-                      disabled={slotsAreFull && !isSelected}
-                    />
+                    <div key={id} className="relative">
+                      <WarriorSelectCard
+                        tokenId={id}
+                        selected={isSelected}
+                        slotNumber={getSlotNumber(id)}
+                        onClick={() => !isLocked && handleWarriorClick(id)}
+                        disabled={(slotsAreFull && !isSelected) || isLocked}
+                      />
+                      {isLocked && (
+                        <div className="absolute inset-0 rounded-xl bg-black/60 flex items-center justify-center pointer-events-none">
+                          <span className="text-[9px] font-pixel text-white/50 uppercase tracking-wider">In Use</span>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
             </div>
           </section>
+        </>
+      )}
+
+      {/* ================================================================
+       * BATCH FUSION MODE
+       * ================================================================ */}
+      {isConnected && tokenIds.length >= 2 && fusionMode === 'batch' && (
+        <>
+          {/* Batch progress / completion */}
+          <section className="relative px-4 pb-6">
+            <div className="max-w-4xl mx-auto space-y-6">
+
+              {/* Batch progress overlay */}
+              <AnimatePresence>
+                {batchProgress && (
+                  <motion.div
+                    className="glass-card p-8 text-center space-y-4"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0 }}
+                    style={{ transform: 'none' }}
+                  >
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                    >
+                      <GitMerge className="w-12 h-12 text-frost-purple mx-auto" />
+                    </motion.div>
+                    <p className="font-display text-lg font-bold text-white">
+                      Merging pair {batchProgress.current}/{batchProgress.total}...
+                    </p>
+                    <p className="text-sm text-white/40">
+                      Please confirm each transaction in your wallet
+                    </p>
+                    {/* Progress bar */}
+                    <div className="w-full max-w-xs mx-auto h-2 rounded-full bg-white/5 overflow-hidden">
+                      <motion.div
+                        className="h-full rounded-full bg-gradient-to-r from-frost-purple to-frost-pink"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    </div>
+                    <p className="text-[10px] font-mono text-white/25">
+                      {batchProgress.current} of {batchProgress.total} pairs
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Batch complete */}
+              <AnimatePresence>
+                {batchComplete && !batchProgress && (
+                  <motion.div
+                    className="glass-card p-8 text-center space-y-4"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0 }}
+                    style={{ transform: 'none' }}
+                  >
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', bounce: 0.5 }}
+                    >
+                      <CheckCircle2 className="w-14 h-14 text-frost-green mx-auto" />
+                    </motion.div>
+                    <p className="font-display text-xl font-bold text-frost-green">
+                      Batch Fusion Complete!
+                    </p>
+                    {batchResults.length > 0 && (
+                      <p className="text-sm text-white/50">
+                        New warriors created:{' '}
+                        {batchResults.map((id) => `#${id}`).join(', ')}
+                      </p>
+                    )}
+                    <motion.button
+                      onClick={handleBatchReset}
+                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-frost-green/80 to-frost-cyan/80 text-white font-display text-sm font-bold uppercase"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Fuse More
+                    </motion.button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Batch error */}
+              <AnimatePresence>
+                {batchError && (
+                  <motion.div
+                    className="p-3 rounded-lg bg-frost-red/10 border border-frost-red/20 text-frost-red text-sm text-center"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    {batchError}
+                    {batchResults.length > 0 && (
+                      <span className="block mt-1 text-frost-green text-xs">
+                        {batchResults.length} pair(s) were successfully fused before the error.
+                      </span>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </section>
+
+          {/* Pair preview + controls */}
+          {!batchProgress && !batchComplete && (
+            <>
+              {/* Pairs preview */}
+              {batchPairs.length > 0 && (
+                <section className="relative px-4 pb-6">
+                  <div className="max-w-4xl mx-auto">
+                    <motion.div
+                      className="glass-card p-6 space-y-4"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      style={{ transform: 'none' }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-display text-sm font-bold text-white/70 uppercase tracking-wider">
+                          Auto-Paired by Power Score (lowest first)
+                        </h3>
+                        <span className="text-[10px] font-mono text-white/30">
+                          {batchSelected.size % 2 !== 0 && (
+                            <span className="text-frost-orange mr-2">1 warrior unpaired</span>
+                          )}
+                          {batchPairs.length} {batchPairs.length === 1 ? 'pair' : 'pairs'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {batchPairs.map((pair, idx) => (
+                          <motion.div
+                            key={`pair-${pair[0]}-${pair[1]}`}
+                            className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-purple-500/20"
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: idx * 0.05 }}
+                          >
+                            {/* Pair badge */}
+                            <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center">
+                              <span className="text-[10px] font-display font-bold text-purple-400">
+                                {idx + 1}
+                              </span>
+                            </div>
+
+                            {/* Warrior 1 */}
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <div className="w-8 h-8 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={`/api/metadata/${pair[0]}/image`}
+                                  alt={`#${pair[0]}`}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-mono text-white/70 truncate">#{pair[0]}</p>
+                                <p className="text-[9px] font-mono text-white/30">PWR {warriorPowerScores.get(pair[0]) ?? '?'}</p>
+                              </div>
+                            </div>
+
+                            <Plus className="w-3 h-3 text-white/20 flex-shrink-0" />
+
+                            {/* Warrior 2 */}
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <div className="w-8 h-8 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={`/api/metadata/${pair[1]}/image`}
+                                  alt={`#${pair[1]}`}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-mono text-white/70 truncate">#{pair[1]}</p>
+                                <p className="text-[9px] font-mono text-white/30">PWR {warriorPowerScores.get(pair[1]) ?? '?'}</p>
+                              </div>
+                            </div>
+
+                            <ArrowRight className="w-3 h-3 text-purple-400/50 flex-shrink-0" />
+                            <Sparkles className="w-4 h-4 text-purple-400/40 flex-shrink-0" />
+                          </motion.div>
+                        ))}
+                      </div>
+
+                      {/* Cost summary */}
+                      <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                        <span className="text-xs text-white/40">
+                          {batchPairs.length} {batchPairs.length === 1 ? 'pair' : 'pairs'} x {MERGE_PRICE} AVAX
+                        </span>
+                        <span className="font-display text-lg font-bold text-frost-cyan text-glow-cyan">
+                          {batchTotalCost} AVAX
+                        </span>
+                      </div>
+                    </motion.div>
+                  </div>
+                </section>
+              )}
+
+              {/* Batch fuse button */}
+              <section className="relative px-4 pb-6">
+                <div className="max-w-md mx-auto">
+                  <motion.button
+                    onClick={handleBatchFuse}
+                    disabled={batchPairs.length === 0 || !!batchProgress}
+                    className="w-full relative group overflow-hidden rounded-xl font-display text-lg font-bold uppercase tracking-wider py-4 px-8 transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    whileHover={batchPairs.length > 0 ? { scale: 1.03, boxShadow: '0 0 30px rgba(168,85,247,0.3)' } : {}}
+                    whileTap={batchPairs.length > 0 ? { scale: 0.98 } : {}}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                  >
+                    {batchPairs.length > 0 ? (
+                      <motion.div
+                        className="absolute -inset-[2px]"
+                        animate={{ rotate: [0, 360] }}
+                        transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+                        style={{
+                          background: 'conic-gradient(from 0deg, #a855f7, #ec4899, #00f0ff, #a855f7)',
+                          borderRadius: '0.75rem',
+                        }}
+                      >
+                        <div className="absolute inset-[2px] bg-frost-surface rounded-[0.65rem]" />
+                      </motion.div>
+                    ) : null}
+                    <div className={`absolute inset-0 rounded-xl transition-opacity ${
+                      batchPairs.length > 0
+                        ? 'bg-gradient-to-r from-frost-purple via-frost-pink to-frost-cyan opacity-90 group-hover:opacity-100'
+                        : 'bg-white/5 opacity-100'
+                    }`} />
+                    {batchPairs.length > 0 && <div className="absolute inset-0 shimmer" />}
+                    <span className="relative z-10 flex items-center justify-center gap-3 text-white">
+                      <Layers className="w-5 h-5" />
+                      {batchPairs.length > 0
+                        ? `Batch Fuse (${batchPairs.length} ${batchPairs.length === 1 ? 'pair' : 'pairs'}) - ${batchTotalCost} AVAX`
+                        : 'Select Warriors to Batch Fuse'}
+                    </span>
+                  </motion.button>
+                </div>
+              </section>
+            </>
+          )}
+
+          {/* ================================================================
+           * BATCH WARRIOR SELECTION GRID
+           * ================================================================ */}
+          {!batchProgress && !batchComplete && (
+            <section className="relative px-4 pb-24">
+              <div className="max-w-6xl mx-auto">
+                {/* Section header */}
+                <motion.div
+                  className="text-center mb-8"
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: '-40px' }}
+                >
+                  <h2 className="font-display text-2xl sm:text-3xl font-bold gradient-text mb-2">
+                    SELECT WARRIORS FOR BATCH FUSION
+                  </h2>
+                  <p className="text-white/40 text-sm">
+                    Select multiple warriors. They will be auto-paired by lowest power score.
+                    <br />
+                    <span className="text-frost-cyan font-bold font-mono">{batchSelected.size}</span>{' '}
+                    selected out of{' '}
+                    <span className="text-frost-cyan font-bold font-mono">{availableTokenIds.length}</span>{' '}
+                    available.
+                  </p>
+
+                  {/* Action buttons + legend */}
+                  <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
+                    <button
+                      onClick={handleSelectAll}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-pixel uppercase tracking-wider bg-frost-cyan/15 border border-frost-cyan/30 text-frost-cyan hover:bg-frost-cyan/25 transition-all"
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                      Select All
+                    </button>
+                    <button
+                      onClick={handleSelectAllLowPower}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-pixel uppercase tracking-wider bg-purple-500/15 border border-purple-500/30 text-purple-400 hover:bg-purple-500/25 transition-all"
+                    >
+                      <Zap className="w-3 h-3" />
+                      Low Power (&lt;{BATCH_POWER_THRESHOLD})
+                    </button>
+                    <button
+                      onClick={handleBatchClearSelection}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-pixel uppercase tracking-wider bg-white/5 border border-white/10 text-white/40 hover:text-white/60 transition-all"
+                    >
+                      <X className="w-3 h-3" />
+                      Clear Selection
+                    </button>
+                    <button
+                      onClick={() => setPwrSortOrder((prev) => prev === 'desc' ? 'asc' : 'desc')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-pixel uppercase tracking-wider transition-all ${
+                        pwrSortOrder
+                          ? 'bg-frost-cyan/15 border border-frost-cyan/30 text-frost-cyan'
+                          : 'bg-white/5 border border-white/10 text-white/40 hover:text-white/60'
+                      }`}
+                    >
+                      <ArrowUpDown className="w-3 h-3" />
+                      PWR {pwrSortOrder === 'asc' ? '↑' : pwrSortOrder === 'desc' ? '↓' : ''}
+                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-sm border-2 border-purple-500 bg-purple-500/20" />
+                      <span className="text-[10px] text-white/30">Selected</span>
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                  {sortedTokenIds.map((id) => {
+                    const isAvailable = availableTokenIds.includes(id);
+                    const isSelected = batchSelected.has(id);
+                    const isLocked = lockedTokenIds.has(id);
+
+                    // Find pair number for this warrior
+                    let pairNumber: number | null = null;
+                    if (isSelected) {
+                      for (let pi = 0; pi < batchPairs.length; pi++) {
+                        if (batchPairs[pi][0] === id || batchPairs[pi][1] === id) {
+                          pairNumber = pi + 1;
+                          break;
+                        }
+                      }
+                    }
+
+                    return (
+                      <div key={id} className="relative">
+                        <motion.button
+                          onClick={() => isAvailable && !isLocked && handleBatchToggle(id)}
+                          disabled={!isAvailable || isLocked}
+                          className={`relative group rounded-xl overflow-hidden text-left transition-all duration-200 w-full ${
+                            isSelected
+                              ? 'ring-2 ring-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.3)]'
+                              : !isAvailable || isLocked
+                              ? 'opacity-40 cursor-not-allowed'
+                              : 'hover:ring-1 hover:ring-white/20 cursor-pointer'
+                          }`}
+                          whileHover={isAvailable && !isLocked ? { y: -2, scale: 1.02 } : {}}
+                          whileTap={isAvailable && !isLocked ? { scale: 0.98 } : {}}
+                        >
+                          {/* Pair number badge overlay */}
+                          <AnimatePresence>
+                            {isSelected && pairNumber !== null && (
+                              <motion.div
+                                className="absolute top-1.5 left-1.5 z-20"
+                                initial={{ opacity: 0, scale: 0 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0 }}
+                              >
+                                <div className="px-2 py-0.5 rounded-full bg-purple-500/80 backdrop-blur-sm border border-purple-400/50">
+                                  <span className="font-display text-[9px] font-bold text-white">
+                                    Pair {pairNumber}
+                                  </span>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+
+                          {/* Selected check overlay */}
+                          <AnimatePresence>
+                            {isSelected && (
+                              <motion.div
+                                className="absolute top-1.5 right-1.5 z-20"
+                                initial={{ opacity: 0, scale: 0 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0 }}
+                              >
+                                <div className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center">
+                                  <Check className="w-3 h-3 text-white" />
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+
+                          <div className="relative bg-frost-card/80 backdrop-blur-lg border border-white/5 rounded-xl overflow-hidden">
+                            {/* Warrior Image */}
+                            <div className="relative w-full aspect-square bg-white/[0.02]">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={`/api/metadata/${id}/image`}
+                                alt={`Warrior #${id}`}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                              <span className="absolute bottom-1.5 right-1.5 text-[9px] font-mono text-white/60 bg-black/60 backdrop-blur-sm px-1.5 py-0.5 rounded-full">
+                                #{id}
+                              </span>
+                            </div>
+
+                            {/* Power Score */}
+                            <div className="p-2 text-center border-t border-white/5">
+                              <p className="text-[8px] uppercase tracking-widest text-white/20">PWR</p>
+                              <p className="font-display text-sm font-bold text-frost-cyan">
+                                {warriorPowerScores.get(id) ?? '...'}
+                              </p>
+                            </div>
+                          </div>
+                        </motion.button>
+
+                        {isLocked && (
+                          <div className="absolute inset-0 rounded-xl bg-black/60 flex items-center justify-center pointer-events-none">
+                            <span className="text-[9px] font-pixel text-white/50 uppercase tracking-wider">In Use</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
         </>
       )}
     </div>

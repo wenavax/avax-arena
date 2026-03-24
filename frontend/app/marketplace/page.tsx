@@ -68,8 +68,8 @@ type Tab = 'items' | 'my-listings' | 'activity';
 type SortOption = 'recent' | 'price-asc' | 'price-desc' | 'level-desc' | 'power-desc' | 'token-asc';
 
 type MarketItem =
-  | { type: 'listing'; warrior: Warrior; listing: ListingData }
-  | { type: 'auction'; warrior: Warrior; auction: AuctionData };
+  | { type: 'listing'; warrior: Warrior | null; listing: ListingData }
+  | { type: 'auction'; warrior: Warrior | null; auction: AuctionData };
 
 interface SaleRecord {
   id: number;
@@ -188,7 +188,7 @@ function CollectionStatsBar({
 
   return (
     <div className="border-b border-white/[0.06] bg-frost-surface/40 backdrop-blur-sm">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6">
+      <div className="px-4 sm:px-6">
         <div className="flex items-center justify-between py-4">
           {/* Left: Collection identity */}
           <div className="flex items-center gap-3">
@@ -500,14 +500,20 @@ function NFTListingCard({
   warrior,
   listing,
   onBuy,
+  onCancel,
   buying,
+  connectedAddress,
 }: {
-  warrior: Warrior;
+  warrior: Warrior | null;
   listing: ListingData;
   onBuy: (tokenId: number) => void;
+  onCancel: (tokenId: number) => void;
   buying: boolean;
+  connectedAddress?: string;
 }) {
-  const el = getElement(warrior.element);
+  const el = warrior ? getElement(warrior.element) : null;
+  const tokenId = listing.tokenId;
+  const isOwner = connectedAddress && listing.seller.toLowerCase() === connectedAddress.toLowerCase();
 
   return (
     <motion.div
@@ -516,68 +522,87 @@ function NFTListingCard({
       className="group rounded-xl border border-white/[0.06] bg-frost-card/60 backdrop-blur-sm hover:border-frost-cyan/30 transition-all duration-300 overflow-hidden hover:shadow-glow-cyan hover:-translate-y-1"
     >
       {/* Image */}
-      <Link href={`/marketplace/${warrior.tokenId}`} className="block relative">
+      <Link href={`/marketplace/${tokenId}`} className="block relative">
         <div className="relative aspect-square bg-gradient-to-br from-frost-bg to-frost-surface overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/metadata/${warrior.tokenId}/image?element=${warrior.element}`}
-            alt={`Warrior #${warrior.tokenId}`}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            src={`/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
+            alt={`Warrior #${tokenId}`}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 warrior-idle"
+            style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
             loading="lazy"
           />
           {/* Badges */}
-          <div className="absolute top-2.5 left-2.5">
-            <span className={cn('text-[10px] px-2 py-1 rounded-md bg-black/60 backdrop-blur-sm border border-white/10 font-pixel')}>
-              {el.emoji} {el.name}
-            </span>
-          </div>
-          <div className="absolute top-2.5 right-2.5">
-            <span className="text-[10px] px-2 py-1 rounded-md bg-black/60 backdrop-blur-sm border border-white/10 font-pixel text-white/80">
-              Lv.{warrior.level}
-            </span>
-          </div>
+          {el && (
+            <div className="absolute top-1.5 left-1.5">
+              <span className={cn('text-[8px] px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 font-pixel')}>
+                {el.emoji} {el.name}
+              </span>
+            </div>
+          )}
+          {warrior && (
+            <div className="absolute top-1.5 right-1.5">
+              <span className="text-[8px] px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 font-pixel text-white/80">
+                Lv.{warrior.level}
+              </span>
+            </div>
+          )}
+          {/* Owner badge */}
+          {isOwner && (
+            <div className="absolute bottom-1.5 left-1.5">
+              <span className="text-[8px] px-1.5 py-0.5 rounded bg-frost-gold/20 backdrop-blur-sm border border-frost-gold/30 font-pixel text-frost-gold">
+                Your Listing
+              </span>
+            </div>
+          )}
           {/* Hover overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between">
-              <span className="text-[10px] text-white/80 font-pixel">Power {warrior.powerScore}</span>
-              <ArrowUpRight className="h-3.5 w-3.5 text-white/60" />
+            <div className="absolute bottom-1.5 left-2 right-2 flex items-center justify-between">
+              <span className="text-[8px] text-white/80 font-pixel">PWR {warrior?.powerScore ?? '?'}</span>
+              <ArrowUpRight className="h-3 w-3 text-white/60" />
             </div>
           </div>
         </div>
       </Link>
 
       {/* Info */}
-      <div className="p-3.5">
-        <Link href={`/marketplace/${warrior.tokenId}`}>
-          <h3 className="font-pixel text-xs text-white truncate hover:text-frost-cyan transition-colors">
-            Warrior #{warrior.tokenId}
+      <div className="p-2.5">
+        <Link href={`/marketplace/${tokenId}`}>
+          <h3 className="font-pixel text-[10px] text-white truncate hover:text-frost-cyan transition-colors">
+            #{tokenId}
           </h3>
         </Link>
 
         {/* Stats row */}
-        <div className="flex items-center justify-between mt-2.5">
-          <div className="flex items-center gap-3 text-[10px] font-pixel text-white/50">
-            <span className="text-red-400">{warrior.attack} ATK</span>
-            <span className="text-blue-400">{warrior.defense} DEF</span>
-            <span className="text-green-400">{warrior.speed} SPD</span>
+        {warrior && (
+          <div className="flex items-center gap-2 mt-1.5 text-[8px] font-pixel text-white/50">
+            <span className="text-red-400">{warrior.attack}</span>
+            <span className="text-blue-400">{warrior.defense}</span>
+            <span className="text-green-400">{warrior.speed}</span>
           </div>
-          <div className="font-pixel text-xs text-frost-cyan font-bold">{warrior.powerScore}</div>
-        </div>
+        )}
 
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/[0.06]">
-          <div>
-            <div className="text-[9px] text-white/40 uppercase tracking-wider font-pixel">Price</div>
-            <div className="font-pixel text-sm text-frost-cyan font-bold">
-              {formatEther(listing.price)} <span className="text-[10px] text-white/40">AVAX</span>
-            </div>
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.06]">
+          <div className="font-pixel text-[11px] text-frost-cyan font-bold">
+            {formatEther(listing.price)} <span className="text-[8px] text-white/40">AVAX</span>
           </div>
-          <button
-            onClick={(e) => { e.preventDefault(); onBuy(warrior.tokenId); }}
-            disabled={buying}
-            className="px-4 py-2 text-[10px] font-pixel rounded-lg bg-frost-cyan/10 text-frost-cyan border border-frost-cyan/30 hover:bg-frost-cyan/20 transition-all disabled:opacity-50"
-          >
-            {buying ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Buy'}
-          </button>
+          {isOwner ? (
+            <button
+              onClick={(e) => { e.preventDefault(); onCancel(tokenId); }}
+              disabled={buying}
+              className="px-2.5 py-1 text-[9px] font-pixel rounded-md text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-all disabled:opacity-50"
+            >
+              {buying ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : 'Cancel'}
+            </button>
+          ) : (
+            <button
+              onClick={(e) => { e.preventDefault(); onBuy(tokenId); }}
+              disabled={buying}
+              className="px-2.5 py-1 text-[9px] font-pixel rounded-md bg-frost-cyan/10 text-frost-cyan border border-frost-cyan/30 hover:bg-frost-cyan/20 transition-all disabled:opacity-50"
+            >
+              {buying ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : 'Buy'}
+            </button>
+          )}
         </div>
       </div>
     </motion.div>
@@ -588,12 +613,20 @@ function NFTAuctionCard({
   warrior,
   auction,
   onBid,
+  onCancel,
+  buying,
+  connectedAddress,
 }: {
-  warrior: Warrior;
+  warrior: Warrior | null;
   auction: AuctionData;
   onBid: (tokenId: number) => void;
+  onCancel: (tokenId: number) => void;
+  buying: boolean;
+  connectedAddress?: string;
 }) {
-  const el = getElement(warrior.element);
+  const el = warrior ? getElement(warrior.element) : null;
+  const tokenId = auction.tokenId;
+  const isOwner = connectedAddress && auction.seller.toLowerCase() === connectedAddress.toLowerCase();
   const [countdown, setCountdown] = useState(timeRemaining(auction.endTime));
 
   useEffect(() => {
@@ -612,81 +645,96 @@ function NFTAuctionCard({
       className="group rounded-xl border border-white/[0.06] bg-frost-card/60 backdrop-blur-sm hover:border-frost-purple/30 transition-all duration-300 overflow-hidden hover:shadow-glow-purple hover:-translate-y-1"
     >
       {/* Image */}
-      <Link href={`/marketplace/${warrior.tokenId}`} className="block relative">
+      <Link href={`/marketplace/${tokenId}`} className="block relative">
         <div className="relative aspect-square bg-gradient-to-br from-frost-bg to-frost-surface overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/metadata/${warrior.tokenId}/image?element=${warrior.element}`}
-            alt={`Warrior #${warrior.tokenId}`}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            src={`/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
+            alt={`Warrior #${tokenId}`}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 warrior-idle"
+            style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
             loading="lazy"
           />
           {/* Badges */}
-          <div className="absolute top-2.5 left-2.5">
-            <span className={cn('text-[10px] px-2 py-1 rounded-md bg-black/60 backdrop-blur-sm border border-white/10 font-pixel')}>
-              {el.emoji} {el.name}
-            </span>
-          </div>
-          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
-            <span className="text-[10px] px-2 py-1 rounded-md bg-black/60 backdrop-blur-sm border border-white/10 font-pixel text-white/80">
-              Lv.{warrior.level}
-            </span>
-          </div>
+          {el && (
+            <div className="absolute top-1.5 left-1.5">
+              <span className={cn('text-[8px] px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 font-pixel')}>
+                {el.emoji} {el.name}
+              </span>
+            </div>
+          )}
+          {warrior && (
+            <div className="absolute top-1.5 right-1.5">
+              <span className="text-[8px] px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 font-pixel text-white/80">
+                Lv.{warrior.level}
+              </span>
+            </div>
+          )}
           {/* Auction timer badge */}
-          <div className="absolute bottom-2.5 right-2.5">
+          <div className="absolute bottom-1.5 right-1.5">
             <span className={cn(
-              'flex items-center gap-1 text-[10px] px-2 py-1 rounded-md backdrop-blur-sm border font-pixel',
+              'flex items-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded backdrop-blur-sm border font-pixel',
               ended ? 'bg-red-500/20 border-red-500/30 text-red-400' : 'bg-frost-purple/20 border-frost-purple/30 text-frost-purple'
             )}>
-              <Clock className="h-3 w-3" />
+              <Clock className="h-2.5 w-2.5" />
               {ended ? 'Ended' : countdown}
             </span>
           </div>
+          {/* Owner badge */}
+          {isOwner && (
+            <div className="absolute bottom-1.5 left-1.5">
+              <span className="text-[8px] px-1.5 py-0.5 rounded bg-frost-gold/20 backdrop-blur-sm border border-frost-gold/30 font-pixel text-frost-gold">
+                Your Auction
+              </span>
+            </div>
+          )}
           {/* Hover overlay */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            <div className="absolute bottom-2.5 left-3">
-              <span className="text-[10px] text-white/80 font-pixel">Power {warrior.powerScore}</span>
+            <div className="absolute bottom-1.5 left-2">
+              <span className="text-[8px] text-white/80 font-pixel">PWR {warrior?.powerScore ?? '?'}</span>
             </div>
           </div>
         </div>
       </Link>
 
       {/* Info */}
-      <div className="p-3.5">
-        <Link href={`/marketplace/${warrior.tokenId}`}>
-          <h3 className="font-pixel text-xs text-white truncate hover:text-frost-purple transition-colors">
-            Warrior #{warrior.tokenId}
+      <div className="p-2.5">
+        <Link href={`/marketplace/${tokenId}`}>
+          <h3 className="font-pixel text-[10px] text-white truncate hover:text-frost-purple transition-colors">
+            #{tokenId}
           </h3>
         </Link>
 
         {/* Stats row */}
-        <div className="flex items-center justify-between mt-2.5">
-          <div className="flex items-center gap-3 text-[10px] font-pixel text-white/50">
-            <span className="text-red-400">{warrior.attack} ATK</span>
-            <span className="text-blue-400">{warrior.defense} DEF</span>
-            <span className="text-green-400">{warrior.speed} SPD</span>
+        {warrior && (
+          <div className="flex items-center gap-2 mt-1.5 text-[8px] font-pixel text-white/50">
+            <span className="text-red-400">{warrior.attack}</span>
+            <span className="text-blue-400">{warrior.defense}</span>
+            <span className="text-green-400">{warrior.speed}</span>
           </div>
-          <div className="font-pixel text-xs text-frost-purple font-bold">{warrior.powerScore}</div>
-        </div>
+        )}
 
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/[0.06]">
-          <div>
-            <div className="text-[9px] text-white/40 uppercase tracking-wider font-pixel">
-              {auction.highestBid > BigInt(0) ? 'Top Bid' : 'Start'}
-            </div>
-            <div className="font-pixel text-sm text-frost-purple font-bold">
-              {formatEther(auction.highestBid > BigInt(0) ? auction.highestBid : auction.startPrice)}{' '}
-              <span className="text-[10px] text-white/40">AVAX</span>
-            </div>
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.06]">
+          <div className="font-pixel text-[11px] text-frost-purple font-bold">
+            {formatEther(auction.highestBid > BigInt(0) ? auction.highestBid : auction.startPrice)}{' '}
+            <span className="text-[8px] text-white/40">AVAX</span>
           </div>
-          {!ended && (
+          {isOwner ? (
             <button
-              onClick={(e) => { e.preventDefault(); onBid(warrior.tokenId); }}
-              className="px-4 py-2 text-[10px] font-pixel rounded-lg bg-frost-purple/10 text-frost-purple border border-frost-purple/30 hover:bg-frost-purple/20 transition-all"
+              onClick={(e) => { e.preventDefault(); onCancel(tokenId); }}
+              disabled={buying}
+              className="px-2.5 py-1 text-[9px] font-pixel rounded-md text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-all disabled:opacity-50"
+            >
+              {buying ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : 'Cancel'}
+            </button>
+          ) : !ended ? (
+            <button
+              onClick={(e) => { e.preventDefault(); onBid(tokenId); }}
+              className="px-2.5 py-1 text-[9px] font-pixel rounded-md bg-frost-purple/10 text-frost-purple border border-frost-purple/30 hover:bg-frost-purple/20 transition-all"
             >
               Bid
             </button>
-          )}
+          ) : null}
         </div>
       </div>
     </motion.div>
@@ -707,7 +755,8 @@ function WarriorThumb({ tokenId, element, size = 36 }: { tokenId: number; elemen
         alt={`#${tokenId}`}
         width={size}
         height={size}
-        className="w-full h-full object-cover"
+        className="w-full h-full object-cover warrior-idle"
+        style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
         loading="lazy"
       />
       <span className="absolute bottom-0 right-0 text-[8px] leading-none bg-black/60 rounded-tl px-0.5">{el.emoji}</span>
@@ -734,7 +783,7 @@ function ListItemModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="glass-card w-full max-w-md p-6 rounded-2xl border border-white/[0.08]"
+        className="glass-card w-full max-w-md mx-4 sm:mx-auto p-6 rounded-2xl border border-white/[0.08]"
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-pixel text-sm font-bold gradient-text">List NFT for Sale</h3>
@@ -744,7 +793,7 @@ function ListItemModal({
         <div className="space-y-4">
           <div>
             <label className="text-xs text-white/40 block mb-2">Select Warrior</label>
-            <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-40 overflow-y-auto">
               {warriors.map((w) => (
                 <button
                   key={w.tokenId}
@@ -817,7 +866,7 @@ function CreateAuctionModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="glass-card w-full max-w-md p-6 rounded-2xl border border-white/[0.08]"
+        className="glass-card w-full max-w-md mx-4 sm:mx-auto p-6 rounded-2xl border border-white/[0.08]"
       >
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-pixel text-sm font-bold gradient-text">Create Auction</h3>
@@ -827,7 +876,7 @@ function CreateAuctionModal({
         <div className="space-y-4">
           <div>
             <label className="text-xs text-white/40 block mb-2">Select Warrior</label>
-            <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-40 overflow-y-auto">
               {warriors.map((w) => (
                 <button
                   key={w.tokenId}
@@ -1052,9 +1101,9 @@ export default function MarketplacePage() {
       const newListings = new Map<number, ListingData>();
       const newWarriors = new Map(warriorsData);
 
-      await Promise.all(
+      const results = await Promise.allSettled(
         tokenIds.map(async (tokenId) => {
-          const [listingRaw, warrior] = await Promise.all([
+          const [listingRaw, warrior] = await Promise.allSettled([
             publicClient.readContract({
               address: CONTRACT_ADDRESSES.marketplace as `0x${string}`,
               abi: MARKETPLACE_ABI,
@@ -1063,8 +1112,12 @@ export default function MarketplacePage() {
             }),
             fetchWarrior(tokenId),
           ]);
-          newListings.set(tokenId, parseListingData(listingRaw as Record<string, unknown>, tokenId));
-          if (warrior) newWarriors.set(tokenId, warrior);
+          if (listingRaw.status === 'fulfilled' && listingRaw.value) {
+            newListings.set(tokenId, parseListingData(listingRaw.value as Record<string, unknown>, tokenId));
+          }
+          if (warrior.status === 'fulfilled' && warrior.value) {
+            newWarriors.set(tokenId, warrior.value);
+          }
         })
       );
 
@@ -1105,9 +1158,9 @@ export default function MarketplacePage() {
       const newAuctions = new Map<number, AuctionData>();
       const newWarriors = new Map(warriorsData);
 
-      await Promise.all(
+      await Promise.allSettled(
         tokenIds.map(async (tokenId) => {
-          const [auctionRaw, warrior] = await Promise.all([
+          const [auctionRaw, warrior] = await Promise.allSettled([
             publicClient.readContract({
               address: CONTRACT_ADDRESSES.marketplace as `0x${string}`,
               abi: MARKETPLACE_ABI,
@@ -1116,8 +1169,12 @@ export default function MarketplacePage() {
             }),
             fetchWarrior(tokenId),
           ]);
-          newAuctions.set(tokenId, parseAuctionData(auctionRaw as Record<string, unknown>, tokenId));
-          if (warrior) newWarriors.set(tokenId, warrior);
+          if (auctionRaw.status === 'fulfilled' && auctionRaw.value) {
+            newAuctions.set(tokenId, parseAuctionData(auctionRaw.value as Record<string, unknown>, tokenId));
+          }
+          if (warrior.status === 'fulfilled' && warrior.value) {
+            newWarriors.set(tokenId, warrior.value);
+          }
         })
       );
 
@@ -1139,33 +1196,134 @@ export default function MarketplacePage() {
         args: [address],
       })) as bigint[];
 
-      const warriors = await Promise.all(
-        ids.map(async (id) => {
-          const w = await fetchWarrior(Number(id));
-          return w;
-        })
+      const results = await Promise.allSettled(
+        ids.map(async (id) => fetchWarrior(Number(id)))
       );
-      setMyWarriors(
-        (warriors.filter(Boolean) as Warrior[]).sort((a, b) => b.powerScore - a.powerScore)
-      );
+      const warriors: Warrior[] = [];
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value) warriors.push(r.value);
+      }
+      setMyWarriors(warriors.sort((a, b) => b.powerScore - a.powerScore));
     } catch (err) {
       console.error('Failed to fetch user warriors:', err);
     }
   }, [publicClient, address, fetchWarrior]);
 
   const fetchActivity = useCallback(async () => {
+    if (!publicClient) return;
     try {
-      const res = await fetch('/api/marketplace/activity?limit=50');
-      const data = await res.json();
-      const sales = data.sales ?? [];
+      const marketAddr = CONTRACT_ADDRESSES.marketplace as `0x${string}`;
+      const currentBlock = await publicClient.getBlockNumber();
+      const fromBlock = currentBlock > 200000n ? currentBlock - 200000n : 0n;
+
+      const CHUNK = 2000n;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const eventDefs: any[] = [
+        { type: 'event', name: 'ItemSold', inputs: [
+          { type: 'uint256', name: 'tokenId', indexed: true },
+          { type: 'address', name: 'seller', indexed: true },
+          { type: 'address', name: 'buyer', indexed: true },
+          { type: 'uint256', name: 'price' },
+        ]},
+        { type: 'event', name: 'AuctionEnded', inputs: [
+          { type: 'uint256', name: 'tokenId', indexed: true },
+          { type: 'address', name: 'seller', indexed: true },
+          { type: 'address', name: 'winner', indexed: true },
+          { type: 'uint256', name: 'amount' },
+        ]},
+        { type: 'event', name: 'ItemListed', inputs: [
+          { type: 'uint256', name: 'tokenId', indexed: true },
+          { type: 'address', name: 'seller', indexed: true },
+          { type: 'uint256', name: 'price' },
+        ]},
+      ];
+
+      // Fetch logs in 2000-block chunks to avoid RPC limits
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allResults: any[][] = [[], [], []];
+      for (let start = fromBlock; start <= currentBlock; start += CHUNK) {
+        const end = start + CHUNK - 1n > currentBlock ? currentBlock : start + CHUNK - 1n;
+        const chunkResults = await Promise.all(
+          eventDefs.map(event =>
+            publicClient.getLogs({ address: marketAddr, event, fromBlock: start, toBlock: end })
+          )
+        );
+        chunkResults.forEach((logs, i) => allResults[i].push(...logs));
+      }
+
+      const [soldLogs, auctionLogs, listedLogs] = allResults;
+
+      // Collect unique block numbers and fetch their timestamps
+      const allLogs = [...soldLogs, ...auctionLogs, ...listedLogs];
+      const uniqueBlocks = [...new Set(allLogs.map(l => l.blockNumber))];
+      const blockTimestamps = new Map<bigint, number>();
+      await Promise.all(
+        uniqueBlocks.map(async (bn) => {
+          try {
+            const block = await publicClient.getBlock({ blockNumber: bn });
+            blockTimestamps.set(bn, Number(block.timestamp) * 1000); // ms
+          } catch { /* fallback to now */ }
+        })
+      );
+      const getTs = (bn: bigint) => blockTimestamps.get(bn) || Date.now();
+
+      const sales: SaleRecord[] = [];
+      let idCounter = 0;
+
+      for (const log of soldLogs) {
+        const args = log.args as { tokenId?: bigint; seller?: string; buyer?: string; price?: bigint };
+        if (!args.tokenId || !args.seller || !args.buyer || !args.price) continue;
+        sales.push({
+          id: ++idCounter,
+          tokenId: Number(args.tokenId),
+          seller: args.seller,
+          buyer: args.buyer,
+          price: formatEther(args.price),
+          type: 'sale',
+          createdAt: getTs(log.blockNumber),
+        });
+      }
+
+      for (const log of auctionLogs) {
+        const args = log.args as { tokenId?: bigint; seller?: string; winner?: string; amount?: bigint };
+        if (!args.tokenId || !args.seller || !args.winner || !args.amount) continue;
+        sales.push({
+          id: ++idCounter,
+          tokenId: Number(args.tokenId),
+          seller: args.seller,
+          buyer: args.winner,
+          price: formatEther(args.amount),
+          type: 'auction',
+          createdAt: getTs(log.blockNumber),
+        });
+      }
+
+      for (const log of listedLogs) {
+        const args = log.args as { tokenId?: bigint; seller?: string; price?: bigint };
+        if (!args.tokenId || !args.seller || !args.price) continue;
+        sales.push({
+          id: ++idCounter,
+          tokenId: Number(args.tokenId),
+          seller: args.seller,
+          buyer: '',
+          price: formatEther(args.price),
+          type: 'listing',
+          createdAt: getTs(log.blockNumber),
+        });
+      }
+
+      // Sort by block number descending
+      sales.sort((a, b) => b.createdAt - a.createdAt);
       setActivityData(sales);
-      // Compute volume
-      const vol = sales.reduce((sum: number, s: SaleRecord) => sum + parseFloat(s.price || '0'), 0);
+
+      const vol = sales
+        .filter(s => s.type === 'sale' || s.type === 'auction')
+        .reduce((sum, s) => sum + parseFloat(s.price || '0'), 0);
       setTotalVolume(vol);
     } catch (err) {
       console.error('Failed to fetch activity:', err);
     }
-  }, []);
+  }, [publicClient]);
 
   const fetchTotalSupply = useCallback(async () => {
     if (!publicClient) return;
@@ -1336,6 +1494,21 @@ export default function MarketplacePage() {
     }
   };
 
+  const handleCancelAuction = async (tokenId: number) => {
+    setPending(true);
+    try {
+      await writeContractAsync({
+        address: CONTRACT_ADDRESSES.marketplace as `0x${string}`,
+        abi: MARKETPLACE_ABI,
+        functionName: 'cancelAuction',
+        args: [BigInt(tokenId)],
+      });
+    } catch (err) {
+      console.error('Cancel auction failed:', err);
+      setPending(false);
+    }
+  };
+
   // ------ Computed: floor price ------
 
   const floorPrice = useMemo(() => {
@@ -1353,17 +1526,17 @@ export default function MarketplacePage() {
 
     if (statusFilter.has('listing')) {
       for (const tokenId of listingTokenIds) {
-        const warrior = warriorsData.get(tokenId);
+        const warrior = warriorsData.get(tokenId) ?? null;
         const listing = listingsData.get(tokenId);
-        if (warrior && listing) items.push({ type: 'listing', warrior, listing });
+        if (listing) items.push({ type: 'listing', warrior, listing });
       }
     }
 
     if (statusFilter.has('auction')) {
       for (const tokenId of auctionTokenIds) {
-        const warrior = warriorsData.get(tokenId);
+        const warrior = warriorsData.get(tokenId) ?? null;
         const auction = auctionsData.get(tokenId);
-        if (warrior && auction) items.push({ type: 'auction', warrior, auction });
+        if (auction) items.push({ type: 'auction', warrior, auction });
       }
     }
 
@@ -1375,7 +1548,7 @@ export default function MarketplacePage() {
       const w = item.warrior;
 
       // Element filter
-      if (elementFilter !== null && w.element !== elementFilter) return false;
+      if (elementFilter !== null && (!w || w.element !== elementFilter)) return false;
 
       // Price filter
       const price = item.type === 'listing' ? item.listing.price : item.auction.startPrice;
@@ -1384,12 +1557,12 @@ export default function MarketplacePage() {
       if (priceMax && priceAvax > parseFloat(priceMax)) return false;
 
       // Level filter
-      if (levelMin && w.level < parseInt(levelMin)) return false;
-      if (levelMax && w.level > parseInt(levelMax)) return false;
+      if (levelMin && (!w || w.level < parseInt(levelMin))) return false;
+      if (levelMax && (!w || w.level > parseInt(levelMax))) return false;
 
       // Power filter
-      if (powerMin && w.powerScore < parseInt(powerMin)) return false;
-      if (powerMax && w.powerScore > parseInt(powerMax)) return false;
+      if (powerMin && (!w || w.powerScore < parseInt(powerMin))) return false;
+      if (powerMax && (!w || w.powerScore > parseInt(powerMax))) return false;
 
       return true;
     });
@@ -1411,11 +1584,13 @@ export default function MarketplacePage() {
           return Number(pb - pa);
         });
       case 'level-desc':
-        return items.sort((a, b) => b.warrior.level - a.warrior.level);
+        return items.sort((a, b) => (b.warrior?.level ?? 0) - (a.warrior?.level ?? 0));
       case 'power-desc':
-        return items.sort((a, b) => b.warrior.powerScore - a.warrior.powerScore);
-      case 'token-asc':
-        return items.sort((a, b) => a.warrior.tokenId - b.warrior.tokenId);
+        return items.sort((a, b) => (b.warrior?.powerScore ?? 0) - (a.warrior?.powerScore ?? 0));
+      case 'token-asc': {
+        const tid = (it: MarketItem) => it.type === 'listing' ? it.listing.tokenId : it.auction.tokenId;
+        return items.sort((a, b) => tid(a) - tid(b));
+      }
       case 'recent':
       default:
         return items;
@@ -1425,6 +1600,11 @@ export default function MarketplacePage() {
   const myListings = listingTokenIds.filter((tokenId) => {
     const l = listingsData.get(tokenId);
     return l && l.seller.toLowerCase() === address?.toLowerCase();
+  });
+
+  const myAuctions = auctionTokenIds.filter((tokenId) => {
+    const a = auctionsData.get(tokenId);
+    return a && a.seller.toLowerCase() === address?.toLowerCase();
   });
 
   const activeFilterCount = [
@@ -1462,7 +1642,7 @@ export default function MarketplacePage() {
         totalVolume={totalVolume}
       />
 
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6">
+      <div className="px-4 sm:px-6">
         {/* Toolbar */}
         <div className="flex items-center justify-between py-4 border-b border-white/[0.06]">
           {/* Left: Tabs + Action buttons */}
@@ -1482,9 +1662,9 @@ export default function MarketplacePage() {
                 >
                   <Icon className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">{t.label}</span>
-                  {t.id === 'my-listings' && myListings.length > 0 && (
+                  {t.id === 'my-listings' && (myListings.length + myAuctions.length) > 0 && (
                     <span className="text-[9px] bg-frost-cyan/20 text-frost-cyan px-1.5 py-0.5 rounded-full">
-                      {myListings.length}
+                      {myListings.length + myAuctions.length}
                     </span>
                   )}
                 </button>
@@ -1616,25 +1796,31 @@ export default function MarketplacePage() {
                           </Link>
                         </motion.div>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
-                          {sortedItems.map((item) =>
-                            item.type === 'listing' ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                          {sortedItems.map((item) => {
+                            const tid = item.type === 'listing' ? item.listing.tokenId : item.auction.tokenId;
+                            return item.type === 'listing' ? (
                               <NFTListingCard
-                                key={`l-${item.warrior.tokenId}`}
+                                key={`l-${tid}`}
                                 warrior={item.warrior}
                                 listing={item.listing}
                                 onBuy={handleBuy}
+                                onCancel={handleCancelListing}
                                 buying={pending}
+                                connectedAddress={address}
                               />
                             ) : (
                               <NFTAuctionCard
-                                key={`a-${item.warrior.tokenId}`}
+                                key={`a-${tid}`}
                                 warrior={item.warrior}
                                 auction={item.auction}
-                                onBid={() => setBidModalToken(item.warrior.tokenId)}
+                                onBid={() => setBidModalToken(tid)}
+                                onCancel={handleCancelAuction}
+                                buying={pending}
+                                connectedAddress={address}
                               />
-                            )
-                          )}
+                            );
+                          })}
                         </div>
                       )}
                     </>
@@ -1647,7 +1833,7 @@ export default function MarketplacePage() {
                         <div className="text-center py-20">
                           <p className="text-white/40 font-pixel text-xs">Connect your wallet to see your listings</p>
                         </div>
-                      ) : myListings.length === 0 ? (
+                      ) : (myListings.length + myAuctions.length) === 0 ? (
                         <div className="text-center py-20">
                           <Tag className="h-12 w-12 text-white/20 mx-auto mb-3" />
                           <p className="text-white/40 font-pixel text-xs mb-3">You have no active listings</p>
@@ -1659,15 +1845,15 @@ export default function MarketplacePage() {
                           </button>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                           {myListings.map((tokenId) => {
                             const warrior = warriorsData.get(tokenId);
                             const listing = listingsData.get(tokenId);
-                            if (!warrior || !listing) return null;
-                            const el = getElement(warrior.element);
+                            if (!listing) return null;
+                            const el = warrior ? getElement(warrior.element) : null;
                             return (
                               <motion.div
-                                key={tokenId}
+                                key={`listing-${tokenId}`}
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 className="rounded-xl border border-white/[0.06] bg-frost-card/60 backdrop-blur-sm overflow-hidden"
@@ -1676,28 +1862,90 @@ export default function MarketplacePage() {
                                   <div className="relative aspect-square bg-gradient-to-br from-frost-bg to-frost-surface overflow-hidden">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                      src={`/api/metadata/${tokenId}/image?element=${warrior.element}`}
+                                      src={`/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
                                       alt={`Warrior #${tokenId}`}
-                                      className="w-full h-full object-cover"
+                                      className="w-full h-full object-cover warrior-idle"
+                                      style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
                                       loading="lazy"
                                     />
-                                    <div className="absolute top-2.5 left-2.5">
-                                      <span className="text-[10px] px-2 py-1 rounded-md bg-black/60 backdrop-blur-sm border border-white/10 font-pixel">
-                                        {el.emoji} {el.name}
-                                      </span>
-                                    </div>
+                                    {el && (
+                                      <div className="absolute top-1.5 left-1.5">
+                                        <span className="text-[8px] px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 font-pixel">
+                                          {el.emoji} {el.name}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                 </Link>
-                                <div className="p-3.5">
-                                  <h3 className="font-pixel text-xs text-white">Warrior #{tokenId}</h3>
-                                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/[0.06]">
-                                    <span className="font-pixel text-sm text-frost-cyan font-bold">
-                                      {formatEther(listing.price)} <span className="text-[10px] text-white/40">AVAX</span>
+                                <div className="p-2.5">
+                                  <h3 className="font-pixel text-[10px] text-white">#{tokenId}</h3>
+                                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.06]">
+                                    <span className="font-pixel text-[11px] text-frost-cyan font-bold">
+                                      {formatEther(listing.price)} <span className="text-[8px] text-white/40">AVAX</span>
                                     </span>
                                     <button
                                       onClick={() => handleCancelListing(tokenId)}
                                       disabled={pending}
-                                      className="text-[10px] font-pixel px-3 py-1.5 rounded-lg text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-colors disabled:opacity-50"
+                                      className="text-[9px] font-pixel px-2.5 py-1 rounded-md text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-colors disabled:opacity-50"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                          {myAuctions.map((tokenId) => {
+                            const warrior = warriorsData.get(tokenId);
+                            const auction = auctionsData.get(tokenId);
+                            if (!auction) return null;
+                            const el = warrior ? getElement(warrior.element) : null;
+                            return (
+                              <motion.div
+                                key={`auction-${tokenId}`}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="rounded-xl border border-white/[0.06] bg-frost-card/60 backdrop-blur-sm overflow-hidden"
+                              >
+                                <Link href={`/marketplace/${tokenId}`} className="block relative">
+                                  <div className="relative aspect-square bg-gradient-to-br from-frost-bg to-frost-surface overflow-hidden">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={`/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
+                                      alt={`Warrior #${tokenId}`}
+                                      className="w-full h-full object-cover warrior-idle"
+                                      style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
+                                      loading="lazy"
+                                    />
+                                    {el && (
+                                      <div className="absolute top-1.5 left-1.5">
+                                        <span className="text-[8px] px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 font-pixel">
+                                          {el.emoji} {el.name}
+                                        </span>
+                                      </div>
+                                    )}
+                                    <div className="absolute top-1.5 right-1.5">
+                                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-frost-purple/60 backdrop-blur-sm border border-frost-purple/30 font-pixel text-white">
+                                        Auction
+                                      </span>
+                                    </div>
+                                  </div>
+                                </Link>
+                                <div className="p-2.5">
+                                  <h3 className="font-pixel text-[10px] text-white">#{tokenId}</h3>
+                                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.06]">
+                                    <div>
+                                      <span className="font-pixel text-[11px] text-frost-purple font-bold">
+                                        {formatEther(auction.highestBid > BigInt(0) ? auction.highestBid : auction.startPrice)} <span className="text-[8px] text-white/40">AVAX</span>
+                                      </span>
+                                      <div className="text-[8px] text-white/30 mt-0.5">
+                                        <Clock className="inline h-2 w-2 mr-0.5" />{timeRemaining(auction.endTime)}
+                                      </div>
+                                    </div>
+                                    <button
+                                      onClick={() => handleCancelAuction(tokenId)}
+                                      disabled={pending}
+                                      className="text-[9px] font-pixel px-2.5 py-1 rounded-md text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-colors disabled:opacity-50"
                                     >
                                       Cancel
                                     </button>
@@ -1755,14 +2003,16 @@ export default function MarketplacePage() {
                                   <td className="px-4 py-3">
                                     <span className={cn(
                                       'text-[10px] px-2 py-0.5 rounded font-pixel',
-                                      sale.type === 'auction' ? 'bg-frost-purple/20 text-frost-purple' : 'bg-frost-green/20 text-frost-green'
+                                      sale.type === 'auction' ? 'bg-frost-purple/20 text-frost-purple'
+                                        : sale.type === 'listing' ? 'bg-frost-cyan/20 text-frost-cyan'
+                                        : 'bg-frost-green/20 text-frost-green'
                                     )}>
-                                      {sale.type === 'auction' ? 'Auction' : 'Sale'}
+                                      {sale.type === 'auction' ? 'Auction' : sale.type === 'listing' ? 'Listed' : 'Sale'}
                                     </span>
                                   </td>
                                   <td className="px-4 py-3 font-pixel text-xs text-white">{sale.price} AVAX</td>
                                   <td className="px-4 py-3 text-white/40 hidden sm:table-cell font-mono text-xs">{shortenAddress(sale.seller)}</td>
-                                  <td className="px-4 py-3 text-white/40 hidden sm:table-cell font-mono text-xs">{shortenAddress(sale.buyer)}</td>
+                                  <td className="px-4 py-3 text-white/40 hidden sm:table-cell font-mono text-xs">{sale.buyer ? shortenAddress(sale.buyer) : '—'}</td>
                                   <td className="px-4 py-3 text-right text-white/40 text-xs">{timeAgo(sale.createdAt)}</td>
                                 </tr>
                               ))}
@@ -1795,7 +2045,7 @@ export default function MarketplacePage() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -300, opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed left-0 top-0 bottom-0 w-[300px] z-50 bg-frost-bg border-r border-white/[0.06] overflow-y-auto pt-4 lg:hidden"
+              className="fixed left-0 top-0 bottom-0 w-[280px] sm:w-[300px] z-50 bg-frost-bg border-r border-white/[0.06] overflow-y-auto pt-4 lg:hidden"
             >
               <div className="px-4 pb-3 flex items-center justify-between border-b border-white/[0.06]">
                 <span className="font-pixel text-sm text-white">Filters</span>

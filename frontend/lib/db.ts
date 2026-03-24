@@ -24,10 +24,12 @@ function getDb(): Database.Database {
 
   const db = new Database(DB_PATH);
 
-  // Performance settings
+  // Performance & safety settings for PM2 cluster mode
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
   db.pragma('foreign_keys = ON');
+  db.pragma('busy_timeout = 5000');
+  db.pragma('wal_autocheckpoint = 100');
 
   // Run migrations
   migrate(db);
@@ -223,6 +225,20 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_personalities_agent ON agent_personalities(agent_id);
     CREATE INDEX IF NOT EXISTS idx_live_events_created ON live_events(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_live_events_type ON live_events(event_type);
+
+    /* --- Wallet Points (FSB rewards) --- */
+
+    CREATE TABLE IF NOT EXISTS wallet_points (
+      wallet            TEXT PRIMARY KEY,
+      fsb_points        INTEGER NOT NULL DEFAULT 0,
+      total_battles     INTEGER NOT NULL DEFAULT 0,
+      wins              INTEGER NOT NULL DEFAULT 0,
+      losses            INTEGER NOT NULL DEFAULT 0,
+      total_avax_won    TEXT NOT NULL DEFAULT '0',
+      updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wallet_points_fsb ON wallet_points(fsb_points DESC);
 
     /* --- API Keys (external agent auth) --- */
 
@@ -455,6 +471,23 @@ function migrate(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id);
+
+    /* --- Wallet Referrals --- */
+    CREATE TABLE IF NOT EXISTS wallet_referrals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      referrer_wallet TEXT NOT NULL,
+      referee_wallet TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(referee_wallet)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_wallet_referrals_referrer ON wallet_referrals(referrer_wallet);
+
+    CREATE TABLE IF NOT EXISTS wallet_referral_codes (
+      wallet_address TEXT PRIMARY KEY,
+      referral_code TEXT NOT NULL UNIQUE,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
 
     /* --- Warrior Merges --- */
     CREATE TABLE IF NOT EXISTS warrior_merges (
@@ -731,6 +764,30 @@ function migrate(db: Database.Database): void {
   ];
   for (const sql of alterStatements) {
     try { db.exec(sql); } catch { /* column already exists */ }
+  }
+
+  // --- Quest System v7: Enhanced story lore for all quests + zones ---
+  const v7Marker = db.prepare("SELECT lore_intro FROM quest_definitions WHERE id = 100 LIMIT 1").get() as { lore_intro: string } | undefined;
+  const needsV7 = v7Marker && !v7Marker.lore_intro.includes('trembles');
+  if (needsV7) {
+    const { ZONE_SEEDS: zoneSeedsV7, generateAllQuests: genQuestsV7 } = require('@/data/quest-seed');
+
+    // Update zones with richer lore
+    const updateZoneV7 = db.prepare('UPDATE quest_zones SET description = ?, lore = ? WHERE id = ?');
+    for (const z of zoneSeedsV7) {
+      updateZoneV7.run(z.description, z.lore, z.id);
+    }
+
+    // Update all quest lore fields
+    const updateQuestV7 = db.prepare('UPDATE quest_definitions SET lore_intro = ?, lore_success = ?, lore_failure = ?, description = ? WHERE id = ?');
+    const allQuestsV7 = genQuestsV7();
+    const updateMany = db.transaction((quests: typeof allQuestsV7) => {
+      for (const q of quests) {
+        updateQuestV7.run(q.lore_intro, q.lore_success, q.lore_failure, q.description, q.id);
+      }
+    });
+    updateMany(allQuestsV7);
+    console.log('[db] Quest v7 migration complete: enhanced story lore for all 999 quests + 8 zones');
   }
 }
 

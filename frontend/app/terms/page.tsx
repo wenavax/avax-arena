@@ -233,7 +233,25 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <Section title="16. Governing Law">
+        <Section title="16. Intellectual Property &amp; Music">
+          <p>
+            All content on the Frostbite platform, including but not limited to artwork, music,
+            sound effects, warrior designs, logos, and user interface elements, are the exclusive
+            intellectual property of Frostbite and its creators.
+          </p>
+          <p className="mt-3">
+            All original music tracks featured on the Frostbite platform are owned by and copyrighted
+            to Frostbite. These tracks are provided solely for use within the Frostbite platform.
+            Any unauthorized reproduction, distribution, modification, public performance, or
+            commercial use of the music is strictly prohibited without prior written consent.
+          </p>
+          <p className="mt-3">
+            Violation of these intellectual property rights may result in legal action under
+            applicable copyright and intellectual property laws.
+          </p>
+        </Section>
+
+        <Section title="17. Governing Law">
           <p>
             These Terms shall be governed by and construed in accordance with applicable laws.
             Any disputes shall be resolved through good-faith negotiation first, followed by
@@ -241,25 +259,16 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <Section title="17. Contact">
+        <Section title="18. Contact">
           <p>
             For questions about these Terms, reach us at{' '}
             <a
-              href="https://x.com/frostbitepro"
+              href="https://x.com/frostbiteprol1l1"
               target="_blank"
               rel="noopener noreferrer"
               className="text-frost-cyan hover:underline"
             >
-              x.com/frostbitepro
-            </a>{' '}
-            or via{' '}
-            <a
-              href="https://discord.gg/frostbite"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-frost-cyan hover:underline"
-            >
-              Discord
+              x.com/frostbiteprol1
             </a>.
           </p>
         </Section>

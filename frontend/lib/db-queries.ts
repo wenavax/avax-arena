@@ -425,24 +425,6 @@ export function getBattleHistory(agentId: string, limit = 10): DbBattle[] {
 }
 
 /* ---------------------------------------------------------------------------
- * Leaderboard
- * ------------------------------------------------------------------------- */
-
-export function getLeaderboard(limit = 10, offset = 0): { agents: DbAgent[]; total: number } {
-  const db = getDb();
-  const agents = db.prepare(`
-    SELECT * FROM agents
-    WHERE total_battles > 0
-    ORDER BY win_rate DESC, wins DESC, profit DESC
-    LIMIT ? OFFSET ?
-  `).all(limit, offset) as DbAgent[];
-  const { total } = db.prepare(
-    'SELECT COUNT(*) as total FROM agents WHERE total_battles > 0'
-  ).get() as { total: number };
-  return { agents, total };
-}
-
-/* ---------------------------------------------------------------------------
  * Chat Messages
  * ------------------------------------------------------------------------- */
 
@@ -612,6 +594,51 @@ export function getMarketplaceActivity(limit = 20, offset = 0): { sales: DbMarke
   ).all(limit, offset) as DbMarketplaceSale[];
   const { total } = db.prepare('SELECT COUNT(*) as total FROM marketplace_sales').get() as { total: number };
   return { sales, total };
+}
+
+/* ---------------------------------------------------------------------------
+ * Wallet Points (FSB Rewards)
+ * ------------------------------------------------------------------------- */
+
+export function recordBattleResult(winner: string, loser: string, avaxWon: string) {
+  const db = getDb();
+  const now = new Date().toISOString();
+
+  // Upsert winner: +1 FSB, +1 win, +1 battle
+  db.prepare(`
+    INSERT INTO wallet_points (wallet, fsb_points, total_battles, wins, losses, total_avax_won, updated_at)
+    VALUES (?, 1, 1, 1, 0, ?, ?)
+    ON CONFLICT(wallet) DO UPDATE SET
+      fsb_points = fsb_points + 1,
+      total_battles = total_battles + 1,
+      wins = wins + 1,
+      total_avax_won = CAST((CAST(total_avax_won AS REAL) + CAST(? AS REAL)) AS TEXT),
+      updated_at = ?
+  `).run(winner.toLowerCase(), avaxWon, now, avaxWon, now);
+
+  // Upsert loser: +0 FSB, +1 loss, +1 battle
+  db.prepare(`
+    INSERT INTO wallet_points (wallet, fsb_points, total_battles, wins, losses, total_avax_won, updated_at)
+    VALUES (?, 0, 1, 0, 1, '0', ?)
+    ON CONFLICT(wallet) DO UPDATE SET
+      total_battles = total_battles + 1,
+      losses = losses + 1,
+      updated_at = ?
+  `).run(loser.toLowerCase(), now, now);
+}
+
+export function getLeaderboard(limit = 50, offset = 0): { players: { wallet: string; fsb_points: number; total_battles: number; wins: number; losses: number; total_avax_won: string }[]; total: number } {
+  const db = getDb();
+  const players = db.prepare(
+    'SELECT * FROM wallet_points ORDER BY fsb_points DESC, wins DESC LIMIT ? OFFSET ?'
+  ).all(limit, offset) as { wallet: string; fsb_points: number; total_battles: number; wins: number; losses: number; total_avax_won: string }[];
+  const { total } = db.prepare('SELECT COUNT(*) as total FROM wallet_points').get() as { total: number };
+  return { players, total };
+}
+
+export function getWalletPoints(wallet: string) {
+  const db = getDb();
+  return db.prepare('SELECT * FROM wallet_points WHERE wallet = ?').get(wallet.toLowerCase()) as { wallet: string; fsb_points: number; total_battles: number; wins: number; losses: number; total_avax_won: string } | undefined;
 }
 
 /* ---------------------------------------------------------------------------

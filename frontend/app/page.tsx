@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, useInView, AnimatePresence } from 'framer-motion';
 import {
   Sparkles,
@@ -18,494 +18,102 @@ import {
   Store,
   Lock,
   TrendingUp,
+  Users,
+  Target,
+  Award,
+  Globe,
 } from 'lucide-react';
 import { usePublicClient } from 'wagmi';
 import { formatEther } from 'viem';
-import { ELEMENTS, ELEMENT_ADVANTAGES, CONTRACT_ADDRESSES } from '@/lib/constants';
-import { FROSTBITE_WARRIOR_ABI, BATTLE_ENGINE_ABI } from '@/lib/contracts';
+import { ELEMENTS, CONTRACT_ADDRESSES } from '@/lib/constants';
+import { FROSTBITE_WARRIOR_ABI, BATTLE_ENGINE_ABI, TEAM_BATTLE_ABI } from '@/lib/contracts';
 
 /* ===========================================================================
  * Animated Counter
  * ========================================================================= */
 
-function AnimatedCounter({
-  target,
-  suffix = '',
-  prefix = '',
-}: {
-  target: number;
-  suffix?: string;
-  prefix?: string;
-}) {
+function AnimatedCounter({ target, suffix = '', prefix = '' }: { target: number; suffix?: string; prefix?: string }) {
   const [count, setCount] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: '-40px' });
 
   useEffect(() => {
-    if (!inView) return;
+    if (!inView || target === 0) return;
     let start = 0;
-    const duration = 2200;
-    const step = Math.ceil(target / (duration / 16));
+    const step = Math.max(1, Math.ceil(target / 120));
     const timer = setInterval(() => {
       start += step;
-      if (start >= target) {
-        start = target;
-        clearInterval(timer);
-      }
+      if (start >= target) { start = target; clearInterval(timer); }
       setCount(start);
     }, 16);
     return () => clearInterval(timer);
   }, [inView, target]);
 
-  return (
-    <span
-      ref={ref}
-      className="font-mono font-bold text-2xl sm:text-3xl text-white tabular-nums"
-    >
-      {prefix}
-      {count.toLocaleString()}
-      {suffix}
-    </span>
-  );
+  return <span ref={ref} className="font-mono font-bold tabular-nums">{prefix}{count.toLocaleString()}{suffix}</span>;
 }
 
 /* ===========================================================================
- * Live Platform Stats (on-chain reads)
+ * Live Stats
  * ========================================================================= */
 
 interface LiveStats {
   warriorsMinted: number;
   totalBattles: number;
+  teamBattles: number;
   avaxVolume: number;
 }
 
 function useLiveStats(): LiveStats {
   const publicClient = usePublicClient();
-  const [stats, setStats] = useState<LiveStats>({
-    warriorsMinted: 0,
-    totalBattles: 0,
-    avaxVolume: 0,
-  });
+  const [stats, setStats] = useState<LiveStats>({ warriorsMinted: 0, totalBattles: 0, teamBattles: 0, avaxVolume: 0 });
 
   useEffect(() => {
     if (!publicClient) return;
     let cancelled = false;
-
-    async function fetchOnChain() {
+    (async () => {
       try {
-        const [supplyRes, battleRes, balanceRes] = await Promise.allSettled([
-          publicClient!.readContract({
-            address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
-            abi: FROSTBITE_WARRIOR_ABI,
-            functionName: 'totalSupply',
-          }),
-          publicClient!.readContract({
-            address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
-            abi: BATTLE_ENGINE_ABI,
-            functionName: 'battleCounter',
-          }),
-          publicClient!.getBalance({
-            address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
-          }),
+        const totalWageredAbi = [{ name: 'totalWagered', type: 'function', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' }] as const;
+        const [supplyRes, battleRes, teamRes, wagered1Res, wagered2Res] = await Promise.allSettled([
+          publicClient.readContract({ address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`, abi: FROSTBITE_WARRIOR_ABI, functionName: 'totalSupply' }),
+          publicClient.readContract({ address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`, abi: BATTLE_ENGINE_ABI, functionName: 'battleCounter' }),
+          publicClient.readContract({ address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`, abi: TEAM_BATTLE_ABI, functionName: 'battleCounter' }),
+          publicClient.readContract({ address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`, abi: totalWageredAbi, functionName: 'totalWagered' }),
+          publicClient.readContract({ address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`, abi: totalWageredAbi, functionName: 'totalWagered' }),
         ]);
         if (cancelled) return;
-        setStats((prev) => ({
-          ...prev,
-          warriorsMinted:
-            supplyRes.status === 'fulfilled' ? Number(supplyRes.value) : 0,
-          totalBattles:
-            battleRes.status === 'fulfilled' ? Number(battleRes.value) : 0,
-          avaxVolume:
-            balanceRes.status === 'fulfilled'
-              ? parseFloat(Number(formatEther(balanceRes.value as bigint)).toFixed(2))
-              : 0,
-        }));
-      } catch {
-        /* stats stay at 0 */
-      }
-    }
-
-    fetchOnChain();
-    return () => {
-      cancelled = true;
-    };
+        const w1 = wagered1Res.status === 'fulfilled' ? (wagered1Res.value as bigint) : 0n;
+        const w2 = wagered2Res.status === 'fulfilled' ? (wagered2Res.value as bigint) : 0n;
+        setStats({
+          warriorsMinted: supplyRes.status === 'fulfilled' ? Number(supplyRes.value) : 0,
+          totalBattles: battleRes.status === 'fulfilled' ? Number(battleRes.value) : 0,
+          teamBattles: teamRes.status === 'fulfilled' ? Number(teamRes.value) : 0,
+          avaxVolume: parseFloat(Number(formatEther(w1 + w2)).toFixed(2)),
+        });
+      } catch { /* stats stay at 0 */ }
+    })();
+    return () => { cancelled = true; };
   }, [publicClient]);
 
   return stats;
 }
 
 /* ===========================================================================
- * Warrior Showcase Card
+ * Fade-in wrapper (renders content visible by default, animates only when JS loads)
  * ========================================================================= */
 
-interface ShowcaseWarrior {
-  element: (typeof ELEMENTS)[number];
-  attack: number;
-  defense: number;
-  speed: number;
-  level: number;
-  powerScore: number;
-}
-
-const SHOWCASE_PAIRS: [number, number][] = [
-  [0, 3], // Fire vs Ice
-  [5, 6], // Thunder vs Shadow
-  [1, 0], // Water vs Fire
-  [7, 4], // Light vs Earth
-  [2, 3], // Wind vs Ice
-  [6, 7], // Shadow vs Light
-];
-
-function useShowcaseWarriors(): [ShowcaseWarrior, ShowcaseWarrior] {
-  const warriors = useMemo<ShowcaseWarrior[]>(() => {
-    // Deterministic stats to avoid hydration mismatch
-    const stats = [
-      { a: 88, d: 62, s: 75, l: 4 },
-      { a: 71, d: 85, s: 68, l: 3 },
-      { a: 65, d: 78, s: 92, l: 5 },
-      { a: 72, d: 90, s: 55, l: 2 },
-      { a: 80, d: 58, s: 82, l: 4 },
-      { a: 95, d: 45, s: 70, l: 3 },
-      { a: 76, d: 72, s: 88, l: 5 },
-      { a: 60, d: 95, s: 60, l: 2 },
-    ];
-    return ELEMENTS.map((el, i) => ({
-      element: el,
-      attack: stats[i].a,
-      defense: stats[i].d,
-      speed: stats[i].s,
-      level: stats[i].l,
-      powerScore: stats[i].a + stats[i].d + stats[i].s,
-    }));
-  }, []);
-
-  const [pairIndex, setPairIndex] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setPairIndex((prev) => (prev + 1) % SHOWCASE_PAIRS.length);
-    }, 4500);
-    return () => clearInterval(timer);
-  }, []);
-
-  const [leftIdx, rightIdx] = SHOWCASE_PAIRS[pairIndex];
-  return [warriors[leftIdx], warriors[rightIdx]];
-}
-
-function WarriorCard({
-  warrior,
-  side,
-}: {
-  warrior: ShowcaseWarrior;
-  side: 'left' | 'right';
-}) {
-  const stats = [
-    { label: 'ATK', value: warrior.attack, color: 'bg-red-500' },
-    { label: 'DEF', value: warrior.defense, color: 'bg-blue-500' },
-    { label: 'SPD', value: warrior.speed, color: 'bg-green-500' },
-  ];
-
+function FadeIn({ children, className = '', delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: '-60px' });
   return (
     <motion.div
-      key={`${warrior.element.id}-${side}`}
-      initial={{ opacity: 0, x: side === 'left' ? -60 : 60, scale: 0.85 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.8, y: 20 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-      className="relative w-36 sm:w-44"
+      ref={ref}
+      className={className}
+      initial={{ opacity: 0.15, y: 24 }}
+      animate={inView ? { opacity: 1, y: 0 } : { opacity: 0.15, y: 24 }}
+      transition={{ duration: 0.6, delay, ease: 'easeOut' }}
     >
-      <div
-        className="glass-card p-4 sm:p-5 text-center relative overflow-hidden border border-white/[0.08]"
-        style={{
-          boxShadow: `0 0 30px ${warrior.element.glowColor}, 0 0 60px ${warrior.element.glowColor}`,
-        }}
-      >
-        {/* Background glow */}
-        <div
-          className={`absolute inset-0 bg-gradient-to-br ${warrior.element.bgGradient} opacity-60 rounded-[16px]`}
-        />
-
-        <div className="relative z-10">
-          {/* Element emoji */}
-          <div className="text-4xl sm:text-5xl mb-2 drop-shadow-lg">
-            {warrior.element.emoji}
-          </div>
-
-          {/* Element name */}
-          <h4
-            className={`font-display text-sm sm:text-base font-bold mb-3 bg-gradient-to-r ${warrior.element.color} bg-clip-text text-transparent`}
-          >
-            {warrior.element.name}
-          </h4>
-
-          {/* Stat bars */}
-          <div className="space-y-2">
-            {stats.map((stat) => (
-              <div key={stat.label}>
-                <div className="flex justify-between mb-0.5">
-                  <span className="text-[10px] font-mono text-white/50 uppercase">
-                    {stat.label}
-                  </span>
-                  <span className="text-[10px] font-mono text-white/70">
-                    {stat.value}
-                  </span>
-                </div>
-                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-                  <motion.div
-                    className={`h-full rounded-full ${stat.color}`}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${stat.value}%` }}
-                    transition={{ duration: 0.8, ease: 'easeOut', delay: 0.3 }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Power score */}
-          <div className="mt-3 pt-2 border-t border-white/[0.06]">
-            <span className="text-[10px] font-pixel text-white/40 uppercase">
-              Power
-            </span>
-            <span className="ml-2 text-sm font-mono font-bold text-frost-gold">
-              {warrior.powerScore}
-            </span>
-          </div>
-        </div>
-      </div>
+      {children}
     </motion.div>
-  );
-}
-
-/* ===========================================================================
- * Clash Effect (center between warriors)
- * ========================================================================= */
-
-function ClashEffect() {
-  const sparks = useMemo(
-    () =>
-      Array.from({ length: 8 }, (_, i) => {
-        const angle = (i / 8) * Math.PI * 2;
-        const dist = 25 + (i % 3) * 10;
-        return {
-          id: i,
-          x: Math.cos(angle) * dist,
-          y: Math.sin(angle) * dist,
-          delay: i * 0.15,
-          size: 2 + (i % 2),
-        };
-      }),
-    [],
-  );
-
-  return (
-    <div className="relative flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20">
-      {/* Pulse rings */}
-      <div
-        className="absolute inset-0 rounded-full border-2 border-frost-primary/60"
-        style={{ animation: 'clash-ring 2s ease-out infinite' }}
-      />
-      <div
-        className="absolute inset-0 rounded-full border-2 border-frost-secondary/40"
-        style={{ animation: 'clash-ring 2s ease-out infinite 0.5s' }}
-      />
-
-      {/* Center glow */}
-      <div
-        className="absolute w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-frost-primary/30 blur-md"
-        style={{ animation: 'clash-pulse 1.5s ease-in-out infinite' }}
-      />
-
-      {/* Swords icon */}
-      <Swords className="relative z-10 h-6 w-6 sm:h-8 sm:w-8 text-frost-primary drop-shadow-[0_0_8px_rgba(255,32,32,0.8)]" />
-
-      {/* Sparks */}
-      {sparks.map((spark) => (
-        <span
-          key={spark.id}
-          className="absolute rounded-full bg-frost-gold"
-          style={{
-            width: `${spark.size}px`,
-            height: `${spark.size}px`,
-            ['--spark-x' as string]: `${spark.x}px`,
-            ['--spark-y' as string]: `${spark.y}px`,
-            animation: `spark-burst 1.2s ease-out infinite ${spark.delay}s`,
-            boxShadow: `0 0 ${spark.size * 3}px #ffd700`,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-/* ===========================================================================
- * Warrior Showdown (right side of hero)
- * ========================================================================= */
-
-function WarriorShowdown() {
-  const [leftWarrior, rightWarrior] = useShowcaseWarriors();
-
-  return (
-    <div className="relative flex items-center justify-center py-8 md:py-0">
-      {/* Background radial glow */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-frost-primary/[0.06] blur-[80px]" />
-      </div>
-
-      {/* Energy lines connecting warriors */}
-      <div className="absolute top-1/2 left-[15%] right-[15%] h-px -translate-y-1/2">
-        <div
-          className="h-full bg-gradient-to-r from-transparent via-frost-primary/40 to-transparent"
-          style={{ animation: 'energy-line 3s ease-in-out infinite' }}
-        />
-      </div>
-
-      {/* Warriors + Clash */}
-      <div className="relative z-10 flex items-center gap-3 sm:gap-5">
-        <AnimatePresence mode="wait">
-          <WarriorCard key={`l-${leftWarrior.element.id}`} warrior={leftWarrior} side="left" />
-        </AnimatePresence>
-
-        <ClashEffect />
-
-        <AnimatePresence mode="wait">
-          <WarriorCard key={`r-${rightWarrior.element.id}`} warrior={rightWarrior} side="right" />
-        </AnimatePresence>
-      </div>
-
-      {/* VS text */}
-      <div className="absolute bottom-2 md:bottom-4 left-1/2 -translate-x-1/2">
-        <span className="font-pixel text-[10px] text-white/30 uppercase tracking-[0.3em]">
-          Battle Preview
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/* ===========================================================================
- * Hero Section (Cinematic Split)
- * ========================================================================= */
-
-function HeroSection({ stats }: { stats: LiveStats }) {
-  return (
-    <section className="relative min-h-[90vh] flex items-center overflow-hidden px-4">
-      {/* Subtle background orbs */}
-      <div className="absolute top-20 -left-32 w-80 h-80 rounded-full bg-frost-primary/[0.04] blur-[100px] pointer-events-none" />
-      <div className="absolute bottom-20 -right-32 w-96 h-96 rounded-full bg-frost-secondary/[0.03] blur-[100px] pointer-events-none" />
-
-      <div className="relative z-10 mx-auto max-w-7xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12 items-center">
-        {/* Left Column: Content */}
-        <div className="text-center md:text-left order-2 md:order-1">
-          {/* Title block */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease: 'easeOut' }}
-          >
-            <h1 className="font-display font-black leading-none tracking-tight mb-2">
-              <span className="gradient-text text-5xl sm:text-6xl md:text-6xl lg:text-7xl">
-                FROSTBITE
-              </span>
-              <br />
-              <span className="text-frost-primary text-6xl sm:text-7xl md:text-7xl lg:text-8xl drop-shadow-[0_0_20px_rgba(255,32,32,0.3)]">
-                ARENA
-              </span>
-            </h1>
-          </motion.div>
-
-          {/* Description */}
-          <motion.p
-            className="text-base sm:text-lg md:text-xl text-white/50 max-w-lg mx-auto md:mx-0 mb-6 leading-relaxed"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.15 }}
-          >
-            Mint unique NFT warriors on Avalanche.{' '}
-            <span className="text-frost-primary font-semibold">
-              Battle PvP
-            </span>{' '}
-            for AVAX rewards.
-          </motion.p>
-
-          {/* Network badge */}
-          <motion.div
-            className="flex justify-center md:justify-start mb-6"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.25 }}
-          >
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-green/10 border border-frost-green/30 text-frost-green text-[10px] font-pixel uppercase tracking-wider">
-              <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
-              Avalanche Mainnet
-            </span>
-          </motion.div>
-
-          {/* CTA Buttons */}
-          <motion.div
-            className="flex flex-col sm:flex-row items-center md:items-start gap-3 mb-10"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.35 }}
-          >
-            <Link
-              href="/mint"
-              className="btn-neon btn-neon-cyan flex items-center gap-2 text-sm sm:text-base px-7 py-3"
-            >
-              <Sparkles className="h-4 w-4" />
-              Mint Warrior
-            </Link>
-            <Link
-              href="/battle"
-              className="btn-neon btn-neon-purple flex items-center gap-2 text-sm sm:text-base px-7 py-3"
-            >
-              <Swords className="h-4 w-4" />
-              Enter Arena
-            </Link>
-          </motion.div>
-
-          {/* Stats Row */}
-          <motion.div
-            className="grid grid-cols-3 gap-3 max-w-sm mx-auto md:mx-0"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.5 }}
-          >
-            {[
-              { label: 'Warriors', value: stats.warriorsMinted, icon: Shield },
-              { label: 'Battles', value: stats.totalBattles, icon: Swords },
-              { label: 'AVAX Won', value: stats.avaxVolume, icon: Coins },
-            ].map((stat) => {
-              const Icon = stat.icon;
-              return (
-                <div key={stat.label} className="text-center md:text-left">
-                  <div className="flex items-center justify-center md:justify-start gap-1.5 mb-1">
-                    <Icon className="h-3.5 w-3.5 text-white/25" />
-                    <AnimatedCounter target={stat.value} />
-                  </div>
-                  <p className="text-[10px] text-white/30 uppercase tracking-wider font-pixel">
-                    {stat.label}
-                  </p>
-                </div>
-              );
-            })}
-          </motion.div>
-        </div>
-
-        {/* Right Column: Battle Showcase */}
-        <motion.div
-          className="order-1 md:order-2"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-        >
-          <WarriorShowdown />
-        </motion.div>
-      </div>
-
-      {/* Bottom fade */}
-      <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-frost-bg to-transparent pointer-events-none" />
-    </section>
   );
 }
 
@@ -513,170 +121,295 @@ function HeroSection({ stats }: { stats: LiveStats }) {
  * Live Activity Ticker
  * ========================================================================= */
 
-const TICKER_ITEMS = [
-  '\u2694\uFE0F 0x12..ab won 0.05 AVAX in Battle #42',
-  '\uD83C\uDF89 New warrior minted! #15',
-  '\uD83C\uDFC6 0xCD..ef is on a 3-win streak',
-  '\uD83D\uDD25 Fire warrior #8 defeated Ice warrior #3',
-  '\uD83D\uDCA7 0xFA..92 staked 0.1 AVAX on Battle #55',
-  '\u26A1 Thunder warrior #21 leveled up!',
-  '\uD83C\uDF0A Water warrior #6 won by element advantage',
-  '\uD83C\uDF1F 0x3B..d7 minted a Shadow warrior',
-  '\uD83D\uDEE1\uFE0F Earth warrior #11 survived 5 battles',
-  '\uD83C\uDFAF 0xA1..c4 claimed 0.08 AVAX rewards',
+const TICKER_ICONS: Record<string, string> = {
+  mint: '✨',
+  battle: '⚔️',
+  team_battle: '🛡️',
+  sale: '💰',
+  quest: '🗺️',
+  merge: '🔥',
+  info: '📢',
+};
+
+function useTickerEvents() {
+  const [events, setEvents] = useState<{ type: string; message: string }[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchEvents() {
+      try {
+        const res = await fetch('/api/v1/activity-ticker');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data)) setEvents(data);
+      } catch { /* silent */ }
+    }
+    fetchEvents();
+    const interval = setInterval(fetchEvents, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  return events;
+}
+
+const FALLBACK_TICKER: { type: string; message: string }[] = [
+  { type: 'info', message: 'Welcome to Frostbite Arena — mint your warrior and enter the battlefield' },
+  { type: 'battle', message: 'Challenge other warriors in 1v1 or 3v3 battles for AVAX rewards' },
+  { type: 'quest', message: 'Send warriors on dungeon quests to earn XP and level up' },
+  { type: 'merge', message: 'Fuse two warriors into a stronger one with the Merge system' },
+  { type: 'sale', message: 'Trade warriors on the Frostbite Marketplace' },
+  { type: 'mint', message: 'Every warrior is unique — stats, elements, and special powers are randomized on-chain' },
+  { type: 'team_battle', message: 'Form a team of 3 warriors and compete in 3v3 arena battles' },
 ];
 
 function LiveTicker() {
-  const items = TICKER_ITEMS;
-  // Duplicate for seamless loop
-  const doubled = [...items, ...items];
+  const events = useTickerEvents();
+
+  // Use live events if available, otherwise show fallback messages
+  const source = events.length > 0 ? events : FALLBACK_TICKER;
+
+  // Duplicate list for seamless loop
+  const items = [...source, ...source];
 
   return (
-    <div className="w-full py-2 bg-frost-surface/50 border-y border-white/[0.04] overflow-hidden">
-      <div
-        className="flex whitespace-nowrap"
-        style={{
-          animation: 'ticker-scroll 40s linear infinite',
-          width: 'max-content',
-        }}
-      >
-        {doubled.map((item, i) => (
-          <span key={i} className="font-pixel text-[11px] text-white/50 mx-1">
-            {item}
-            <span className="text-frost-cyan mx-3">&middot;</span>
+    <div className="relative w-full overflow-hidden border-y border-white/[0.04] bg-black/30 backdrop-blur-sm">
+      {/* Left/right fade masks */}
+      <div className="absolute left-0 top-0 bottom-0 w-16 sm:w-24 bg-gradient-to-r from-frost-bg to-transparent z-10 pointer-events-none" />
+      <div className="absolute right-0 top-0 bottom-0 w-16 sm:w-24 bg-gradient-to-l from-frost-bg to-transparent z-10 pointer-events-none" />
+
+      <div className="flex animate-ticker py-2.5">
+        {items.map((ev, i) => (
+          <span
+            key={`${i}-${ev.message}`}
+            className="flex-shrink-0 flex items-center gap-1.5 mx-6 text-xs sm:text-sm text-white/50 whitespace-nowrap"
+          >
+            <span className="text-sm">{TICKER_ICONS[ev.type] ?? '📢'}</span>
+            <span>{ev.message}</span>
           </span>
         ))}
       </div>
-      <style jsx>{`
-        @keyframes ticker-scroll {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-      `}</style>
     </div>
   );
 }
 
 /* ===========================================================================
- * Why Frostbite Section
+ * Hero Section
+ * ========================================================================= */
+
+function HeroSection({ stats }: { stats: LiveStats }) {
+  return (
+    <section className="relative min-h-screen flex items-center justify-center overflow-hidden px-4">
+      {/* Background orbs */}
+      <div className="absolute top-20 -left-32 w-80 h-80 rounded-full bg-frost-primary/[0.04] blur-[100px] pointer-events-none hidden sm:block" />
+      <div className="absolute bottom-20 -right-32 w-96 h-96 rounded-full bg-frost-secondary/[0.03] blur-[100px] pointer-events-none hidden sm:block" />
+
+      {/* WarriorShowdown as background element */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.15] scale-150">
+        <WarriorShowdown />
+      </div>
+
+      {/* Centered content */}
+      <div className="relative z-10 text-center max-w-3xl w-full flex flex-col items-center">
+        <FadeIn>
+          <h1 className="font-display font-black leading-none tracking-tight mb-2">
+            <span className="gradient-text text-6xl sm:text-7xl lg:text-8xl">FROSTBITE</span>
+          </h1>
+          <h2 className="text-frost-primary text-2xl sm:text-3xl lg:text-4xl font-display font-bold tracking-widest mb-4 drop-shadow-[0_0_20px_rgba(255,32,32,0.3)]">
+            BATTLE ARENA
+          </h2>
+        </FadeIn>
+
+        <FadeIn delay={0.1}>
+          <p className="text-lg text-white/50 mb-6">
+            Mint warriors. Battle PvP. Earn AVAX.
+          </p>
+        </FadeIn>
+
+        <FadeIn delay={0.15}>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-frost-green/10 border border-frost-green/30 text-frost-green text-[10px] font-pixel uppercase tracking-wider mb-8">
+            <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
+            Live on Avalanche
+          </span>
+        </FadeIn>
+
+        <FadeIn delay={0.2}>
+          <Link
+            href="/battle"
+            className="btn-3d btn-3d-red px-10 py-4 text-base sm:text-lg mb-10"
+            style={{ boxShadow: '0 4px 0 0 #991111, 0 6px 20px rgba(0,0,0,0.3), 0 0 40px rgba(255,32,32,0.2)' }}
+          >
+            <Swords className="h-5 w-5" />
+            Enter Arena
+          </Link>
+        </FadeIn>
+
+        {/* Mini stats row */}
+        <FadeIn delay={0.25}>
+          <div className="flex items-center gap-4 sm:gap-8">
+            {[
+              { label: 'Warriors', value: stats.warriorsMinted, icon: Shield },
+              { label: 'Battles', value: stats.totalBattles + stats.teamBattles, icon: Swords },
+              { label: 'Volume', value: stats.avaxVolume, suffix: '', prefix: '', icon: Coins },
+            ].map((s, i) => (
+              <div key={s.label} className="flex items-center gap-4">
+                <div className="text-center">
+                  <div className="text-xl sm:text-2xl font-mono font-bold text-white">
+                    <AnimatedCounter target={s.value} suffix={s.suffix} prefix={s.prefix} />
+                  </div>
+                  <div className="text-[9px] text-white/30 font-pixel uppercase mt-0.5">{s.label}</div>
+                </div>
+                {i < 2 && <div className="stat-divider" />}
+              </div>
+            ))}
+          </div>
+        </FadeIn>
+      </div>
+    </section>
+  );
+}
+
+/* ===========================================================================
+ * Warrior Showdown (rotating element pairs)
+ * ========================================================================= */
+
+const SHOWCASE_PAIRS: [number, number][] = [[0, 3], [5, 6], [1, 0], [7, 4], [2, 3], [6, 7]];
+const SHOWCASE_STATS = [
+  { a: 88, d: 62, s: 75, l: 4 }, { a: 71, d: 85, s: 68, l: 3 },
+  { a: 65, d: 78, s: 92, l: 5 }, { a: 72, d: 90, s: 55, l: 2 },
+  { a: 80, d: 58, s: 82, l: 4 }, { a: 95, d: 45, s: 70, l: 3 },
+  { a: 76, d: 72, s: 88, l: 5 }, { a: 60, d: 95, s: 60, l: 2 },
+];
+
+function WarriorShowdown() {
+  const [pairIndex, setPairIndex] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setPairIndex((p) => (p + 1) % SHOWCASE_PAIRS.length), 4500);
+    return () => clearInterval(timer);
+  }, []);
+
+  const [leftIdx, rightIdx] = SHOWCASE_PAIRS[pairIndex];
+  const leftEl = ELEMENTS[leftIdx];
+  const rightEl = ELEMENTS[rightIdx];
+  const leftStats = SHOWCASE_STATS[leftIdx];
+  const rightStats = SHOWCASE_STATS[rightIdx];
+
+  return (
+    <div className="relative flex items-center justify-center py-8 lg:py-0">
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-frost-primary/[0.06] blur-[80px]" />
+      </div>
+
+      <div className="relative z-10 flex items-center gap-3 sm:gap-5">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`l-${leftEl.id}`}
+            initial={{ opacity: 0, x: -60, scale: 0.85 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className="w-36 sm:w-44"
+          >
+            <div className="glass-card p-4 sm:p-5 text-center relative overflow-hidden border border-white/[0.08]"
+              style={{ boxShadow: `0 0 30px ${leftEl.glowColor}` }}>
+              <div className={`absolute inset-0 bg-gradient-to-br ${leftEl.bgGradient} opacity-60 rounded-[16px]`} />
+              <div className="relative z-10">
+                <div className="text-4xl sm:text-5xl mb-2">{leftEl.emoji}</div>
+                <h4 className={`font-display text-sm font-bold mb-3 bg-gradient-to-r ${leftEl.color} bg-clip-text text-transparent`}>{leftEl.name}</h4>
+                <div className="space-y-1.5 text-[10px] font-mono text-white/50">
+                  <div className="flex justify-between"><span>ATK</span><span className="text-white/70">{leftStats.a}</span></div>
+                  <div className="flex justify-between"><span>DEF</span><span className="text-white/70">{leftStats.d}</span></div>
+                  <div className="flex justify-between"><span>SPD</span><span className="text-white/70">{leftStats.s}</span></div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-white/[0.06] text-[10px] font-pixel text-white/40">
+                  Power <span className="ml-1 text-sm font-mono font-bold text-frost-gold">{leftStats.a + leftStats.d + leftStats.s}</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+
+        {/* VS center */}
+        <div className="relative flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20">
+          <div className="absolute inset-0 rounded-full border-2 border-frost-primary/60" style={{ animation: 'clash-ring 2s ease-out infinite' }} />
+          <div className="absolute w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-frost-primary/30 blur-md" style={{ animation: 'clash-pulse 1.5s ease-in-out infinite' }} />
+          <Swords className="relative z-10 h-6 w-6 sm:h-8 sm:w-8 text-frost-primary drop-shadow-[0_0_8px_rgba(255,32,32,0.8)]" />
+        </div>
+
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`r-${rightEl.id}`}
+            initial={{ opacity: 0, x: 60, scale: 0.85 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className="w-36 sm:w-44"
+          >
+            <div className="glass-card p-4 sm:p-5 text-center relative overflow-hidden border border-white/[0.08]"
+              style={{ boxShadow: `0 0 30px ${rightEl.glowColor}` }}>
+              <div className={`absolute inset-0 bg-gradient-to-br ${rightEl.bgGradient} opacity-60 rounded-[16px]`} />
+              <div className="relative z-10">
+                <div className="text-4xl sm:text-5xl mb-2">{rightEl.emoji}</div>
+                <h4 className={`font-display text-sm font-bold mb-3 bg-gradient-to-r ${rightEl.color} bg-clip-text text-transparent`}>{rightEl.name}</h4>
+                <div className="space-y-1.5 text-[10px] font-mono text-white/50">
+                  <div className="flex justify-between"><span>ATK</span><span className="text-white/70">{rightStats.a}</span></div>
+                  <div className="flex justify-between"><span>DEF</span><span className="text-white/70">{rightStats.d}</span></div>
+                  <div className="flex justify-between"><span>SPD</span><span className="text-white/70">{rightStats.s}</span></div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-white/[0.06] text-[10px] font-pixel text-white/40">
+                  Power <span className="ml-1 text-sm font-mono font-bold text-frost-gold">{rightStats.a + rightStats.d + rightStats.s}</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+/* ===========================================================================
+ * Platform Features
  * ========================================================================= */
 
 const FEATURES = [
-  {
-    icon: Shield,
-    title: 'On-Chain Warriors',
-    description: 'Every warrior is a unique NFT with randomized stats stored permanently on the Avalanche blockchain.',
-    gradient: 'from-frost-cyan to-blue-500',
-    delay: 0,
-  },
-  {
-    icon: Swords,
-    title: 'PvP Battles for AVAX',
-    description: 'Stake real AVAX in battles. Winners take the pot. Element advantages add strategic depth.',
-    gradient: 'from-frost-primary to-orange-500',
-    delay: 0.1,
-  },
-  {
-    icon: GitMerge,
-    title: 'Warrior Fusion',
-    description: 'Burn two warriors to forge a stronger one. Combine the best traits and create the ultimate fighter.',
-    gradient: 'from-purple-500 to-fuchsia-500',
-    delay: 0.2,
-  },
-  {
-    icon: Map,
-    title: 'Quest System',
-    description: 'Complete daily and weekly quests to earn XP, level up your warriors, and unlock exclusive rewards.',
-    gradient: 'from-green-500 to-emerald-500',
-    delay: 0.3,
-  },
-  {
-    icon: Store,
-    title: 'Marketplace',
-    description: 'Buy and sell warriors on the decentralized marketplace. Find bargains or list your champions.',
-    gradient: 'from-amber-500 to-yellow-500',
-    delay: 0.4,
-  },
-  {
-    icon: Lock,
-    title: 'Fully Decentralized',
-    description: 'No centralized servers. All game logic runs on verified smart contracts on Avalanche C-Chain.',
-    gradient: 'from-cyan-400 to-teal-500',
-    delay: 0.5,
-  },
+  { icon: Shield, title: 'On-Chain Warriors', desc: 'Every warrior is a unique ERC-721 NFT with randomized stats — Attack, Defense, Speed, Element — stored permanently on Avalanche.', gradient: 'from-frost-cyan to-blue-500' },
+  { icon: Swords, title: '1v1 & 3v3 PvP Battles', desc: 'Stake AVAX and battle other players. Winners take the pot minus a small platform fee. Element advantages add strategic depth.', gradient: 'from-frost-primary to-orange-500' },
+  { icon: GitMerge, title: 'Warrior Fusion', desc: 'Burn two warriors to forge a stronger one. The fused warrior inherits boosted stats from both parents.', gradient: 'from-purple-500 to-fuchsia-500' },
+  { icon: Map, title: 'Quest System', desc: '8 elemental zones with 32 quests. Complete quests to earn XP, level up, and progress through difficulty tiers.', gradient: 'from-green-500 to-emerald-500' },
+  { icon: Store, title: 'NFT Marketplace', desc: 'List warriors for sale, place bids, or make offers. Full-featured decentralized marketplace with auctions.', gradient: 'from-amber-500 to-yellow-500' },
+  { icon: Trophy, title: 'Tournaments', desc: 'Compete in bracket-style tournaments with AVAX prize pools. Climb the seasonal leaderboard for glory.', gradient: 'from-cyan-400 to-teal-500' },
 ];
 
-function WhyFrostbite() {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: '-80px' });
-
+function FeaturesSection() {
   return (
-    <section className="relative py-24 sm:py-32 px-4" ref={ref}>
-      {/* Background decoration */}
+    <section className="relative py-24 sm:py-32 px-4">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-frost-primary/[0.03] blur-[120px] pointer-events-none" />
+      <div className="mx-auto max-w-5xl relative z-10">
+        <FadeIn>
+          <div className="text-center mb-16">
+            <span className="inline-block font-pixel text-[10px] text-frost-primary uppercase tracking-[0.3em] mb-3">Platform Features</span>
+            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold gradient-text mb-4">THE FROSTBITE EXPERIENCE</h2>
+            <p className="text-white/40 text-sm sm:text-base max-w-xl mx-auto leading-relaxed">
+              A fully on-chain NFT battle arena built on Avalanche. Fast transactions, low fees, and high-stakes PvP combat.
+            </p>
+          </div>
+        </FadeIn>
 
-      <div className="mx-auto max-w-6xl relative z-10">
-        {/* Section heading */}
-        <div className="text-center mb-16">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={inView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6 }}
-          >
-            <span className="inline-block font-pixel text-[10px] text-frost-primary uppercase tracking-[0.3em] mb-3">
-              Why Choose Us
-            </span>
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold gradient-text mb-4">
-              THE FROSTBITE EXPERIENCE
-            </h2>
-          </motion.div>
-          <motion.p
-            className="text-white/40 text-sm sm:text-base max-w-xl mx-auto leading-relaxed"
-            initial={{ opacity: 0 }}
-            animate={inView ? { opacity: 1 } : {}}
-            transition={{ duration: 0.6, delay: 0.2 }}
-          >
-            A fully on-chain NFT battle arena built on Avalanche. Fast transactions,
-            low fees, and high-stakes PvP combat.
-          </motion.p>
-        </div>
-
-        {/* Features grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {FEATURES.map((feature, i) => {
-            const Icon = feature.icon;
-            return (
-              <motion.div
-                key={feature.title}
-                className="group"
-                initial={{ opacity: 0, y: 30 }}
-                animate={inView ? { opacity: 1, y: 0 } : {}}
-                transition={{ duration: 0.5, delay: feature.delay }}
-              >
-                <div className="glass-card p-6 h-full relative overflow-hidden">
-                  {/* Hover glow */}
-                  <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full bg-gradient-to-br ${feature.gradient} opacity-0 group-hover:opacity-10 blur-2xl transition-opacity duration-500`} />
-
-                  <div className="relative z-10">
-                    {/* Icon */}
-                    <div className={`inline-flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br ${feature.gradient} mb-4`}>
-                      <Icon className="h-5 w-5 text-white" />
-                    </div>
-
-                    {/* Title */}
-                    <h3 className="font-display text-base font-bold text-white mb-2">
-                      {feature.title}
-                    </h3>
-
-                    {/* Description */}
-                    <p className="text-sm text-white/40 leading-relaxed">
-                      {feature.description}
-                    </p>
+          {FEATURES.map((f, i) => (
+            <FadeIn key={f.title} delay={i * 0.08}>
+              <div className="group glass-card p-6 h-full relative overflow-hidden">
+                <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full bg-gradient-to-br ${f.gradient} opacity-0 group-hover:opacity-10 blur-2xl transition-opacity duration-500`} />
+                <div className="relative z-10">
+                  <div className={`inline-flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br ${f.gradient} mb-4`}>
+                    <f.icon className="h-5 w-5 text-white" />
                   </div>
+                  <h3 className="font-display text-base font-bold text-white mb-2">{f.title}</h3>
+                  <p className="text-sm text-white/40 leading-relaxed">{f.desc}</p>
                 </div>
-              </motion.div>
-            );
-          })}
+              </div>
+            </FadeIn>
+          ))}
         </div>
       </div>
     </section>
@@ -684,174 +417,370 @@ function WhyFrostbite() {
 }
 
 /* ===========================================================================
- * Battle Mechanics Showcase
+ * How It Works
  * ========================================================================= */
 
-function BattleMechanics() {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: '-80px' });
+const STEPS = [
+  { step: '01', title: 'Connect Wallet', desc: 'Connect your MetaMask or any EVM wallet to Avalanche C-Chain.', icon: Globe, color: 'text-frost-cyan' },
+  { step: '02', title: 'Mint Warriors', desc: 'Mint unique NFT warriors with randomized stats and elemental powers. Each warrior is one-of-a-kind.', icon: Sparkles, color: 'text-frost-purple' },
+  { step: '03', title: 'Battle & Earn', desc: 'Enter the arena, stake AVAX, and battle other players. Win to claim the combined stake as reward.', icon: Swords, color: 'text-frost-primary' },
+  { step: '04', title: 'Level Up & Trade', desc: 'Complete quests for XP, fuse warriors for stronger stats, and trade on the marketplace.', icon: TrendingUp, color: 'text-frost-gold' },
+];
 
+function HowItWorksSection() {
+  return (
+    <section className="relative py-24 sm:py-32 px-4">
+      <div className="mx-auto max-w-5xl relative z-10">
+        <FadeIn>
+          <div className="text-center mb-16">
+            <span className="inline-block font-pixel text-[10px] text-frost-cyan uppercase tracking-[0.3em] mb-3">Getting Started</span>
+            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4">
+              How It <span className="text-frost-primary">Works</span>
+            </h2>
+          </div>
+        </FadeIn>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {STEPS.map((s, i) => (
+            <FadeIn key={s.step} delay={i * 0.1}>
+              <div className="glass-card p-6 text-center relative group">
+                {/* Step number */}
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-frost-surface border border-white/[0.08]">
+                  <span className="font-pixel text-[10px] text-frost-primary">{s.step}</span>
+                </div>
+                <s.icon className={`w-8 h-8 mx-auto mb-4 mt-2 ${s.color}`} />
+                <h3 className="font-display text-sm font-bold text-white mb-2">{s.title}</h3>
+                <p className="text-xs text-white/35 leading-relaxed">{s.desc}</p>
+                {i < 3 && (
+                  <ChevronRight className="hidden lg:block absolute top-1/2 -right-4 w-4 h-4 text-white/10 -translate-y-1/2" />
+                )}
+              </div>
+            </FadeIn>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ===========================================================================
+ * Battle Mechanics
+ * ========================================================================= */
+
+function BattleMechanicsSection() {
   const mechanics = [
-    {
-      emoji: '🎲',
-      title: 'Randomized Combat',
-      desc: 'On-chain randomness determines battle outcomes. Attack, Defense, and Speed stats all play a role in each round.',
-    },
-    {
-      emoji: '⚡',
-      title: 'Element Advantages',
-      desc: 'Fire beats Wind, Water beats Fire, and more. Exploit the element wheel for 1.5x damage bonus.',
-    },
-    {
-      emoji: '📈',
-      title: 'Level Up System',
-      desc: 'Win battles and complete quests to gain XP. Higher levels unlock better stats and stronger warriors.',
-    },
+    { emoji: '🎲', title: 'On-Chain Randomness', desc: 'Battle outcomes are determined by verifiable on-chain randomness. Attack, Defense, and Speed stats all influence each combat round.' },
+    { emoji: '⚡', title: 'Element Wheel', desc: 'Fire > Wind > Earth > Thunder > Water > Fire. Exploit element advantages for a 1.5x damage bonus in battle.' },
+    { emoji: '📈', title: 'Progressive Leveling', desc: 'Warriors gain XP from battles and quests. Higher levels boost all stats, making experienced warriors formidable opponents.' },
+    { emoji: '🛡️', title: '3v3 Team Battles', desc: 'Assemble a team of 3 warriors for team battles. Each warrior fights an opponent — best of 3 takes the combined stake.' },
   ];
 
   return (
-    <section className="relative py-24 sm:py-32 px-4 overflow-hidden" ref={ref}>
-      {/* Animated background lines */}
+    <section className="relative py-24 sm:py-32 px-4 overflow-hidden">
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-1/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-frost-primary/20 to-transparent" style={{ animation: 'energy-line 4s ease-in-out infinite' }} />
-        <div className="absolute top-3/4 left-0 w-full h-px bg-gradient-to-r from-transparent via-frost-secondary/15 to-transparent" style={{ animation: 'energy-line 4s ease-in-out infinite 1s' }} />
       </div>
-
-      <div className="mx-auto max-w-6xl relative z-10">
+      <div className="mx-auto max-w-5xl relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          {/* Left: Text content */}
           <div>
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              animate={inView ? { opacity: 1, x: 0 } : {}}
-              transition={{ duration: 0.6 }}
-            >
-              <span className="inline-block font-pixel text-[10px] text-frost-secondary uppercase tracking-[0.3em] mb-3">
-                Battle System
-              </span>
+            <FadeIn>
+              <span className="inline-block font-pixel text-[10px] text-frost-secondary uppercase tracking-[0.3em] mb-3">Battle System</span>
               <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-6">
                 Strategic <span className="text-frost-primary">On-Chain</span> Combat
               </h2>
               <p className="text-white/40 text-sm sm:text-base leading-relaxed mb-8">
-                Every battle in Frostbite is resolved entirely on the blockchain.
-                No hidden servers, no manipulation — just pure strategy and your warrior&apos;s strength.
+                Every battle is resolved entirely on the blockchain. No hidden servers, no manipulation — just pure strategy and your warrior&apos;s strength.
               </p>
-            </motion.div>
-
+            </FadeIn>
             <div className="space-y-5">
               {mechanics.map((m, i) => (
-                <motion.div
-                  key={m.title}
-                  className="flex gap-4 items-start"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={inView ? { opacity: 1, x: 0 } : {}}
-                  transition={{ duration: 0.5, delay: 0.2 + i * 0.15 }}
-                >
-                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-2xl">
-                    {m.emoji}
+                <FadeIn key={m.title} delay={i * 0.1}>
+                  <div className="flex gap-4 items-start">
+                    <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-2xl">{m.emoji}</div>
+                    <div>
+                      <h4 className="font-display text-sm font-bold text-white mb-1">{m.title}</h4>
+                      <p className="text-xs sm:text-sm text-white/35 leading-relaxed">{m.desc}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-display text-sm font-bold text-white mb-1">
-                      {m.title}
-                    </h4>
-                    <p className="text-xs sm:text-sm text-white/35 leading-relaxed">
-                      {m.desc}
-                    </p>
-                  </div>
-                </motion.div>
+                </FadeIn>
               ))}
             </div>
-
-            <motion.div
-              className="mt-8"
-              initial={{ opacity: 0, y: 20 }}
-              animate={inView ? { opacity: 1, y: 0 } : {}}
-              transition={{ duration: 0.5, delay: 0.7 }}
-            >
-              <Link
-                href="/battle"
-                className="inline-flex items-center gap-2 text-frost-primary text-sm font-semibold hover:gap-3 transition-all"
-              >
-                Start battling now
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </motion.div>
           </div>
 
-          {/* Right: Animated battle preview */}
-          <motion.div
-            className="relative"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={inView ? { opacity: 1, scale: 1 } : {}}
-            transition={{ duration: 0.7, delay: 0.3 }}
-          >
-            <div className="glass-card p-6 sm:p-8 relative overflow-hidden">
-              {/* Glow background */}
-              <div className="absolute inset-0 bg-gradient-to-br from-frost-primary/[0.05] to-frost-secondary/[0.03] rounded-[16px]" />
-
+          {/* Element wheel */}
+          <FadeIn delay={0.2}>
+            <div className="glass-card p-8 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-frost-primary/[0.03] to-frost-secondary/[0.03]" />
               <div className="relative z-10">
-                {/* Battle header */}
-                <div className="flex items-center justify-between mb-6">
-                  <span className="font-pixel text-[10px] text-white/30 uppercase tracking-wider">
-                    Live Battle Simulation
-                  </span>
-                  <span className="flex items-center gap-1.5 text-[10px] text-frost-green">
-                    <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
-                    ON-CHAIN
-                  </span>
-                </div>
-
-                {/* Battle participants */}
-                <div className="flex items-center justify-between gap-4 mb-6">
-                  <div className="text-center flex-1">
-                    <div className="text-4xl mb-2">{ELEMENTS[0].emoji}</div>
-                    <div className="font-display text-sm font-bold text-white">Fire Warrior</div>
-                    <div className="text-[10px] text-white/30 font-mono mt-1">ATK 88 · DEF 62</div>
-                  </div>
-
-                  <div className="flex flex-col items-center gap-1">
-                    <Zap className="h-5 w-5 text-frost-gold" style={{ animation: 'clash-pulse 1.5s ease-in-out infinite' }} />
-                    <span className="font-pixel text-[9px] text-frost-gold">VS</span>
-                  </div>
-
-                  <div className="text-center flex-1">
-                    <div className="text-4xl mb-2">{ELEMENTS[3].emoji}</div>
-                    <div className="font-display text-sm font-bold text-white">Ice Warrior</div>
-                    <div className="text-[10px] text-white/30 font-mono mt-1">ATK 72 · DEF 90</div>
-                  </div>
-                </div>
-
-                {/* Battle log */}
-                <div className="space-y-2 mb-4">
-                  {[
-                    { text: 'Fire attacks with 88 ATK + element bonus!', color: 'text-red-400' },
-                    { text: 'Ice defends with 90 DEF...', color: 'text-cyan-400' },
-                    { text: 'Fire deals 47 damage! Super effective!', color: 'text-frost-gold' },
-                  ].map((log, i) => (
-                    <motion.div
-                      key={i}
-                      className={`flex items-center gap-2 text-[11px] font-mono ${log.color}`}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={inView ? { opacity: 1, x: 0 } : {}}
-                      transition={{ duration: 0.4, delay: 0.8 + i * 0.2 }}
-                    >
-                      <ChevronRight className="h-3 w-3 flex-shrink-0" />
-                      {log.text}
-                    </motion.div>
+                <h3 className="font-display text-lg font-bold text-white mb-6 text-center">Element Advantages</h3>
+                <div className="grid grid-cols-4 gap-2 sm:gap-3">
+                  {ELEMENTS.map((el) => (
+                    <div key={el.id} className="text-center p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                      <div className="text-2xl mb-1">{el.emoji}</div>
+                      <div className={`text-[10px] font-bold bg-gradient-to-r ${el.color} bg-clip-text text-transparent`}>{el.name}</div>
+                    </div>
                   ))}
                 </div>
-
-                {/* Stake info */}
-                <div className="pt-4 border-t border-white/[0.06] flex items-center justify-between">
-                  <span className="text-[10px] text-white/30 font-pixel uppercase">Stake</span>
-                  <span className="text-sm font-mono font-bold text-frost-gold">0.05 AVAX</span>
-                </div>
+                <p className="text-center text-[10px] text-white/25 mt-4 font-pixel">
+                  Each element has strengths and weaknesses — choose wisely!
+                </p>
               </div>
             </div>
-          </motion.div>
+          </FadeIn>
         </div>
       </div>
     </section>
+  );
+}
+
+/* ===========================================================================
+ * Smart Contracts Info
+ * ========================================================================= */
+
+function ContractsSection() {
+  const contracts = [
+    { name: 'ArenaWarrior', desc: 'ERC-721 NFT', addr: '0x958d...05dE2' },
+    { name: 'BattleEngine', desc: '1v1 PvP', addr: '0x617f...6f62' },
+    { name: 'TeamBattleEngine', desc: '3v3 Battles', addr: '0x522d...8c27' },
+    { name: 'QuestEngine', desc: 'PvE Quests', addr: '0x5699...87e0' },
+    { name: 'Marketplace', desc: 'NFT Trading', addr: '0x716E...9039' },
+    { name: 'RewardVault', desc: 'Rewards', addr: '0xEa62...63A' },
+  ];
+
+  return (
+    <section className="relative py-20 px-4">
+      <div className="mx-auto max-w-5xl relative z-10">
+        <FadeIn>
+          <div className="text-center mb-12">
+            <span className="inline-block font-pixel text-[10px] text-frost-green uppercase tracking-[0.3em] mb-3">Verified & Open</span>
+            <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mb-3">
+              Smart Contracts on <span className="text-frost-cyan">Avalanche C-Chain</span>
+            </h2>
+            <p className="text-white/35 text-sm max-w-lg mx-auto">
+              All game logic runs on verified smart contracts. No centralized servers — fully decentralized and transparent.
+            </p>
+          </div>
+        </FadeIn>
+
+        <FadeIn delay={0.1}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {contracts.map((c) => (
+              <div key={c.name} className="glass-card p-4 text-center">
+                <div className="font-display text-xs font-bold text-white mb-1">{c.name}</div>
+                <div className="text-[10px] text-white/30 mb-2">{c.desc}</div>
+                <div className="font-mono text-[9px] text-frost-cyan/50 truncate">{c.addr}</div>
+              </div>
+            ))}
+          </div>
+          <div className="text-center mt-4">
+            <Link href="/docs" className="inline-flex items-center gap-1.5 text-xs text-frost-cyan/60 hover:text-frost-cyan transition-colors font-pixel">
+              View Full Documentation <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+        </FadeIn>
+      </div>
+    </section>
+  );
+}
+
+/* ===========================================================================
+ * Tabbed Info Panel
+ * ========================================================================= */
+
+const HOME_TABS = ['Features', 'How It Works', 'Battle System', 'Contracts'] as const;
+type HomeTab = typeof HOME_TABS[number];
+
+function TabbedInfoPanel() {
+  const [activeTab, setActiveTab] = useState<HomeTab>('Features');
+
+  return (
+    <section className="relative py-16 sm:py-24 px-4">
+      <div className="mx-auto max-w-5xl relative z-10">
+        {/* Tab bar */}
+        <div className="flex items-center justify-center gap-1 sm:gap-2 mb-8 flex-wrap">
+          {HOME_TABS.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 sm:px-6 py-2.5 font-pixel text-[10px] sm:text-xs uppercase tracking-wider rounded-t-lg border-b-2 transition-all duration-200
+                ${activeTab === tab
+                  ? 'bg-frost-primary/15 text-frost-primary border-frost-primary'
+                  : 'text-white/40 hover:text-white/60 border-transparent hover:bg-white/[0.03]'
+                }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div className="glass-card p-6 sm:p-8 min-h-[400px]">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.25 }}
+            >
+              {activeTab === 'Features' && <TabFeatures />}
+              {activeTab === 'How It Works' && <TabHowItWorks />}
+              {activeTab === 'Battle System' && <TabBattleSystem />}
+              {activeTab === 'Contracts' && <TabContracts />}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TabFeatures() {
+  return (
+    <div>
+      <div className="text-center mb-10">
+        <span className="inline-block font-pixel text-[10px] text-frost-primary uppercase tracking-[0.3em] mb-3">Platform Features</span>
+        <h2 className="font-display text-2xl sm:text-3xl md:text-4xl font-bold gradient-text mb-3">THE FROSTBITE EXPERIENCE</h2>
+        <p className="text-white/40 text-sm max-w-xl mx-auto leading-relaxed">
+          A fully on-chain NFT battle arena built on Avalanche. Fast transactions, low fees, and high-stakes PvP combat.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {FEATURES.map((f) => (
+          <div key={f.title} className="group glass-card p-6 h-full relative overflow-hidden">
+            <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full bg-gradient-to-br ${f.gradient} opacity-0 group-hover:opacity-10 blur-2xl transition-opacity duration-500`} />
+            <div className="relative z-10">
+              <div className={`inline-flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br ${f.gradient} mb-4`}>
+                <f.icon className="h-5 w-5 text-white" />
+              </div>
+              <h3 className="font-display text-base font-bold text-white mb-2">{f.title}</h3>
+              <p className="text-sm text-white/40 leading-relaxed">{f.desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TabHowItWorks() {
+  return (
+    <div>
+      <div className="text-center mb-10">
+        <span className="inline-block font-pixel text-[10px] text-frost-cyan uppercase tracking-[0.3em] mb-3">Getting Started</span>
+        <h2 className="font-display text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3">
+          How It <span className="text-frost-primary">Works</span>
+        </h2>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {STEPS.map((s, i) => (
+          <div key={s.step} className="glass-card p-6 text-center relative group">
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-frost-surface border border-white/[0.08]">
+              <span className="font-pixel text-[10px] text-frost-primary">{s.step}</span>
+            </div>
+            <s.icon className={`w-8 h-8 mx-auto mb-4 mt-2 ${s.color}`} />
+            <h3 className="font-display text-sm font-bold text-white mb-2">{s.title}</h3>
+            <p className="text-xs text-white/35 leading-relaxed">{s.desc}</p>
+            {i < 3 && (
+              <ChevronRight className="hidden lg:block absolute top-1/2 -right-4 w-4 h-4 text-white/10 -translate-y-1/2" />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TabBattleSystem() {
+  const mechanics = [
+    { emoji: '🎲', title: 'On-Chain Randomness', desc: 'Battle outcomes are determined by verifiable on-chain randomness. Attack, Defense, and Speed stats all influence each combat round.' },
+    { emoji: '⚡', title: 'Element Wheel', desc: 'Fire > Wind > Earth > Thunder > Water > Fire. Exploit element advantages for a 1.5x damage bonus in battle.' },
+    { emoji: '📈', title: 'Progressive Leveling', desc: 'Warriors gain XP from battles and quests. Higher levels boost all stats, making experienced warriors formidable opponents.' },
+    { emoji: '🛡️', title: '3v3 Team Battles', desc: 'Assemble a team of 3 warriors for team battles. Each warrior fights an opponent — best of 3 takes the combined stake.' },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+      <div>
+        <span className="inline-block font-pixel text-[10px] text-frost-secondary uppercase tracking-[0.3em] mb-3">Battle System</span>
+        <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mb-4">
+          Strategic <span className="text-frost-primary">On-Chain</span> Combat
+        </h2>
+        <p className="text-white/40 text-sm leading-relaxed mb-6">
+          Every battle is resolved entirely on the blockchain. No hidden servers, no manipulation — just pure strategy and your warrior&apos;s strength.
+        </p>
+        <div className="space-y-5">
+          {mechanics.map((m) => (
+            <div key={m.title} className="flex gap-4 items-start">
+              <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-2xl">{m.emoji}</div>
+              <div>
+                <h4 className="font-display text-sm font-bold text-white mb-1">{m.title}</h4>
+                <p className="text-xs sm:text-sm text-white/35 leading-relaxed">{m.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Element wheel */}
+      <div className="glass-card p-8 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-frost-primary/[0.03] to-frost-secondary/[0.03]" />
+        <div className="relative z-10">
+          <h3 className="font-display text-lg font-bold text-white mb-6 text-center">Element Advantages</h3>
+          <div className="grid grid-cols-4 gap-2 sm:gap-3">
+            {ELEMENTS.map((el) => (
+              <div key={el.id} className="text-center p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="text-2xl mb-1">{el.emoji}</div>
+                <div className={`text-[10px] font-bold bg-gradient-to-r ${el.color} bg-clip-text text-transparent`}>{el.name}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-center text-[10px] text-white/25 mt-4 font-pixel">
+            Each element has strengths and weaknesses — choose wisely!
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabContracts() {
+  const contracts = [
+    { name: 'ArenaWarrior', desc: 'ERC-721 NFT', addr: '0x958d...05dE2' },
+    { name: 'BattleEngine', desc: '1v1 PvP', addr: '0x617f...6f62' },
+    { name: 'TeamBattleEngine', desc: '3v3 Battles', addr: '0x522d...8c27' },
+    { name: 'QuestEngine', desc: 'PvE Quests', addr: '0x5699...87e0' },
+    { name: 'Marketplace', desc: 'NFT Trading', addr: '0x716E...9039' },
+    { name: 'RewardVault', desc: 'Rewards', addr: '0xEa62...63A' },
+  ];
+
+  return (
+    <div>
+      <div className="text-center mb-10">
+        <span className="inline-block font-pixel text-[10px] text-frost-green uppercase tracking-[0.3em] mb-3">Verified & Open</span>
+        <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mb-3">
+          Smart Contracts on <span className="text-frost-cyan">Avalanche C-Chain</span>
+        </h2>
+        <p className="text-white/35 text-sm max-w-lg mx-auto">
+          All game logic runs on verified smart contracts. No centralized servers — fully decentralized and transparent.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {contracts.map((c) => (
+          <div key={c.name} className="glass-card p-4 text-center">
+            <div className="font-display text-xs font-bold text-white mb-1">{c.name}</div>
+            <div className="text-[10px] text-white/30 mb-2">{c.desc}</div>
+            <div className="font-mono text-[9px] text-frost-cyan/50 truncate">{c.addr}</div>
+          </div>
+        ))}
+      </div>
+      <div className="text-center mt-4">
+        <Link href="/docs" className="inline-flex items-center gap-1.5 text-xs text-frost-cyan/60 hover:text-frost-cyan transition-colors font-pixel">
+          View Full Documentation <ArrowRight className="w-3 h-3" />
+        </Link>
+      </div>
+    </div>
   );
 }
 
@@ -860,375 +789,61 @@ function BattleMechanics() {
  * ========================================================================= */
 
 function CTASection() {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: '-80px' });
-
   return (
-    <section className="relative py-24 sm:py-32 px-4" ref={ref}>
-      <div className="mx-auto max-w-3xl text-center">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={inView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.7 }}
-        >
-          {/* Decorative glow */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] rounded-full bg-frost-primary/[0.05] blur-[100px] pointer-events-none" />
-
-          <div className="relative z-10">
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4">
-              Ready to <span className="gradient-text">Enter the Arena?</span>
-            </h2>
-            <p className="text-white/40 text-sm sm:text-base max-w-lg mx-auto mb-8 leading-relaxed">
-              Mint your first warrior, stake AVAX, and prove your dominance in Frostbite Arena.
-              The battlefield awaits.
-            </p>
-
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              <Link
-                href="/mint"
-                className="btn-neon btn-neon-cyan flex items-center gap-2 text-sm px-8 py-3.5"
-              >
-                <Sparkles className="h-4 w-4" />
-                Mint Your Warrior
-              </Link>
-              <Link
-                href="/docs"
-                className="flex items-center gap-2 text-sm text-white/40 hover:text-white/70 transition-colors px-6 py-3.5"
-              >
-                Read the Docs
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-
-            {/* Trust indicators */}
-            <div className="flex flex-wrap items-center justify-center gap-6 mt-10 text-[11px] text-white/25 font-pixel uppercase tracking-wider">
-              <span className="flex items-center gap-1.5">
-                <Lock className="h-3 w-3" /> Verified Contracts
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Zap className="h-3 w-3" /> Sub-Second Finality
-              </span>
-              <span className="flex items-center gap-1.5">
-                <TrendingUp className="h-3 w-3" /> Real AVAX Rewards
-              </span>
-            </div>
-          </div>
-        </motion.div>
+    <section className="relative py-24 sm:py-32 px-4">
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-frost-primary/[0.05] blur-[120px]" />
       </div>
+      <FadeIn>
+        <div className="mx-auto max-w-2xl text-center relative z-10">
+          <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4">
+            Ready to <span className="text-frost-primary">Fight</span>?
+          </h2>
+          <p className="text-white/40 text-sm sm:text-base mb-8 leading-relaxed">
+            Join the arena, mint your first warrior, and start earning AVAX through PvP combat.
+            The battlefield awaits.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link href="/mint" className="btn-3d btn-3d-cyan flex items-center gap-2 px-8 py-3.5 text-sm sm:text-base">
+              <Sparkles className="h-4 w-4" />
+              Mint Your First Warrior
+            </Link>
+            <Link href="/docs" className="flex items-center gap-2 px-6 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/50 hover:text-white hover:bg-white/[0.08] transition-all text-sm">
+              Read the Docs <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </FadeIn>
     </section>
   );
 }
 
 /* ===========================================================================
- * How It Works Section
- * ========================================================================= */
-
-const STEPS = [
-  {
-    number: '01',
-    icon: Sparkles,
-    title: 'Mint Your Warrior',
-    description:
-      'Pay 0.01 AVAX to mint a unique NFT warrior with random combat attributes.',
-    gradient: 'from-frost-cyan/20 to-frost-cyan/5',
-    borderGlow: 'group-hover:border-frost-cyan/40',
-    iconColor: 'text-frost-cyan',
-  },
-  {
-    number: '02',
-    icon: Swords,
-    title: 'Enter Frostbite',
-    description:
-      'Stake AVAX and challenge other warriors to battle.',
-    gradient: 'from-frost-purple/20 to-frost-purple/5',
-    borderGlow: 'group-hover:border-frost-purple/40',
-    iconColor: 'text-frost-purple',
-  },
-  {
-    number: '03',
-    icon: Trophy,
-    title: 'Battle & Win',
-    description:
-      "Your warrior's attributes determine combat. Element advantages matter!",
-    gradient: 'from-frost-pink/20 to-frost-pink/5',
-    borderGlow: 'group-hover:border-frost-pink/40',
-    iconColor: 'text-frost-pink',
-  },
-  {
-    number: '04',
-    icon: Coins,
-    title: 'Earn Rewards',
-    description:
-      'Winners claim the pot. Level up your warrior with victories.',
-    gradient: 'from-frost-gold/20 to-frost-gold/5',
-    borderGlow: 'group-hover:border-frost-gold/40',
-    iconColor: 'text-frost-gold',
-  },
-];
-
-function HowItWorks() {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: '-80px' });
-
-  return (
-    <section className="relative py-24 sm:py-32 px-4" ref={ref}>
-      <div className="mx-auto max-w-6xl">
-        {/* Section heading */}
-        <div className="text-center mb-16">
-          <motion.h2
-            className="font-display text-3xl sm:text-4xl md:text-5xl font-bold gradient-text mb-4"
-            initial={{ opacity: 0, y: 20 }}
-            animate={inView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6 }}
-          >
-            HOW IT WORKS
-          </motion.h2>
-          <motion.p
-            className="text-white/40 text-sm sm:text-base max-w-md mx-auto"
-            initial={{ opacity: 0 }}
-            animate={inView ? { opacity: 1 } : {}}
-            transition={{ duration: 0.6, delay: 0.2 }}
-          >
-            From minting to victory in four simple steps.
-          </motion.p>
-        </div>
-
-        {/* Steps Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative">
-          {/* Connecting line (desktop only) */}
-          <div className="hidden lg:block absolute top-1/2 left-[12.5%] right-[12.5%] h-px -translate-y-1/2 z-0">
-            <div className="h-full w-full bg-gradient-to-r from-frost-cyan/30 via-frost-purple/30 to-frost-gold/30" />
-          </div>
-
-          {STEPS.map((step, i) => {
-            const Icon = step.icon;
-            return (
-              <motion.div
-                key={step.number}
-                className="relative z-10 group"
-                initial={{ opacity: 0, y: 30 }}
-                animate={inView ? { opacity: 1, y: 0 } : {}}
-                transition={{ duration: 0.5, delay: 0.15 * i }}
-              >
-                <div
-                  className={`glass-card p-6 text-center h-full border border-white/[0.06] ${step.borderGlow} transition-colors`}
-                >
-                  {/* Step number badge */}
-                  <div
-                    className={`inline-flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-br ${step.gradient} border border-white/10 mb-4`}
-                  >
-                    <span className={`font-mono text-sm font-bold ${step.iconColor}`}>
-                      {step.number}
-                    </span>
-                  </div>
-
-                  {/* Icon */}
-                  <div className="flex justify-center mb-3">
-                    <Icon className={`h-7 w-7 ${step.iconColor} opacity-80`} />
-                  </div>
-
-                  {/* Title */}
-                  <h3 className="font-display text-base font-bold text-white mb-2">
-                    {step.title}
-                  </h3>
-
-                  {/* Description */}
-                  <p className="text-sm text-white/40 leading-relaxed">
-                    {step.description}
-                  </p>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ===========================================================================
- * Elements Showcase Section
- * ========================================================================= */
-
-const ELEMENT_DESCRIPTIONS: Record<string, string> = {
-  Fire: 'Burns bright with offensive power',
-  Water: 'Flows around defenses',
-  Wind: 'Strikes with blinding speed',
-  Ice: 'Freezes opponents in place',
-  Earth: 'Unbreakable defense',
-  Thunder: 'Shocking burst damage',
-  Shadow: 'Strikes from the unseen',
-  Light: 'Pure radiant energy',
-};
-
-function ElementsShowcase() {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: '-80px' });
-
-  return (
-    <section className="relative py-24 sm:py-32 px-4" ref={ref}>
-      <div className="mx-auto max-w-6xl">
-        {/* Section heading */}
-        <div className="text-center mb-16">
-          <motion.h2
-            className="font-display text-3xl sm:text-4xl md:text-5xl font-bold gradient-text mb-4"
-            initial={{ opacity: 0, y: 20 }}
-            animate={inView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6 }}
-          >
-            8 ELEMENTS OF POWER
-          </motion.h2>
-          <motion.p
-            className="text-white/40 text-sm sm:text-base max-w-lg mx-auto"
-            initial={{ opacity: 0 }}
-            animate={inView ? { opacity: 1 } : {}}
-            transition={{ duration: 0.6, delay: 0.2 }}
-          >
-            Every warrior is bound to an element. Master the advantage wheel to
-            dominate Frostbite.
-          </motion.p>
-        </div>
-
-        {/* Elements grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 mb-12">
-          {ELEMENTS.map((element, i) => (
-            <motion.div
-              key={element.id}
-              className="group relative"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={inView ? { opacity: 1, scale: 1 } : {}}
-              transition={{ duration: 0.4, delay: 0.08 * i }}
-            >
-              <div className="glass-card p-5 sm:p-6 text-center h-full relative overflow-hidden">
-                {/* Background gradient overlay */}
-                <div
-                  className={`absolute inset-0 bg-gradient-to-br ${element.bgGradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-[16px]`}
-                />
-
-                {/* Glow ring on hover */}
-                <div
-                  className="absolute inset-0 rounded-[16px] opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                  style={{
-                    boxShadow: `inset 0 0 30px ${element.glowColor}, 0 0 20px ${element.glowColor}`,
-                  }}
-                />
-
-                <div className="relative z-10">
-                  {/* Emoji */}
-                  <div className="text-4xl sm:text-5xl mb-3 transition-transform duration-300 group-hover:scale-110">
-                    {element.emoji}
-                  </div>
-
-                  {/* Name */}
-                  <h3
-                    className={`font-display text-sm sm:text-base font-bold mb-1.5 bg-gradient-to-r ${element.color} bg-clip-text text-transparent`}
-                  >
-                    {element.name}
-                  </h3>
-
-                  {/* Description */}
-                  <p className="text-xs sm:text-sm text-white/35 leading-relaxed group-hover:text-white/55 transition-colors">
-                    {ELEMENT_DESCRIPTIONS[element.name]}
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Element advantage wheel */}
-        <motion.div
-          className="glass-card p-6 sm:p-8 max-w-3xl mx-auto"
-          initial={{ opacity: 0, y: 20 }}
-          animate={inView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.6, delay: 0.8 }}
-        >
-          <div className="text-center mb-5">
-            <h3 className="font-display text-base sm:text-lg font-bold text-white mb-1">
-              Element Advantage Wheel
-            </h3>
-            <p className="text-xs text-white/30">
-              Attackers with element advantage deal 1.5x damage
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {Object.entries(ELEMENT_ADVANTAGES).map(([attackerId, defenderId]) => {
-              const attacker = ELEMENTS[Number(attackerId)];
-              const defender = ELEMENTS[Number(defenderId)];
-              return (
-                <div
-                  key={attackerId}
-                  className="flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.04] hover:border-white/10 transition-colors"
-                >
-                  <span className="flex items-center gap-2 text-sm">
-                    <span className="text-lg">{attacker.emoji}</span>
-                    <span
-                      className={`font-semibold bg-gradient-to-r ${attacker.color} bg-clip-text text-transparent`}
-                    >
-                      {attacker.name}
-                    </span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-frost-cyan/50 flex-shrink-0" />
-                  <span className="flex items-center gap-2 text-sm">
-                    <span
-                      className={`font-semibold bg-gradient-to-r ${defender.color} bg-clip-text text-transparent`}
-                    >
-                      {defender.name}
-                    </span>
-                    <span className="text-lg">{defender.emoji}</span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
-/* ===========================================================================
- * Stats Bar (bottom)
+ * Bottom Stats Bar
  * ========================================================================= */
 
 function StatsBar({ stats }: { stats: LiveStats }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true, margin: '-40px' });
-
   return (
-    <section className="relative" ref={ref}>
-      {/* Gradient border top */}
-      <div className="h-px w-full bg-gradient-to-r from-transparent via-frost-cyan/50 to-transparent" />
-
-      <div className="py-14 sm:py-16 px-4">
-        <motion.div
-          className="mx-auto max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8"
-          initial={{ opacity: 0, y: 20 }}
-          animate={inView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.7 }}
-        >
-          {[
-            { label: 'Warriors Minted', value: stats.warriorsMinted, icon: Shield },
-            { label: 'Total Battles', value: stats.totalBattles, icon: Swords },
-            { label: 'AVAX Won', value: stats.avaxVolume, icon: Coins },
-          ].map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <div key={stat.label} className="text-center">
-                <div className="flex justify-center mb-2">
-                  <Icon className="h-5 w-5 text-white/20" />
-                </div>
-                <AnimatedCounter target={stat.value} />
-                <p className="text-xs sm:text-sm text-white/35 mt-1 uppercase tracking-wider">
-                  {stat.label}
-                </p>
-              </div>
-            );
-          })}
-        </motion.div>
+    <div className="border-t border-white/[0.04] py-8 px-4">
+      <div className="mx-auto max-w-5xl grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
+        <div>
+          <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.warriorsMinted} /></div>
+          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">Warriors Minted</div>
+        </div>
+        <div>
+          <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.totalBattles} /></div>
+          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">1v1 Battles</div>
+        </div>
+        <div>
+          <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.teamBattles} /></div>
+          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">3v3 Battles</div>
+        </div>
+        <div>
+          <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={8} /></div>
+          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">Element Types</div>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -1241,12 +856,9 @@ export default function HomePage() {
 
   return (
     <>
-      <HeroSection stats={stats} />
       <LiveTicker />
-      <WhyFrostbite />
-      <BattleMechanics />
-      <HowItWorks />
-      <ElementsShowcase />
+      <HeroSection stats={stats} />
+      <TabbedInfoPanel />
       <CTASection />
       <StatsBar stats={stats} />
     </>

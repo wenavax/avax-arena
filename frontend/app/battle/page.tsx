@@ -17,11 +17,13 @@ import {
   Wallet,
   CheckCircle,
   Coins,
+  RefreshCw,
+  Users,
+  Layers,
 } from 'lucide-react';
 import { ELEMENTS, MIN_BATTLE_STAKE, MIN_TEAM_BATTLE_STAKE, ELEMENT_ADVANTAGES, CONTRACT_ADDRESSES, ACTIVE_CHAIN_ID } from '@/lib/constants';
-import { BATTLE_ENGINE_ABI, TEAM_BATTLE_ABI, FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
-import { Users } from 'lucide-react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useSwitchChain } from 'wagmi';
+import { BATTLE_ENGINE_ABI, TEAM_BATTLE_ABI, FROSTBITE_WARRIOR_ABI, QUEST_ENGINE_ABI, MARKETPLACE_ABI } from '@/lib/contracts';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useSwitchChain, useWalletClient } from 'wagmi';
 import { parseEther, formatEther } from 'viem';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useOnContractEvent } from '@/hooks/useContractEvents';
@@ -102,6 +104,21 @@ interface TeamBattle {
 
 function getElement(id: number) {
   return ELEMENTS[id] ?? ELEMENTS[0];
+}
+
+// Neon color mapping for battle animation — bright saturated colors per element
+const NEON_COLORS: Record<number, string> = {
+  0: '#ff4400', // Fire - neon orange-red
+  1: '#00aaff', // Water - neon blue
+  2: '#00ff88', // Wind - neon green
+  3: '#00f0ff', // Ice - neon cyan
+  4: '#ffaa00', // Earth - neon amber
+  5: '#ffe600', // Thunder - neon yellow
+  6: '#dd00ff', // Shadow - neon purple
+  7: '#ffcc00', // Light - neon gold
+};
+function getNeonColor(elementId: number) {
+  return NEON_COLORS[elementId] ?? '#00d4ff';
 }
 
 function timeAgo(timestamp: number): string {
@@ -203,7 +220,8 @@ function WarriorImage({
         alt={`Warrior #${tokenId}`}
         width={size}
         height={size}
-        className="w-full h-full object-cover"
+        className="w-full h-full object-cover warrior-idle"
+        style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
         loading="lazy"
       />
       <span
@@ -256,7 +274,7 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
           return;
         }
 
-        const details = await Promise.all(
+        const results = await Promise.allSettled(
           ids.map((id) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
@@ -268,11 +286,13 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
         );
 
         if (cancelled) return;
-        setWarriors(
-          details
-            .map((raw, i) => parseWarriorData(raw as Record<string, unknown>, Number(ids[i])))
-            .sort((a, b) => b.powerScore - a.powerScore)
-        );
+        const parsed: Warrior[] = [];
+        for (let i = 0; i < results.length; i++) {
+          if (results[i].status === 'fulfilled') {
+            parsed.push(parseWarriorData((results[i] as PromiseFulfilledResult<unknown>).value as Record<string, unknown>, Number(ids[i])));
+          }
+        }
+        setWarriors(parsed.sort((a, b) => b.powerScore - a.powerScore));
       } catch (err) {
         console.error('[battle] Failed to fetch warriors:', err);
         if (!cancelled) setWarriors([]);
@@ -306,7 +326,7 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
         }
 
         // Fetch battle details
-        const battleDetails = await Promise.all(
+        const battleResults = await Promise.allSettled(
           battleIds.map((id) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
@@ -318,10 +338,16 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
         );
 
         if (cancelled) return;
-        const battles = battleDetails.map((raw) => parseBattleData(raw as Record<string, unknown>));
+        const battles: ReturnType<typeof parseBattleData>[] = [];
+        for (const r of battleResults) {
+          if (r.status === 'fulfilled') {
+            battles.push(parseBattleData(r.value as Record<string, unknown>));
+          }
+        }
 
         // Fetch warrior data for each battle creator
-        const warriorDetails = await Promise.all(
+        const defaultW: Warrior = { tokenId: 0, attack: 0, defense: 0, speed: 0, element: 0, specialPower: 0, level: 0, experience: 0, battleWins: 0, battleLosses: 0, powerScore: 0 };
+        const warriorDetails = await Promise.allSettled(
           battles.map((b) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
@@ -333,11 +359,37 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
         );
 
         if (cancelled) return;
+
+        // Validate NFT ownership — filter out stale battles where player1 no longer owns the NFT
+        const ownerChecks = await Promise.allSettled(
+          battles.map((b) =>
+            publicClient!.readContract({
+              address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+              abi: FROSTBITE_WARRIOR_ABI,
+              functionName: 'ownerOf',
+              args: [BigInt(b.nft1)],
+            })
+          )
+        );
+
+        if (cancelled) return;
+        const validBattles: typeof battles = [];
+        const validWarriorDetails: typeof warriorDetails = [];
+        battles.forEach((b, i) => {
+          const ownerResult = ownerChecks[i];
+          if (ownerResult.status === 'fulfilled' && (ownerResult.value as string).toLowerCase() === b.player1.toLowerCase()) {
+            validBattles.push(b);
+            validWarriorDetails.push(warriorDetails[i]);
+          }
+        });
+
         setOpenBattles(
-          battles.map((b, i) => ({
+          validBattles.map((b, i) => ({
             ...b,
-            creatorWarrior: parseWarriorData(warriorDetails[i] as Record<string, unknown>, b.nft1),
-          }))
+            creatorWarrior: validWarriorDetails[i].status === 'fulfilled'
+              ? parseWarriorData((validWarriorDetails[i] as PromiseFulfilledResult<unknown>).value as Record<string, unknown>, b.nft1)
+              : { ...defaultW, tokenId: b.nft1 },
+          })).sort((a, b) => b.createdAt - a.createdAt)
         );
       } catch (err) {
         console.error('[battle] Failed to fetch open battles:', err);
@@ -377,7 +429,7 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
         // Get last 20 battles (most recent first)
         const recentIds = historyIds.slice(-20).reverse();
 
-        const battleDetails = await Promise.all(
+        const battleResults = await Promise.allSettled(
           recentIds.map((id) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
@@ -389,7 +441,10 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
         );
 
         if (cancelled) return;
-        const battles = battleDetails.map((raw) => parseBattleData(raw as Record<string, unknown>));
+        const battles: ReturnType<typeof parseBattleData>[] = [];
+        for (const r of battleResults) {
+          if (r.status === 'fulfilled') battles.push(parseBattleData(r.value as Record<string, unknown>));
+        }
 
         // Collect all unique NFT IDs to fetch warrior data
         const nftIds = new Set<number>();
@@ -399,7 +454,7 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
         });
 
         const nftIdArray = Array.from(nftIds);
-        const warriorResults = await Promise.all(
+        const warriorResults = await Promise.allSettled(
           nftIdArray.map((id) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
@@ -411,15 +466,17 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
         );
 
         if (cancelled) return;
-        const warriorMap = new Map<number, Warrior>();
-        nftIdArray.forEach((id, i) => {
-          warriorMap.set(id, parseWarriorData(warriorResults[i] as Record<string, unknown>, id));
-        });
-
         const defaultWarrior: Warrior = {
           tokenId: 0, attack: 0, defense: 0, speed: 0, element: 0,
           specialPower: 0, level: 0, experience: 0, battleWins: 0, battleLosses: 0, powerScore: 0,
         };
+        const warriorMap = new Map<number, Warrior>();
+        nftIdArray.forEach((id, i) => {
+          const r = warriorResults[i];
+          if (r.status === 'fulfilled') {
+            warriorMap.set(id, parseWarriorData(r.value as Record<string, unknown>, id));
+          }
+        });
 
         setBattleHistory(
           battles
@@ -428,8 +485,8 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
               const isPlayer1 = b.player1.toLowerCase() === address!.toLowerCase();
               return {
                 ...b,
-                myWarrior: warriorMap.get(isPlayer1 ? b.nft1 : b.nft2) ?? defaultWarrior,
-                theirWarrior: warriorMap.get(isPlayer1 ? b.nft2 : b.nft1) ?? defaultWarrior,
+                myWarrior: warriorMap.get(isPlayer1 ? b.nft1 : b.nft2) ?? { ...defaultWarrior, tokenId: isPlayer1 ? b.nft1 : b.nft2 },
+                theirWarrior: warriorMap.get(isPlayer1 ? b.nft2 : b.nft1) ?? { ...defaultWarrior, tokenId: isPlayer1 ? b.nft2 : b.nft1 },
               };
             })
         );
@@ -496,7 +553,7 @@ function useTeamBattleData(address: string | undefined, isConnected: boolean) {
           return;
         }
 
-        const battleDetails = await Promise.all(
+        const teamBattleResults = await Promise.allSettled(
           battleIds.map((id) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
@@ -508,14 +565,19 @@ function useTeamBattleData(address: string | undefined, isConnected: boolean) {
         );
 
         if (cancelled) return;
-        const battles = battleDetails.map((raw) => parseTeamBattleData(raw as readonly unknown[]));
+        const battles: ReturnType<typeof parseTeamBattleData>[] = [];
+        for (const r of teamBattleResults) {
+          if (r.status === 'fulfilled') {
+            battles.push(parseTeamBattleData(r.value as readonly unknown[]));
+          }
+        }
 
         // Fetch warrior data for each battle's team1
         const allNftIds = new Set<number>();
         battles.forEach((b) => b.team1.forEach((id) => { if (id > 0) allNftIds.add(id); }));
 
         const nftIdArray = Array.from(allNftIds);
-        const warriorResults = await Promise.all(
+        const warriorResults = await Promise.allSettled(
           nftIdArray.map((id) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
@@ -527,15 +589,42 @@ function useTeamBattleData(address: string | undefined, isConnected: boolean) {
         );
 
         if (cancelled) return;
+        const defaultW: Warrior = { tokenId: 0, attack: 0, defense: 0, speed: 0, element: 0, specialPower: 0, level: 0, experience: 0, battleWins: 0, battleLosses: 0, powerScore: 0 };
         const warriorMap = new Map<number, Warrior>();
         nftIdArray.forEach((id, i) => {
-          warriorMap.set(id, parseWarriorData(warriorResults[i] as Record<string, unknown>, id));
+          const r = warriorResults[i];
+          if (r.status === 'fulfilled') {
+            warriorMap.set(id, parseWarriorData(r.value as Record<string, unknown>, id));
+          }
         });
 
-        const defaultW: Warrior = { tokenId: 0, attack: 0, defense: 0, speed: 0, element: 0, specialPower: 0, level: 0, experience: 0, battleWins: 0, battleLosses: 0, powerScore: 0 };
+        // Validate NFT ownership — filter out stale battles where player1 no longer owns team NFTs
+        const ownershipChecks = await Promise.allSettled(
+          nftIdArray.map((id) =>
+            publicClient!.readContract({
+              address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+              abi: FROSTBITE_WARRIOR_ABI,
+              functionName: 'ownerOf',
+              args: [BigInt(id)],
+            })
+          )
+        );
+
+        if (cancelled) return;
+        const ownerMap = new Map<number, string>();
+        nftIdArray.forEach((id, i) => {
+          const r = ownershipChecks[i];
+          if (r.status === 'fulfilled') {
+            ownerMap.set(id, (r.value as string).toLowerCase());
+          }
+        });
+
+        const validBattles = battles.filter((b) =>
+          b.team1.every((id) => id === 0 || ownerMap.get(id) === b.player1.toLowerCase())
+        );
 
         setOpenTeamBattles(
-          battles.map((b) => ({
+          validBattles.map((b) => ({
             ...b,
             creatorWarriors: b.team1.map((id) => warriorMap.get(id) ?? defaultW),
           }))
@@ -577,7 +666,7 @@ function useTeamBattleData(address: string | undefined, isConnected: boolean) {
 
         const recentIds = historyIds.slice(-20).reverse();
 
-        const battleDetails = await Promise.all(
+        const battleResults = await Promise.allSettled(
           recentIds.map((id) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
@@ -589,7 +678,10 @@ function useTeamBattleData(address: string | undefined, isConnected: boolean) {
         );
 
         if (cancelled) return;
-        const battles = battleDetails.map((raw) => parseTeamBattleData(raw as readonly unknown[]));
+        const battles: ReturnType<typeof parseTeamBattleData>[] = [];
+        for (const r of battleResults) {
+          if (r.status === 'fulfilled') battles.push(parseTeamBattleData(r.value as readonly unknown[]));
+        }
 
         // Collect all NFT IDs
         const nftIds = new Set<number>();
@@ -599,7 +691,7 @@ function useTeamBattleData(address: string | undefined, isConnected: boolean) {
         });
 
         const nftIdArray = Array.from(nftIds);
-        const warriorResults = await Promise.all(
+        const warriorResults = await Promise.allSettled(
           nftIdArray.map((id) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
@@ -611,12 +703,14 @@ function useTeamBattleData(address: string | undefined, isConnected: boolean) {
         );
 
         if (cancelled) return;
+        const defaultW: Warrior = { tokenId: 0, attack: 0, defense: 0, speed: 0, element: 0, specialPower: 0, level: 0, experience: 0, battleWins: 0, battleLosses: 0, powerScore: 0 };
         const warriorMap = new Map<number, Warrior>();
         nftIdArray.forEach((id, i) => {
-          warriorMap.set(id, parseWarriorData(warriorResults[i] as Record<string, unknown>, id));
+          const r = warriorResults[i];
+          if (r.status === 'fulfilled') {
+            warriorMap.set(id, parseWarriorData(r.value as Record<string, unknown>, id));
+          }
         });
-
-        const defaultW: Warrior = { tokenId: 0, attack: 0, defense: 0, speed: 0, element: 0, specialPower: 0, level: 0, experience: 0, battleWins: 0, battleLosses: 0, powerScore: 0 };
 
         setTeamBattleHistory(
           battles
@@ -1193,12 +1287,12 @@ function BattleResultModal({
                   {isClaiming ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Claiming {payoutAmount} AVAX...
+                      Claiming...
                     </>
                   ) : (
                     <>
                       <Wallet className="h-4 w-4" />
-                      Claim {payoutAmount} AVAX
+                      Claim Rewards
                     </>
                   )}
                 </motion.button>
@@ -1372,9 +1466,9 @@ function ArenaStatsBar({
 
     return [
       { icon: Zap, value: String(openBattles.length), label: 'OPEN DUELS', color: 'text-frost-cyan' },
-      { icon: Sword, value: String(battleHistory.length), label: 'TOTAL BATTLES', color: 'text-frost-purple' },
-      { icon: Trophy, value: biggestWin > 0 ? `${biggestWin.toFixed(3)}` : '—', label: 'BIGGEST WIN', color: 'text-frost-gold' },
-      { icon: Sparkles, value: totalVolume > 0 ? `${totalVolume.toFixed(2)}` : '0', label: 'VOLUME (AVAX)', color: 'text-frost-pink' },
+      { icon: Sword, value: String(battleHistory.length), label: 'MY BATTLES', color: 'text-frost-purple' },
+      { icon: Trophy, value: biggestWin > 0 ? `${biggestWin.toFixed(3)}` : '—', label: 'BEST WIN', color: 'text-frost-gold' },
+      { icon: Sparkles, value: totalVolume > 0 ? `${totalVolume.toFixed(2)}` : '0', label: 'MY VOLUME', color: 'text-frost-pink' },
       { icon: Shield, value: `${wins}/${losses}`, label: 'W/L', color: 'text-frost-green' },
     ];
   }, [openBattles, battleHistory, currentAddress]);
@@ -1422,20 +1516,91 @@ function BattleFeedSidebar({
   battleHistory: (Battle & { myWarrior: Warrior; theirWarrior: Warrior })[];
   currentAddress?: string;
 }) {
+  // Fetch global battle feed from on-chain events
+  const publicClient = usePublicClient();
+  const [globalFeed, setGlobalFeed] = useState<FeedEvent[]>([]);
+
+  useEffect(() => {
+    if (!publicClient) return;
+    let cancelled = false;
+
+    async function fetchGlobalFeed() {
+      try {
+        const battleAddr = CONTRACT_ADDRESSES.battleEngine as `0x${string}`;
+        const teamAddr = CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`;
+        const currentBlock = await publicClient!.getBlockNumber();
+        const fromBlock = currentBlock > 5000n ? currentBlock - 5000n : 0n;
+
+        const [resolvedLogs, teamResolvedLogs] = await Promise.all([
+          publicClient!.getLogs({
+            address: battleAddr,
+            event: {
+              type: 'event',
+              name: 'BattleResolved',
+              inputs: [
+                { type: 'uint256', name: 'battleId', indexed: true },
+                { type: 'address', name: 'winner', indexed: true },
+                { type: 'uint256', name: 'payout' },
+              ],
+            },
+            fromBlock,
+          }),
+          publicClient!.getLogs({
+            address: teamAddr,
+            event: {
+              type: 'event',
+              name: 'TeamBattleResolved',
+              inputs: [
+                { type: 'uint256', name: 'battleId', indexed: true },
+                { type: 'address', name: 'winner', indexed: true },
+                { type: 'uint256', name: 'payout' },
+              ],
+            },
+            fromBlock,
+          }),
+        ]);
+
+        if (cancelled) return;
+
+        const items: FeedEvent[] = [];
+
+        for (const log of resolvedLogs) {
+          const args = log.args as { battleId?: bigint; winner?: string; payout?: bigint };
+          if (!args.winner || !args.payout) continue;
+          items.push({
+            id: `g1v1-${Number(args.battleId)}`,
+            type: 'win',
+            message: `${shortenAddress(args.winner)} won ${parseFloat(formatEther(args.payout)).toFixed(4)} AVAX (1v1)`,
+            time: `Block ${Number(log.blockNumber)}`,
+          });
+        }
+
+        for (const log of teamResolvedLogs) {
+          const args = log.args as { battleId?: bigint; winner?: string; payout?: bigint };
+          if (!args.winner || !args.payout) continue;
+          items.push({
+            id: `g3v3-${Number(args.battleId)}`,
+            type: 'win',
+            message: `${shortenAddress(args.winner)} won ${parseFloat(formatEther(args.payout)).toFixed(4)} AVAX (3v3)`,
+            time: `Block ${Number(log.blockNumber)}`,
+          });
+        }
+
+        // Reverse so newest first
+        items.reverse();
+        setGlobalFeed(items.slice(0, 20));
+      } catch (err) {
+        console.error('[feed] Failed to fetch global feed:', err);
+      }
+    }
+
+    fetchGlobalFeed();
+    const interval = setInterval(fetchGlobalFeed, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [publicClient]);
+
   const events = useMemo<FeedEvent[]>(() => {
     const items: FeedEvent[] = [];
-
-    // Battle history events
-    battleHistory.slice(0, 15).forEach((b) => {
-      const isWin = currentAddress && b.winner.toLowerCase() === currentAddress.toLowerCase();
-      const winnerAddr = shortenAddress(b.winner);
-      items.push({
-        id: `h-${b.id}`,
-        type: isWin ? 'win' : 'loss',
-        message: `${winnerAddr} won ${formatEther(b.stake)} AVAX with #${isWin ? b.myWarrior.tokenId : b.theirWarrior.tokenId}`,
-        time: timeAgo(b.resolvedAt),
-      });
-    });
 
     // Open battles events
     openBattles.forEach((b) => {
@@ -1447,9 +1612,25 @@ function BattleFeedSidebar({
       });
     });
 
-    // Sort by recency (newer first based on the time string heuristic — not perfect but close enough)
-    return items.slice(0, 20);
-  }, [openBattles, battleHistory, currentAddress]);
+    // User's own history
+    battleHistory.slice(0, 5).forEach((b) => {
+      const isWin = currentAddress && b.winner.toLowerCase() === currentAddress.toLowerCase();
+      items.push({
+        id: `h-${b.id}`,
+        type: isWin ? 'win' : 'loss',
+        message: `${shortenAddress(b.winner)} won ${formatEther(b.stake)} AVAX with #${isWin ? b.myWarrior.tokenId : b.theirWarrior.tokenId}`,
+        time: timeAgo(b.resolvedAt),
+      });
+    });
+
+    // Global feed (deduplicated)
+    const existingIds = new Set(items.map(i => i.id));
+    globalFeed.forEach((e) => {
+      if (!existingIds.has(e.id)) items.push(e);
+    });
+
+    return items.slice(0, 25);
+  }, [openBattles, battleHistory, currentAddress, globalFeed]);
 
   const dotColor = { win: 'bg-frost-green', loss: 'bg-frost-red', new: 'bg-frost-cyan' };
   const glowColor = { win: 'shadow-[0_0_12px_rgba(0,255,136,0.15)]', loss: 'shadow-none', new: 'shadow-none' };
@@ -1547,6 +1728,7 @@ function ArenaTable({
   onFightClick,
   onCancelBattle,
   isCancelPending,
+  claimButtons,
 }: {
   battles: (Battle & { creatorWarrior: Warrior })[];
   isLoading: boolean;
@@ -1556,6 +1738,7 @@ function ArenaTable({
   onFightClick: (battle: Battle & { creatorWarrior: Warrior }) => void;
   onCancelBattle: (battleId: number) => void;
   isCancelPending: boolean;
+  claimButtons?: React.ReactNode;
 }) {
   return (
     <div className="flex-1 flex flex-col min-w-0">
@@ -1567,21 +1750,25 @@ function ArenaTable({
             {battles.length} OPEN
           </span>
         </div>
-        <motion.button
-          onClick={onCreateClick}
-          disabled={!isConnected}
-          className={cn(
-            'px-4 py-2 rounded-lg font-pixel text-[10px] uppercase tracking-wider transition-all flex items-center gap-1.5',
-            isConnected
-              ? 'btn-primary'
-              : 'bg-white/5 text-white/20 cursor-not-allowed',
-          )}
-          whileHover={isConnected ? { scale: 1.03 } : {}}
-          whileTap={isConnected ? { scale: 0.97 } : {}}
-        >
-          <Sword className="w-3 h-3" />
-          Create Battle
-        </motion.button>
+        <div className="flex items-center gap-2">
+          {/* Claim buttons inline */}
+          {claimButtons}
+          <motion.button
+            onClick={onCreateClick}
+            disabled={!isConnected}
+            className={cn(
+              'px-4 py-2 rounded-lg font-pixel text-[10px] uppercase tracking-wider transition-all flex items-center gap-1.5',
+              isConnected
+                ? 'btn-primary'
+                : 'bg-white/5 text-white/20 cursor-not-allowed',
+            )}
+            whileHover={isConnected ? { scale: 1.03 } : {}}
+            whileTap={isConnected ? { scale: 0.97 } : {}}
+          >
+            <Sword className="w-3 h-3" />
+            Create Battle
+          </motion.button>
+        </div>
       </div>
 
       {/* Table */}
@@ -1892,9 +2079,11 @@ function WarriorSelectionDrawer({
   isLoadingWarriors,
   onClose,
   onCreateBattle,
+  onCreateMultiBattle,
   onJoinBattle,
   isWorking,
   isPending,
+  multiProgress,
 }: {
   isOpen: boolean;
   mode: 'create' | 'join';
@@ -1903,17 +2092,23 @@ function WarriorSelectionDrawer({
   isLoadingWarriors: boolean;
   onClose: () => void;
   onCreateBattle: (warrior: Warrior, stake: string) => void;
+  onCreateMultiBattle: (warriors: Warrior[], stake: string) => void;
   onJoinBattle: (warrior: Warrior, battle: Battle & { creatorWarrior: Warrior }) => void;
   isWorking: boolean;
   isPending: boolean;
+  multiProgress: { current: number; total: number } | null;
 }) {
   const [selectedWarrior, setSelectedWarrior] = useState<Warrior | null>(null);
+  const [selectedWarriors, setSelectedWarriors] = useState<Warrior[]>([]);
+  const [isMultiMode, setIsMultiMode] = useState(false);
   const [stakeAmount, setStakeAmount] = useState(MIN_BATTLE_STAKE);
 
   // Reset state when drawer opens
   useEffect(() => {
     if (isOpen) {
       setSelectedWarrior(null);
+      setSelectedWarriors([]);
+      setIsMultiMode(false);
       setStakeAmount(MIN_BATTLE_STAKE);
     }
   }, [isOpen]);
@@ -1923,15 +2118,35 @@ function WarriorSelectionDrawer({
     return !isNaN(amount) && amount >= parseFloat(MIN_BATTLE_STAKE);
   }, [stakeAmount]);
 
+  const toggleMultiWarrior = useCallback((w: Warrior) => {
+    setSelectedWarriors((prev) => {
+      const exists = prev.find((p) => p.tokenId === w.tokenId);
+      if (exists) return prev.filter((p) => p.tokenId !== w.tokenId);
+      return [...prev, w];
+    });
+  }, []);
+
   const handleConfirm = useCallback(() => {
-    if (!selectedWarrior) return;
     if (mode === 'create') {
       if (!isValidStake) return;
-      onCreateBattle(selectedWarrior, stakeAmount);
-    } else if (targetBattle) {
+      if (isMultiMode) {
+        if (selectedWarriors.length === 0) return;
+        onCreateMultiBattle(selectedWarriors, stakeAmount);
+      } else {
+        if (!selectedWarrior) return;
+        onCreateBattle(selectedWarrior, stakeAmount);
+      }
+    } else if (targetBattle && selectedWarrior) {
       onJoinBattle(selectedWarrior, targetBattle);
     }
-  }, [selectedWarrior, mode, stakeAmount, isValidStake, targetBattle, onCreateBattle, onJoinBattle]);
+  }, [selectedWarrior, selectedWarriors, isMultiMode, mode, stakeAmount, isValidStake, targetBattle, onCreateBattle, onCreateMultiBattle, onJoinBattle]);
+
+  const totalStake = useMemo(() => {
+    if (!isMultiMode || selectedWarriors.length === 0) return stakeAmount;
+    const amount = parseFloat(stakeAmount);
+    if (isNaN(amount)) return '0';
+    return (amount * selectedWarriors.length).toFixed(4).replace(/\.?0+$/, '');
+  }, [isMultiMode, selectedWarriors.length, stakeAmount]);
 
   const stakeDisplay = mode === 'join' && targetBattle
     ? formatEther(targetBattle.stake)
@@ -1957,14 +2172,14 @@ function WarriorSelectionDrawer({
 
           {/* Modal */}
           <motion.div
-            className="relative w-full max-w-4xl bg-frost-bg/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            className="relative w-full max-w-4xl mx-2 sm:mx-auto bg-frost-bg/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
             initial={{ scale: 0.9, y: 30, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.95, y: 20, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06] flex-shrink-0">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-white/[0.06] flex-shrink-0">
               <div>
                 <h3 className="font-display text-lg font-bold text-white">
                   {mode === 'create' ? 'Create Battle' : 'Choose Your Fighter'}
@@ -1979,16 +2194,59 @@ function WarriorSelectionDrawer({
                   </p>
                 )}
               </div>
-              <button
-                onClick={onClose}
-                className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] flex items-center justify-center text-white/40 hover:text-white transition-colors"
-              >
-                <XCircle className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                {mode === 'create' && !isWorking && (
+                  <button
+                    onClick={() => {
+                      setIsMultiMode(!isMultiMode);
+                      setSelectedWarrior(null);
+                      setSelectedWarriors([]);
+                    }}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-pixel uppercase tracking-wider transition-all border',
+                      isMultiMode
+                        ? 'bg-frost-primary/15 text-frost-primary border-frost-primary/30'
+                        : 'bg-white/[0.04] text-white/40 border-white/10 hover:bg-white/[0.08] hover:text-white/60',
+                    )}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    Multi
+                  </button>
+                )}
+                <button
+                  onClick={onClose}
+                  className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] flex items-center justify-center text-white/40 hover:text-white transition-colors"
+                >
+                  <XCircle className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
+            {/* Multi-battle progress */}
+            {multiProgress && (
+              <div className="px-4 sm:px-6 py-3 border-b border-white/[0.06] flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-4 h-4 text-frost-cyan animate-spin flex-shrink-0" />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-white/60">Creating battles...</span>
+                      <span className="text-xs font-mono text-frost-cyan">{multiProgress.current}/{multiProgress.total}</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-frost-primary to-frost-cyan rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(multiProgress.current / multiProgress.total) * 100}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Content */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden">
               {isLoadingWarriors ? (
                 <div className="flex items-center justify-center py-20">
                   <Loader2 className="w-8 h-8 text-frost-cyan animate-spin" />
@@ -2005,13 +2263,27 @@ function WarriorSelectionDrawer({
                   <div className="lg:col-span-3 border-r border-white/[0.04] flex flex-col">
                     <div className="px-5 py-3 border-b border-white/[0.04] flex items-center justify-between flex-shrink-0">
                       <span className="text-[10px] uppercase tracking-wider text-white/40 font-pixel">
-                        Your Warriors ({warriors.length})
+                        {isMultiMode
+                          ? `Select Warriors (${selectedWarriors.length} selected)`
+                          : `Your Warriors (${warriors.length})`}
                       </span>
+                      {isMultiMode && warriors.length > 0 && (
+                        <button
+                          onClick={() =>
+                            setSelectedWarriors(selectedWarriors.length === warriors.length ? [] : [...warriors])
+                          }
+                          className="text-[10px] font-pixel text-frost-cyan/60 hover:text-frost-cyan transition-colors"
+                        >
+                          {selectedWarriors.length === warriors.length ? 'Deselect All' : 'Select All'}
+                        </button>
+                      )}
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 auto-rows-min content-start">
+                    <div className="max-h-[50vh] overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 auto-rows-min content-start scrollbar-thin">
                       {warriors.map((w, idx) => {
                         const el = getElement(w.element);
-                        const isSelected = selectedWarrior?.tokenId === w.tokenId;
+                        const isSelected = isMultiMode
+                          ? selectedWarriors.some((s) => s.tokenId === w.tokenId)
+                          : selectedWarrior?.tokenId === w.tokenId;
                         return (
                           <motion.button
                             key={w.tokenId}
@@ -2021,7 +2293,7 @@ function WarriorSelectionDrawer({
                             transition={{ delay: 0.02 * idx, duration: 0.25 }}
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
-                            onClick={() => setSelectedWarrior(w)}
+                            onClick={() => isMultiMode ? toggleMultiWarrior(w) : setSelectedWarrior(w)}
                             className={cn(
                               'relative flex items-center gap-3 p-3 rounded-xl text-left transition-all',
                               isSelected
@@ -2062,7 +2334,37 @@ function WarriorSelectionDrawer({
                   {/* Right: Preview + Config (2/5 width) */}
                   <div className="lg:col-span-2 flex flex-col p-5 overflow-y-auto">
                     {/* Selected warrior preview */}
-                    {selectedWarrior ? (
+                    {isMultiMode ? (
+                      selectedWarriors.length > 0 ? (
+                        <div className="flex-1">
+                          <div className="text-[10px] uppercase tracking-wider text-white/40 font-pixel mb-3">
+                            {selectedWarriors.length} Warriors Selected
+                          </div>
+                          <div className="space-y-1.5 max-h-40 overflow-y-auto scrollbar-thin">
+                            {selectedWarriors.map((w) => {
+                              const el = getElement(w.element);
+                              return (
+                                <div key={w.tokenId} className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.03]">
+                                  <WarriorImage tokenId={w.tokenId} element={w.element} size={28} className="rounded flex-shrink-0" />
+                                  <span className="font-mono text-xs text-white">#{w.tokenId}</span>
+                                  <span className={cn('text-[10px] bg-gradient-to-r bg-clip-text text-transparent', el.color)}>{el.emoji}</span>
+                                  <span className="text-[10px] text-white/30 font-mono ml-auto">PWR {w.powerScore}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex-1 flex items-center justify-center">
+                          <div className="text-center">
+                            <Layers className="w-10 h-10 text-white/10 mx-auto mb-3" />
+                            <p className="text-white/25 text-xs font-pixel">
+                              Select warriors for multi-battle
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    ) : selectedWarrior ? (
                       <WarriorStatsPreview warrior={selectedWarrior} />
                     ) : (
                       <div className="flex-1 flex items-center justify-center">
@@ -2079,7 +2381,7 @@ function WarriorSelectionDrawer({
                     {mode === 'create' && (
                       <div className="mt-5">
                         <label className="text-[10px] uppercase tracking-wider text-white/40 font-pixel mb-2 block">
-                          Stake Amount
+                          Stake Per Battle
                         </label>
                         <div className="relative">
                           <input
@@ -2132,34 +2434,50 @@ function WarriorSelectionDrawer({
                       </div>
                     )}
 
+                    {/* Total cost indicator for multi mode */}
+                    {isMultiMode && selectedWarriors.length > 1 && isValidStake && (
+                      <div className="mt-3 flex items-center justify-between p-3 rounded-xl bg-frost-cyan/5 border border-frost-cyan/15">
+                        <span className="text-xs text-white/50">Total Cost ({selectedWarriors.length} battles)</span>
+                        <span className="font-mono font-bold text-frost-cyan text-sm">
+                          {totalStake} AVAX
+                        </span>
+                      </div>
+                    )}
+
                     {/* Confirm Button */}
-                    <motion.button
-                      onClick={handleConfirm}
-                      disabled={!selectedWarrior || (mode === 'create' && !isValidStake) || isWorking}
-                      className={cn(
-                        'mt-4 w-full py-3.5 rounded-xl font-display font-bold text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2',
-                        selectedWarrior && (mode === 'join' || isValidStake) && !isWorking
-                          ? 'btn-primary'
-                          : 'bg-white/5 text-white/20 cursor-not-allowed',
-                      )}
-                      whileHover={selectedWarrior && !isWorking ? { scale: 1.02 } : {}}
-                      whileTap={selectedWarrior && !isWorking ? { scale: 0.98 } : {}}
-                    >
-                      {isWorking ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          {isPending ? 'Confirm in Wallet...' : mode === 'create' ? 'Creating...' : 'Joining...'}
-                        </>
-                      ) : (
-                        <>
-                          <Swords className="w-4 h-4" />
-                          {mode === 'create'
-                            ? `Create Battle (${stakeDisplay} AVAX)`
-                            : `Fight (${stakeDisplay} AVAX)`
-                          }
-                        </>
-                      )}
-                    </motion.button>
+                    {(() => {
+                      const hasSelection = isMultiMode ? selectedWarriors.length > 0 : !!selectedWarrior;
+                      const canConfirm = hasSelection && (mode === 'join' || isValidStake) && !isWorking;
+                      return (
+                        <motion.button
+                          onClick={handleConfirm}
+                          disabled={!canConfirm}
+                          className={cn(
+                            'mt-4 w-full py-3.5 rounded-xl font-display font-bold text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2',
+                            canConfirm ? 'btn-primary' : 'bg-white/5 text-white/20 cursor-not-allowed',
+                          )}
+                          whileHover={canConfirm ? { scale: 1.02 } : {}}
+                          whileTap={canConfirm ? { scale: 0.98 } : {}}
+                        >
+                          {isWorking ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              {isPending ? 'Confirm in Wallet...' : mode === 'create' ? 'Creating...' : 'Joining...'}
+                            </>
+                          ) : (
+                            <>
+                              <Swords className="w-4 h-4" />
+                              {mode === 'create'
+                                ? isMultiMode && selectedWarriors.length > 1
+                                  ? `Create ${selectedWarriors.length} Battles (${totalStake} AVAX)`
+                                  : `Create Battle (${stakeDisplay} AVAX)`
+                                : `Fight (${stakeDisplay} AVAX)`
+                              }
+                            </>
+                          )}
+                        </motion.button>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -2429,14 +2747,14 @@ function TeamWarriorSelectionDrawer({
 
           {/* Modal */}
           <motion.div
-            className="relative w-full max-w-5xl bg-frost-bg/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            className="relative w-full max-w-5xl mx-2 sm:mx-auto bg-frost-bg/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl shadow-2xl max-h-[85vh] flex flex-col overflow-hidden"
             initial={{ scale: 0.9, y: 30, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.95, y: 20, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06] flex-shrink-0">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-white/[0.06] flex-shrink-0">
               <div>
                 <h3 className="font-display text-lg font-bold text-white flex items-center gap-2">
                   <Users className="w-5 h-5 text-frost-purple" />
@@ -2460,7 +2778,7 @@ function TeamWarriorSelectionDrawer({
             </div>
 
             {/* Slot indicators */}
-            <div className="px-6 py-3 border-b border-white/[0.04] flex-shrink-0">
+            <div className="px-4 sm:px-6 py-3 border-b border-white/[0.04] flex-shrink-0">
               <div className="flex items-center gap-3">
                 {[0, 1, 2].map((i) => {
                   const w = selectedWarriors[i];
@@ -2509,7 +2827,7 @@ function TeamWarriorSelectionDrawer({
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden">
               {isLoadingWarriors ? (
                 <div className="flex items-center justify-center py-20">
                   <Loader2 className="w-8 h-8 text-frost-purple animate-spin" />
@@ -2529,7 +2847,7 @@ function TeamWarriorSelectionDrawer({
                         Your Warriors ({warriors.length})
                       </span>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 auto-rows-min content-start">
+                    <div className="max-h-[45vh] overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-2 auto-rows-min content-start scrollbar-thin">
                       {warriors.map((w, idx) => {
                         const el = getElement(w.element);
                         const isSelected = !!selectedWarriors.find((sw) => sw.tokenId === w.tokenId);
@@ -2924,7 +3242,7 @@ function TeamBattleResultModal({
                 ) : (
                   <>
                     <Wallet className="h-4 w-4" />
-                    Claim {(parseFloat(stakeAmount) * 2 * 0.975).toFixed(4)} AVAX
+                    Claim Rewards
                   </>
                 )}
               </motion.button>
@@ -3092,6 +3410,7 @@ function CompactTeamBattleHistory({
 export default function BattlePage() {
   const { address, isConnected, chain } = useAccount();
   const { switchChainAsync } = useSwitchChain();
+  const { data: walletClient } = useWalletClient();
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'1v1' | '3v3'>('1v1');
@@ -3117,6 +3436,16 @@ export default function BattlePage() {
     (TeamBattle & { myWarriors: Warrior[]; theirWarriors: Warrior[] }) | null
   >(null);
 
+  // Battle animation state
+  const [battleAnimating, setBattleAnimating] = useState(false);
+  const [battleResult, setBattleResult] = useState<'won' | 'lost' | null>(null);
+  const [battleAnimData, setBattleAnimData] = useState<{
+    type: '1v1' | '3v3';
+    myWarriors: Warrior[];
+    opponentWarriors: Warrior[];
+  } | null>(null);
+  const pendingBattleRef = useRef<{ id: number; type: '1v1' | '3v3' } | null>(null);
+
   // Data
   const {
     warriors,
@@ -3136,9 +3465,150 @@ export default function BattlePage() {
     refetch: refetchTeam,
   } = useTeamBattleData(address, isConnected);
 
+  // Manual refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    refetch();
+    refetchTeam();
+    setTimeout(() => setIsRefreshing(false), 1000);
+  }, [refetch, refetchTeam]);
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refetch();
+      refetchTeam();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [refetch, refetchTeam]);
+
+  // Pending payouts from won battles
+  const publicClient = usePublicClient();
+  const [pendingPayout1v1, setPendingPayout1v1] = useState(0n);
+  const [pendingPayout3v3, setPendingPayout3v3] = useState(0n);
+
+  const fetchPayouts = useCallback(async () => {
+    if (!publicClient || !address) {
+      setPendingPayout1v1(0n);
+      setPendingPayout3v3(0n);
+      return;
+    }
+    try {
+      const [p1, p3] = await Promise.all([
+        publicClient.readContract({
+          address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+          abi: BATTLE_ENGINE_ABI,
+          functionName: 'pendingPayouts',
+          args: [address as `0x${string}`],
+        }).catch(() => 0n) as Promise<bigint>,
+        publicClient.readContract({
+          address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
+          abi: TEAM_BATTLE_ABI,
+          functionName: 'pendingPayouts',
+          args: [address as `0x${string}`],
+        }).catch(() => 0n) as Promise<bigint>,
+      ]);
+      setPendingPayout1v1(p1);
+      setPendingPayout3v3(p3);
+    } catch {}
+  }, [publicClient, address]);
+
+  useEffect(() => { fetchPayouts(); }, [fetchPayouts]);
+
+  // Auto-refresh payouts every 15 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchPayouts, 15000);
+    return () => clearInterval(interval);
+  }, [fetchPayouts]);
+
+  const totalPending = pendingPayout1v1 + pendingPayout3v3;
+
+  // Check which warriors are on quest or listed on marketplace
+  const [lockedOnQuestOrListed, setLockedOnQuestOrListed] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (!publicClient || warriors.length === 0) {
+      setLockedOnQuestOrListed(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [questChecks, listingChecks] = await Promise.all([
+          Promise.all(
+            warriors.map((w) =>
+              publicClient.readContract({
+                address: CONTRACT_ADDRESSES.questEngine as `0x${string}`,
+                abi: QUEST_ENGINE_ABI,
+                functionName: 'isWarriorOnQuest',
+                args: [BigInt(w.tokenId)],
+              }).catch(() => false)
+            )
+          ),
+          Promise.all(
+            warriors.map((w) =>
+              publicClient.readContract({
+                address: CONTRACT_ADDRESSES.marketplace as `0x${string}`,
+                abi: MARKETPLACE_ABI,
+                functionName: 'getListing',
+                args: [BigInt(w.tokenId)],
+              }).then((r: any) => Boolean(r?.active ?? r?.[2])).catch(() => false)
+            )
+          ),
+        ]);
+        if (cancelled) return;
+        const locked = new Set<number>();
+        warriors.forEach((w, i) => {
+          if (questChecks[i] || listingChecks[i]) locked.add(w.tokenId);
+        });
+        setLockedOnQuestOrListed(locked);
+      } catch {
+        if (!cancelled) setLockedOnQuestOrListed(new Set());
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [publicClient, warriors]);
+
+  // Cross-filter: warriors locked in 1v1 battles excluded from 3v3, and vice versa
+  const lockedIn1v1 = useMemo(() => {
+    if (!address) return new Set<number>();
+    const ids = new Set<number>();
+    openBattles.forEach((b) => {
+      if (b.player1.toLowerCase() === address.toLowerCase()) ids.add(b.nft1);
+    });
+    return ids;
+  }, [openBattles, address]);
+
+  const lockedIn3v3 = useMemo(() => {
+    if (!address) return new Set<number>();
+    const ids = new Set<number>();
+    openTeamBattles.forEach((b) => {
+      if (b.player1.toLowerCase() === address.toLowerCase()) {
+        b.team1.forEach((id) => { if (id > 0) ids.add(id); });
+      }
+    });
+    return ids;
+  }, [openTeamBattles, address]);
+
+  const warriors1v1 = useMemo(
+    () => warriors.filter((w) => !lockedIn3v3.has(w.tokenId) && !lockedOnQuestOrListed.has(w.tokenId)),
+    [warriors, lockedIn3v3, lockedOnQuestOrListed],
+  );
+
+  const warriors3v3 = useMemo(
+    () => warriors.filter((w) => !lockedIn1v1.has(w.tokenId) && !lockedOnQuestOrListed.has(w.tokenId)),
+    [warriors, lockedIn1v1, lockedOnQuestOrListed],
+  );
+
+  // Multi-battle state
+  const [multiProgress, setMultiProgress] = useState<{ current: number; total: number } | null>(null);
+  const [isMultiBattling, setIsMultiBattling] = useState(false);
+
   // 1v1 Contract writes
   const {
     writeContract: createBattle,
+    writeContractAsync: createBattleAsync,
     data: createTxHash,
     isPending: isCreatePending,
     error: createError,
@@ -3188,23 +3658,18 @@ export default function BattlePage() {
   const { isSuccess: isClaimSuccess } = useWaitForTransactionReceipt({ hash: claimTxHash });
 
   // Toast state for claim success
-  const [claimToast, setClaimToast] = useState<{ amount: string; txHash: string } | null>(null);
+  const [claimToast, setClaimToast] = useState<{ txHash: string } | null>(null);
 
   useEffect(() => {
     if (isClaimSuccess && claimTxHash) {
-      // Calculate payout from currently selected battle result
-      const stake = selectedBattleResult
-        ? parseFloat(formatEther(selectedBattleResult.stake))
-        : selectedTeamBattleResult
-        ? parseFloat(formatEther(selectedTeamBattleResult.stake))
-        : 0;
-      const payout = (stake * 2 * 0.975).toFixed(4);
-      setClaimToast({ amount: payout, txHash: claimTxHash });
+      setClaimToast({ txHash: claimTxHash });
       // Auto-dismiss after 6 seconds
       const timer = setTimeout(() => setClaimToast(null), 6000);
+      // Refetch pending payouts
+      setTimeout(() => fetchPayouts(), 2000);
       return () => clearTimeout(timer);
     }
-  }, [isClaimSuccess, claimTxHash]);
+  }, [isClaimSuccess, claimTxHash, fetchPayouts]);
 
   const handleClaimPayout = useCallback(
     async (contractAddress: string, abi: readonly unknown[]) => {
@@ -3256,27 +3721,53 @@ export default function BattlePage() {
       setDrawerOpen(false);
       setError(null);
       resetCreate();
-      setTimeout(() => refetch(), 2000);
+      refetch();
+      setTimeout(() => { refetch(); refetchTeam(); }, 3000);
     }
-  }, [isCreateSuccess, resetCreate, refetch]);
+  }, [isCreateSuccess, resetCreate, refetch, refetchTeam]);
 
   useEffect(() => {
     if (isJoinSuccess) {
+      const battleId = targetBattle?.id;
       setDrawerOpen(false);
       setTargetBattle(null);
       setError(null);
       resetJoin();
-      setTimeout(() => refetch(), 2000);
+      if (battleId) pendingBattleRef.current = { id: battleId, type: '1v1' };
+      setBattleAnimating(true);
+      setBattleResult(null);
+      setTimeout(async () => {
+        // Fetch resolved battle to determine win/loss
+        if (battleId && publicClient && address) {
+          try {
+            const raw = await publicClient.readContract({
+              address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+              abi: BATTLE_ENGINE_ABI,
+              functionName: 'getBattle',
+              args: [BigInt(battleId)],
+            });
+            const battle = parseBattleData(raw as Record<string, unknown>);
+            setBattleResult(battle.winner.toLowerCase() === address.toLowerCase() ? 'won' : 'lost');
+          } catch {
+            setBattleAnimating(false);
+          }
+        } else {
+          setBattleAnimating(false);
+        }
+        refetch();
+        refetchTeam();
+      }, 5000);
     }
-  }, [isJoinSuccess, resetJoin, refetch]);
+  }, [isJoinSuccess, resetJoin, refetch, refetchTeam, targetBattle, publicClient, address]);
 
   useEffect(() => {
     if (isCancelSuccess) {
       setError(null);
       resetCancel();
-      setTimeout(() => refetch(), 2000);
+      refetch();
+      setTimeout(() => { refetch(); refetchTeam(); }, 3000);
     }
-  }, [isCancelSuccess, resetCancel, refetch]);
+  }, [isCancelSuccess, resetCancel, refetch, refetchTeam]);
 
   // 3v3 Success handlers
   useEffect(() => {
@@ -3284,27 +3775,54 @@ export default function BattlePage() {
       setTeamDrawerOpen(false);
       setError(null);
       resetCreateTeam();
-      setTimeout(() => refetchTeam(), 2000);
+      // Refetch immediately + delayed to catch pending tx
+      refetchTeam();
+      setTimeout(() => { refetchTeam(); refetch(); }, 3000);
     }
-  }, [isCreateTeamSuccess, resetCreateTeam, refetchTeam]);
+  }, [isCreateTeamSuccess, resetCreateTeam, refetchTeam, refetch]);
 
   useEffect(() => {
     if (isJoinTeamSuccess) {
+      const battleId = targetTeamBattle?.id;
       setTeamDrawerOpen(false);
       setTargetTeamBattle(null);
       setError(null);
       resetJoinTeam();
-      setTimeout(() => refetchTeam(), 2000);
+      if (battleId) pendingBattleRef.current = { id: battleId, type: '3v3' };
+      setBattleAnimating(true);
+      setBattleResult(null);
+      setTimeout(async () => {
+        // Fetch resolved battle to determine win/loss
+        if (battleId && publicClient && address) {
+          try {
+            const raw = await publicClient.readContract({
+              address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
+              abi: TEAM_BATTLE_ABI,
+              functionName: 'getTeamBattle',
+              args: [BigInt(battleId)],
+            });
+            const battle = parseTeamBattleData(raw as readonly unknown[]);
+            setBattleResult(battle.winner.toLowerCase() === address.toLowerCase() ? 'won' : 'lost');
+          } catch {
+            setBattleAnimating(false);
+          }
+        } else {
+          setBattleAnimating(false);
+        }
+        refetchTeam();
+        refetch();
+      }, 5000);
     }
-  }, [isJoinTeamSuccess, resetJoinTeam, refetchTeam]);
+  }, [isJoinTeamSuccess, resetJoinTeam, refetchTeam, refetch, targetTeamBattle, publicClient, address]);
 
   useEffect(() => {
     if (isCancelTeamSuccess) {
       setError(null);
       resetCancelTeam();
-      setTimeout(() => refetchTeam(), 2000);
+      refetchTeam();
+      setTimeout(() => { refetchTeam(); refetch(); }, 3000);
     }
-  }, [isCancelTeamSuccess, resetCancelTeam, refetchTeam]);
+  }, [isCancelTeamSuccess, resetCancelTeam, refetchTeam, refetch]);
 
   // Error handlers
   useEffect(() => {
@@ -3327,6 +3845,28 @@ export default function BattlePage() {
       }
     }
   }, [createError, joinError, cancelError, createTeamError, joinTeamError, cancelTeamError, activeTab]);
+
+  // Ensure NFT approval for battle contracts
+  const ensureApproval = useCallback(
+    async (operator: string) => {
+      if (!publicClient || !address || !walletClient) return;
+      const approved = await publicClient.readContract({
+        address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+        abi: FROSTBITE_WARRIOR_ABI,
+        functionName: 'isApprovedForAll',
+        args: [address as `0x${string}`, operator as `0x${string}`],
+      });
+      if (approved) return;
+      const hash = await walletClient.writeContract({
+        address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+        abi: FROSTBITE_WARRIOR_ABI,
+        functionName: 'setApprovalForAll',
+        args: [operator as `0x${string}`, true],
+      });
+      await publicClient.waitForTransactionReceipt({ hash });
+    },
+    [publicClient, address, walletClient],
+  );
 
   // 1v1 Handlers
   const handleViewResult = useCallback(
@@ -3361,6 +3901,12 @@ export default function BattlePage() {
           return;
         }
       }
+      try {
+        await ensureApproval(CONTRACT_ADDRESSES.battleEngine);
+      } catch {
+        setError('NFT approval failed');
+        return;
+      }
       createBattle({
         address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
         abi: BATTLE_ENGINE_ABI,
@@ -3369,7 +3915,60 @@ export default function BattlePage() {
         value: parseEther(stake),
       });
     },
-    [createBattle, chain, switchChainAsync],
+    [createBattle, chain, switchChainAsync, ensureApproval],
+  );
+
+  const handleCreateMultiBattle = useCallback(
+    async (selectedWarriors: Warrior[], stake: string) => {
+      setError(null);
+      if (chain?.id !== ACTIVE_CHAIN_ID) {
+        try {
+          await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+        } catch {
+          return;
+        }
+      }
+      try {
+        await ensureApproval(CONTRACT_ADDRESSES.battleEngine);
+      } catch {
+        setError('NFT approval failed');
+        return;
+      }
+
+      setIsMultiBattling(true);
+      setMultiProgress({ current: 0, total: selectedWarriors.length });
+      let created = 0;
+
+      for (const warrior of selectedWarriors) {
+        try {
+          const hash = await createBattleAsync({
+            address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
+            abi: BATTLE_ENGINE_ABI,
+            functionName: 'createBattle',
+            args: [BigInt(warrior.tokenId), '0x' as `0x${string}`],
+            value: parseEther(stake),
+          });
+          if (hash && publicClient) {
+            await publicClient.waitForTransactionReceipt({ hash });
+          }
+          created++;
+          setMultiProgress({ current: created, total: selectedWarriors.length });
+        } catch (err) {
+          console.error(`[multi-battle] Failed for #${warrior.tokenId}:`, err);
+          setError(`Battle #${warrior.tokenId} failed. ${created}/${selectedWarriors.length} created.`);
+          break;
+        }
+      }
+
+      setIsMultiBattling(false);
+      setMultiProgress(null);
+      if (created > 0) {
+        setDrawerOpen(false);
+        refetch();
+        setTimeout(() => { refetch(); refetchTeam(); }, 3000);
+      }
+    },
+    [createBattleAsync, publicClient, chain, switchChainAsync, ensureApproval, refetch, refetchTeam],
   );
 
   const handleJoinBattle = useCallback(
@@ -3382,6 +3981,17 @@ export default function BattlePage() {
           return;
         }
       }
+      try {
+        await ensureApproval(CONTRACT_ADDRESSES.battleEngine);
+      } catch {
+        setError('NFT approval failed');
+        return;
+      }
+      setBattleAnimData({
+        type: '1v1',
+        myWarriors: [warrior],
+        opponentWarriors: [battle.creatorWarrior],
+      });
       joinBattle({
         address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
         abi: BATTLE_ENGINE_ABI,
@@ -3390,7 +4000,7 @@ export default function BattlePage() {
         value: battle.stake,
       });
     },
-    [joinBattle, chain, switchChainAsync],
+    [joinBattle, chain, switchChainAsync, ensureApproval],
   );
 
   const handleCancelBattle = useCallback(
@@ -3438,6 +4048,12 @@ export default function BattlePage() {
           return;
         }
       }
+      try {
+        await ensureApproval(CONTRACT_ADDRESSES.teamBattleEngine);
+      } catch {
+        setError('NFT approval failed');
+        return;
+      }
       const tokenIds = team.map((w) => BigInt(w.tokenId)) as [bigint, bigint, bigint];
       createTeamBattle({
         address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
@@ -3447,7 +4063,7 @@ export default function BattlePage() {
         value: parseEther(stake),
       });
     },
-    [createTeamBattle, chain, switchChainAsync],
+    [createTeamBattle, chain, switchChainAsync, ensureApproval],
   );
 
   const handleJoinTeamBattle = useCallback(
@@ -3460,6 +4076,42 @@ export default function BattlePage() {
           return;
         }
       }
+      // Pre-flight: verify creator still owns their team NFTs (burned/transferred NFTs cause revert)
+      if (publicClient) {
+        try {
+          const ownerChecks = await Promise.allSettled(
+            battle.team1.filter((id) => id > 0).map((id) =>
+              publicClient.readContract({
+                address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+                abi: FROSTBITE_WARRIOR_ABI,
+                functionName: 'ownerOf',
+                args: [BigInt(id)],
+              })
+            )
+          );
+          const allValid = ownerChecks.every(
+            (r) => r.status === 'fulfilled' && (r.value as string).toLowerCase() === battle.player1.toLowerCase()
+          );
+          if (!allValid) {
+            setError('This battle is invalid — opponent no longer owns their warriors. Refreshing...');
+            setTimeout(() => refetchTeam(), 1000);
+            return;
+          }
+        } catch {
+          // Continue anyway if check fails
+        }
+      }
+      try {
+        await ensureApproval(CONTRACT_ADDRESSES.teamBattleEngine);
+      } catch {
+        setError('NFT approval failed');
+        return;
+      }
+      setBattleAnimData({
+        type: '3v3',
+        myWarriors: team,
+        opponentWarriors: battle.creatorWarriors,
+      });
       const tokenIds = team.map((w) => BigInt(w.tokenId)) as [bigint, bigint, bigint];
       joinTeamBattle({
         address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`,
@@ -3469,7 +4121,7 @@ export default function BattlePage() {
         value: battle.stake,
       });
     },
-    [joinTeamBattle, chain, switchChainAsync],
+    [joinTeamBattle, chain, switchChainAsync, ensureApproval, publicClient, refetchTeam],
   );
 
   const handleCancelTeamBattle = useCallback(
@@ -3500,7 +4152,7 @@ export default function BattlePage() {
     [],
   );
 
-  const isWorking = isCreatePending || isCreateConfirming || isJoinPending || isJoinConfirming;
+  const isWorking = isCreatePending || isCreateConfirming || isJoinPending || isJoinConfirming || isMultiBattling;
   const isTeamWorking = isCreateTeamPending || isCreateTeamConfirming || isJoinTeamPending || isJoinTeamConfirming;
 
   if (!isConnected) {
@@ -3510,7 +4162,7 @@ export default function BattlePage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative z-10 text-center max-w-md"
+          className="relative z-10 text-center max-w-md mx-4 sm:mx-auto"
         >
           <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-frost-cyan/20 to-frost-purple/20 border border-frost-cyan/20 flex items-center justify-center">
             <Swords className="w-10 h-10 text-frost-cyan" />
@@ -3543,7 +4195,7 @@ export default function BattlePage() {
   }
 
   return (
-    <div className="h-[calc(100vh-64px)] flex flex-col relative overflow-hidden">
+    <div className="h-[calc(100vh-64px)] flex flex-col relative overflow-y-auto overflow-x-hidden">
       <ArenaBackground />
 
       {/* Stats Bar */}
@@ -3556,7 +4208,7 @@ export default function BattlePage() {
       {/* Tab Selector */}
       <div className="flex items-center gap-1 px-4 sm:px-6 py-2 border-b border-white/[0.06] flex-shrink-0 relative z-10">
         <button
-          onClick={() => setActiveTab('1v1')}
+          onClick={() => { setActiveTab('1v1'); refetch(); }}
           className={cn(
             'px-4 py-1.5 rounded-lg font-pixel text-[10px] uppercase tracking-wider transition-all flex items-center gap-1.5',
             activeTab === '1v1'
@@ -3568,7 +4220,7 @@ export default function BattlePage() {
           1v1 Duel
         </button>
         <button
-          onClick={() => setActiveTab('3v3')}
+          onClick={() => { setActiveTab('3v3'); refetchTeam(); }}
           className={cn(
             'px-4 py-1.5 rounded-lg font-pixel text-[10px] uppercase tracking-wider transition-all flex items-center gap-1.5',
             activeTab === '3v3'
@@ -3579,6 +4231,17 @@ export default function BattlePage() {
           <Users className="w-3 h-3" />
           3v3 Team
         </button>
+
+        <div className="ml-auto">
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="p-1.5 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/[0.05] transition-all disabled:opacity-50"
+            title="Refresh battles"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', isRefreshing && 'animate-spin')} />
+          </button>
+        </div>
       </div>
 
       {/* Error Toast */}
@@ -3621,6 +4284,34 @@ export default function BattlePage() {
                 onFightClick={handleFightClick}
                 onCancelBattle={handleCancelBattle}
                 isCancelPending={isCancelPending || isCancelConfirming}
+                claimButtons={isConnected && totalPending > 0n ? (
+                  <>
+                    {pendingPayout1v1 > 0n && (
+                      <motion.button
+                        onClick={() => handleClaimPayout(CONTRACT_ADDRESSES.battleEngine, BATTLE_ENGINE_ABI)}
+                        disabled={isClaimPending}
+                        className="px-3 py-1.5 rounded-lg bg-frost-gold/20 hover:bg-frost-gold/30 border border-frost-gold/40 text-frost-gold font-pixel text-[9px] uppercase tracking-wider transition-all flex items-center gap-1 disabled:opacity-50"
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                      >
+                        {isClaimPending ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Coins className="w-2.5 h-2.5" />}
+                        Claim {parseFloat(formatEther(pendingPayout1v1)).toFixed(3)}
+                      </motion.button>
+                    )}
+                    {pendingPayout3v3 > 0n && (
+                      <motion.button
+                        onClick={() => handleClaimPayout(CONTRACT_ADDRESSES.teamBattleEngine, TEAM_BATTLE_ABI)}
+                        disabled={isClaimPending}
+                        className="px-3 py-1.5 rounded-lg bg-frost-gold/20 hover:bg-frost-gold/30 border border-frost-gold/40 text-frost-gold font-pixel text-[9px] uppercase tracking-wider transition-all flex items-center gap-1 disabled:opacity-50"
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                      >
+                        {isClaimPending ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Coins className="w-2.5 h-2.5" />}
+                        Claim 3v3 {parseFloat(formatEther(pendingPayout3v3)).toFixed(3)}
+                      </motion.button>
+                    )}
+                  </>
+                ) : undefined}
               />
               <CompactBattleHistory
                 history={battleHistory}
@@ -3659,16 +4350,18 @@ export default function BattlePage() {
         isOpen={drawerOpen}
         mode={drawerMode}
         targetBattle={targetBattle}
-        warriors={warriors}
+        warriors={warriors1v1}
         isLoadingWarriors={isLoadingWarriors}
         onClose={() => {
           setDrawerOpen(false);
           setTargetBattle(null);
         }}
         onCreateBattle={handleCreateBattle}
+        onCreateMultiBattle={handleCreateMultiBattle}
         onJoinBattle={handleJoinBattle}
         isWorking={isWorking}
         isPending={isCreatePending || isJoinPending}
+        multiProgress={multiProgress}
       />
 
       {/* 3v3 Team Warrior Selection Drawer */}
@@ -3676,7 +4369,7 @@ export default function BattlePage() {
         isOpen={teamDrawerOpen}
         mode={teamDrawerMode}
         targetBattle={targetTeamBattle}
-        warriors={warriors}
+        warriors={warriors3v3}
         isLoadingWarriors={isLoadingWarriors}
         onClose={() => {
           setTeamDrawerOpen(false);
@@ -3749,10 +4442,10 @@ export default function BattlePage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="font-display text-sm font-bold text-white mb-0.5">
-                    AVAX Claimed!
+                    Claim Successful!
                   </h4>
-                  <p className="text-frost-green font-mono text-lg font-bold">
-                    +{claimToast.amount} AVAX
+                  <p className="text-frost-green font-mono text-sm font-bold">
+                    Rewards sent to your wallet
                   </p>
                   <a
                     href={`https://snowtrace.io/tx/${claimToast.txHash}`}
@@ -3780,6 +4473,643 @@ export default function BattlePage() {
                 />
               </div>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Battle Animation Overlay — Neon Edition */}
+      <AnimatePresence>
+        {(battleAnimating || battleResult) && (
+          <motion.div
+            className="fixed inset-0 z-[300] flex items-center justify-center overflow-hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            {/* Dark backdrop with subtle radial neon wash */}
+            <div className="absolute inset-0 bg-black/95 pointer-events-none" />
+            <div
+              className="absolute inset-0 pointer-events-none opacity-30"
+              style={{
+                background: `radial-gradient(ellipse at 25% 50%, ${getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 0)}22 0%, transparent 50%), radial-gradient(ellipse at 75% 50%, ${getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0)}22 0%, transparent 50%)`,
+              }}
+            />
+
+            {/* Neon grid floor lines */}
+            <div className="absolute bottom-0 left-0 right-0 h-[40%] pointer-events-none overflow-hidden opacity-20" style={{ perspective: '400px' }}>
+              <div
+                className="w-full h-full"
+                style={{
+                  transform: 'rotateX(60deg)',
+                  backgroundImage: `linear-gradient(${getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 3)}44 1px, transparent 1px), linear-gradient(90deg, ${getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0)}44 1px, transparent 1px)`,
+                  backgroundSize: '60px 60px',
+                }}
+              />
+            </div>
+
+            {/* Floating neon particles */}
+            {!battleResult && Array.from({ length: 16 }).map((_, i) => {
+              const isLeft = i < 8;
+              const neon = isLeft
+                ? getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 0)
+                : getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0);
+              return (
+                <motion.div
+                  key={`np-${i}`}
+                  className="absolute rounded-full pointer-events-none"
+                  style={{
+                    width: 2 + (i % 3),
+                    height: 2 + (i % 3),
+                    background: neon,
+                    boxShadow: `0 0 6px ${neon}, 0 0 12px ${neon}`,
+                    left: isLeft ? `${3 + (i % 8) * 5}%` : `${58 + (i % 8) * 5}%`,
+                    top: `${10 + (i * 5) % 80}%`,
+                  }}
+                  animate={{ opacity: [0, 1, 0], y: [0, -60 - (i % 4) * 15], x: [(i % 2 === 0 ? -1 : 1) * 10] }}
+                  transition={{ duration: 2 + (i % 3) * 0.4, delay: (i % 6) * 0.5, repeat: Infinity }}
+                />
+              );
+            })}
+
+            {/* Horizontal neon scan line */}
+            {!battleResult && (
+              <motion.div
+                className="absolute left-0 right-0 h-[1px] pointer-events-none"
+                style={{ background: `linear-gradient(90deg, transparent, ${getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 3)}, transparent)`, boxShadow: `0 0 10px ${getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 3)}` }}
+                initial={{ top: '15%', opacity: 0 }}
+                animate={{ top: ['15%', '85%', '15%'], opacity: [0, 0.5, 0] }}
+                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            )}
+
+            <AnimatePresence mode="wait">
+              {!battleResult ? (
+                /* ============ FIGHTING PHASE ============ */
+                <motion.div
+                  key="fighting"
+                  className="relative flex flex-col items-center z-10 w-full px-4"
+                  exit={{ opacity: 0, scale: 0.8, filter: 'blur(12px)' }}
+                  transition={{ duration: 0.4 }}
+                >
+                  <div className="flex items-center justify-center gap-4 sm:gap-8 md:gap-16 w-full max-w-4xl relative">
+                    {/* ===== NEON BEAM ATTACKS ===== */}
+                    {(() => {
+                      const myNeon = getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 3);
+                      const oppNeon = getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0);
+                      const beamCount = battleAnimData?.type === '3v3' ? 3 : 1;
+                      return (
+                        <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden">
+                          {/* Left→Right beams (my warriors attacking) */}
+                          {Array.from({ length: beamCount }).map((_, bi) => {
+                            const yPos = beamCount === 1 ? 50 : 20 + bi * 30;
+                            return (
+                              <motion.div
+                                key={`beam-lr-${bi}`}
+                                className="absolute"
+                                style={{
+                                  left: '10%',
+                                  top: `${yPos}%`,
+                                  width: '80%',
+                                  height: '3px',
+                                  transformOrigin: 'left center',
+                                }}
+                                initial={{ scaleX: 0, opacity: 0 }}
+                                animate={{
+                                  scaleX: [0, 1, 1, 0],
+                                  opacity: [0, 1, 0.8, 0],
+                                  x: ['0%', '0%', '0%', '20%'],
+                                }}
+                                transition={{
+                                  duration: 1.2,
+                                  delay: 0.8 + bi * 0.15,
+                                  repeat: Infinity,
+                                  repeatDelay: 2.5,
+                                  ease: 'easeOut',
+                                  times: [0, 0.3, 0.7, 1],
+                                }}
+                              >
+                                {/* Beam core */}
+                                <div
+                                  className="absolute inset-0 rounded-full"
+                                  style={{ background: `linear-gradient(90deg, transparent 0%, ${myNeon} 20%, #fff 50%, ${myNeon} 80%, transparent 100%)`, boxShadow: `0 0 8px ${myNeon}, 0 0 20px ${myNeon}, 0 0 40px ${myNeon}88` }}
+                                />
+                                {/* Beam glow (wider) */}
+                                <div
+                                  className="absolute -inset-y-2 inset-x-0 rounded-full"
+                                  style={{ background: `linear-gradient(90deg, transparent 0%, ${myNeon}44 20%, ${myNeon}66 50%, ${myNeon}44 80%, transparent 100%)`, filter: 'blur(4px)' }}
+                                />
+                                {/* Beam tip (energy ball) */}
+                                <motion.div
+                                  className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+                                  style={{ background: '#fff', boxShadow: `0 0 8px #fff, 0 0 15px ${myNeon}, 0 0 30px ${myNeon}` }}
+                                  animate={{ scale: [1, 1.4, 1] }}
+                                  transition={{ duration: 0.3, repeat: Infinity }}
+                                />
+                              </motion.div>
+                            );
+                          })}
+
+                          {/* Right→Left beams (opponent attacking) */}
+                          {Array.from({ length: beamCount }).map((_, bi) => {
+                            const yPos = beamCount === 1 ? 50 : 20 + bi * 30;
+                            return (
+                              <motion.div
+                                key={`beam-rl-${bi}`}
+                                className="absolute"
+                                style={{
+                                  right: '10%',
+                                  top: `${yPos + (beamCount === 1 ? 5 : 3)}%`,
+                                  width: '80%',
+                                  height: '3px',
+                                  transformOrigin: 'right center',
+                                }}
+                                initial={{ scaleX: 0, opacity: 0 }}
+                                animate={{
+                                  scaleX: [0, 1, 1, 0],
+                                  opacity: [0, 1, 0.8, 0],
+                                  x: ['0%', '0%', '0%', '-20%'],
+                                }}
+                                transition={{
+                                  duration: 1.2,
+                                  delay: 2.0 + bi * 0.15,
+                                  repeat: Infinity,
+                                  repeatDelay: 2.5,
+                                  ease: 'easeOut',
+                                  times: [0, 0.3, 0.7, 1],
+                                }}
+                              >
+                                {/* Beam core */}
+                                <div
+                                  className="absolute inset-0 rounded-full"
+                                  style={{ background: `linear-gradient(90deg, transparent 0%, ${oppNeon} 20%, #fff 50%, ${oppNeon} 80%, transparent 100%)`, boxShadow: `0 0 8px ${oppNeon}, 0 0 20px ${oppNeon}, 0 0 40px ${oppNeon}88` }}
+                                />
+                                {/* Beam glow */}
+                                <div
+                                  className="absolute -inset-y-2 inset-x-0 rounded-full"
+                                  style={{ background: `linear-gradient(90deg, transparent 0%, ${oppNeon}44 20%, ${oppNeon}66 50%, ${oppNeon}44 80%, transparent 100%)`, filter: 'blur(4px)' }}
+                                />
+                                {/* Beam tip */}
+                                <motion.div
+                                  className="absolute left-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
+                                  style={{ background: '#fff', boxShadow: `0 0 8px #fff, 0 0 15px ${oppNeon}, 0 0 30px ${oppNeon}` }}
+                                  animate={{ scale: [1, 1.4, 1] }}
+                                  transition={{ duration: 0.3, repeat: Infinity }}
+                                />
+                              </motion.div>
+                            );
+                          })}
+
+                          {/* Impact flashes when beams hit */}
+                          {Array.from({ length: beamCount }).map((_, bi) => {
+                            const yPos = beamCount === 1 ? 50 : 20 + bi * 30;
+                            return [
+                              <motion.div
+                                key={`hit-r-${bi}`}
+                                className="absolute w-6 h-6 rounded-full"
+                                style={{ right: '12%', top: `${yPos}%`, transform: 'translate(50%, -50%)', background: myNeon, boxShadow: `0 0 15px ${myNeon}, 0 0 30px ${myNeon}` }}
+                                initial={{ scale: 0, opacity: 0 }}
+                                animate={{ scale: [0, 2, 0], opacity: [0, 0.8, 0] }}
+                                transition={{ duration: 0.4, delay: 1.7 + bi * 0.15, repeat: Infinity, repeatDelay: 3.3 }}
+                              />,
+                              <motion.div
+                                key={`hit-l-${bi}`}
+                                className="absolute w-6 h-6 rounded-full"
+                                style={{ left: '12%', top: `${yPos + (beamCount === 1 ? 5 : 3)}%`, transform: 'translate(-50%, -50%)', background: oppNeon, boxShadow: `0 0 15px ${oppNeon}, 0 0 30px ${oppNeon}` }}
+                                initial={{ scale: 0, opacity: 0 }}
+                                animate={{ scale: [0, 2, 0], opacity: [0, 0.8, 0] }}
+                                transition={{ duration: 0.4, delay: 2.9 + bi * 0.15, repeat: Infinity, repeatDelay: 3.3 }}
+                              />,
+                            ];
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* MY WARRIORS (Left) */}
+                    <motion.div
+                      className={cn('flex gap-4', battleAnimData?.type === '3v3' ? 'flex-col' : '')}
+                      initial={{ x: -200, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+                    >
+                      {(battleAnimData?.myWarriors ?? []).map((w, i) => {
+                        const neon = getNeonColor(w.element);
+                        const el = getElement(w.element);
+                        const imgSize = battleAnimData?.type === '3v3' ? 90 : 140;
+                        return (
+                          <motion.div
+                            key={w.tokenId}
+                            className="relative flex flex-col items-center"
+                            initial={{ x: -100, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            transition={{ delay: 0.1 + i * 0.15, type: 'spring', stiffness: 200, damping: 18 }}
+                          >
+                            {/* Neon outer glow */}
+                            <motion.div
+                              className="absolute -inset-3 rounded-2xl pointer-events-none"
+                              style={{ boxShadow: `0 0 20px ${neon}66, 0 0 40px ${neon}33, inset 0 0 20px ${neon}22` }}
+                              animate={{ opacity: [0.4, 1, 0.4] }}
+                              transition={{ duration: 1.5, delay: i * 0.3, repeat: Infinity, ease: 'easeInOut' }}
+                            />
+                            {/* Neon background bloom */}
+                            <motion.div
+                              className="absolute inset-0 rounded-2xl blur-3xl pointer-events-none"
+                              style={{ background: neon }}
+                              animate={{ scale: [1, 1.4, 1], opacity: [0.15, 0.35, 0.15] }}
+                              transition={{ duration: 1.5, delay: i * 0.3, repeat: Infinity, ease: 'easeInOut' }}
+                            />
+                            {/* Attack lunge */}
+                            <motion.div
+                              animate={{
+                                x: [0, 25, 0, 0, 25, 0, 0, 25, 0],
+                                rotate: [0, 3, 0, 0, -2, 0, 0, 3, 0],
+                              }}
+                              transition={{
+                                duration: 4.5,
+                                times: [0, 0.08, 0.15, 0.33, 0.41, 0.48, 0.66, 0.74, 0.81],
+                                ease: 'easeInOut',
+                                repeat: Infinity,
+                                delay: i * 0.4,
+                              }}
+                            >
+                              <div
+                                className="rounded-2xl overflow-hidden relative z-10"
+                                style={{ boxShadow: `0 0 15px ${neon}88, 0 0 30px ${neon}44, 0 4px 20px rgba(0,0,0,0.5)`, border: `2px solid ${neon}88` }}
+                              >
+                                <WarriorImage tokenId={w.tokenId} element={w.element} size={imgSize} className="" />
+                              </div>
+                            </motion.div>
+                            {/* Neon name badge */}
+                            <motion.div
+                              className="mt-2 text-center"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ delay: 0.5 + i * 0.1 }}
+                            >
+                              <span className="text-xs font-mono font-bold" style={{ color: neon, textShadow: `0 0 8px ${neon}` }}>#{w.tokenId}</span>
+                              <span className="ml-1 text-[10px]">{el.emoji}</span>
+                              <div className="text-[9px] font-pixel" style={{ color: `${neon}aa`, textShadow: `0 0 4px ${neon}` }}>PWR {w.powerScore}</div>
+                            </motion.div>
+                          </motion.div>
+                        );
+                      })}
+                    </motion.div>
+
+                    {/* CENTER - VS + Neon Clash */}
+                    <div className="relative flex flex-col items-center gap-4 flex-shrink-0">
+                      {/* Neon rotating rings */}
+                      <motion.div
+                        className="absolute w-32 h-32 sm:w-40 sm:h-40 rounded-full pointer-events-none"
+                        style={{ boxShadow: `0 0 15px ${getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 3)}44` , border: `1px solid ${getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 3)}66` }}
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 3, repeat: Infinity, ease: 'linear' }}
+                      />
+                      <motion.div
+                        className="absolute w-28 h-28 sm:w-36 sm:h-36 rounded-full pointer-events-none"
+                        style={{ boxShadow: `0 0 15px ${getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0)}44`, border: `1px solid ${getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0)}66` }}
+                        animate={{ rotate: -360 }}
+                        transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+                      />
+                      {/* Crossed swords with neon glow */}
+                      <div className="relative w-20 h-20 flex items-center justify-center">
+                        <motion.div
+                          className="absolute"
+                          animate={{ x: [-20, 0, -20], rotate: [-45, -15, -45] }}
+                          transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                        >
+                          <Sword className="w-10 h-10" style={{ color: getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 3), filter: `drop-shadow(0 0 12px ${getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 3)})` }} />
+                        </motion.div>
+                        <motion.div
+                          className="absolute"
+                          style={{ scaleX: -1 }}
+                          animate={{ x: [20, 0, 20], rotate: [45, 15, 45] }}
+                          transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                        >
+                          <Sword className="w-10 h-10" style={{ color: getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0), filter: `drop-shadow(0 0 12px ${getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0)})` }} />
+                        </motion.div>
+                        {/* Neon clash burst */}
+                        <motion.div
+                          className="absolute w-8 h-8 rounded-full pointer-events-none"
+                          style={{ background: '#fff', boxShadow: '0 0 20px #fff, 0 0 40px #00d4ff' }}
+                          animate={{ scale: [0.3, 1.5, 0.3], opacity: [0, 0.9, 0] }}
+                          transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                        />
+                      </div>
+                      {/* Neon VS text */}
+                      <motion.div
+                        className="font-display text-3xl sm:text-4xl font-black relative"
+                        style={{ color: '#fff', textShadow: '0 0 10px #00d4ff, 0 0 20px #00d4ff, 0 0 40px #00d4ff, 0 0 80px #0066ff' }}
+                        animate={{ scale: [1, 1.15, 1] }}
+                        transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                      >
+                        VS
+                      </motion.div>
+                      {/* Status */}
+                      <motion.div
+                        className="text-xs font-pixel flex items-center gap-1.5"
+                        style={{ color: '#00d4ffcc', textShadow: '0 0 6px #00d4ff' }}
+                        animate={{ opacity: [0.5, 1, 0.5] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      >
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Resolving...
+                      </motion.div>
+                      {/* Neon progress bar */}
+                      <div className="w-36 sm:w-48 h-1.5 rounded-full bg-white/5 overflow-hidden relative" style={{ boxShadow: '0 0 5px rgba(0,212,255,0.2)' }}>
+                        <motion.div
+                          className="h-full rounded-full"
+                          style={{ background: `linear-gradient(90deg, ${getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 3)}, #a855f7, ${getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0)})`, boxShadow: '0 0 10px rgba(168,85,247,0.5)' }}
+                          initial={{ width: '0%' }}
+                          animate={{ width: '100%' }}
+                          transition={{ duration: 5, ease: 'easeInOut' }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* OPPONENT WARRIORS (Right) */}
+                    <motion.div
+                      className={cn('flex gap-4', battleAnimData?.type === '3v3' ? 'flex-col' : '')}
+                      initial={{ x: 200, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+                    >
+                      {(battleAnimData?.opponentWarriors ?? []).map((w, i) => {
+                        const neon = getNeonColor(w.element);
+                        const el = getElement(w.element);
+                        const imgSize = battleAnimData?.type === '3v3' ? 90 : 140;
+                        return (
+                          <motion.div
+                            key={w.tokenId}
+                            className="relative flex flex-col items-center"
+                            initial={{ x: 100, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            transition={{ delay: 0.1 + i * 0.15, type: 'spring', stiffness: 200, damping: 18 }}
+                          >
+                            {/* Neon outer glow */}
+                            <motion.div
+                              className="absolute -inset-3 rounded-2xl pointer-events-none"
+                              style={{ boxShadow: `0 0 20px ${neon}66, 0 0 40px ${neon}33, inset 0 0 20px ${neon}22` }}
+                              animate={{ opacity: [0.4, 1, 0.4] }}
+                              transition={{ duration: 1.5, delay: i * 0.3 + 0.2, repeat: Infinity, ease: 'easeInOut' }}
+                            />
+                            {/* Neon background bloom */}
+                            <motion.div
+                              className="absolute inset-0 rounded-2xl blur-3xl pointer-events-none"
+                              style={{ background: neon }}
+                              animate={{ scale: [1, 1.4, 1], opacity: [0.15, 0.35, 0.15] }}
+                              transition={{ duration: 1.5, delay: i * 0.3 + 0.2, repeat: Infinity, ease: 'easeInOut' }}
+                            />
+                            {/* Attack lunge (opposite direction) */}
+                            <motion.div
+                              animate={{
+                                x: [0, -25, 0, 0, -25, 0, 0, -25, 0],
+                                rotate: [0, -3, 0, 0, 2, 0, 0, -3, 0],
+                              }}
+                              transition={{
+                                duration: 4.5,
+                                times: [0, 0.08, 0.15, 0.33, 0.41, 0.48, 0.66, 0.74, 0.81],
+                                ease: 'easeInOut',
+                                repeat: Infinity,
+                                delay: i * 0.4,
+                              }}
+                            >
+                              <div
+                                className="rounded-2xl overflow-hidden relative z-10"
+                                style={{ boxShadow: `0 0 15px ${neon}88, 0 0 30px ${neon}44, 0 4px 20px rgba(0,0,0,0.5)`, border: `2px solid ${neon}88` }}
+                              >
+                                <WarriorImage tokenId={w.tokenId} element={w.element} size={imgSize} className="" />
+                              </div>
+                            </motion.div>
+                            {/* Neon name badge */}
+                            <motion.div
+                              className="mt-2 text-center"
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ delay: 0.5 + i * 0.1 }}
+                            >
+                              <span className="text-xs font-mono font-bold" style={{ color: neon, textShadow: `0 0 8px ${neon}` }}>#{w.tokenId}</span>
+                              <span className="ml-1 text-[10px]">{el.emoji}</span>
+                              <div className="text-[9px] font-pixel" style={{ color: `${neon}aa`, textShadow: `0 0 4px ${neon}` }}>PWR {w.powerScore}</div>
+                            </motion.div>
+                          </motion.div>
+                        );
+                      })}
+                    </motion.div>
+                  </div>
+                </motion.div>
+              ) : (
+                /* ============ RESULT PHASE — NEON ============ */
+                <motion.div
+                  key="result"
+                  className="relative flex flex-col items-center z-10 w-full px-4"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                >
+                  {/* Neon explosion rings */}
+                  {[0, 1].map((ri) => (
+                    <motion.div
+                      key={`er-${ri}`}
+                      className="absolute rounded-full pointer-events-none"
+                      style={{
+                        border: `2px solid ${battleResult === 'won' ? '#ffd700' : '#ff3366'}`,
+                        boxShadow: `0 0 20px ${battleResult === 'won' ? '#ffd70066' : '#ff336666'}`,
+                      }}
+                      initial={{ width: 0, height: 0, opacity: 1 }}
+                      animate={{ width: 400 + ri * 200, height: 400 + ri * 200, opacity: 0 }}
+                      transition={{ duration: 1 + ri * 0.3, delay: ri * 0.2, ease: 'easeOut' }}
+                    />
+                  ))}
+
+                  <div className="flex items-center justify-center gap-6 sm:gap-10 md:gap-16 w-full max-w-4xl mb-8">
+                    {/* My warriors — result */}
+                    <motion.div
+                      className={cn('flex gap-3', battleAnimData?.type === '3v3' ? 'flex-col' : '')}
+                      initial={{ x: -50, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: 0.2 }}
+                    >
+                      {(battleAnimData?.myWarriors ?? []).map((w, i) => {
+                        const neon = getNeonColor(w.element);
+                        const el = getElement(w.element);
+                        const imgSize = battleAnimData?.type === '3v3' ? 80 : 120;
+                        const isWinner = battleResult === 'won';
+                        const glowNeon = isWinner ? '#ffd700' : neon;
+                        return (
+                          <motion.div
+                            key={w.tokenId}
+                            className="relative flex flex-col items-center"
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{
+                              scale: isWinner ? [0.8, 1.1, 1.05] : [0.8, 0.85],
+                              opacity: isWinner ? 1 : 0.35,
+                              filter: isWinner ? 'grayscale(0%) brightness(1.1)' : 'grayscale(80%) brightness(0.5)',
+                            }}
+                            transition={{ delay: 0.3 + i * 0.1, duration: 0.6 }}
+                          >
+                            {/* Winner neon halo */}
+                            {isWinner && (
+                              <motion.div
+                                className="absolute -inset-4 rounded-2xl pointer-events-none"
+                                style={{ boxShadow: `0 0 25px ${glowNeon}88, 0 0 50px ${glowNeon}44, 0 0 80px ${glowNeon}22` }}
+                                animate={{ opacity: [0.5, 1, 0.5] }}
+                                transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                              />
+                            )}
+                            <div
+                              className="rounded-2xl overflow-hidden relative z-10"
+                              style={{
+                                boxShadow: isWinner ? `0 0 20px ${glowNeon}88, 0 0 40px ${glowNeon}44` : 'none',
+                                border: isWinner ? `2px solid ${glowNeon}aa` : '2px solid rgba(255,255,255,0.08)',
+                              }}
+                            >
+                              <WarriorImage tokenId={w.tokenId} element={w.element} size={imgSize} className="" />
+                            </div>
+                            <div className="mt-1.5 text-center">
+                              <span className="text-[10px] font-mono font-bold" style={{ color: isWinner ? glowNeon : '#ffffff55', textShadow: isWinner ? `0 0 6px ${glowNeon}` : 'none' }}>#{w.tokenId}</span>
+                              <span className="ml-1 text-[9px]">{el.emoji}</span>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </motion.div>
+
+                    {/* Center Result — Neon */}
+                    <motion.div
+                      className="flex flex-col items-center gap-3 flex-shrink-0"
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 15, delay: 0.1 }}
+                    >
+                      <motion.div
+                        className="w-24 h-24 sm:w-28 sm:h-28 rounded-full flex items-center justify-center relative"
+                        style={{
+                          background: battleResult === 'won' ? 'rgba(255,215,0,0.1)' : 'rgba(255,51,102,0.1)',
+                          boxShadow: battleResult === 'won'
+                            ? '0 0 30px rgba(255,215,0,0.3), 0 0 60px rgba(255,215,0,0.15), inset 0 0 30px rgba(255,215,0,0.1)'
+                            : '0 0 30px rgba(255,51,102,0.3), 0 0 60px rgba(255,51,102,0.15), inset 0 0 30px rgba(255,51,102,0.1)',
+                          border: `2px solid ${battleResult === 'won' ? 'rgba(255,215,0,0.5)' : 'rgba(255,51,102,0.5)'}`,
+                        }}
+                        initial={{ rotate: -180 }}
+                        animate={{ rotate: 0 }}
+                        transition={{ type: 'spring', stiffness: 200, damping: 12 }}
+                      >
+                        <motion.div
+                          className="absolute inset-0 rounded-full blur-2xl pointer-events-none"
+                          style={{ background: battleResult === 'won' ? '#ffd700' : '#ff3366' }}
+                          animate={{ scale: [1, 1.4, 1], opacity: [0.2, 0.5, 0.2] }}
+                          transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                        />
+                        {battleResult === 'won' ? (
+                          <Trophy className="w-12 h-12 sm:w-14 sm:h-14 relative z-10" style={{ color: '#ffd700', filter: 'drop-shadow(0 0 15px rgba(255,215,0,0.7))' }} />
+                        ) : (
+                          <Shield className="w-12 h-12 sm:w-14 sm:h-14 relative z-10" style={{ color: '#ff3366', filter: 'drop-shadow(0 0 15px rgba(255,51,102,0.7))' }} />
+                        )}
+                      </motion.div>
+
+                      <motion.h2
+                        className="font-display text-3xl sm:text-4xl font-bold"
+                        style={{
+                          color: battleResult === 'won' ? '#ffd700' : '#ff3366',
+                          textShadow: battleResult === 'won'
+                            ? '0 0 10px #ffd700, 0 0 20px #ffd700, 0 0 40px #ff8800'
+                            : '0 0 10px #ff3366, 0 0 20px #ff3366, 0 0 40px #ff0044',
+                        }}
+                        initial={{ scale: 0.5, opacity: 0 }}
+                        animate={{ scale: [0.5, 1.15, 1], opacity: 1 }}
+                        transition={{ delay: 0.3, duration: 0.5 }}
+                      >
+                        {battleResult === 'won' ? 'Victory!' : 'Defeat'}
+                      </motion.h2>
+
+                      <motion.p
+                        className="text-white/50 text-xs sm:text-sm"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.5 }}
+                      >
+                        {battleResult === 'won'
+                          ? (battleAnimData?.type === '3v3' ? 'Your team dominated the arena!' : 'Your warrior has triumphed!')
+                          : 'Better luck next time, warrior.'}
+                      </motion.p>
+
+                      <motion.button
+                        className="relative z-20 mt-2 px-10 py-3 rounded-xl font-display text-sm font-bold text-white transition-colors cursor-pointer"
+                        style={{
+                          background: battleResult === 'won' ? 'rgba(255,215,0,0.08)' : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${battleResult === 'won' ? 'rgba(255,215,0,0.4)' : 'rgba(255,255,255,0.15)'}`,
+                          boxShadow: battleResult === 'won' ? '0 0 15px rgba(255,215,0,0.15)' : '0 0 10px rgba(255,255,255,0.05)',
+                        }}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.6 }}
+                        onClick={() => {
+                          setBattleAnimating(false);
+                          setBattleResult(null);
+                          setBattleAnimData(null);
+                          pendingBattleRef.current = null;
+                        }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        Continue
+                      </motion.button>
+                    </motion.div>
+
+                    {/* Opponent warriors — result */}
+                    <motion.div
+                      className={cn('flex gap-3', battleAnimData?.type === '3v3' ? 'flex-col' : '')}
+                      initial={{ x: 50, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ delay: 0.2 }}
+                    >
+                      {(battleAnimData?.opponentWarriors ?? []).map((w, i) => {
+                        const neon = getNeonColor(w.element);
+                        const el = getElement(w.element);
+                        const imgSize = battleAnimData?.type === '3v3' ? 80 : 120;
+                        const isWinner = battleResult === 'lost';
+                        const glowNeon = isWinner ? '#ffd700' : neon;
+                        return (
+                          <motion.div
+                            key={w.tokenId}
+                            className="relative flex flex-col items-center"
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{
+                              scale: isWinner ? [0.8, 1.1, 1.05] : [0.8, 0.85],
+                              opacity: isWinner ? 1 : 0.35,
+                              filter: isWinner ? 'grayscale(0%) brightness(1.1)' : 'grayscale(80%) brightness(0.5)',
+                            }}
+                            transition={{ delay: 0.3 + i * 0.1, duration: 0.6 }}
+                          >
+                            {isWinner && (
+                              <motion.div
+                                className="absolute -inset-4 rounded-2xl pointer-events-none"
+                                style={{ boxShadow: `0 0 25px ${glowNeon}88, 0 0 50px ${glowNeon}44, 0 0 80px ${glowNeon}22` }}
+                                animate={{ opacity: [0.5, 1, 0.5] }}
+                                transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                              />
+                            )}
+                            <div
+                              className="rounded-2xl overflow-hidden relative z-10"
+                              style={{
+                                boxShadow: isWinner ? `0 0 20px ${glowNeon}88, 0 0 40px ${glowNeon}44` : 'none',
+                                border: isWinner ? `2px solid ${glowNeon}aa` : '2px solid rgba(255,255,255,0.08)',
+                              }}
+                            >
+                              <WarriorImage tokenId={w.tokenId} element={w.element} size={imgSize} className="" />
+                            </div>
+                            <div className="mt-1.5 text-center">
+                              <span className="text-[10px] font-mono font-bold" style={{ color: isWinner ? glowNeon : '#ffffff55', textShadow: isWinner ? `0 0 6px ${glowNeon}` : 'none' }}>#{w.tokenId}</span>
+                              <span className="ml-1 text-[9px]">{el.emoji}</span>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </motion.div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>
