@@ -5,8 +5,14 @@ import { Web3Provider } from '@/providers/Web3Provider';
 import { EventProvider } from '@/providers/EventProvider';
 import { Sidebar, MobileTopBar } from '@/components/layout/Sidebar';
 import { Footer } from '@/components/layout/Footer';
+import { ActivityTicker } from '@/components/layout/ActivityTicker';
 import { ChainGuard } from '@/components/ChainGuard';
 import dynamic from 'next/dynamic';
+
+const MusicPlayer = dynamic(
+  () => import('@/components/layout/MusicPlayer').then(mod => mod.MusicPlayer),
+  { ssr: false }
+);
 
 const ParticleBackground = dynamic(
   () => import('@/components/layout/ParticleBackground').then(mod => mod.ParticleBackground),
@@ -41,10 +47,21 @@ const silkscreen = Silkscreen({
 });
 
 export const metadata: Metadata = {
-  title: 'Frostbite | NFT Battle Arena on Avalanche',
+  title: {
+    default: 'Frostbite | NFT Battle Arena on Avalanche',
+    template: '%s | Frostbite',
+  },
   description:
-    'Mint cyber warriors, battle NFTs, and earn AVAX on Avalanche C-Chain. Element-based PvP battles, quests, and marketplace.',
-  keywords: ['Avalanche', 'AVAX', 'NFT', 'Battle', 'Web3', 'PvP', 'Blockchain Gaming', 'Frostbite', 'GameFi'],
+    'Mint cyber warriors, battle NFTs, and earn AVAX on Avalanche C-Chain. Element-based PvP battles, quests, fusion, and decentralized marketplace.',
+  keywords: [
+    'Avalanche', 'AVAX', 'NFT', 'Battle', 'Web3', 'PvP', 'Blockchain Gaming',
+    'Frostbite', 'GameFi', 'NFT Game', 'Play to Earn', 'Crypto Gaming',
+    'Avalanche NFT', 'C-Chain', 'DeFi Gaming', 'NFT Marketplace',
+  ],
+  authors: [{ name: 'Frostbite', url: 'https://frostbite.pro' }],
+  creator: 'Frostbite',
+  publisher: 'Frostbite',
+  category: 'Gaming',
   icons: {
     icon: [
       { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
@@ -55,10 +72,11 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Frostbite | NFT Battle Arena on Avalanche',
     description:
-      'Mint cyber warriors, battle NFTs, and earn AVAX. Element-based PvP battles on Avalanche.',
+      'Mint cyber warriors, battle NFTs, and earn AVAX. Element-based PvP battles, quests, and marketplace on Avalanche.',
     type: 'website',
     url: 'https://frostbite.pro',
     siteName: 'Frostbite',
+    locale: 'en_US',
     images: [
       {
         url: 'https://frostbite.pro/og-image.jpg',
@@ -70,11 +88,48 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
+    site: '@frostbiteprol1',
+    creator: '@frostbiteprol1',
     title: 'Frostbite | NFT Battle Arena on Avalanche',
     description: 'Mint cyber warriors, battle NFTs, and earn AVAX. Element-based PvP battles on Avalanche.',
     images: ['https://frostbite.pro/og-image.jpg'],
   },
   metadataBase: new URL('https://frostbite.pro'),
+  alternates: {
+    canonical: '/',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+};
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'Frostbite',
+  url: 'https://frostbite.pro',
+  description: 'NFT Battle Arena on Avalanche — mint warriors, battle PvP, complete quests, and trade on the marketplace.',
+  applicationCategory: 'GameApplication',
+  operatingSystem: 'Web',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+  },
+  creator: {
+    '@type': 'Organization',
+    name: 'Frostbite',
+    url: 'https://frostbite.pro',
+    sameAs: ['https://x.com/frostbiteprol1'],
+  },
 };
 
 export default function RootLayout({
@@ -85,6 +140,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${orbitron.variable} ${jetbrainsMono.variable} ${silkscreen.variable}`} suppressHydrationWarning>
       <body className="font-sans antialiased min-h-screen">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         <ThemeProvider>
           <Web3Provider>
           <EventProvider>
@@ -93,15 +152,16 @@ export default function RootLayout({
             <ParticleBackground />
             <div className="scanlines" aria-hidden="true" />
 
-            {/* App shell: sidebar + main */}
-            <div className="flex min-h-screen">
+            {/* App shell: sidebar + main + activity ticker */}
+            <div className="mx-auto max-w-[1560px] w-full flex min-h-screen relative">
               <Sidebar />
-              <div className="flex-1 flex flex-col min-h-screen lg:ml-56">
+              <div className="flex-1 min-w-0 flex flex-col min-h-screen xl:mr-[280px]">
                 <MobileTopBar />
                 <ChainGuard />
-                <main className="relative z-10 flex-1">{children}</main>
+                <main className="relative flex-1 pb-4 px-3 sm:px-6 lg:px-8">{children}</main>
                 <Footer />
               </div>
+              <ActivityTicker />
             </div>
           </EventProvider>
           </Web3Provider>

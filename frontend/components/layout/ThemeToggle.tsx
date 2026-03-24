@@ -17,10 +17,19 @@ export function ThemeToggle() {
   return (
     <button
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      className="flex items-center justify-center w-9 h-9 rounded-lg text-white/60 hover:text-frost-primary hover:bg-frost-primary/[0.08] transition-all duration-200"
+      className={`
+        relative flex items-center justify-center w-9 h-9 rounded-lg
+        transition-all duration-300 overflow-hidden
+        ${isDark
+          ? 'bg-white/[0.06] hover:bg-white/[0.1] text-white/60 hover:text-frost-gold border border-white/[0.06]'
+          : 'bg-frost-primary/10 hover:bg-frost-primary/15 text-frost-primary hover:text-frost-primary border border-frost-primary/20'
+        }
+      `}
       aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
     >
-      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      <div className="relative z-10">
+        {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      </div>
     </button>
   );
 }

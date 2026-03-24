@@ -136,7 +136,8 @@ function WarriorImage({ tokenId, element, size }: { tokenId: number; element: nu
       alt={`Warrior #${tokenId}`}
       width={size}
       height={size}
-      className="w-full h-full object-cover"
+      className="w-full h-full object-cover warrior-idle"
+      style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
       loading="lazy"
     />
   );
@@ -161,7 +162,7 @@ function LoadingSpinner({ label }: { label?: string }) {
 
 function EmptyState({ icon: Icon, message }: { icon: React.ElementType; message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 gap-3">
+    <div className="flex flex-col items-center justify-center py-6 sm:py-12 gap-3">
       <Icon className="w-10 h-10 text-white/15" />
       <span className="text-sm text-white/40">{message}</span>
     </div>
@@ -390,7 +391,8 @@ function WarriorNFTCard({ warrior }: { warrior: Warrior }) {
         <img
           src={`/api/metadata/${warrior.tokenId}/image?element=${warrior.element}`}
           alt={`Warrior #${warrior.tokenId}`}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 warrior-idle"
+          style={{ animationDelay: `${(warrior.tokenId % 5) * 0.3}s` }}
           loading="lazy"
         />
         {/* Badges */}
@@ -700,7 +702,7 @@ export default function ProfilePage() {
           return;
         }
 
-        const details = await Promise.all(
+        const results = await Promise.allSettled(
           ids.map((id) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
@@ -712,11 +714,13 @@ export default function ProfilePage() {
         );
 
         if (cancelled) return;
-        setWarriors(
-          details
-            .map((raw, i) => parseWarriorData(raw as Record<string, unknown>, Number(ids[i])))
-            .sort((a, b) => b.powerScore - a.powerScore)
-        );
+        const parsed: ReturnType<typeof parseWarriorData>[] = [];
+        for (let i = 0; i < results.length; i++) {
+          if (results[i].status === 'fulfilled') {
+            parsed.push(parseWarriorData((results[i] as PromiseFulfilledResult<unknown>).value as Record<string, unknown>, Number(ids[i])));
+          }
+        }
+        setWarriors(parsed.sort((a, b) => b.powerScore - a.powerScore));
       } catch (err) {
         console.error('[profile] Failed to fetch warriors:', err);
         if (!cancelled) setWarriors([]);
@@ -757,7 +761,7 @@ export default function ProfilePage() {
         // Get last 20 battles (most recent)
         const recentIds = battleIds.slice(-20).reverse();
 
-        const battleDetails = await Promise.all(
+        const battleResults = await Promise.allSettled(
           recentIds.map((id) =>
             publicClient!.readContract({
               address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
@@ -770,16 +774,19 @@ export default function ProfilePage() {
 
         if (cancelled) return;
 
-        const parsed = battleDetails.map((raw) =>
-          parseBattleData(raw as Record<string, unknown>)
-        );
+        const parsed: ReturnType<typeof parseBattleData>[] = [];
+        for (const r of battleResults) {
+          if (r.status === 'fulfilled') {
+            parsed.push(parseBattleData(r.value as Record<string, unknown>));
+          }
+        }
 
         setBattleHistory(parsed);
 
         // Compute stats from ALL battle IDs
-        const allBattleDetails = battleIds.length <= 20
-          ? battleDetails
-          : await Promise.all(
+        const allBattleResults = battleIds.length <= 20
+          ? battleResults
+          : await Promise.allSettled(
               battleIds.map((id) =>
                 publicClient!.readContract({
                   address: CONTRACT_ADDRESSES.battleEngine as `0x${string}`,
@@ -792,9 +799,12 @@ export default function ProfilePage() {
 
         if (cancelled) return;
 
-        const allBattles = allBattleDetails.map((raw) =>
-          parseBattleData(raw as Record<string, unknown>)
-        );
+        const allBattles: ReturnType<typeof parseBattleData>[] = [];
+        for (const r of allBattleResults) {
+          if (r.status === 'fulfilled') {
+            allBattles.push(parseBattleData(r.value as Record<string, unknown>));
+          }
+        }
 
         const totalBattles = allBattles.length;
         const wins = allBattles.filter(
@@ -929,7 +939,7 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 pt-6 pb-12">
+      <div className="px-4 sm:px-6 pt-6 pb-12">
         {/* Banner + Profile Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}

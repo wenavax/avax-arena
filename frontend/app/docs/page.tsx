@@ -47,7 +47,7 @@ const CONTRACTS = [
   { name: 'TeamBattleEngine', address: '0x522d57c8b594Ddd56Ab8660E77fA9e0BA7548c27', desc: '3v3 team battle resolution' },
   { name: 'FrostbiteToken (FSB)', address: '0x96D9fB6BD38f1E0D9b1A9a9f763595F928B56214', desc: 'Platform reward token' },
   { name: 'Marketplace', address: '0x716ECe04F80b3986D180c0d8Ff25424a6Ea69039', desc: 'NFT listings, auctions & offers' },
-  { name: 'QuestEngine', address: '0x2A471Cead6d71f26A811b0FACa21Bf58b93627dB', desc: 'Quest system (8 zones, 32 quests)' },
+  { name: 'QuestEngine', address: '0x5699dea2Be233777C8E64A979386E3CD789187e0', desc: 'Quest system (8 zones, 32 quests)' },
   { name: 'Tournament', address: '0xABbde81f4B5D6A7968e0C216Abddefe4398E22Ab', desc: 'Tournament brackets' },
   { name: 'Leaderboard', address: '0x9E6108ea6d0a43c9622f581498E2bBfe53971a46', desc: 'On-chain rankings' },
   { name: 'RewardVault', address: '0xEa620F3772d66927979D90BC039936500fa1363A', desc: 'Reward distribution' },

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sword,
@@ -23,6 +23,11 @@ import {
   Minus,
   Plus,
   Layers,
+  Copy,
+  CheckCircle,
+  Users,
+  Gift,
+  Share2,
 } from 'lucide-react';
 import Image from 'next/image';
 import { ELEMENTS, MINT_PRICE } from '@/lib/constants';
@@ -34,9 +39,10 @@ import {
   useWaitForTransactionReceipt,
   useSwitchChain,
 } from 'wagmi';
-import { parseEther, decodeEventLog } from 'viem';
+import { parseEther } from 'viem';
 import { CONTRACT_ADDRESSES, ACTIVE_CHAIN_ID } from '@/lib/constants';
 import { useOnContractEvent } from '@/hooks/useContractEvents';
+import { MintRevealOverlay } from '@/components/mint/MintRevealOverlay';
 
 /* ---------------------------------------------------------------------------
  * Element Icon Mapping
@@ -495,7 +501,8 @@ function GalleryWarriorCard({
           <img
             src={`/api/metadata/${tokenId}/image?element=${warrior.element}`}
             alt={`Warrior #${tokenId}`}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover warrior-idle"
+            style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
             loading="lazy"
           />
           {/* Element badge overlay */}
@@ -535,9 +542,7 @@ function GalleryWarriorCard({
           {/* Power Score */}
           <div className="text-center pt-1 border-t border-white/5">
             <p className="text-[10px] uppercase tracking-widest text-white/20">PWR</p>
-            <p
-              className={`font-display text-lg font-bold bg-gradient-to-r ${element.color} bg-clip-text text-transparent`}
-            >
+            <p className="font-display text-lg font-bold text-frost-cyan">
               {powerScore}
             </p>
           </div>
@@ -660,10 +665,73 @@ export default function MintPage() {
   const { switchChainAsync } = useSwitchChain();
   const [mintedTokenId, setMintedTokenId] = useState<number | null>(null);
   const [showWarrior, setShowWarrior] = useState(false);
+  const [showReveal, setShowReveal] = useState(false);
   const [warriorImageUrl, setWarriorImageUrl] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [batchMintedTokenIds, setBatchMintedTokenIds] = useState<number[]>([]);
+
+  // Referral state
+  const [refCode, setRefCode] = useState('');
+  const [refApplied, setRefApplied] = useState(false);
+  const [refError, setRefError] = useState('');
+  const [myReferralCode, setMyReferralCode] = useState('');
+  const [referralStats, setReferralStats] = useState<{ totalReferrals: number } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Load ref code from cookie on mount
+  useEffect(() => {
+    const cookie = document.cookie.split('; ').find(c => c.startsWith('ref_code='));
+    if (cookie) {
+      const code = cookie.split('=')[1];
+      if (code) setRefCode(code);
+    }
+  }, []);
+
+  // Fetch own referral code + stats when connected
+  const fetchReferralData = useCallback(async () => {
+    if (!address) return;
+    try {
+      const res = await fetch(`/api/v1/wallet-referrals?wallet=${address}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMyReferralCode(data.referralCode);
+        setReferralStats({ totalReferrals: data.totalReferrals });
+        if (data.referredBy) setRefApplied(true);
+      }
+    } catch { /* ignore */ }
+  }, [address]);
+
+  useEffect(() => { fetchReferralData(); }, [fetchReferralData]);
+
+  // Apply referral code after first mint
+  const applyReferral = useCallback(async () => {
+    if (!address || !refCode || refApplied) return;
+    try {
+      const res = await fetch('/api/v1/wallet-referrals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: address, referralCode: refCode }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRefApplied(true);
+        setRefError('');
+        // Clear cookie
+        document.cookie = 'ref_code=; max-age=0; path=/';
+      } else {
+        if (data.error === 'Already referred') setRefApplied(true);
+        else setRefError(data.error || 'Failed to apply referral');
+      }
+    } catch { /* ignore */ }
+  }, [address, refCode, refApplied]);
+
+  const copyReferralLink = useCallback(() => {
+    if (!myReferralCode) return;
+    navigator.clipboard.writeText(`${window.location.origin}/mint?ref=${myReferralCode}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [myReferralCode]);
 
   /* ---- Contract Writes ---- */
   const {
@@ -732,13 +800,13 @@ export default function MintPage() {
       } else if (mintedIds.length === 1) {
         // Single mint result
         setMintedTokenId(mintedIds[0]);
-        setShowWarrior(true);
+        setShowReveal(true);
         setBatchMintedTokenIds([]);
       } else {
         // Fallback: use totalSupply
         const newTokenId = Number(totalSupply);
         setMintedTokenId(newTokenId);
-        setShowWarrior(true);
+        setShowReveal(true);
         setBatchMintedTokenIds([]);
       }
 
@@ -746,6 +814,11 @@ export default function MintPage() {
       refetchSupply();
       refetchOwned();
       refetchWarrior();
+
+      // Apply referral code if present
+      if (refCode && !refApplied) applyReferral();
+      // Refresh own referral data
+      fetchReferralData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTxSuccess, txReceipt]);
@@ -853,7 +926,7 @@ export default function MintPage() {
        * HERO SECTION
        * ============================================================ */}
       <section className="relative pt-20 pb-12 px-4">
-        <div className="max-w-6xl mx-auto text-center">
+        <div className="max-w-5xl mx-auto text-center">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1083,6 +1156,33 @@ export default function MintPage() {
                 </motion.div>
               ) : (
                 <div className="space-y-4">
+                  {/* Referral code input */}
+                  {!refApplied && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-white/40 uppercase tracking-wider font-pixel flex items-center gap-1.5">
+                        <Gift className="w-3 h-3" />
+                        Referral Code (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={refCode}
+                        onChange={(e) => { setRefCode(e.target.value.trim()); setRefError(''); }}
+                        placeholder="Enter referral code"
+                        disabled={isMinting}
+                        className="w-full px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white text-sm font-mono placeholder:text-white/20 focus:outline-none focus:border-frost-cyan/40 transition-colors disabled:opacity-50"
+                      />
+                      {refError && (
+                        <p className="text-frost-red text-[11px]">{refError}</p>
+                      )}
+                    </div>
+                  )}
+                  {refApplied && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-frost-green/10 border border-frost-green/20 text-frost-green text-xs">
+                      <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                      Referral applied
+                    </div>
+                  )}
+
                   {/* Quantity selector */}
                   <QuantitySelector
                     quantity={quantity}
@@ -1176,7 +1276,7 @@ export default function MintPage() {
        * ============================================================ */}
       {isConnected && tokenIds.length > 0 && (
         <section className="relative px-4 pb-24">
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-5xl mx-auto">
             {/* Section header */}
             <motion.div
               className="text-center mb-10"
@@ -1210,6 +1310,72 @@ export default function MintPage() {
         </section>
       )}
 
+      {/* Referral Sharing Section */}
+      {isConnected && myReferralCode && (
+        <section className="relative px-4 pb-12">
+          <div className="max-w-xl mx-auto">
+            <motion.div
+              className="glass-card p-6"
+              initial={{ opacity: 0.15, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-frost-purple/20 flex items-center justify-center">
+                  <Share2 className="w-5 h-5 text-frost-purple" />
+                </div>
+                <div>
+                  <h3 className="font-display text-sm font-bold text-white">
+                    Invite Friends
+                  </h3>
+                  <p className="text-[11px] text-white/40">
+                    Share your link and grow the Frostbite community
+                  </p>
+                </div>
+              </div>
+
+              {/* Referral link */}
+              <div className="flex items-center gap-2 mb-4">
+                <div className="flex-1 px-3 py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08] font-mono text-xs text-white/60 truncate">
+                  {typeof window !== 'undefined' ? `${window.location.origin}/mint?ref=${myReferralCode}` : `frostbite.gg/mint?ref=${myReferralCode}`}
+                </div>
+                <motion.button
+                  onClick={copyReferralLink}
+                  className="px-3 py-2.5 rounded-lg bg-frost-cyan/15 border border-frost-cyan/30 text-frost-cyan text-xs font-bold flex items-center gap-1.5 hover:bg-frost-cyan/25 transition-colors flex-shrink-0"
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {copied ? (
+                    <>
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy
+                    </>
+                  )}
+                </motion.button>
+              </div>
+
+              {/* Stats */}
+              {referralStats && (
+                <div className="flex items-center gap-4 pt-3 border-t border-white/[0.06]">
+                  <div className="flex items-center gap-1.5 text-xs text-white/40">
+                    <Users className="w-3.5 h-3.5" />
+                    <span className="font-mono font-bold text-white/70">{referralStats.totalReferrals}</span>
+                    {referralStats.totalReferrals === 1 ? 'referral' : 'referrals'}
+                  </div>
+                  <div className="text-[10px] text-white/25 font-mono uppercase tracking-wider">
+                    Code: {myReferralCode}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        </section>
+      )}
+
       {/* Empty state for connected but no warriors */}
       {isConnected && tokenIds.length === 0 && !showWarrior && batchMintedTokenIds.length === 0 && (
         <section className="relative px-4 pb-24">
@@ -1233,6 +1399,20 @@ export default function MintPage() {
           </div>
         </section>
       )}
+
+      {/* Mint Reveal Animation Overlay */}
+      <AnimatePresence>
+        {showReveal && (
+          <MintRevealOverlay
+            isOpen={showReveal}
+            element={warrior?.element ?? 0}
+            onComplete={() => {
+              setShowReveal(false);
+              setShowWarrior(true);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -558,13 +558,24 @@ export default function NFTDetailPage() {
                 )}
 
                 {auctionEnded ? (
-                  <button
-                    onClick={handleEndAuction}
-                    disabled={pending}
-                    className="w-full py-3 rounded-lg font-medium bg-frost-gold/20 text-frost-gold border border-frost-gold/30 hover:bg-frost-gold/30 transition-colors disabled:opacity-50"
-                  >
-                    {pending ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Settle Auction'}
-                  </button>
+                  <div className="space-y-2">
+                    <button
+                      onClick={handleEndAuction}
+                      disabled={pending}
+                      className="w-full py-3 rounded-lg font-medium bg-frost-gold/20 text-frost-gold border border-frost-gold/30 hover:bg-frost-gold/30 transition-colors disabled:opacity-50"
+                    >
+                      {pending ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Settle Auction'}
+                    </button>
+                    {isOwner && (
+                      <button
+                        onClick={handleCancelAuction}
+                        disabled={pending}
+                        className="w-full py-3 rounded-lg text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-colors disabled:opacity-50"
+                      >
+                        {pending ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'Cancel Auction'}
+                      </button>
+                    )}
+                  </div>
                 ) : isOwner && auction.highestBidder === '0x0000000000000000000000000000000000000000' ? (
                   <button
                     onClick={handleCancelAuction}

@@ -202,23 +202,14 @@ export default function PrivacyPage() {
         <Section title="14. Contact">
           <p>
             For privacy-related questions or data requests, contact us through our official
-            channels at{' '}
+            channel at{' '}
             <a
-              href="https://x.com/frostbitepro"
+              href="https://x.com/frostbiteprol1l1"
               target="_blank"
               rel="noopener noreferrer"
               className="text-frost-cyan hover:underline"
             >
-              x.com/frostbitepro
-            </a>{' '}
-            or via{' '}
-            <a
-              href="https://discord.gg/frostbite"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-frost-cyan hover:underline"
-            >
-              Discord
+              x.com/frostbiteprol1
             </a>.
           </p>
         </Section>

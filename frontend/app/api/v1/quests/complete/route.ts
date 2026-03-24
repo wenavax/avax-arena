@@ -10,6 +10,7 @@ import {
   completeTierQuest,
   abandonTierQuest,
   generateQuest,
+  syncTierWithChain,
 } from '@/lib/quest-progression';
 
 export const dynamic = 'force-dynamic';

@@ -3,7 +3,7 @@ import Image from 'next/image';
 import { Twitter, Github, BookOpen, Zap } from 'lucide-react';
 
 const SOCIAL_LINKS = [
-  { href: 'https://x.com/frostbitepro', label: 'X / Twitter', icon: Twitter },
+  { href: 'https://x.com/frostbiteprol1', label: 'X / Twitter', icon: Twitter },
   { href: 'https://github.com/wenavax/avax-arena', label: 'GitHub', icon: Github },
 ];
 
@@ -73,6 +73,16 @@ export function Footer() {
               <span className="text-frost-red font-medium">Avalanche</span>
             </span>
           </div>
+        </div>
+
+        {/* Copyright */}
+        <div className="mt-6 pt-4 border-t border-white/[0.04] flex flex-col sm:flex-row items-center justify-between gap-2">
+          <p className="text-[10px] text-white/20">
+            &copy; {new Date().getFullYear()} Frostbite. All rights reserved. All music, artwork, and content are the intellectual property of Frostbite.
+          </p>
+          <p className="text-[10px] text-white/15">
+            Unauthorized reproduction or distribution is prohibited.
+          </p>
         </div>
       </div>
     </footer>

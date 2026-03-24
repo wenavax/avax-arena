@@ -30,6 +30,20 @@ export default defineConfig({
       accounts: [configVariable("PRIVATE_KEY")],
     },
   },
+  chainDescriptors: {
+    43114: {
+      name: "Avalanche",
+      chainType: "generic",
+      blockExplorers: {
+        etherscan: {
+          name: "SnowTrace",
+          url: "https://snowtrace.io",
+          apiUrl:
+            "https://api.routescan.io/v2/network/mainnet/evm/43114/etherscan",
+        },
+      },
+    },
+  },
   verify: {
     etherscan: {
       apiKey: configVariable("SNOWTRACE_API_KEY"),
