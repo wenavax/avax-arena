@@ -13,9 +13,11 @@ import {
   Sparkles,
   BarChart3,
   Store,
+  ArrowLeftRight,
   GitMerge,
   User,
   Map,
+  Bot,
   Wallet,
   Copy,
   Check,
@@ -39,6 +41,8 @@ const TRACKS = [
   { src: '/music/track2.mp3', title: '2' },
   { src: '/music/track3.mp3', title: '3' },
   { src: '/music/track4.mp3', title: '4' },
+  { src: '/music/track5.mp3', title: '5' },
+  { src: '/music/track6.mp3', title: '6' },
 ];
 
 function MusicControls() {
@@ -119,6 +123,7 @@ const NAV_LINKS = [
   { href: '/battle', label: 'Battle', desc: 'PvP arena', icon: Swords, group: 'play' },
   { href: '/merge', label: 'Fusion', desc: 'Merge warriors', icon: GitMerge, group: 'play' },
   { href: '/quests', label: 'Quests', desc: 'PvE missions', icon: Map, group: 'play' },
+  { href: '/agents', label: 'Agents', desc: 'AI warriors', icon: Bot, group: 'play' },
   { href: '/marketplace', label: 'Market', desc: 'Buy & sell', icon: Store, group: 'trade' },
   { href: '/leaderboard', label: 'Rankings', desc: 'Leaderboard', icon: BarChart3, group: 'social' },
 ];
@@ -274,14 +279,14 @@ export function Sidebar() {
       {/* Logo area */}
       <Link href="/" className="flex items-center gap-3.5 px-5 h-[4.5rem] group flex-shrink-0 border-b border-white/[0.04]">
         <div className="relative flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden ring-1 ring-white/[0.08] shadow-[0_0_15px_rgba(255,32,32,0.1)] group-hover:shadow-[0_0_20px_rgba(255,32,32,0.2)] transition-shadow">
-          <Image src="/logo.png" alt="Frostbite" width={40} height={40} className="rounded-xl" priority />
+          <Image src="/avalanche/logo.png" alt="Frostbite" width={40} height={40} className="rounded-xl" priority />
         </div>
         <div>
-          <div className="font-display text-[15px] font-bold tracking-wider leading-tight">
+          <div className="font-display text-[10px] font-bold tracking-wider leading-tight">
             <span className="gradient-text">FROST</span>
             <span className="text-white/80 ml-0.5">BITE</span>
           </div>
-          <div className="text-[9px] font-medium uppercase tracking-[0.15em] text-white/20 mt-0.5">Battle Arena</div>
+          <div className="text-[7px] font-pixel uppercase tracking-[0.15em] text-white/20 mt-0.5">Battle Arena</div>
         </div>
       </Link>
 
@@ -324,6 +329,14 @@ export function Sidebar() {
           <MusicControls />
           <ThemeToggle />
         </div>
+
+        {/* Back to chain select */}
+        <a
+          href="/"
+          className="flex items-center justify-center gap-1.5 mt-2 py-2 rounded-lg text-[10px] text-white/15 hover:text-white/40 hover:bg-white/[0.03] transition-all"
+        >
+          &larr; Chain Select
+        </a>
       </div>
     </aside>
   );
@@ -347,8 +360,8 @@ export function MobileTopBar() {
       {/* Top bar */}
       <header className="lg:hidden sticky top-0 z-50 flex items-center justify-between h-14 px-4 bg-[rgb(var(--frost-bg))]/95 backdrop-blur-xl border-b border-white/[0.04]">
         <Link href="/" className="flex items-center gap-2">
-          <Image src="/logo.png" alt="Frostbite" width={28} height={28} className="rounded-lg" priority />
-          <span className="font-display text-sm font-bold tracking-wider">
+          <Image src="/avalanche/logo.png" alt="Frostbite" width={28} height={28} className="rounded-lg" priority />
+          <span className="font-display text-[9px] font-bold tracking-wider">
             <span className="gradient-text">FROST</span>
             <span className="text-white/90 ml-0.5">BITE</span>
           </span>
@@ -384,8 +397,8 @@ export function MobileTopBar() {
         {/* Drawer header */}
         <div className="flex-shrink-0 flex items-center justify-between h-14 px-4 border-b border-white/[0.04]">
           <Link href="/" className="flex items-center gap-2" onClick={() => setOpen(false)}>
-            <Image src="/logo.png" alt="Frostbite" width={28} height={28} className="rounded-lg" priority />
-            <span className="font-display text-sm font-bold tracking-wider">
+            <Image src="/avalanche/logo.png" alt="Frostbite" width={28} height={28} className="rounded-lg" priority />
+            <span className="font-display text-[9px] font-bold tracking-wider">
               <span className="gradient-text">FROST</span>
               <span className="text-white/90 ml-0.5">BITE</span>
             </span>

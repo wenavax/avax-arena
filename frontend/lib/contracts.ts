@@ -168,3 +168,156 @@ export const BATCH_MINTER_ABI = parseAbi([
   'event BatchMinted(address indexed to, uint256 quantity, uint256[] tokenIds)',
 ]);
 
+/* ---- ERC-6551 Token Bound Accounts ---- */
+
+export const ERC6551_REGISTRY_ABI = parseAbi([
+  'function createAccount(address implementation, bytes32 salt, uint256 chainId, address tokenContract, uint256 tokenId) external returns (address)',
+  'function account(address implementation, bytes32 salt, uint256 chainId, address tokenContract, uint256 tokenId) external view returns (address)',
+]);
+
+export const FROSTBITE_ACCOUNT_ABI = parseAbi([
+  'function execute(address to, uint256 value, bytes data, uint8 operation) external payable returns (bytes)',
+  'function token() external view returns (uint256 chainId, address tokenContract, uint256 tokenId)',
+  'function state() external view returns (uint256)',
+  'function owner() external view returns (address)',
+  'function isValidSigner(address signer, bytes context) external view returns (bytes4)',
+  'event Executed(address indexed to, uint256 value, bytes data, uint256 newState)',
+  'event Received(address indexed from, uint256 amount)',
+]);
+
+/* ---- Phase 3: FrostbiteAccountV2 (Delegation-enabled TBA) ---- */
+
+export const FROSTBITE_ACCOUNT_V2_ABI = parseAbi([
+  // V1 functions
+  'function execute(address to, uint256 value, bytes data, uint8 operation) external payable returns (bytes)',
+  'function token() external view returns (uint256 chainId, address tokenContract, uint256 tokenId)',
+  'function state() external view returns (uint256)',
+  'function owner() external view returns (address)',
+  'function isValidSigner(address signer, bytes context) external view returns (bytes4)',
+
+  // V2 delegation functions
+  'function addDelegate(address delegate) external',
+  'function removeDelegate(address delegate) external',
+  'function isDelegate(address addr) external view returns (bool)',
+
+  // Events
+  'event Executed(address indexed to, uint256 value, bytes data, uint256 newState)',
+  'event Received(address indexed from, uint256 amount)',
+  'event DelegateAdded(address indexed delegate)',
+  'event DelegateRemoved(address indexed delegate)',
+]);
+
+/* ---- Phase 4: FrostbiteAccountV3 (Ultimate Secure TBA) ---- */
+
+export const FROSTBITE_ACCOUNT_V3_ABI = parseAbi([
+  // ERC-6551 Core
+  'function execute(address to, uint256 value, bytes data, uint8 operation) external payable returns (bytes)',
+  'function token() external view returns (uint256 chainId, address tokenContract, uint256 tokenId)',
+  'function state() external view returns (uint256)',
+  'function owner() external view returns (address)',
+  'function isValidSigner(address signer, bytes context) external view returns (bytes4)',
+
+  // Delegation Management
+  'function addDelegate(address delegate, uint256 expiresAt, uint256 budget) external',
+  'function removeDelegate(address delegate) external',
+  'function setDelegateBudget(address delegate, uint256 budget) external',
+  'function isDelegate(address addr) external view returns (bool)',
+  'function getDelegateInfo(address addr) external view returns ((bool active, address authorizedBy, uint256 expiresAt, uint256 budgetTotal, uint256 budgetSpent))',
+  'function delegateBudgetRemaining(address delegate) external view returns (uint256)',
+
+  // Target & Selector Management
+  'function setAllowedTarget(address target, bool allowed) external',
+  'function isAllowedTarget(address target) external view returns (bool)',
+  'function setDelegateSpendLimit(uint256 limit) external',
+  'function delegateSpendLimit() external view returns (uint256)',
+  'function setDelegateAllowedSelector(address target, bytes4 selector, bool allowed) external',
+  'function isDelegateAllowedSelector(address target, bytes4 selector) external view returns (bool)',
+
+  // Lock & Freeze
+  'function lock(uint256 duration) external',
+  'function unlock() external',
+  'function lockedUntil() external view returns (uint256)',
+  'function emergencyFrozen() external view returns (bool)',
+  'function MAX_LOCK_DURATION() external view returns (uint256)',
+
+  // Guardian & Emergency
+  'function setGuardian(address _guardian) external',
+  'function guardian() external view returns (address)',
+  'function emergencyFreeze() external',
+  'function emergencyUnfreeze() external',
+
+  // Cooldown
+  'function setDelegateCooldown(uint256 seconds_) external',
+  'function delegateCooldown() external view returns (uint256)',
+  'function lastDelegateExecTime(address delegate) external view returns (uint256)',
+
+  // Sweep
+  'function sweepAVAX(address to) external',
+
+  // Events
+  'event DelegateAdded(address indexed delegate, uint256 expiresAt, uint256 budget)',
+  'event DelegateRemoved(address indexed delegate)',
+  'event DelegateBudgetSet(address indexed delegate, uint256 budget)',
+  'event Locked(uint256 until)',
+  'event Unlocked()',
+  'event EmergencyFrozen(address indexed by)',
+  'event EmergencyUnfrozen()',
+  'event Swept(address indexed to, uint256 amount)',
+  'event GuardianSet(address indexed guardian)',
+  'event Executed(address indexed to, uint256 value, bytes data, uint256 newState)',
+  'event Received(address indexed from, uint256 amount)',
+]);
+
+/* ---- Phase 2: Identity & Reputation Registries ---- */
+
+export const IDENTITY_REGISTRY_ABI = parseAbi([
+  // Write functions
+  'function registerAgent(uint256 tokenId, string metadataURI) external',
+  'function updateMetadata(uint256 tokenId, string newURI) external',
+  'function setAutoMode(uint256 tokenId, bool enabled) external',
+
+  // View functions
+  'function getAgent(uint256 tokenId) external view returns ((uint256 agentId, uint256 tokenId, address tbaAddress, string metadataURI, uint256 registeredAt, bool autoMode))',
+  'function getAgentByAddress(address tba) external view returns ((uint256 agentId, uint256 tokenId, address tbaAddress, string metadataURI, uint256 registeredAt, bool autoMode))',
+  'function isRegistered(uint256 tokenId) external view returns (bool)',
+  'function totalAgents() external view returns (uint256)',
+  'function getAutoModeAgents() external view returns (uint256[])',
+  'function getAutoModeAgentCount() external view returns (uint256)',
+  'function computeTBA(uint256 tokenId) external view returns (address)',
+
+  // Immutables
+  'function erc6551Registry() external view returns (address)',
+  'function frostbiteAccountImpl() external view returns (address)',
+  'function arenaWarrior() external view returns (address)',
+  'function tbaChainId() external view returns (uint256)',
+
+  // Events
+  'event AgentRegistered(uint256 indexed agentId, uint256 indexed tokenId, address indexed tbaAddress, string metadataURI)',
+  'event MetadataUpdated(uint256 indexed tokenId, string newURI)',
+  'event AutoModeToggled(uint256 indexed tokenId, bool enabled)',
+]);
+
+export const REPUTATION_REGISTRY_ABI = parseAbi([
+  // Write functions (authorized callers only)
+  'function postBattleResult(uint256 tokenId, bool won, uint256 avaxStake, uint8 warriorElement, uint8 opponentElement) external',
+  'function postQuestResult(uint256 tokenId, bool completed, uint256 xpGained) external',
+
+  // Owner functions
+  'function addAuthorizedCaller(address caller) external',
+  'function removeAuthorizedCaller(address caller) external',
+
+  // View functions
+  'function getReputation(uint256 tokenId) external view returns ((uint256 totalBattles, uint256 wins, uint256 losses, uint256 totalQuests, uint256 questsCompleted, uint256 questsFailed, uint256 totalXpEarned, uint256 totalAvaxEarned, uint256 totalAvaxLost, uint256[8] elementWins, uint256 lastActive, uint256 overallScore))',
+  'function getOverallScore(uint256 tokenId) external view returns (uint256)',
+  'function getElementMastery(uint256 tokenId, uint8 element) external view returns (uint256)',
+  'function getTopAgents(uint256 limit) external view returns (uint256[], uint256[])',
+  'function getLeaderboardSize() external view returns (uint256)',
+  'function authorizedCallers(address) external view returns (bool)',
+
+  // Events
+  'event BattleResultPosted(uint256 indexed tokenId, bool won, uint256 avaxStake, uint256 newScore)',
+  'event QuestResultPosted(uint256 indexed tokenId, bool completed, uint256 xpGained, uint256 newScore)',
+  'event AuthorizedCallerAdded(address indexed caller)',
+  'event AuthorizedCallerRemoved(address indexed caller)',
+]);
+

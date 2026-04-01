@@ -235,10 +235,41 @@ function migrate(db: Database.Database): void {
       wins              INTEGER NOT NULL DEFAULT 0,
       losses            INTEGER NOT NULL DEFAULT 0,
       total_avax_won    TEXT NOT NULL DEFAULT '0',
+      battles_3v3       INTEGER NOT NULL DEFAULT 0,
+      wins_3v3          INTEGER NOT NULL DEFAULT 0,
+      losses_3v3        INTEGER NOT NULL DEFAULT 0,
+      quests_completed  INTEGER NOT NULL DEFAULT 0,
+      quests_failed     INTEGER NOT NULL DEFAULT 0,
+      mints             INTEGER NOT NULL DEFAULT 0,
+      fusions           INTEGER NOT NULL DEFAULT 0,
+      market_buys       INTEGER NOT NULL DEFAULT 0,
+      market_lists      INTEGER NOT NULL DEFAULT 0,
+      monthly_points    INTEGER NOT NULL DEFAULT 0,
+      month_key         TEXT NOT NULL DEFAULT '',
       updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_wallet_points_fsb ON wallet_points(fsb_points DESC);
+    CREATE INDEX IF NOT EXISTS idx_wallet_points_monthly ON wallet_points(monthly_points DESC);
+
+    /* --- Monthly Leaderboard Archive --- */
+
+    CREATE TABLE IF NOT EXISTS monthly_archive (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      month_key         TEXT NOT NULL,
+      rank              INTEGER NOT NULL,
+      wallet            TEXT NOT NULL,
+      monthly_points    INTEGER NOT NULL DEFAULT 0,
+      wins              INTEGER NOT NULL DEFAULT 0,
+      losses            INTEGER NOT NULL DEFAULT 0,
+      wins_3v3          INTEGER NOT NULL DEFAULT 0,
+      mints             INTEGER NOT NULL DEFAULT 0,
+      fusions           INTEGER NOT NULL DEFAULT 0,
+      quests_completed  INTEGER NOT NULL DEFAULT 0,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_monthly_archive_month ON monthly_archive(month_key DESC, rank ASC);
 
     /* --- API Keys (external agent auth) --- */
 
@@ -789,6 +820,47 @@ function migrate(db: Database.Database): void {
     updateMany(allQuestsV7);
     console.log('[db] Quest v7 migration complete: enhanced story lore for all 999 quests + 8 zones');
   }
+
+  // --- Leaderboard v2: Monthly points + activity tracking ---
+  const wpCols = db.prepare("PRAGMA table_info(wallet_points)").all() as { name: string }[];
+  const wpColNames = wpCols.map(c => c.name);
+  const newWpCols: [string, string][] = [
+    ['battles_3v3', 'INTEGER NOT NULL DEFAULT 0'],
+    ['wins_3v3', 'INTEGER NOT NULL DEFAULT 0'],
+    ['losses_3v3', 'INTEGER NOT NULL DEFAULT 0'],
+    ['quests_completed', 'INTEGER NOT NULL DEFAULT 0'],
+    ['quests_failed', 'INTEGER NOT NULL DEFAULT 0'],
+    ['mints', 'INTEGER NOT NULL DEFAULT 0'],
+    ['fusions', 'INTEGER NOT NULL DEFAULT 0'],
+    ['market_buys', 'INTEGER NOT NULL DEFAULT 0'],
+    ['market_lists', 'INTEGER NOT NULL DEFAULT 0'],
+    ['monthly_points', 'INTEGER NOT NULL DEFAULT 0'],
+    ['month_key', "TEXT NOT NULL DEFAULT ''"],
+  ];
+  for (const [name, type] of newWpCols) {
+    if (!wpColNames.includes(name)) {
+      try { db.exec(`ALTER TABLE wallet_points ADD COLUMN ${name} ${type}`); } catch { /* already exists */ }
+    }
+  }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_wallet_points_monthly ON wallet_points(monthly_points DESC)'); } catch { /* ok */ }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS monthly_archive (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      month_key         TEXT NOT NULL,
+      rank              INTEGER NOT NULL,
+      wallet            TEXT NOT NULL,
+      monthly_points    INTEGER NOT NULL DEFAULT 0,
+      wins              INTEGER NOT NULL DEFAULT 0,
+      losses            INTEGER NOT NULL DEFAULT 0,
+      wins_3v3          INTEGER NOT NULL DEFAULT 0,
+      mints             INTEGER NOT NULL DEFAULT 0,
+      fusions           INTEGER NOT NULL DEFAULT 0,
+      quests_completed  INTEGER NOT NULL DEFAULT 0,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_monthly_archive_month ON monthly_archive(month_key DESC, rank ASC);
+  `);
 }
 
 export default getDb;

@@ -17,6 +17,8 @@ import {
   SlidersHorizontal,
   ArrowUpDown,
   Sparkles,
+  LayoutGrid,
+  Grid2x2,
 } from 'lucide-react';
 import { ELEMENTS, CONTRACT_ADDRESSES, PLATFORM_FEE_PERCENT } from '@/lib/constants';
 import { MARKETPLACE_ABI, FROSTBITE_WARRIOR_ABI } from '@/lib/contracts';
@@ -66,6 +68,7 @@ interface AuctionData {
 
 type Tab = 'items' | 'my-listings' | 'activity';
 type SortOption = 'recent' | 'price-asc' | 'price-desc' | 'level-desc' | 'power-desc' | 'token-asc';
+type GridSize = 'small' | 'large';
 
 type MarketItem =
   | { type: 'listing'; warrior: Warrior | null; listing: ListingData }
@@ -162,7 +165,7 @@ const TABS: { id: Tab; label: string; icon: typeof Store }[] = [
 ];
 
 /* ---------------------------------------------------------------------------
- * Sub-components: Collection Stats Bar
+ * Sub-components: Collection Stats Bar (OpenSea-style)
  * ------------------------------------------------------------------------- */
 
 function CollectionStatsBar({
@@ -179,37 +182,51 @@ function CollectionStatsBar({
   totalVolume: number;
 }) {
   const stats = [
-    { label: 'Floor', value: floorPrice > BigInt(0) ? `${formatEther(floorPrice)} AVAX` : '--' },
-    { label: 'Listed', value: totalListed.toString() },
-    { label: 'Auctions', value: activeAuctions.toString() },
-    { label: 'Supply', value: totalSupply > 0 ? totalSupply.toString() : '--' },
-    { label: 'Volume', value: totalVolume > 0 ? `${totalVolume.toFixed(2)} AVAX` : '--' },
+    { label: 'Floor Price', value: floorPrice > BigInt(0) ? `${formatEther(floorPrice)}` : '--', suffix: 'AVAX' },
+    { label: 'Total Volume', value: totalVolume > 0 ? `${totalVolume.toFixed(2)}` : '--', suffix: 'AVAX' },
+    { label: 'Listed', value: `${totalListed}`, suffix: totalSupply > 0 ? `/ ${totalSupply}` : '' },
+    { label: 'Auctions', value: activeAuctions.toString(), suffix: 'active' },
+    { label: 'Supply', value: totalSupply > 0 ? totalSupply.toString() : '--', suffix: '' },
   ];
 
   return (
     <div className="border-b border-white/[0.06] bg-frost-surface/40 backdrop-blur-sm">
       <div className="px-4 sm:px-6">
-        <div className="flex items-center justify-between py-4">
-          {/* Left: Collection identity */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-frost-cyan/20 to-frost-purple/20 border border-white/[0.08] flex items-center justify-center">
-              <Store className="h-5 w-5 text-frost-cyan" />
-            </div>
-            <div>
-              <h1 className="font-pixel text-sm sm:text-lg text-white leading-tight">Frostbite Warriors</h1>
-              <p className="text-[10px] text-white/40 hidden sm:block">Marketplace</p>
-            </div>
+        {/* Collection identity row */}
+        <div className="flex items-center gap-4 pt-4 pb-3">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-frost-cyan/20 to-frost-purple/20 border border-white/[0.08] flex items-center justify-center flex-shrink-0">
+            <Store className="h-6 w-6 text-frost-cyan" />
           </div>
+          <div className="min-w-0">
+            <h1 className="font-pixel text-sm sm:text-lg text-white leading-tight truncate">
+              Frostbite Warriors
+            </h1>
+            <p className="text-[10px] text-white/40 mt-0.5">
+              NFT Marketplace on Avalanche
+            </p>
+          </div>
+        </div>
 
-          {/* Right: Stats */}
-          <div className="flex items-center gap-4 sm:gap-8 overflow-x-auto">
-            {stats.map((s) => (
-              <div key={s.label} className="text-center flex-shrink-0">
-                <div className="font-pixel text-xs sm:text-sm text-frost-cyan">{s.value}</div>
-                <div className="text-[9px] sm:text-[10px] text-white/40 uppercase tracking-wider">{s.label}</div>
+        {/* Stats row - OpenSea style horizontal boxes */}
+        <div className="flex items-stretch gap-2 sm:gap-3 pb-4 overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
+          {stats.map((s) => (
+            <div
+              key={s.label}
+              className="flex-shrink-0 min-w-[100px] sm:min-w-[120px] px-3 sm:px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.12] transition-colors"
+            >
+              <div className="text-[9px] sm:text-[10px] text-white/35 uppercase tracking-wider font-pixel mb-1">
+                {s.label}
               </div>
-            ))}
-          </div>
+              <div className="flex items-baseline gap-1">
+                <span className="font-pixel text-sm sm:text-base text-white font-bold leading-none">
+                  {s.value}
+                </span>
+                {s.suffix && (
+                  <span className="text-[9px] text-white/30 font-pixel">{s.suffix}</span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -389,7 +406,7 @@ function FilterSidebar({
             onChange={(e) => setPriceMin(e.target.value)}
             className="w-full px-2 py-1.5 rounded-lg text-xs bg-white/[0.04] border border-white/[0.08] text-white placeholder:text-white/30 focus:outline-none focus:border-frost-cyan/40"
           />
-          <span className="text-white/30 text-xs">—</span>
+          <span className="text-white/30 text-xs">&mdash;</span>
           <input
             type="number"
             step="0.01"
@@ -413,7 +430,7 @@ function FilterSidebar({
             onChange={(e) => setLevelMin(e.target.value)}
             className="w-full px-2 py-1.5 rounded-lg text-xs bg-white/[0.04] border border-white/[0.08] text-white placeholder:text-white/30 focus:outline-none focus:border-frost-cyan/40"
           />
-          <span className="text-white/30 text-xs">—</span>
+          <span className="text-white/30 text-xs">&mdash;</span>
           <input
             type="number"
             min="1"
@@ -436,7 +453,7 @@ function FilterSidebar({
             onChange={(e) => setPowerMin(e.target.value)}
             className="w-full px-2 py-1.5 rounded-lg text-xs bg-white/[0.04] border border-white/[0.08] text-white placeholder:text-white/30 focus:outline-none focus:border-frost-cyan/40"
           />
-          <span className="text-white/30 text-xs">—</span>
+          <span className="text-white/30 text-xs">&mdash;</span>
           <input
             type="number"
             min="0"
@@ -493,7 +510,43 @@ function SortDropdown({ value, onChange }: { value: SortOption; onChange: (v: So
 }
 
 /* ---------------------------------------------------------------------------
- * Sub-components: NFT Cards (image-dominant, Salvor style)
+ * Sub-components: Grid Size Toggle
+ * ------------------------------------------------------------------------- */
+
+function GridToggle({ gridSize, onChange }: { gridSize: GridSize; onChange: (v: GridSize) => void }) {
+  return (
+    <div className="flex items-center rounded-lg border border-white/[0.08] overflow-hidden">
+      <button
+        onClick={() => onChange('large')}
+        className={cn(
+          'p-2 transition-all',
+          gridSize === 'large'
+            ? 'bg-frost-cyan/10 text-frost-cyan'
+            : 'bg-white/[0.02] text-white/40 hover:text-white/60'
+        )}
+        title="Large grid"
+      >
+        <Grid2x2 className="h-3.5 w-3.5" />
+      </button>
+      <div className="w-px h-5 bg-white/[0.08]" />
+      <button
+        onClick={() => onChange('small')}
+        className={cn(
+          'p-2 transition-all',
+          gridSize === 'small'
+            ? 'bg-frost-cyan/10 text-frost-cyan'
+            : 'bg-white/[0.02] text-white/40 hover:text-white/60'
+        )}
+        title="Small grid"
+      >
+        <LayoutGrid className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Sub-components: NFT Cards (OpenSea-inspired with hover overlays)
  * ------------------------------------------------------------------------- */
 
 function NFTListingCard({
@@ -503,6 +556,7 @@ function NFTListingCard({
   onCancel,
   buying,
   connectedAddress,
+  compact,
 }: {
   warrior: Warrior | null;
   listing: ListingData;
@@ -510,6 +564,7 @@ function NFTListingCard({
   onCancel: (tokenId: number) => void;
   buying: boolean;
   connectedAddress?: string;
+  compact?: boolean;
 }) {
   const el = warrior ? getElement(warrior.element) : null;
   const tokenId = listing.tokenId;
@@ -526,83 +581,112 @@ function NFTListingCard({
         <div className="relative aspect-square bg-gradient-to-br from-frost-bg to-frost-surface overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
+            src={`/avalanche/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
             alt={`Warrior #${tokenId}`}
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 warrior-idle"
             style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
             loading="lazy"
           />
-          {/* Badges */}
-          {el && (
-            <div className="absolute top-1.5 left-1.5">
-              <span className={cn('text-[8px] px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 font-pixel')}>
-                {el.emoji} {el.name}
+          {/* Top badges */}
+          <div className="absolute top-2 left-2 right-2 flex items-start justify-between">
+            {el && (
+              <span className={cn('text-[9px] px-2 py-1 rounded-lg bg-black/70 backdrop-blur-sm border border-white/10 font-pixel flex items-center gap-1')}>
+                <span>{el.emoji}</span>
+                <span className="text-white/80">{el.name}</span>
               </span>
-            </div>
-          )}
-          {warrior && (
-            <div className="absolute top-1.5 right-1.5">
-              <span className="text-[8px] px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 font-pixel text-white/80">
-                Lv.{warrior.level}
+            )}
+            {warrior && (
+              <span className="text-[9px] px-2 py-1 rounded-lg bg-black/70 backdrop-blur-sm border border-white/10 font-pixel text-frost-gold">
+                PWR {warrior.powerScore}
               </span>
-            </div>
-          )}
+            )}
+          </div>
           {/* Owner badge */}
           {isOwner && (
-            <div className="absolute bottom-1.5 left-1.5">
+            <div className="absolute bottom-2 left-2">
               <span className="text-[8px] px-1.5 py-0.5 rounded bg-frost-gold/20 backdrop-blur-sm border border-frost-gold/30 font-pixel text-frost-gold">
                 Your Listing
               </span>
             </div>
           )}
-          {/* Hover overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            <div className="absolute bottom-1.5 left-2 right-2 flex items-center justify-between">
-              <span className="text-[8px] text-white/80 font-pixel">PWR {warrior?.powerScore ?? '?'}</span>
-              <ArrowUpRight className="h-3 w-3 text-white/60" />
-            </div>
+          {/* Hover overlay with quick action */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
+            {isOwner ? (
+              <button
+                onClick={(e) => { e.preventDefault(); onCancel(tokenId); }}
+                disabled={buying}
+                className="w-full py-2 rounded-lg text-[10px] font-pixel text-red-400 bg-red-400/10 border border-red-400/30 hover:bg-red-400/20 transition-all disabled:opacity-50 backdrop-blur-sm"
+              >
+                {buying ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : 'Cancel Listing'}
+              </button>
+            ) : (
+              <button
+                onClick={(e) => { e.preventDefault(); onBuy(tokenId); }}
+                disabled={buying}
+                className="w-full py-2 rounded-lg text-[10px] font-pixel text-frost-cyan bg-frost-cyan/10 border border-frost-cyan/30 hover:bg-frost-cyan/20 transition-all disabled:opacity-50 backdrop-blur-sm"
+              >
+                {buying ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : 'Buy Now'}
+              </button>
+            )}
           </div>
         </div>
       </Link>
 
       {/* Info */}
-      <div className="p-2.5">
-        <Link href={`/marketplace/${tokenId}`}>
-          <h3 className="font-pixel text-[10px] text-white truncate hover:text-frost-cyan transition-colors">
-            #{tokenId}
-          </h3>
-        </Link>
+      <div className={compact ? 'p-2.5' : 'p-3'}>
+        <div className="flex items-center justify-between">
+          <Link href={`/marketplace/${tokenId}`}>
+            <h3 className={cn('font-pixel text-white truncate hover:text-frost-cyan transition-colors', compact ? 'text-[10px]' : 'text-xs')}>
+              #{tokenId}
+            </h3>
+          </Link>
+          {warrior && !compact && (
+            <span className="text-[9px] font-pixel text-white/30">
+              Lv.{warrior.level}
+            </span>
+          )}
+        </div>
 
         {/* Stats row */}
-        {warrior && (
-          <div className="flex items-center gap-2 mt-1.5 text-[8px] font-pixel text-white/50">
-            <span className="text-red-400">{warrior.attack}</span>
-            <span className="text-blue-400">{warrior.defense}</span>
-            <span className="text-green-400">{warrior.speed}</span>
+        {warrior && !compact && (
+          <div className="flex items-center gap-2.5 mt-1.5 text-[9px] font-pixel text-white/50">
+            <span className="text-red-400" title="Attack">{warrior.attack}</span>
+            <span className="text-blue-400" title="Defense">{warrior.defense}</span>
+            <span className="text-green-400" title="Speed">{warrior.speed}</span>
           </div>
         )}
 
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.06]">
-          <div className="font-pixel text-[11px] text-frost-cyan font-bold">
-            {formatEther(listing.price)} <span className="text-[8px] text-white/40">AVAX</span>
+        <div className={cn('flex items-center justify-between border-t border-white/[0.06]', compact ? 'mt-2 pt-2' : 'mt-2.5 pt-2.5')}>
+          <div>
+            <div className={cn('font-pixel text-frost-cyan font-bold', compact ? 'text-[11px]' : 'text-sm')}>
+              {formatEther(listing.price)}
+            </div>
+            <div className="text-[8px] text-white/30 font-pixel">AVAX</div>
           </div>
-          {isOwner ? (
-            <button
-              onClick={(e) => { e.preventDefault(); onCancel(tokenId); }}
-              disabled={buying}
-              className="px-2.5 py-1 text-[9px] font-pixel rounded-md text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-all disabled:opacity-50"
-            >
-              {buying ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : 'Cancel'}
-            </button>
-          ) : (
-            <button
-              onClick={(e) => { e.preventDefault(); onBuy(tokenId); }}
-              disabled={buying}
-              className="px-2.5 py-1 text-[9px] font-pixel rounded-md bg-frost-cyan/10 text-frost-cyan border border-frost-cyan/30 hover:bg-frost-cyan/20 transition-all disabled:opacity-50"
-            >
-              {buying ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : 'Buy'}
-            </button>
-          )}
+          {/* Small inline button for non-hover devices */}
+          <div className="sm:hidden">
+            {isOwner ? (
+              <button
+                onClick={(e) => { e.preventDefault(); onCancel(tokenId); }}
+                disabled={buying}
+                className="px-2.5 py-1 text-[9px] font-pixel rounded-md text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-all disabled:opacity-50"
+              >
+                {buying ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Cancel'}
+              </button>
+            ) : (
+              <button
+                onClick={(e) => { e.preventDefault(); onBuy(tokenId); }}
+                disabled={buying}
+                className="px-2.5 py-1 text-[9px] font-pixel rounded-md bg-frost-cyan/10 text-frost-cyan border border-frost-cyan/30 hover:bg-frost-cyan/20 transition-all disabled:opacity-50"
+              >
+                {buying ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Buy'}
+              </button>
+            )}
+          </div>
+          {/* Desktop: show arrow icon */}
+          <div className="hidden sm:block">
+            <ArrowUpRight className="h-3.5 w-3.5 text-white/20 group-hover:text-frost-cyan transition-colors" />
+          </div>
         </div>
       </div>
     </motion.div>
@@ -616,6 +700,7 @@ function NFTAuctionCard({
   onCancel,
   buying,
   connectedAddress,
+  compact,
 }: {
   warrior: Warrior | null;
   auction: AuctionData;
@@ -623,6 +708,7 @@ function NFTAuctionCard({
   onCancel: (tokenId: number) => void;
   buying: boolean;
   connectedAddress?: string;
+  compact?: boolean;
 }) {
   const el = warrior ? getElement(warrior.element) : null;
   const tokenId = auction.tokenId;
@@ -649,92 +735,119 @@ function NFTAuctionCard({
         <div className="relative aspect-square bg-gradient-to-br from-frost-bg to-frost-surface overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
+            src={`/avalanche/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
             alt={`Warrior #${tokenId}`}
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 warrior-idle"
             style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
             loading="lazy"
           />
-          {/* Badges */}
-          {el && (
-            <div className="absolute top-1.5 left-1.5">
-              <span className={cn('text-[8px] px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 font-pixel')}>
-                {el.emoji} {el.name}
+          {/* Top badges */}
+          <div className="absolute top-2 left-2 right-2 flex items-start justify-between">
+            {el && (
+              <span className={cn('text-[9px] px-2 py-1 rounded-lg bg-black/70 backdrop-blur-sm border border-white/10 font-pixel flex items-center gap-1')}>
+                <span>{el.emoji}</span>
+                <span className="text-white/80">{el.name}</span>
               </span>
-            </div>
-          )}
-          {warrior && (
-            <div className="absolute top-1.5 right-1.5">
-              <span className="text-[8px] px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm border border-white/10 font-pixel text-white/80">
-                Lv.{warrior.level}
+            )}
+            {warrior && (
+              <span className="text-[9px] px-2 py-1 rounded-lg bg-black/70 backdrop-blur-sm border border-white/10 font-pixel text-frost-gold">
+                PWR {warrior.powerScore}
               </span>
-            </div>
-          )}
-          {/* Auction timer badge */}
-          <div className="absolute bottom-1.5 right-1.5">
+            )}
+          </div>
+          {/* Bottom badges row — timer + owner in same line */}
+          <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between gap-1">
+            {isOwner && (
+              <span className="text-[8px] px-1.5 py-0.5 rounded bg-frost-gold/20 backdrop-blur-sm border border-frost-gold/30 font-pixel text-frost-gold truncate">
+                Your Auction
+              </span>
+            )}
             <span className={cn(
-              'flex items-center gap-0.5 text-[8px] px-1.5 py-0.5 rounded backdrop-blur-sm border font-pixel',
+              'flex items-center gap-0.5 text-[9px] px-2 py-1 rounded-lg backdrop-blur-sm border font-pixel ml-auto',
               ended ? 'bg-red-500/20 border-red-500/30 text-red-400' : 'bg-frost-purple/20 border-frost-purple/30 text-frost-purple'
             )}>
               <Clock className="h-2.5 w-2.5" />
               {ended ? 'Ended' : countdown}
             </span>
           </div>
-          {/* Owner badge */}
-          {isOwner && (
-            <div className="absolute bottom-1.5 left-1.5">
-              <span className="text-[8px] px-1.5 py-0.5 rounded bg-frost-gold/20 backdrop-blur-sm border border-frost-gold/30 font-pixel text-frost-gold">
-                Your Auction
-              </span>
-            </div>
-          )}
-          {/* Hover overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-            <div className="absolute bottom-1.5 left-2">
-              <span className="text-[8px] text-white/80 font-pixel">PWR {warrior?.powerScore ?? '?'}</span>
-            </div>
+          {/* Hover overlay with quick action */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
+            {isOwner ? (
+              <button
+                onClick={(e) => { e.preventDefault(); onCancel(tokenId); }}
+                disabled={buying}
+                className="w-full py-2 rounded-lg text-[10px] font-pixel text-red-400 bg-red-400/10 border border-red-400/30 hover:bg-red-400/20 transition-all disabled:opacity-50 backdrop-blur-sm"
+              >
+                {buying ? <Loader2 className="h-3 w-3 animate-spin mx-auto" /> : 'Cancel Auction'}
+              </button>
+            ) : !ended ? (
+              <button
+                onClick={(e) => { e.preventDefault(); onBid(tokenId); }}
+                className="w-full py-2 rounded-lg text-[10px] font-pixel text-frost-purple bg-frost-purple/10 border border-frost-purple/30 hover:bg-frost-purple/20 transition-all backdrop-blur-sm"
+              >
+                Place Bid
+              </button>
+            ) : null}
           </div>
         </div>
       </Link>
 
       {/* Info */}
-      <div className="p-2.5">
-        <Link href={`/marketplace/${tokenId}`}>
-          <h3 className="font-pixel text-[10px] text-white truncate hover:text-frost-purple transition-colors">
-            #{tokenId}
-          </h3>
-        </Link>
+      <div className={compact ? 'p-2.5' : 'p-3'}>
+        <div className="flex items-center justify-between">
+          <Link href={`/marketplace/${tokenId}`}>
+            <h3 className={cn('font-pixel text-white truncate hover:text-frost-purple transition-colors', compact ? 'text-[10px]' : 'text-xs')}>
+              #{tokenId}
+            </h3>
+          </Link>
+          {warrior && !compact && (
+            <span className="text-[9px] font-pixel text-white/30">
+              Lv.{warrior.level}
+            </span>
+          )}
+        </div>
 
         {/* Stats row */}
-        {warrior && (
-          <div className="flex items-center gap-2 mt-1.5 text-[8px] font-pixel text-white/50">
-            <span className="text-red-400">{warrior.attack}</span>
-            <span className="text-blue-400">{warrior.defense}</span>
-            <span className="text-green-400">{warrior.speed}</span>
+        {warrior && !compact && (
+          <div className="flex items-center gap-2.5 mt-1.5 text-[9px] font-pixel text-white/50">
+            <span className="text-red-400" title="Attack">{warrior.attack}</span>
+            <span className="text-blue-400" title="Defense">{warrior.defense}</span>
+            <span className="text-green-400" title="Speed">{warrior.speed}</span>
           </div>
         )}
 
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.06]">
-          <div className="font-pixel text-[11px] text-frost-purple font-bold">
-            {formatEther(auction.highestBid > BigInt(0) ? auction.highestBid : auction.startPrice)}{' '}
-            <span className="text-[8px] text-white/40">AVAX</span>
+        <div className={cn('flex items-center justify-between border-t border-white/[0.06]', compact ? 'mt-2 pt-2' : 'mt-2.5 pt-2.5')}>
+          <div>
+            <div className={cn('font-pixel text-frost-purple font-bold', compact ? 'text-[11px]' : 'text-sm')}>
+              {formatEther(auction.highestBid > BigInt(0) ? auction.highestBid : auction.startPrice)}
+            </div>
+            <div className="text-[8px] text-white/30 font-pixel">
+              {auction.highestBid > BigInt(0) ? 'Current Bid' : 'Start'} &middot; AVAX
+            </div>
           </div>
-          {isOwner ? (
-            <button
-              onClick={(e) => { e.preventDefault(); onCancel(tokenId); }}
-              disabled={buying}
-              className="px-2.5 py-1 text-[9px] font-pixel rounded-md text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-all disabled:opacity-50"
-            >
-              {buying ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : 'Cancel'}
-            </button>
-          ) : !ended ? (
-            <button
-              onClick={(e) => { e.preventDefault(); onBid(tokenId); }}
-              className="px-2.5 py-1 text-[9px] font-pixel rounded-md bg-frost-purple/10 text-frost-purple border border-frost-purple/30 hover:bg-frost-purple/20 transition-all"
-            >
-              Bid
-            </button>
-          ) : null}
+          {/* Small inline button for non-hover devices */}
+          <div className="sm:hidden">
+            {isOwner ? (
+              <button
+                onClick={(e) => { e.preventDefault(); onCancel(tokenId); }}
+                disabled={buying}
+                className="px-2.5 py-1 text-[9px] font-pixel rounded-md text-red-400 border border-red-400/20 hover:bg-red-400/10 transition-all disabled:opacity-50"
+              >
+                {buying ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : 'Cancel'}
+              </button>
+            ) : !ended ? (
+              <button
+                onClick={(e) => { e.preventDefault(); onBid(tokenId); }}
+                className="px-2.5 py-1 text-[9px] font-pixel rounded-md bg-frost-purple/10 text-frost-purple border border-frost-purple/30 hover:bg-frost-purple/20 transition-all"
+              >
+                Bid
+              </button>
+            ) : null}
+          </div>
+          {/* Desktop: show arrow icon */}
+          <div className="hidden sm:block">
+            <ArrowUpRight className="h-3.5 w-3.5 text-white/20 group-hover:text-frost-purple transition-colors" />
+          </div>
         </div>
       </div>
     </motion.div>
@@ -751,7 +864,7 @@ function WarriorThumb({ tokenId, element, size = 36 }: { tokenId: number; elemen
     <div className="relative rounded-lg overflow-hidden flex-shrink-0 mx-auto mb-1" style={{ width: size, height: size }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={`/api/metadata/${tokenId}/image?element=${element}`}
+        src={`/avalanche/api/metadata/${tokenId}/image?element=${element}`}
         alt={`#${tokenId}`}
         width={size}
         height={size}
@@ -970,7 +1083,7 @@ function BidModal({
         className="glass-card w-full max-w-sm p-6 rounded-2xl border border-white/[0.08]"
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-pixel text-sm font-bold gradient-text">Place Bid — #{tokenId}</h3>
+          <h3 className="font-pixel text-sm font-bold gradient-text">Place Bid &mdash; #{tokenId}</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white"><X className="h-5 w-5" /></button>
         </div>
 
@@ -1023,6 +1136,7 @@ export default function MarketplacePage() {
   const [tab, setTab] = useState<Tab>('items');
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState(false);
+  const [gridSize, setGridSize] = useState<GridSize>('small');
 
   // Data
   const [listingTokenIds, setListingTokenIds] = useState<number[]>([]);
@@ -1051,6 +1165,7 @@ export default function MarketplacePage() {
   const [powerMax, setPowerMax] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('recent');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebar, setDesktopSidebar] = useState(false);
 
   // ------ Fetch on-chain data ------
 
@@ -1629,6 +1744,13 @@ export default function MarketplacePage() {
     setPowerMax('');
   };
 
+  const isCompact = gridSize === 'small';
+
+  // Grid class based on gridSize
+  const gridClass = gridSize === 'large'
+    ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5'
+    : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4';
+
   // ------ Render ------
 
   return (
@@ -1644,9 +1766,9 @@ export default function MarketplacePage() {
 
       <div className="px-4 sm:px-6">
         {/* Toolbar */}
-        <div className="flex items-center justify-between py-4 border-b border-white/[0.06]">
+        <div className="flex items-center justify-between py-3 border-b border-white/[0.06]">
           {/* Left: Tabs + Action buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {TABS.map((t) => {
               const Icon = t.icon;
               return (
@@ -1654,16 +1776,16 @@ export default function MarketplacePage() {
                   key={t.id}
                   onClick={() => setTab(t.id)}
                   className={cn(
-                    'flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-[10px] sm:text-xs font-pixel uppercase tracking-wider transition-all',
+                    'flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[10px] sm:text-[11px] font-pixel uppercase tracking-wider transition-all',
                     tab === t.id
                       ? 'text-frost-cyan bg-frost-cyan/10 border border-frost-cyan/20'
                       : 'text-white/40 hover:text-white/60 hover:bg-white/[0.04] border border-transparent'
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5" />
+                  <Icon className="h-3 w-3" />
                   <span className="hidden sm:inline">{t.label}</span>
                   {t.id === 'my-listings' && (myListings.length + myAuctions.length) > 0 && (
-                    <span className="text-[9px] bg-frost-cyan/20 text-frost-cyan px-1.5 py-0.5 rounded-full">
+                    <span className="text-[8px] bg-frost-cyan/20 text-frost-cyan px-1 py-0.5 rounded-full leading-none">
                       {myListings.length + myAuctions.length}
                     </span>
                   )}
@@ -1671,36 +1793,52 @@ export default function MarketplacePage() {
               );
             })}
 
+            {/* Divider */}
+            {isConnected && <div className="w-px h-5 bg-white/[0.06] mx-1 hidden sm:block" />}
+
             {/* Action buttons */}
             {isConnected && (
               <>
-                <div className="w-px h-6 bg-white/[0.06] mx-1 hidden sm:block" />
                 <button
                   onClick={() => setShowListModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] sm:text-xs font-pixel text-frost-cyan bg-frost-cyan/5 border border-frost-cyan/20 hover:bg-frost-cyan/10 transition-all"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] sm:text-[11px] font-pixel text-frost-cyan bg-frost-cyan/5 border border-frost-cyan/20 hover:bg-frost-cyan/10 transition-all"
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className="h-3 w-3" />
                   <span className="hidden sm:inline">List</span>
                 </button>
                 <button
                   onClick={() => setShowAuctionModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] sm:text-xs font-pixel text-frost-purple bg-frost-purple/5 border border-frost-purple/20 hover:bg-frost-purple/10 transition-all"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[10px] sm:text-[11px] font-pixel text-frost-purple bg-frost-purple/5 border border-frost-purple/20 hover:bg-frost-purple/10 transition-all"
                 >
-                  <Gavel className="h-3.5 w-3.5" />
+                  <Gavel className="h-3 w-3" />
                   <span className="hidden sm:inline">Auction</span>
                 </button>
               </>
             )}
           </div>
 
-          {/* Right: Sort + Filter toggle */}
+          {/* Right: Sort + Grid toggle + Filter toggle */}
           <div className="flex items-center gap-2">
             {tab === 'items' && (
               <>
                 <SortDropdown value={sortBy} onChange={setSortBy} />
+                <GridToggle gridSize={gridSize} onChange={setGridSize} />
+                {/* Mobile filter toggle */}
                 <button
                   onClick={() => setSidebarOpen(true)}
                   className="lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-pixel bg-white/[0.04] border border-white/[0.08] text-white/60 hover:text-white transition-all"
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  {activeFilterCount > 0 && (
+                    <span className="bg-frost-cyan/20 text-frost-cyan text-[9px] px-1.5 py-0.5 rounded-full">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </button>
+                {/* Desktop filter sidebar toggle */}
+                <button
+                  onClick={() => setDesktopSidebar(p => !p)}
+                  className="hidden lg:flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-pixel bg-white/[0.04] border border-white/[0.08] text-white/60 hover:text-white transition-all"
                 >
                   <SlidersHorizontal className="h-3.5 w-3.5" />
                   {activeFilterCount > 0 && (
@@ -1714,11 +1852,43 @@ export default function MarketplacePage() {
           </div>
         </div>
 
+        {/* Element quick-filter pills (only on items tab) */}
+        {tab === 'items' && (
+          <div className="flex items-center gap-1.5 py-3 overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
+            <button
+              onClick={() => setElementFilter(null)}
+              className={cn(
+                'flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-pixel transition-all',
+                elementFilter === null
+                  ? 'bg-frost-cyan/15 text-frost-cyan border border-frost-cyan/30'
+                  : 'bg-white/[0.03] text-white/40 border border-white/[0.06] hover:border-white/[0.12] hover:text-white/60'
+              )}
+            >
+              All
+            </button>
+            {ELEMENTS.map((el) => (
+              <button
+                key={el.id}
+                onClick={() => setElementFilter(el.id === elementFilter ? null : el.id)}
+                className={cn(
+                  'flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-pixel transition-all',
+                  elementFilter === el.id
+                    ? 'bg-frost-cyan/15 text-frost-cyan border border-frost-cyan/30'
+                    : 'bg-white/[0.03] text-white/40 border border-white/[0.06] hover:border-white/[0.12] hover:text-white/60'
+                )}
+              >
+                <span>{el.emoji}</span>
+                <span className="hidden sm:inline">{el.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Main Content: Sidebar + Grid */}
-        <div className="flex gap-6 pt-6 pb-16">
-          {/* Sidebar — desktop only */}
-          {tab === 'items' && (
-            <aside className="w-[280px] flex-shrink-0 hidden lg:block">
+        <div className="flex gap-6 pb-16">
+          {/* Sidebar — desktop, collapsible */}
+          {tab === 'items' && desktopSidebar && (
+            <aside className="w-[220px] flex-shrink-0 hidden lg:block">
               <FilterSidebar
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
@@ -1769,6 +1939,15 @@ export default function MarketplacePage() {
                         <span className="text-xs text-white/40 font-pixel">
                           {sortedItems.length} {sortedItems.length === 1 ? 'item' : 'items'}
                         </span>
+                        {activeFilterCount > 0 && (
+                          <button
+                            onClick={clearAllFilters}
+                            className="text-[10px] text-frost-cyan hover:underline font-pixel flex items-center gap-1"
+                          >
+                            <X className="h-3 w-3" />
+                            Clear filters
+                          </button>
+                        )}
                       </div>
 
                       {sortedItems.length === 0 ? (
@@ -1796,7 +1975,7 @@ export default function MarketplacePage() {
                           </Link>
                         </motion.div>
                       ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        <div className={gridClass}>
                           {sortedItems.map((item) => {
                             const tid = item.type === 'listing' ? item.listing.tokenId : item.auction.tokenId;
                             return item.type === 'listing' ? (
@@ -1808,6 +1987,7 @@ export default function MarketplacePage() {
                                 onCancel={handleCancelListing}
                                 buying={pending}
                                 connectedAddress={address}
+                                compact={isCompact}
                               />
                             ) : (
                               <NFTAuctionCard
@@ -1818,6 +1998,7 @@ export default function MarketplacePage() {
                                 onCancel={handleCancelAuction}
                                 buying={pending}
                                 connectedAddress={address}
+                                compact={isCompact}
                               />
                             );
                           })}
@@ -1845,7 +2026,7 @@ export default function MarketplacePage() {
                           </button>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        <div className={gridClass}>
                           {myListings.map((tokenId) => {
                             const warrior = warriorsData.get(tokenId);
                             const listing = listingsData.get(tokenId);
@@ -1862,7 +2043,7 @@ export default function MarketplacePage() {
                                   <div className="relative aspect-square bg-gradient-to-br from-frost-bg to-frost-surface overflow-hidden">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                      src={`/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
+                                      src={`/avalanche/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
                                       alt={`Warrior #${tokenId}`}
                                       className="w-full h-full object-cover warrior-idle"
                                       style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
@@ -1911,7 +2092,7 @@ export default function MarketplacePage() {
                                   <div className="relative aspect-square bg-gradient-to-br from-frost-bg to-frost-surface overflow-hidden">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                      src={`/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
+                                      src={`/avalanche/api/metadata/${tokenId}/image${warrior ? `?element=${warrior.element}` : ''}`}
                                       alt={`Warrior #${tokenId}`}
                                       className="w-full h-full object-cover warrior-idle"
                                       style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
@@ -1991,7 +2172,7 @@ export default function MarketplacePage() {
                                       <div className="w-8 h-8 rounded-lg bg-frost-surface overflow-hidden flex-shrink-0">
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img
-                                          src={`/api/metadata/${sale.tokenId}/image`}
+                                          src={`/avalanche/api/metadata/${sale.tokenId}/image`}
                                           alt={`#${sale.tokenId}`}
                                           className="w-full h-full object-cover"
                                           loading="lazy"
@@ -2012,7 +2193,7 @@ export default function MarketplacePage() {
                                   </td>
                                   <td className="px-4 py-3 font-pixel text-xs text-white">{sale.price} AVAX</td>
                                   <td className="px-4 py-3 text-white/40 hidden sm:table-cell font-mono text-xs">{shortenAddress(sale.seller)}</td>
-                                  <td className="px-4 py-3 text-white/40 hidden sm:table-cell font-mono text-xs">{sale.buyer ? shortenAddress(sale.buyer) : '—'}</td>
+                                  <td className="px-4 py-3 text-white/40 hidden sm:table-cell font-mono text-xs">{sale.buyer ? shortenAddress(sale.buyer) : '\u2014'}</td>
                                   <td className="px-4 py-3 text-right text-white/40 text-xs">{timeAgo(sale.createdAt)}</td>
                                 </tr>
                               ))}

@@ -600,45 +600,220 @@ export function getMarketplaceActivity(limit = 20, offset = 0): { sales: DbMarke
  * Wallet Points (FSB Rewards)
  * ------------------------------------------------------------------------- */
 
-export function recordBattleResult(winner: string, loser: string, avaxWon: string) {
-  const db = getDb();
-  const now = new Date().toISOString();
+/* ---- Monthly Points Config ---- */
+const POINTS = {
+  BATTLE_1V1_WIN: 15,   BATTLE_1V1_LOSS: 3,
+  BATTLE_3V3_WIN: 40,   BATTLE_3V3_LOSS: 8,
+  QUEST_EASY_WIN: 5,    QUEST_EASY_FAIL: 1,
+  QUEST_MEDIUM_WIN: 15, QUEST_MEDIUM_FAIL: 3,
+  QUEST_HARD_WIN: 30,   QUEST_HARD_FAIL: 5,
+  QUEST_BOSS_WIN: 50,   QUEST_BOSS_FAIL: 8,
+  MINT: 20,
+  FUSION: 35,
+  MARKET_BUY: 25,
+  MARKET_LIST: 5,
+};
 
-  // Upsert winner: +1 FSB, +1 win, +1 battle
-  db.prepare(`
-    INSERT INTO wallet_points (wallet, fsb_points, total_battles, wins, losses, total_avax_won, updated_at)
-    VALUES (?, 1, 1, 1, 0, ?, ?)
-    ON CONFLICT(wallet) DO UPDATE SET
-      fsb_points = fsb_points + 1,
-      total_battles = total_battles + 1,
-      wins = wins + 1,
-      total_avax_won = CAST((CAST(total_avax_won AS REAL) + CAST(? AS REAL)) AS TEXT),
-      updated_at = ?
-  `).run(winner.toLowerCase(), avaxWon, now, avaxWon, now);
-
-  // Upsert loser: +0 FSB, +1 loss, +1 battle
-  db.prepare(`
-    INSERT INTO wallet_points (wallet, fsb_points, total_battles, wins, losses, total_avax_won, updated_at)
-    VALUES (?, 0, 1, 0, 1, '0', ?)
-    ON CONFLICT(wallet) DO UPDATE SET
-      total_battles = total_battles + 1,
-      losses = losses + 1,
-      updated_at = ?
-  `).run(loser.toLowerCase(), now, now);
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-export function getLeaderboard(limit = 50, offset = 0): { players: { wallet: string; fsb_points: number; total_battles: number; wins: number; losses: number; total_avax_won: string }[]; total: number } {
+function ensureMonthlyColumns(db: ReturnType<typeof getDb>) {
+  const cols = db.prepare("PRAGMA table_info(wallet_points)").all() as { name: string }[];
+  const colNames = cols.map(c => c.name);
+  const newCols: [string, string][] = [
+    ['battles_3v3', 'INTEGER NOT NULL DEFAULT 0'],
+    ['wins_3v3', 'INTEGER NOT NULL DEFAULT 0'],
+    ['losses_3v3', 'INTEGER NOT NULL DEFAULT 0'],
+    ['quests_completed', 'INTEGER NOT NULL DEFAULT 0'],
+    ['quests_failed', 'INTEGER NOT NULL DEFAULT 0'],
+    ['mints', 'INTEGER NOT NULL DEFAULT 0'],
+    ['fusions', 'INTEGER NOT NULL DEFAULT 0'],
+    ['market_buys', 'INTEGER NOT NULL DEFAULT 0'],
+    ['market_lists', 'INTEGER NOT NULL DEFAULT 0'],
+    ['monthly_points', 'INTEGER NOT NULL DEFAULT 0'],
+    ['month_key', "TEXT NOT NULL DEFAULT ''"],
+  ];
+  for (const [name, type] of newCols) {
+    if (!colNames.includes(name)) {
+      db.prepare(`ALTER TABLE wallet_points ADD COLUMN ${name} ${type}`).run();
+    }
+  }
+}
+
+function ensureMonth(db: ReturnType<typeof getDb>, wallet: string, monthKey: string) {
+  const row = db.prepare('SELECT month_key FROM wallet_points WHERE wallet = ?').get(wallet) as { month_key: string } | undefined;
+  if (row && row.month_key !== monthKey) {
+    // New month — reset monthly points but keep all-time stats
+    db.prepare('UPDATE wallet_points SET monthly_points = 0, month_key = ? WHERE wallet = ?').run(monthKey, wallet);
+  }
+}
+
+export function recordBattleResult(winner: string, loser: string, avaxWon: string, is3v3 = false) {
   const db = getDb();
+  ensureMonthlyColumns(db);
+  const now = new Date().toISOString();
+  const monthKey = currentMonthKey();
+  const winPts = is3v3 ? POINTS.BATTLE_3V3_WIN : POINTS.BATTLE_1V1_WIN;
+  const losePts = is3v3 ? POINTS.BATTLE_3V3_LOSS : POINTS.BATTLE_1V1_LOSS;
+
+  const winnerLc = winner.toLowerCase();
+  const loserLc = loser.toLowerCase();
+
+  // Winner
+  db.prepare(`
+    INSERT INTO wallet_points (wallet, fsb_points, total_battles, wins, losses, total_avax_won, ${is3v3 ? 'battles_3v3, wins_3v3' : 'battles_3v3, wins_3v3'}, monthly_points, month_key, updated_at)
+    VALUES (?, ?, 1, ${is3v3 ? '0, 0' : '1, 0'}, ?, ${is3v3 ? '1, 1' : '0, 0'}, ?, ?, ?)
+    ON CONFLICT(wallet) DO UPDATE SET
+      fsb_points = fsb_points + ?,
+      total_battles = total_battles + 1,
+      ${is3v3 ? 'battles_3v3 = battles_3v3 + 1, wins_3v3 = wins_3v3 + 1' : 'wins = wins + 1'},
+      total_avax_won = CAST((CAST(total_avax_won AS REAL) + CAST(? AS REAL)) AS TEXT),
+      monthly_points = CASE WHEN month_key = ? THEN monthly_points + ? ELSE ? END,
+      month_key = ?,
+      updated_at = ?
+  `).run(winnerLc, winPts, avaxWon, winPts, monthKey, now, winPts, avaxWon, monthKey, winPts, winPts, monthKey, now);
+
+  // Loser
+  db.prepare(`
+    INSERT INTO wallet_points (wallet, fsb_points, total_battles, wins, losses, total_avax_won, ${is3v3 ? 'battles_3v3, losses_3v3' : 'battles_3v3, losses_3v3'}, monthly_points, month_key, updated_at)
+    VALUES (?, ?, 1, ${is3v3 ? '0, 0' : '0, 1'}, '0', ${is3v3 ? '1, 1' : '0, 0'}, ?, ?, ?)
+    ON CONFLICT(wallet) DO UPDATE SET
+      fsb_points = fsb_points + ?,
+      total_battles = total_battles + 1,
+      ${is3v3 ? 'battles_3v3 = battles_3v3 + 1, losses_3v3 = losses_3v3 + 1' : 'losses = losses + 1'},
+      monthly_points = CASE WHEN month_key = ? THEN monthly_points + ? ELSE ? END,
+      month_key = ?,
+      updated_at = ?
+  `).run(loserLc, losePts, losePts, monthKey, now, losePts, monthKey, losePts, losePts, monthKey, now);
+}
+
+export function recordActivity(wallet: string, activity: 'mint' | 'fusion' | 'market_buy' | 'market_list' | 'quest_easy_win' | 'quest_easy_fail' | 'quest_medium_win' | 'quest_medium_fail' | 'quest_hard_win' | 'quest_hard_fail' | 'quest_boss_win' | 'quest_boss_fail') {
+  const db = getDb();
+  ensureMonthlyColumns(db);
+  const now = new Date().toISOString();
+  const monthKey = currentMonthKey();
+  const walletLc = wallet.toLowerCase();
+
+  const pointsMap: Record<string, { points: number; col: string }> = {
+    mint: { points: POINTS.MINT, col: 'mints' },
+    fusion: { points: POINTS.FUSION, col: 'fusions' },
+    market_buy: { points: POINTS.MARKET_BUY, col: 'market_buys' },
+    market_list: { points: POINTS.MARKET_LIST, col: 'market_lists' },
+    quest_easy_win: { points: POINTS.QUEST_EASY_WIN, col: 'quests_completed' },
+    quest_easy_fail: { points: POINTS.QUEST_EASY_FAIL, col: 'quests_failed' },
+    quest_medium_win: { points: POINTS.QUEST_MEDIUM_WIN, col: 'quests_completed' },
+    quest_medium_fail: { points: POINTS.QUEST_MEDIUM_FAIL, col: 'quests_failed' },
+    quest_hard_win: { points: POINTS.QUEST_HARD_WIN, col: 'quests_completed' },
+    quest_hard_fail: { points: POINTS.QUEST_HARD_FAIL, col: 'quests_failed' },
+    quest_boss_win: { points: POINTS.QUEST_BOSS_WIN, col: 'quests_completed' },
+    quest_boss_fail: { points: POINTS.QUEST_BOSS_FAIL, col: 'quests_failed' },
+  };
+
+  const { points, col } = pointsMap[activity];
+
+  db.prepare(`
+    INSERT INTO wallet_points (wallet, fsb_points, total_battles, wins, losses, total_avax_won, ${col}, monthly_points, month_key, updated_at)
+    VALUES (?, ?, 0, 0, 0, '0', 1, ?, ?, ?)
+    ON CONFLICT(wallet) DO UPDATE SET
+      fsb_points = fsb_points + ?,
+      ${col} = ${col} + 1,
+      monthly_points = CASE WHEN month_key = ? THEN monthly_points + ? ELSE ? END,
+      month_key = ?,
+      updated_at = ?
+  `).run(walletLc, points, points, monthKey, now, points, monthKey, points, points, monthKey, now);
+}
+
+export function migrateExistingPoints() {
+  const db = getDb();
+  ensureMonthlyColumns(db);
+  const monthKey = currentMonthKey();
+  // Recalculate fsb_points and monthly_points from existing wins/losses
+  db.prepare(`
+    UPDATE wallet_points SET
+      fsb_points = (wins * ${POINTS.BATTLE_1V1_WIN}) + (losses * ${POINTS.BATTLE_1V1_LOSS}),
+      monthly_points = (wins * ${POINTS.BATTLE_1V1_WIN}) + (losses * ${POINTS.BATTLE_1V1_LOSS}),
+      month_key = ?
+    WHERE month_key = '' OR month_key IS NULL
+  `).run(monthKey);
+}
+
+export function getLeaderboard(limit = 50, offset = 0) {
+  const db = getDb();
+  ensureMonthlyColumns(db);
+  const monthKey = currentMonthKey();
+  const players = db.prepare(
+    'SELECT * FROM wallet_points WHERE month_key = ? ORDER BY monthly_points DESC, fsb_points DESC LIMIT ? OFFSET ?'
+  ).all(monthKey, limit, offset) as any[];
+  const { total } = db.prepare('SELECT COUNT(*) as total FROM wallet_points WHERE month_key = ? AND monthly_points > 0').get(monthKey) as { total: number };
+  return { players, total };
+}
+
+export function getLeaderboardAllTime(limit = 50, offset = 0) {
+  const db = getDb();
+  ensureMonthlyColumns(db);
   const players = db.prepare(
     'SELECT * FROM wallet_points ORDER BY fsb_points DESC, wins DESC LIMIT ? OFFSET ?'
-  ).all(limit, offset) as { wallet: string; fsb_points: number; total_battles: number; wins: number; losses: number; total_avax_won: string }[];
-  const { total } = db.prepare('SELECT COUNT(*) as total FROM wallet_points').get() as { total: number };
+  ).all(limit, offset) as any[];
+  const { total } = db.prepare('SELECT COUNT(*) as total FROM wallet_points WHERE fsb_points > 0').get() as { total: number };
   return { players, total };
 }
 
 export function getWalletPoints(wallet: string) {
   const db = getDb();
-  return db.prepare('SELECT * FROM wallet_points WHERE wallet = ?').get(wallet.toLowerCase()) as { wallet: string; fsb_points: number; total_battles: number; wins: number; losses: number; total_avax_won: string } | undefined;
+  ensureMonthlyColumns(db);
+  return db.prepare('SELECT * FROM wallet_points WHERE wallet = ?').get(wallet.toLowerCase()) as any | undefined;
+}
+
+export function archiveMonth(monthKey: string) {
+  const db = getDb();
+  ensureMonthlyColumns(db);
+  // Check if already archived
+  const existing = db.prepare('SELECT COUNT(*) as c FROM monthly_archive WHERE month_key = ?').get(monthKey) as { c: number };
+  if (existing.c > 0) return;
+
+  // Archive top 10
+  const top10 = db.prepare(
+    'SELECT * FROM wallet_points WHERE month_key = ? AND monthly_points > 0 ORDER BY monthly_points DESC LIMIT 10'
+  ).all(monthKey) as any[];
+
+  const insert = db.prepare(
+    'INSERT INTO monthly_archive (month_key, rank, wallet, monthly_points, wins, losses, wins_3v3, mints, fusions, quests_completed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  );
+
+  for (let i = 0; i < top10.length; i++) {
+    const p = top10[i];
+    insert.run(monthKey, i + 1, p.wallet, p.monthly_points, p.wins ?? 0, p.losses ?? 0, p.wins_3v3 ?? 0, p.mints ?? 0, p.fusions ?? 0, p.quests_completed ?? 0);
+  }
+}
+
+export function getPreviousMonthTop10(): { monthKey: string; players: any[] } | null {
+  const db = getDb();
+  // Ensure archive table exists
+  try { db.prepare('SELECT 1 FROM monthly_archive LIMIT 1').get(); } catch { return null; }
+
+  const currentMonth = currentMonthKey();
+  const row = db.prepare(
+    'SELECT DISTINCT month_key FROM monthly_archive WHERE month_key < ? ORDER BY month_key DESC LIMIT 1'
+  ).get(currentMonth) as { month_key: string } | undefined;
+
+  if (!row) return null;
+
+  const players = db.prepare(
+    'SELECT * FROM monthly_archive WHERE month_key = ? ORDER BY rank ASC'
+  ).all(row.month_key) as any[];
+
+  return { monthKey: row.month_key, players };
+}
+
+export function checkAndArchivePreviousMonth() {
+  const current = currentMonthKey();
+  // Calculate previous month key
+  const [y, m] = current.split('-').map(Number);
+  const prevDate = new Date(Date.UTC(y, m - 2, 1)); // m-1 is current, m-2 is previous
+  const prevKey = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, '0')}`;
+  archiveMonth(prevKey);
 }
 
 /* ---------------------------------------------------------------------------

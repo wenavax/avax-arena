@@ -58,14 +58,17 @@ function AnimatedCounter({ target, suffix = '', prefix = '' }: { target: number;
 
 interface LiveStats {
   warriorsMinted: number;
+  warriorsFused: number;
   totalBattles: number;
   teamBattles: number;
   avaxVolume: number;
 }
 
+const tokenByIndexAbi = [{ name: 'tokenByIndex', type: 'function', inputs: [{ type: 'uint256' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' }] as const;
+
 function useLiveStats(): LiveStats {
   const publicClient = usePublicClient();
-  const [stats, setStats] = useState<LiveStats>({ warriorsMinted: 0, totalBattles: 0, teamBattles: 0, avaxVolume: 0 });
+  const [stats, setStats] = useState<LiveStats>({ warriorsMinted: 0, warriorsFused: 0, totalBattles: 0, teamBattles: 0, avaxVolume: 0 });
 
   useEffect(() => {
     if (!publicClient) return;
@@ -81,10 +84,28 @@ function useLiveStats(): LiveStats {
           publicClient.readContract({ address: CONTRACT_ADDRESSES.teamBattleEngine as `0x${string}`, abi: totalWageredAbi, functionName: 'totalWagered' }),
         ]);
         if (cancelled) return;
+
+        const supply = supplyRes.status === 'fulfilled' ? Number(supplyRes.value) : 0;
+
+        // Get highest token ID = total ever minted (token IDs never decrease)
+        let totalMinted = supply;
+        if (supply > 0) {
+          try {
+            const lastTokenId = await publicClient.readContract({
+              address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+              abi: tokenByIndexAbi,
+              functionName: 'tokenByIndex',
+              args: [BigInt(supply - 1)],
+            });
+            totalMinted = Number(lastTokenId);
+          } catch { /* fallback to supply */ }
+        }
+
         const w1 = wagered1Res.status === 'fulfilled' ? (wagered1Res.value as bigint) : 0n;
         const w2 = wagered2Res.status === 'fulfilled' ? (wagered2Res.value as bigint) : 0n;
         setStats({
-          warriorsMinted: supplyRes.status === 'fulfilled' ? Number(supplyRes.value) : 0,
+          warriorsMinted: totalMinted,
+          warriorsFused: totalMinted - supply,
           totalBattles: battleRes.status === 'fulfilled' ? Number(battleRes.value) : 0,
           teamBattles: teamRes.status === 'fulfilled' ? Number(teamRes.value) : 0,
           avaxVolume: parseFloat(Number(formatEther(w1 + w2)).toFixed(2)),
@@ -138,7 +159,7 @@ function useTickerEvents() {
     let cancelled = false;
     async function fetchEvents() {
       try {
-        const res = await fetch('/api/v1/activity-ticker');
+        const res = await fetch('/avalanche/api/v1/activity-ticker');
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled && Array.isArray(data)) setEvents(data);
@@ -247,7 +268,8 @@ function HeroSection({ stats }: { stats: LiveStats }) {
         <FadeIn delay={0.25}>
           <div className="flex items-center gap-4 sm:gap-8">
             {[
-              { label: 'Warriors', value: stats.warriorsMinted, icon: Shield },
+              { label: 'Minted', value: stats.warriorsMinted, icon: Shield },
+              { label: 'Fused', value: stats.warriorsFused, icon: GitMerge },
               { label: 'Battles', value: stats.totalBattles + stats.teamBattles, icon: Swords },
               { label: 'Volume', value: stats.avaxVolume, suffix: '', prefix: '', icon: Coins },
             ].map((s, i) => (
@@ -258,7 +280,7 @@ function HeroSection({ stats }: { stats: LiveStats }) {
                   </div>
                   <div className="text-[9px] text-white/30 font-pixel uppercase mt-0.5">{s.label}</div>
                 </div>
-                {i < 2 && <div className="stat-divider" />}
+                {i < 3 && <div className="stat-divider" />}
               </div>
             ))}
           </div>
@@ -828,19 +850,19 @@ function StatsBar({ stats }: { stats: LiveStats }) {
       <div className="mx-auto max-w-5xl grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
         <div>
           <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.warriorsMinted} /></div>
-          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">Warriors Minted</div>
+          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">Total Minted</div>
         </div>
         <div>
-          <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.totalBattles} /></div>
-          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">1v1 Battles</div>
+          <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.warriorsFused} /></div>
+          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">Warriors Fused</div>
         </div>
         <div>
-          <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.teamBattles} /></div>
-          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">3v3 Battles</div>
+          <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.totalBattles + stats.teamBattles} /></div>
+          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">Total Battles</div>
         </div>
         <div>
-          <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={8} /></div>
-          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">Element Types</div>
+          <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.avaxVolume} /></div>
+          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">AVAX Volume</div>
         </div>
       </div>
     </div>

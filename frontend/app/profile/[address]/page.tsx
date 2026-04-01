@@ -132,7 +132,7 @@ function WarriorImage({ tokenId, element, size }: { tokenId: number; element: nu
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={`/api/metadata/${tokenId}/image?element=${element}`}
+      src={`/avalanche/api/metadata/${tokenId}/image?element=${element}`}
       alt={`Warrior #${tokenId}`}
       width={size}
       height={size}
@@ -389,7 +389,7 @@ function WarriorNFTCard({ warrior }: { warrior: Warrior }) {
       <div className="relative aspect-square bg-gradient-to-br from-frost-bg to-frost-surface overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={`/api/metadata/${warrior.tokenId}/image?element=${warrior.element}`}
+          src={`/avalanche/api/metadata/${warrior.tokenId}/image?element=${warrior.element}`}
           alt={`Warrior #${warrior.tokenId}`}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 warrior-idle"
           style={{ animationDelay: `${(warrior.tokenId % 5) * 0.3}s` }}

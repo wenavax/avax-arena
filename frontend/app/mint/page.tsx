@@ -177,82 +177,80 @@ function StatBar({
  * Mystery Card (pre-mint placeholder)
  * ------------------------------------------------------------------------- */
 
+/** 50 random token IDs for rotating NFT showcase */
+const SHOWCASE_TOKENS = Array.from({ length: 50 }, (_, i) => {
+  // Deterministic pseudo-random spread across minted range (1-700)
+  return ((i * 13 + 7) % 700) + 1;
+});
+
 function MysteryCard() {
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveIdx((prev) => (prev + 1) % SHOWCASE_TOKENS.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const tokenId = SHOWCASE_TOKENS[activeIdx];
+
   return (
     <motion.div
-      className="relative w-full max-w-sm mx-auto aspect-[3/4] rounded-2xl overflow-hidden"
-      animate={{ y: [0, -8, 0] }}
+      className="relative w-full max-w-[280px] mx-auto aspect-square rounded-2xl overflow-hidden"
+      animate={{ y: [0, -5, 0] }}
       transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
     >
       {/* Outer glow */}
-      <div className="absolute -inset-1 bg-gradient-to-br from-frost-cyan via-frost-purple to-frost-pink rounded-2xl opacity-60 blur-lg animate-pulse-glow" />
+      <div className="absolute -inset-1 bg-gradient-to-br from-frost-cyan via-frost-purple to-frost-pink rounded-2xl opacity-50 blur-md animate-pulse-glow" />
 
       {/* Card body */}
-      <div className="relative h-full w-full rounded-2xl bg-frost-card border border-white/10 flex flex-col items-center justify-center gap-6 overflow-hidden">
-        {/* Animated mesh background */}
-        <div className="absolute inset-0 opacity-20">
-          <div className="absolute top-0 left-0 w-40 h-40 bg-frost-cyan rounded-full filter blur-[80px] animate-float" />
+      <div className="relative h-full w-full rounded-2xl bg-frost-card border border-white/10 flex flex-col items-center justify-center gap-3 overflow-hidden">
+        {/* Subtle mesh background */}
+        <div className="absolute inset-0 opacity-15">
+          <div className="absolute top-0 left-0 w-28 h-28 bg-frost-cyan rounded-full filter blur-[60px] animate-float" />
           <div
-            className="absolute bottom-0 right-0 w-40 h-40 bg-frost-purple rounded-full filter blur-[80px] animate-float"
+            className="absolute bottom-0 right-0 w-28 h-28 bg-frost-purple rounded-full filter blur-[60px] animate-float"
             style={{ animationDelay: '2s' }}
           />
-          <div
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-frost-pink rounded-full filter blur-[60px] animate-float"
-            style={{ animationDelay: '4s' }}
-          />
         </div>
 
-        {/* Grid lines */}
-        <div className="absolute inset-0 opacity-5">
-          <div
-            className="w-full h-full"
-            style={{
-              backgroundImage:
-                'linear-gradient(rgba(255,32,32,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255,32,32,0.3) 1px, transparent 1px)',
-              backgroundSize: '40px 40px',
-            }}
-          />
+        {/* Rotating NFT images */}
+        <div className="relative z-10 w-36 h-36">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeIdx}
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.85 }}
+              transition={{ duration: 0.5 }}
+              className="absolute inset-0 flex items-center justify-center"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/avalanche/api/metadata/${tokenId}/image?element=${tokenId % 8}`}
+                alt="Mystery warrior"
+                className="w-32 h-32 object-cover rounded-xl border border-white/5"
+                loading="eager"
+              />
+            </motion.div>
+          </AnimatePresence>
+
+          {/* "?" badge overlay */}
+          <div className="absolute -bottom-1 -right-1 z-20 w-8 h-8 rounded-full bg-frost-card border border-white/10 flex items-center justify-center">
+            <span className="text-sm font-display font-black gradient-text">?</span>
+          </div>
         </div>
 
-        {/* Question mark */}
-        <motion.div
-          className="relative z-10"
-          animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
-          transition={{ duration: 4, repeat: Infinity }}
-        >
-          <span className="text-8xl font-display font-black gradient-text select-none">
-            ?
-          </span>
-        </motion.div>
-
-        <div className="relative z-10 text-center px-6">
-          <p className="text-white/40 text-sm font-medium uppercase tracking-widest">
+        {/* Text */}
+        <div className="relative z-10 text-center">
+          <p className="text-white/50 text-[11px] font-display uppercase tracking-widest">
             Unknown Warrior
           </p>
-          <p className="text-white/20 text-xs mt-1">
+          <p className="text-white/25 text-[10px] mt-0.5">
             Mint to reveal stats & element
           </p>
         </div>
-
-        {/* Sparkles scattered */}
-        {[...Array(6)].map((_, i) => (
-          <motion.div
-            key={i}
-            className="absolute"
-            style={{
-              top: `${15 + Math.random() * 70}%`,
-              left: `${10 + Math.random() * 80}%`,
-            }}
-            animate={{ opacity: [0, 1, 0], scale: [0.5, 1, 0.5] }}
-            transition={{
-              duration: 2,
-              repeat: Infinity,
-              delay: i * 0.4,
-            }}
-          >
-            <Sparkles className="w-4 h-4 text-frost-cyan/40" />
-          </motion.div>
-        ))}
       </div>
     </motion.div>
   );
@@ -499,7 +497,7 @@ function GalleryWarriorCard({
         <div className="relative w-full aspect-square bg-white/[0.02]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/metadata/${tokenId}/image?element=${warrior.element}`}
+            src={`/avalanche/api/metadata/${tokenId}/image?element=${warrior.element}`}
             alt={`Warrior #${tokenId}`}
             className="w-full h-full object-cover warrior-idle"
             style={{ animationDelay: `${(tokenId % 5) * 0.3}s` }}
@@ -692,7 +690,7 @@ export default function MintPage() {
   const fetchReferralData = useCallback(async () => {
     if (!address) return;
     try {
-      const res = await fetch(`/api/v1/wallet-referrals?wallet=${address}`);
+      const res = await fetch(`/avalanche/api/v1/wallet-referrals?wallet=${address}`);
       if (res.ok) {
         const data = await res.json();
         setMyReferralCode(data.referralCode);
@@ -708,7 +706,7 @@ export default function MintPage() {
   const applyReferral = useCallback(async () => {
     if (!address || !refCode || refApplied) return;
     try {
-      const res = await fetch('/api/v1/wallet-referrals', {
+      const res = await fetch('/avalanche/api/v1/wallet-referrals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ wallet: address, referralCode: refCode }),
@@ -728,7 +726,7 @@ export default function MintPage() {
 
   const copyReferralLink = useCallback(() => {
     if (!myReferralCode) return;
-    navigator.clipboard.writeText(`${window.location.origin}/mint?ref=${myReferralCode}`);
+    navigator.clipboard.writeText(`${window.location.origin}/avalanche/mint?ref=${myReferralCode}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [myReferralCode]);
@@ -819,6 +817,15 @@ export default function MintPage() {
       if (refCode && !refApplied) applyReferral();
       // Refresh own referral data
       fetchReferralData();
+
+      // Record mint points
+      if (address && mintedIds.length > 0) {
+        fetch('/avalanche/api/v1/points', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet: address, activity: 'mint', count: mintedIds.length }),
+        }).catch(() => {});
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTxSuccess, txReceipt]);
@@ -841,7 +848,7 @@ export default function MintPage() {
     async function generateImage() {
       setIsGeneratingImage(true);
       try {
-        const res = await fetch('/api/metadata/generate', {
+        const res = await fetch('/avalanche/api/metadata/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -909,98 +916,99 @@ export default function MintPage() {
 
   return (
     <div className="min-h-screen relative">
-      {/* Background orbs */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-        <div className="orb w-80 h-80 bg-frost-purple top-20 -left-20" />
-        <div
-          className="orb w-96 h-96 bg-frost-cyan top-60 -right-32"
-          style={{ animationDelay: '2s' }}
-        />
-        <div
-          className="orb w-72 h-72 bg-frost-pink bottom-20 left-1/4"
-          style={{ animationDelay: '4s' }}
-        />
-      </div>
-
       {/* ============================================================
-       * HERO SECTION
+       * COMPACT HEADER
        * ============================================================ */}
-      <section className="relative pt-20 pb-12 px-4">
-        <div className="max-w-5xl mx-auto text-center">
+      <section className="relative pt-16 pb-6 px-4">
+        <div className="max-w-lg mx-auto text-center">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
+            transition={{ duration: 0.5 }}
           >
-            <div className="flex items-center justify-center gap-3 mb-6">
-              <Sword className="w-8 h-8 text-frost-cyan" />
-              <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-black gradient-text">
-                MINT YOUR FROSTBITE WARRIOR
+            <div className="flex items-center justify-center gap-3 mb-3">
+              {/* Left sparkle effects */}
+              <div className="relative flex items-center gap-1">
+                <motion.div
+                  animate={{ opacity: [0.2, 1, 0.2], scale: [0.8, 1.2, 0.8] }}
+                  transition={{ duration: 2, repeat: Infinity, delay: 0 }}
+                >
+                  <Sparkles className="w-4 h-4 text-frost-cyan" />
+                </motion.div>
+                <motion.div
+                  animate={{ opacity: [0.3, 1, 0.3], y: [2, -3, 2] }}
+                  transition={{ duration: 1.8, repeat: Infinity, delay: 0.6 }}
+                >
+                  <Sword className="w-5 h-5 text-frost-cyan/60" />
+                </motion.div>
+              </div>
+
+              <Image
+                src="/avalanche/logo.png"
+                alt="Frostbite"
+                width={44}
+                height={44}
+                className="rounded-lg"
+              />
+              <h1 className="font-display text-3xl sm:text-4xl font-black gradient-text">
+                MINT WARRIOR
               </h1>
-              <Shield className="w-8 h-8 text-frost-pink" />
+
+              {/* Right sparkle effects */}
+              <div className="relative flex items-center gap-1">
+                <motion.div
+                  animate={{ opacity: [0.3, 1, 0.3], y: [-2, 3, -2] }}
+                  transition={{ duration: 1.8, repeat: Infinity, delay: 0.3 }}
+                >
+                  <Shield className="w-5 h-5 text-frost-pink/60" />
+                </motion.div>
+                <motion.div
+                  animate={{ opacity: [0.2, 1, 0.2], scale: [0.8, 1.2, 0.8] }}
+                  transition={{ duration: 2, repeat: Infinity, delay: 0.9 }}
+                >
+                  <Sparkles className="w-4 h-4 text-frost-pink" />
+                </motion.div>
+              </div>
             </div>
 
-            <p className="text-lg text-white/50 max-w-2xl mx-auto mb-4">
-              Forge a unique warrior with randomized stats, element affinities,
-              and special powers. Each warrior is one-of-a-kind on the
-              Avalanche C-Chain.
+            <p className="text-sm text-white/40 mb-4">
+              Forge a unique warrior with randomized stats and element affinities on Avalanche.
             </p>
 
-            {/* Mint price badge */}
-            <motion.div
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full glass-card border-frost-cyan/20"
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.3 }}
-              style={{ transform: 'none' }} // prevent glass-card hover transform
-              whileHover={{ scale: 1.05 }}
-            >
-              <div className="w-2 h-2 rounded-full bg-frost-green animate-pulse" />
-              <span className="text-sm font-mono text-white/70">Mint Price:</span>
-              <span className="font-display text-lg font-bold text-frost-cyan text-glow-cyan">
+            {/* Inline badges row */}
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-cyan/10 border border-frost-cyan/20 text-xs font-mono text-frost-cyan">
+                <div className="w-1.5 h-1.5 rounded-full bg-frost-cyan animate-pulse" />
                 {MINT_PRICE} AVAX
               </span>
-            </motion.div>
-          </motion.div>
-
-          {/* Total Supply + Network Badge */}
-          <motion.div
-            className="mt-6 flex items-center justify-center gap-3 text-white/30 text-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-          >
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-green/10 border border-frost-green/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
-              <span className="text-[10px] font-pixel text-frost-green/80">MAINNET</span>
-            </span>
-            <span className="font-mono flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4" />
-              Total Minted:{' '}
-              {supply === '---' ? (
-                <Loader2 className="w-3 h-3 animate-spin text-frost-cyan inline" />
-              ) : (
-                <span className="text-frost-cyan font-bold">{supply}</span>
-              )}
-            </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-green/10 border border-frost-green/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
+                <span className="text-[10px] font-pixel text-frost-green/80">MAINNET</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-mono text-white/40">
+                <Sparkles className="w-3 h-3" />
+                {supply === '---' ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-frost-cyan" />
+                ) : (
+                  <span className="text-frost-cyan font-bold">{supply}</span>
+                )}
+                <span>minted</span>
+              </span>
+            </div>
           </motion.div>
         </div>
       </section>
 
       {/* ============================================================
-       * MINT AREA
+       * MINT AREA — 2 Column: Card Left + Controls Right
        * ============================================================ */}
-      <section className="relative px-4 pb-20">
+      <section className="relative px-4 pb-16">
         <div className="max-w-5xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            {/* Left: Preview / Warrior Card / Batch Result */}
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-            >
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start">
+
+            {/* Left: Card Preview */}
+            <div>
               <AnimatePresence mode="wait">
-                {/* Batch mint result grid */}
                 {batchMintedTokenIds.length > 1 ? (
                   <motion.div
                     key="batch-result"
@@ -1023,11 +1031,7 @@ export default function MintPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-3 max-h-[600px] overflow-y-auto pr-1">
                       {batchMintedTokenIds.map((id, index) => (
-                        <GalleryWarriorCard
-                          key={id}
-                          tokenId={id}
-                          index={index}
-                        />
+                        <GalleryWarriorCard key={id} tokenId={id} index={index} />
                       ))}
                     </div>
                   </motion.div>
@@ -1052,221 +1056,165 @@ export default function MintPage() {
                   </motion.div>
                 )}
               </AnimatePresence>
-            </motion.div>
+            </div>
 
-            {/* Right: Mint Controls */}
-            <motion.div
-              className="space-y-8"
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.4 }}
-            >
-              {/* Info card */}
-              <div className="glass-card p-6 space-y-4" style={{ transform: 'none' }}>
-                <h2 className="font-display text-xl font-bold text-white">
-                  What You Get
-                </h2>
-                <div className="space-y-3">
+            {/* Right: Mint Controls — single unified card */}
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md overflow-hidden">
+              {/* Features + Elements header band */}
+              <div className="p-4 border-b border-white/[0.04]">
+                {/* Inline feature chips */}
+                <div className="flex items-center gap-2 flex-wrap mb-3">
                   {[
-                    {
-                      icon: Sword,
-                      label: 'Randomized Stats',
-                      desc: 'Attack, Defense, Speed (1-100)',
-                      color: 'text-red-400',
-                    },
-                    {
-                      icon: Sparkles,
-                      label: 'Element Affinity',
-                      desc: 'One of 8 elements with combat advantages',
-                      color: 'text-frost-purple',
-                    },
-                    {
-                      icon: Zap,
-                      label: 'Special Power',
-                      desc: 'Unique ability score for battle bonuses',
-                      color: 'text-frost-cyan',
-                    },
-                    {
-                      icon: Trophy,
-                      label: 'Battle Ready',
-                      desc: 'Immediately usable in Frostbite PvP battles',
-                      color: 'text-frost-gold',
-                    },
-                  ].map((item, i) => (
-                    <motion.div
-                      key={item.label}
-                      className="flex items-start gap-3"
-                      initial={{ opacity: 0, x: 10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.5 + i * 0.1 }}
+                    { icon: Sword, label: 'Random Stats', color: 'text-red-400', bg: 'bg-red-500/8' },
+                    { icon: Sparkles, label: '8 Elements', color: 'text-frost-purple', bg: 'bg-purple-500/8' },
+                    { icon: Zap, label: 'Special Power', color: 'text-frost-cyan', bg: 'bg-cyan-500/8' },
+                    { icon: Trophy, label: 'Battle Ready', color: 'text-frost-gold', bg: 'bg-amber-500/8' },
+                  ].map((item) => (
+                    <div key={item.label} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${item.bg} border border-white/[0.04]`}>
+                      <item.icon className={`w-3 h-3 ${item.color}`} />
+                      <span className="text-[10px] text-white/50 font-medium">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Element row */}
+                <div className="flex items-center gap-1">
+                  {ELEMENTS.map((el) => (
+                    <div
+                      key={el.id}
+                      className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg bg-white/[0.02] hover:bg-white/[0.05] transition-colors cursor-default"
+                      title={el.name}
                     >
-                      <div className="flex-shrink-0 mt-0.5">
-                        <item.icon className={`w-4 h-4 ${item.color}`} />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-white/80">
-                          {item.label}
-                        </p>
-                        <p className="text-xs text-white/40">{item.desc}</p>
-                      </div>
-                    </motion.div>
+                      <span className="text-sm">{el.emoji}</span>
+                      <span className="text-[8px] text-white/30 hidden sm:block">{el.name}</span>
+                    </div>
                   ))}
                 </div>
               </div>
 
-              {/* Element showcase */}
-              <div className="glass-card p-6" style={{ transform: 'none' }}>
-                <h3 className="font-display text-sm font-bold text-white/60 uppercase tracking-wider mb-3">
-                  Possible Elements
-                </h3>
-                <div className="grid grid-cols-4 gap-2">
-                  {ELEMENTS.map((el) => {
-                    const ElIcon = ELEMENT_ICONS[el.id] ?? Sparkles;
-                    return (
-                      <motion.div
-                        key={el.id}
-                        className={`flex flex-col items-center gap-1 p-2 rounded-lg bg-gradient-to-b ${el.bgGradient} border border-white/5 hover:border-white/20 transition-colors cursor-default`}
-                        whileHover={{ scale: 1.08, y: -2 }}
-                      >
-                        <span className="text-lg">{el.emoji}</span>
-                        <span className="text-[10px] text-white/50 font-medium">
-                          {el.name}
+              {/* Mint controls area */}
+              <div className="p-4 space-y-4">
+                {!isConnected ? (
+                  <div className="text-center py-8">
+                    <Wallet className="w-8 h-8 mx-auto text-white/15 mb-2" />
+                    <p className="text-white/40 text-sm mb-1">Connect your wallet to mint</p>
+                    <p className="text-white/20 text-xs">Avalanche C-Chain required</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Referral */}
+                    {!refApplied && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <Gift className="w-3 h-3 text-white/30" />
+                          <input
+                            type="text"
+                            value={refCode}
+                            onChange={(e) => { setRefCode(e.target.value.trim()); setRefError(''); }}
+                            placeholder="Referral code (optional)"
+                            disabled={isMinting}
+                            className="flex-1 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-white text-xs font-mono placeholder:text-white/20 focus:outline-none focus:border-frost-cyan/30 transition-colors disabled:opacity-50"
+                          />
+                        </div>
+                        {refError && <p className="text-frost-red text-[10px] ml-5">{refError}</p>}
+                      </div>
+                    )}
+                    {refApplied && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-frost-green/10 border border-frost-green/20 text-frost-green text-[11px]">
+                        <CheckCircle className="w-3 h-3 flex-shrink-0" />
+                        Referral applied
+                      </div>
+                    )}
+
+                    {/* Quantity — compact inline */}
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        {[1, 5, 10, 20].map((q) => (
+                          <button
+                            key={q}
+                            onClick={() => setQuantity(q)}
+                            disabled={isMinting}
+                            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                              quantity === q
+                                ? 'bg-frost-cyan/20 border border-frost-cyan/40 text-frost-cyan'
+                                : 'bg-white/[0.03] border border-white/[0.06] text-white/40 hover:text-white/60 hover:bg-white/[0.05]'
+                            } disabled:opacity-30`}
+                          >
+                            {q}x
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex-1" />
+                      <div className="text-right">
+                        <span className="text-white/30 text-[10px] block">Total</span>
+                        <span className="font-display text-sm font-bold text-frost-cyan">
+                          {totalCost} AVAX
                         </span>
-                      </motion.div>
-                    );
-                  })}
-                </div>
+                      </div>
+                    </div>
+
+                    {/* Mint button */}
+                    <motion.button
+                      onClick={handleMint}
+                      disabled={isMinting}
+                      className="w-full relative group overflow-hidden rounded-xl font-display text-base font-bold uppercase tracking-wider py-3.5 transition-all duration-300 disabled:cursor-not-allowed"
+                      whileHover={!isMinting ? { scale: 1.02 } : {}}
+                      whileTap={!isMinting ? { scale: 0.98 } : {}}
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-frost-cyan via-frost-purple to-frost-pink opacity-90 group-hover:opacity-100 transition-opacity" />
+                      <div className="absolute inset-0 shimmer" />
+                      <span className="relative z-10 flex items-center justify-center gap-2.5 text-white">
+                        {isMinting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            {isMintPending ? 'Confirm in Wallet...' : quantity > 1 ? `Minting ${quantity}...` : 'Minting...'}
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            {quantity > 1 ? `Mint ${quantity} Warriors — ${totalCost} AVAX` : `Mint Warrior — ${MINT_PRICE} AVAX`}
+                          </>
+                        )}
+                      </span>
+                    </motion.button>
+
+                    {/* Error / Success */}
+                    <AnimatePresence>
+                      {mintError && (
+                        <motion.div
+                          className="p-2.5 rounded-lg bg-frost-red/10 border border-frost-red/20 text-frost-red text-xs text-center"
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                        >
+                          {mintError.message.includes('User rejected') || mintError.message.includes('user rejected')
+                            ? 'Transaction rejected by user'
+                            : mintError.message.includes('InsufficientPayment')
+                            ? `Insufficient AVAX. Mint costs ${totalCost} AVAX.`
+                            : mintError.message.includes('insufficient funds')
+                            ? 'Not enough AVAX in your wallet.'
+                            : `Mint failed: ${'shortMessage' in mintError ? (mintError as any).shortMessage : mintError.message}`}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    <AnimatePresence>
+                      {isTxSuccess && (
+                        <motion.div
+                          className="p-2.5 rounded-lg bg-frost-green/10 border border-frost-green/20 text-frost-green text-xs text-center font-medium"
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                        >
+                          {batchMintedTokenIds.length > 1
+                            ? `${batchMintedTokenIds.length} warriors minted successfully!`
+                            : 'Warrior minted successfully! Welcome to Frostbite.'}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </>
+                )}
               </div>
-
-              {/* Mint button / Connect wallet */}
-              {!isConnected ? (
-                <motion.div
-                  className="text-center p-8 rounded-2xl border border-dashed border-white/10 bg-white/[0.02]"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.6 }}
-                >
-                  <Wallet className="w-10 h-10 mx-auto text-white/20 mb-3" />
-                  <p className="text-white/50 text-sm mb-1">
-                    Connect your wallet to mint
-                  </p>
-                  <p className="text-white/25 text-xs">
-                    Avalanche C-Chain required
-                  </p>
-                </motion.div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Referral code input */}
-                  {!refApplied && (
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] text-white/40 uppercase tracking-wider font-pixel flex items-center gap-1.5">
-                        <Gift className="w-3 h-3" />
-                        Referral Code (optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={refCode}
-                        onChange={(e) => { setRefCode(e.target.value.trim()); setRefError(''); }}
-                        placeholder="Enter referral code"
-                        disabled={isMinting}
-                        className="w-full px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white text-sm font-mono placeholder:text-white/20 focus:outline-none focus:border-frost-cyan/40 transition-colors disabled:opacity-50"
-                      />
-                      {refError && (
-                        <p className="text-frost-red text-[11px]">{refError}</p>
-                      )}
-                    </div>
-                  )}
-                  {refApplied && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-frost-green/10 border border-frost-green/20 text-frost-green text-xs">
-                      <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                      Referral applied
-                    </div>
-                  )}
-
-                  {/* Quantity selector */}
-                  <QuantitySelector
-                    quantity={quantity}
-                    setQuantity={setQuantity}
-                    disabled={isMinting}
-                  />
-
-                  {/* Mint button */}
-                  <motion.button
-                    onClick={handleMint}
-                    disabled={isMinting}
-                    className="w-full relative group overflow-hidden rounded-xl font-display text-lg font-bold uppercase tracking-wider py-4 px-8 transition-all duration-300 disabled:cursor-not-allowed"
-                    whileHover={!isMinting ? { scale: 1.02 } : {}}
-                    whileTap={!isMinting ? { scale: 0.98 } : {}}
-                  >
-                    {/* Button background */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-frost-cyan via-frost-purple to-frost-pink opacity-90 group-hover:opacity-100 transition-opacity" />
-
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 shimmer" />
-
-                    {/* Glow on hover */}
-                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-frost-cyan/20 via-frost-purple/20 to-frost-pink/20 blur-xl" />
-
-                    {/* Content */}
-                    <span className="relative z-10 flex items-center justify-center gap-3 text-white">
-                      {isMinting ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          {isMintPending
-                            ? 'Confirm in Wallet...'
-                            : quantity > 1
-                            ? `Minting ${quantity} Warriors...`
-                            : 'Minting Warrior...'}
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-5 h-5" />
-                          {quantity > 1
-                            ? `Mint ${quantity} Warriors - ${totalCost} AVAX`
-                            : `Mint Warrior - ${MINT_PRICE} AVAX`}
-                        </>
-                      )}
-                    </span>
-                  </motion.button>
-
-                  {/* Error display */}
-                  <AnimatePresence>
-                    {mintError && (
-                      <motion.div
-                        className="p-3 rounded-lg bg-frost-red/10 border border-frost-red/20 text-frost-red text-sm text-center"
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                      >
-                        {mintError.message.includes('User rejected') || mintError.message.includes('user rejected')
-                          ? 'Transaction rejected by user'
-                          : mintError.message.includes('InsufficientPayment')
-                          ? `Insufficient AVAX. Mint costs ${totalCost} AVAX.`
-                          : mintError.message.includes('insufficient funds')
-                          ? 'Not enough AVAX in your wallet.'
-                          : `Mint failed: ${'shortMessage' in mintError ? (mintError as any).shortMessage : mintError.message}`}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Success message */}
-                  <AnimatePresence>
-                    {isTxSuccess && (
-                      <motion.div
-                        className="p-3 rounded-lg bg-frost-green/10 border border-frost-green/20 text-frost-green text-sm text-center font-medium"
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                      >
-                        {batchMintedTokenIds.length > 1
-                          ? `${batchMintedTokenIds.length} warriors minted successfully!`
-                          : 'Warrior minted successfully! Welcome to Frostbite.'}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
-            </motion.div>
+            </div>
           </div>
         </div>
       </section>
@@ -1337,7 +1285,7 @@ export default function MintPage() {
               {/* Referral link */}
               <div className="flex items-center gap-2 mb-4">
                 <div className="flex-1 px-3 py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08] font-mono text-xs text-white/60 truncate">
-                  {typeof window !== 'undefined' ? `${window.location.origin}/mint?ref=${myReferralCode}` : `frostbite.gg/mint?ref=${myReferralCode}`}
+                  {typeof window !== 'undefined' ? `${window.location.origin}/avalanche/mint?ref=${myReferralCode}` : `frostbite.gg/mint?ref=${myReferralCode}`}
                 </div>
                 <motion.button
                   onClick={copyReferralLink}

@@ -29,7 +29,7 @@ export function ActivityTicker() {
 
     async function fetchEvents() {
       try {
-        const res = await fetch('/api/v1/activity-ticker');
+        const res = await fetch('/avalanche/api/v1/activity-ticker');
         if (res.ok && mounted) {
           const data = await res.json();
           const items = data.events || data;
@@ -69,15 +69,15 @@ export function ActivityTicker() {
         <span className="text-[10px] font-pixel uppercase tracking-wider text-white/35">Live Activity</span>
       </div>
 
-      {/* Scrolling feed */}
-      <div className="flex-1 overflow-hidden relative">
+      {/* Scrolling feed — fast scroll, slows on hover */}
+      <div className="flex-1 overflow-hidden relative group/ticker">
         <div className="absolute top-0 left-0 right-0 h-6 bg-gradient-to-b from-[rgb(var(--frost-bg))] to-transparent z-10 pointer-events-none" />
         <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-[rgb(var(--frost-bg))] to-transparent z-10 pointer-events-none" />
 
         <div
-          className="flex flex-col gap-1 px-3 py-3"
+          className="flex flex-col gap-1 px-3 py-3 ticker-scroll-feed"
           style={{
-            animation: `ticker-vertical ${Math.max(events.length * 4, 40)}s linear infinite`,
+            animation: `ticker-vertical ${Math.max(events.length * 1.5, 15)}s linear infinite`,
           }}
         >
           {display.map((event, i) => {

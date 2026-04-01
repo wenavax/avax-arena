@@ -433,7 +433,7 @@ export default function NFTDetailPage() {
               <div className="relative aspect-square bg-gradient-to-br from-frost-bg to-gray-900">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={`/api/metadata/${tokenId}/image?element=${warrior.element}`}
+                  src={`/avalanche/api/metadata/${tokenId}/image?element=${warrior.element}`}
                   alt={`Warrior #${tokenId}`}
                   className="w-full h-full object-cover"
                 />

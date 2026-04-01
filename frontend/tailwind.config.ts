@@ -32,8 +32,8 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Fira Code", "monospace"],
-        display: ["Orbitron", "sans-serif"],
-        pixel: ["Silkscreen", "monospace"],
+        display: ["var(--font-press-start)", "monospace"],
+        pixel: ["var(--font-silkscreen)", "monospace"],
       },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",

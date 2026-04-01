@@ -37,7 +37,7 @@ export function Navbar() {
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 group">
           <div className="relative flex h-9 w-9 items-center justify-center rounded-lg overflow-hidden">
-            <Image src="/logo.png" alt="Frostbite" width={36} height={36} className="rounded-lg" priority />
+            <Image src="/avalanche/logo.png" alt="Frostbite" width={36} height={36} className="rounded-lg" priority />
             <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-frost-cyan to-frost-purple opacity-0 blur-lg transition-opacity group-hover:opacity-60" />
           </div>
           <span className="font-display text-lg font-bold tracking-wider">

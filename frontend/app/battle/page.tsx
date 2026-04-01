@@ -27,6 +27,7 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicCl
 import { parseEther, formatEther } from 'viem';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useOnContractEvent } from '@/hooks/useContractEvents';
+import ElementAttackEffects from '@/components/battle/ElementAttackEffects';
 
 const BATTLE_TAUNTS = [
   'Ready to rumble!',
@@ -216,7 +217,7 @@ function WarriorImage({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={`/api/metadata/${tokenId}/image?element=${element}`}
+        src={`/avalanche/api/metadata/${tokenId}/image?element=${element}`}
         alt={`Warrior #${tokenId}`}
         width={size}
         height={size}
@@ -377,7 +378,10 @@ function useBattleData(address: string | undefined, isConnected: boolean) {
         const validWarriorDetails: typeof warriorDetails = [];
         battles.forEach((b, i) => {
           const ownerResult = ownerChecks[i];
-          if (ownerResult.status === 'fulfilled' && (ownerResult.value as string).toLowerCase() === b.player1.toLowerCase()) {
+          const ownerValid = ownerResult.status === 'fulfilled' && (ownerResult.value as string).toLowerCase() === b.player1.toLowerCase();
+          // Always show user's own battles so they can cancel them
+          const isMine = address && b.player1.toLowerCase() === address.toLowerCase();
+          if (ownerValid || isMine) {
             validBattles.push(b);
             validWarriorDetails.push(warriorDetails[i]);
           }
@@ -619,9 +623,12 @@ function useTeamBattleData(address: string | undefined, isConnected: boolean) {
           }
         });
 
-        const validBattles = battles.filter((b) =>
-          b.team1.every((id) => id === 0 || ownerMap.get(id) === b.player1.toLowerCase())
-        );
+        const validBattles = battles.filter((b) => {
+          const isOwner = b.team1.every((id) => id === 0 || ownerMap.get(id) === b.player1.toLowerCase());
+          // Always show user's own battles so they can cancel them
+          const isMine = address && b.player1.toLowerCase() === address.toLowerCase();
+          return isOwner || isMine;
+        });
 
         setOpenTeamBattles(
           validBattles.map((b) => ({
@@ -4262,16 +4269,9 @@ export default function BattlePage() {
         )}
       </AnimatePresence>
 
-      {/* Main Content: Sidebar + Arena */}
+      {/* Main Content: Arena */}
       <div className="flex-1 flex min-h-0 relative z-10">
-        {/* Battle Feed Sidebar (desktop only) */}
-        <BattleFeedSidebar
-          openBattles={openBattles}
-          battleHistory={battleHistory}
-          currentAddress={address}
-        />
-
-        {/* Center Arena */}
+        {/* Arena */}
         <div className="flex-1 flex flex-col min-w-0">
           {activeTab === '1v1' ? (
             <>
@@ -4548,143 +4548,19 @@ export default function BattlePage() {
                 /* ============ FIGHTING PHASE ============ */
                 <motion.div
                   key="fighting"
-                  className="relative flex flex-col items-center z-10 w-full px-4"
+                  className="relative flex flex-col items-center z-10 w-full px-4 battle-shake"
                   exit={{ opacity: 0, scale: 0.8, filter: 'blur(12px)' }}
                   transition={{ duration: 0.4 }}
                 >
                   <div className="flex items-center justify-center gap-4 sm:gap-8 md:gap-16 w-full max-w-4xl relative">
-                    {/* ===== NEON BEAM ATTACKS ===== */}
-                    {(() => {
-                      const myNeon = getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 3);
-                      const oppNeon = getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0);
-                      const beamCount = battleAnimData?.type === '3v3' ? 3 : 1;
-                      return (
-                        <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden">
-                          {/* Left→Right beams (my warriors attacking) */}
-                          {Array.from({ length: beamCount }).map((_, bi) => {
-                            const yPos = beamCount === 1 ? 50 : 20 + bi * 30;
-                            return (
-                              <motion.div
-                                key={`beam-lr-${bi}`}
-                                className="absolute"
-                                style={{
-                                  left: '10%',
-                                  top: `${yPos}%`,
-                                  width: '80%',
-                                  height: '3px',
-                                  transformOrigin: 'left center',
-                                }}
-                                initial={{ scaleX: 0, opacity: 0 }}
-                                animate={{
-                                  scaleX: [0, 1, 1, 0],
-                                  opacity: [0, 1, 0.8, 0],
-                                  x: ['0%', '0%', '0%', '20%'],
-                                }}
-                                transition={{
-                                  duration: 1.2,
-                                  delay: 0.8 + bi * 0.15,
-                                  repeat: Infinity,
-                                  repeatDelay: 2.5,
-                                  ease: 'easeOut',
-                                  times: [0, 0.3, 0.7, 1],
-                                }}
-                              >
-                                {/* Beam core */}
-                                <div
-                                  className="absolute inset-0 rounded-full"
-                                  style={{ background: `linear-gradient(90deg, transparent 0%, ${myNeon} 20%, #fff 50%, ${myNeon} 80%, transparent 100%)`, boxShadow: `0 0 8px ${myNeon}, 0 0 20px ${myNeon}, 0 0 40px ${myNeon}88` }}
-                                />
-                                {/* Beam glow (wider) */}
-                                <div
-                                  className="absolute -inset-y-2 inset-x-0 rounded-full"
-                                  style={{ background: `linear-gradient(90deg, transparent 0%, ${myNeon}44 20%, ${myNeon}66 50%, ${myNeon}44 80%, transparent 100%)`, filter: 'blur(4px)' }}
-                                />
-                                {/* Beam tip (energy ball) */}
-                                <motion.div
-                                  className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
-                                  style={{ background: '#fff', boxShadow: `0 0 8px #fff, 0 0 15px ${myNeon}, 0 0 30px ${myNeon}` }}
-                                  animate={{ scale: [1, 1.4, 1] }}
-                                  transition={{ duration: 0.3, repeat: Infinity }}
-                                />
-                              </motion.div>
-                            );
-                          })}
-
-                          {/* Right→Left beams (opponent attacking) */}
-                          {Array.from({ length: beamCount }).map((_, bi) => {
-                            const yPos = beamCount === 1 ? 50 : 20 + bi * 30;
-                            return (
-                              <motion.div
-                                key={`beam-rl-${bi}`}
-                                className="absolute"
-                                style={{
-                                  right: '10%',
-                                  top: `${yPos + (beamCount === 1 ? 5 : 3)}%`,
-                                  width: '80%',
-                                  height: '3px',
-                                  transformOrigin: 'right center',
-                                }}
-                                initial={{ scaleX: 0, opacity: 0 }}
-                                animate={{
-                                  scaleX: [0, 1, 1, 0],
-                                  opacity: [0, 1, 0.8, 0],
-                                  x: ['0%', '0%', '0%', '-20%'],
-                                }}
-                                transition={{
-                                  duration: 1.2,
-                                  delay: 2.0 + bi * 0.15,
-                                  repeat: Infinity,
-                                  repeatDelay: 2.5,
-                                  ease: 'easeOut',
-                                  times: [0, 0.3, 0.7, 1],
-                                }}
-                              >
-                                {/* Beam core */}
-                                <div
-                                  className="absolute inset-0 rounded-full"
-                                  style={{ background: `linear-gradient(90deg, transparent 0%, ${oppNeon} 20%, #fff 50%, ${oppNeon} 80%, transparent 100%)`, boxShadow: `0 0 8px ${oppNeon}, 0 0 20px ${oppNeon}, 0 0 40px ${oppNeon}88` }}
-                                />
-                                {/* Beam glow */}
-                                <div
-                                  className="absolute -inset-y-2 inset-x-0 rounded-full"
-                                  style={{ background: `linear-gradient(90deg, transparent 0%, ${oppNeon}44 20%, ${oppNeon}66 50%, ${oppNeon}44 80%, transparent 100%)`, filter: 'blur(4px)' }}
-                                />
-                                {/* Beam tip */}
-                                <motion.div
-                                  className="absolute left-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
-                                  style={{ background: '#fff', boxShadow: `0 0 8px #fff, 0 0 15px ${oppNeon}, 0 0 30px ${oppNeon}` }}
-                                  animate={{ scale: [1, 1.4, 1] }}
-                                  transition={{ duration: 0.3, repeat: Infinity }}
-                                />
-                              </motion.div>
-                            );
-                          })}
-
-                          {/* Impact flashes when beams hit */}
-                          {Array.from({ length: beamCount }).map((_, bi) => {
-                            const yPos = beamCount === 1 ? 50 : 20 + bi * 30;
-                            return [
-                              <motion.div
-                                key={`hit-r-${bi}`}
-                                className="absolute w-6 h-6 rounded-full"
-                                style={{ right: '12%', top: `${yPos}%`, transform: 'translate(50%, -50%)', background: myNeon, boxShadow: `0 0 15px ${myNeon}, 0 0 30px ${myNeon}` }}
-                                initial={{ scale: 0, opacity: 0 }}
-                                animate={{ scale: [0, 2, 0], opacity: [0, 0.8, 0] }}
-                                transition={{ duration: 0.4, delay: 1.7 + bi * 0.15, repeat: Infinity, repeatDelay: 3.3 }}
-                              />,
-                              <motion.div
-                                key={`hit-l-${bi}`}
-                                className="absolute w-6 h-6 rounded-full"
-                                style={{ left: '12%', top: `${yPos + (beamCount === 1 ? 5 : 3)}%`, transform: 'translate(-50%, -50%)', background: oppNeon, boxShadow: `0 0 15px ${oppNeon}, 0 0 30px ${oppNeon}` }}
-                                initial={{ scale: 0, opacity: 0 }}
-                                animate={{ scale: [0, 2, 0], opacity: [0, 0.8, 0] }}
-                                transition={{ duration: 0.4, delay: 2.9 + bi * 0.15, repeat: Infinity, repeatDelay: 3.3 }}
-                              />,
-                            ];
-                          })}
-                        </div>
-                      );
-                    })()}
+                    {/* ===== ELEMENT-SPECIFIC ATTACK EFFECTS ===== */}
+                    <ElementAttackEffects
+                      myElement={battleAnimData?.myWarriors[0]?.element ?? 0}
+                      opponentElement={battleAnimData?.opponentWarriors[0]?.element ?? 0}
+                      myColor={getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 0)}
+                      opponentColor={getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0)}
+                      beamCount={battleAnimData?.type === '3v3' ? 3 : 1}
+                    />
 
                     {/* MY WARRIORS (Left) */}
                     <motion.div
@@ -4695,6 +4571,7 @@ export default function BattlePage() {
                     >
                       {(battleAnimData?.myWarriors ?? []).map((w, i) => {
                         const neon = getNeonColor(w.element);
+                        const oppNeon = getNeonColor(battleAnimData?.opponentWarriors[0]?.element ?? 0);
                         const el = getElement(w.element);
                         const imgSize = battleAnimData?.type === '3v3' ? 90 : 140;
                         return (
@@ -4705,6 +4582,28 @@ export default function BattlePage() {
                             animate={{ x: 0, opacity: 1 }}
                             transition={{ delay: 0.1 + i * 0.15, type: 'spring', stiffness: 200, damping: 18 }}
                           >
+                            {/* Hit flash overlay (when opponent attacks hit) */}
+                            <div
+                              className="absolute inset-0 rounded-2xl z-30 pointer-events-none"
+                              style={{
+                                background: oppNeon,
+                                mixBlendMode: 'screen',
+                                animation: `hit-flash-right 4.5s ease-in-out infinite`,
+                                animationDelay: `${i * 0.4}s`,
+                              }}
+                            />
+                            {/* Damage number popup */}
+                            <div
+                              className="absolute -top-2 left-1/2 -translate-x-1/2 z-40 pointer-events-none font-display text-sm font-bold"
+                              style={{
+                                color: oppNeon,
+                                textShadow: `0 0 8px ${oppNeon}`,
+                                animation: `damage-float-left 4.5s ease-out infinite`,
+                                animationDelay: `${i * 0.4}s`,
+                              }}
+                            >
+                              -{Math.floor(50 + Math.random() * 30)}
+                            </div>
                             {/* Neon outer glow */}
                             <motion.div
                               className="absolute -inset-3 rounded-2xl pointer-events-none"
@@ -4719,30 +4618,69 @@ export default function BattlePage() {
                               animate={{ scale: [1, 1.4, 1], opacity: [0.15, 0.35, 0.15] }}
                               transition={{ duration: 1.5, delay: i * 0.3, repeat: Infinity, ease: 'easeInOut' }}
                             />
-                            {/* Attack lunge */}
-                            <motion.div
-                              animate={{
-                                x: [0, 25, 0, 0, 25, 0, 0, 25, 0],
-                                rotate: [0, 3, 0, 0, -2, 0, 0, 3, 0],
-                              }}
-                              transition={{
-                                duration: 4.5,
-                                times: [0, 0.08, 0.15, 0.33, 0.41, 0.48, 0.66, 0.74, 0.81],
-                                ease: 'easeInOut',
-                                repeat: Infinity,
-                                delay: i * 0.4,
-                              }}
-                            >
-                              <div
-                                className="rounded-2xl overflow-hidden relative z-10"
-                                style={{ boxShadow: `0 0 15px ${neon}88, 0 0 30px ${neon}44, 0 4px 20px rgba(0,0,0,0.5)`, border: `2px solid ${neon}88` }}
+                            {/* Attack lunge + recoil on hit */}
+                            <div style={{ animation: `recoil-left 4.5s ease-in-out infinite`, animationDelay: `${i * 0.4}s` }}>
+                              <motion.div
+                                animate={{
+                                  x: [0, 25, 0, 0, 25, 0, 0, 25, 0],
+                                  rotate: [0, 3, 0, 0, -2, 0, 0, 3, 0],
+                                }}
+                                transition={{
+                                  duration: 4.5,
+                                  times: [0, 0.08, 0.15, 0.33, 0.41, 0.48, 0.66, 0.74, 0.81],
+                                  ease: 'easeInOut',
+                                  repeat: Infinity,
+                                  delay: i * 0.4,
+                                }}
                               >
-                                <WarriorImage tokenId={w.tokenId} element={w.element} size={imgSize} className="" />
+                                <div
+                                  className="rounded-2xl overflow-hidden relative z-10"
+                                  style={{ boxShadow: `0 0 15px ${neon}88, 0 0 30px ${neon}44, 0 4px 20px rgba(0,0,0,0.5)`, border: `2px solid ${neon}88` }}
+                                >
+                                  <WarriorImage tokenId={w.tokenId} element={w.element} size={imgSize} className="" />
+                                </div>
+                              </motion.div>
+                            </div>
+                            {/* Impact shockwave */}
+                            <div
+                              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full pointer-events-none z-20"
+                              style={{
+                                border: `2px solid ${oppNeon}`,
+                                boxShadow: `0 0 12px ${oppNeon}`,
+                                animation: `shockwave-right 4.5s ease-out infinite`,
+                                animationDelay: `${i * 0.4}s`,
+                              }}
+                            />
+                            {/* Health Bar */}
+                            <div className="w-full mt-1.5 px-1">
+                              <div
+                                className="relative h-2 rounded-full overflow-hidden"
+                                style={{ background: 'rgba(255,255,255,0.08)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)', animation: 'hp-shake 0.15s ease-in-out infinite' }}
+                              >
+                                {/* Damage trail (red, follows slowly) */}
+                                <div
+                                  className="absolute inset-0 rounded-full"
+                                  style={{
+                                    background: '#ff4444',
+                                    animation: `hp-trail-left 5s ease-out forwards`,
+                                    animationDelay: `${i * 0.2}s`,
+                                  }}
+                                />
+                                {/* Main HP (green→yellow→red gradient) */}
+                                <div
+                                  className="absolute inset-0 rounded-full"
+                                  style={{
+                                    background: `linear-gradient(90deg, ${neon}, #44ff44)`,
+                                    boxShadow: `0 0 6px ${neon}66`,
+                                    animation: `hp-drain-left 5s ease-out forwards`,
+                                    animationDelay: `${i * 0.2}s`,
+                                  }}
+                                />
                               </div>
-                            </motion.div>
+                            </div>
                             {/* Neon name badge */}
                             <motion.div
-                              className="mt-2 text-center"
+                              className="mt-1 text-center"
                               initial={{ opacity: 0 }}
                               animate={{ opacity: 1 }}
                               transition={{ delay: 0.5 + i * 0.1 }}
@@ -4836,6 +4774,7 @@ export default function BattlePage() {
                     >
                       {(battleAnimData?.opponentWarriors ?? []).map((w, i) => {
                         const neon = getNeonColor(w.element);
+                        const myNeon = getNeonColor(battleAnimData?.myWarriors[0]?.element ?? 0);
                         const el = getElement(w.element);
                         const imgSize = battleAnimData?.type === '3v3' ? 90 : 140;
                         return (
@@ -4846,6 +4785,28 @@ export default function BattlePage() {
                             animate={{ x: 0, opacity: 1 }}
                             transition={{ delay: 0.1 + i * 0.15, type: 'spring', stiffness: 200, damping: 18 }}
                           >
+                            {/* Hit flash overlay (when my attacks hit) */}
+                            <div
+                              className="absolute inset-0 rounded-2xl z-30 pointer-events-none"
+                              style={{
+                                background: myNeon,
+                                mixBlendMode: 'screen',
+                                animation: `hit-flash-left 4.5s ease-in-out infinite`,
+                                animationDelay: `${i * 0.4}s`,
+                              }}
+                            />
+                            {/* Damage number popup */}
+                            <div
+                              className="absolute -top-2 left-1/2 -translate-x-1/2 z-40 pointer-events-none font-display text-sm font-bold"
+                              style={{
+                                color: myNeon,
+                                textShadow: `0 0 8px ${myNeon}`,
+                                animation: `damage-float-right 4.5s ease-out infinite`,
+                                animationDelay: `${i * 0.4}s`,
+                              }}
+                            >
+                              -{Math.floor(50 + Math.random() * 30)}
+                            </div>
                             {/* Neon outer glow */}
                             <motion.div
                               className="absolute -inset-3 rounded-2xl pointer-events-none"
@@ -4860,30 +4821,69 @@ export default function BattlePage() {
                               animate={{ scale: [1, 1.4, 1], opacity: [0.15, 0.35, 0.15] }}
                               transition={{ duration: 1.5, delay: i * 0.3 + 0.2, repeat: Infinity, ease: 'easeInOut' }}
                             />
-                            {/* Attack lunge (opposite direction) */}
-                            <motion.div
-                              animate={{
-                                x: [0, -25, 0, 0, -25, 0, 0, -25, 0],
-                                rotate: [0, -3, 0, 0, 2, 0, 0, -3, 0],
-                              }}
-                              transition={{
-                                duration: 4.5,
-                                times: [0, 0.08, 0.15, 0.33, 0.41, 0.48, 0.66, 0.74, 0.81],
-                                ease: 'easeInOut',
-                                repeat: Infinity,
-                                delay: i * 0.4,
-                              }}
-                            >
-                              <div
-                                className="rounded-2xl overflow-hidden relative z-10"
+                            {/* Attack lunge + recoil on hit */}
+                            <div style={{ animation: `recoil-right 4.5s ease-in-out infinite`, animationDelay: `${i * 0.4}s` }}>
+                              <motion.div
+                                animate={{
+                                  x: [0, -25, 0, 0, -25, 0, 0, -25, 0],
+                                  rotate: [0, -3, 0, 0, 2, 0, 0, -3, 0],
+                                }}
+                                transition={{
+                                  duration: 4.5,
+                                  times: [0, 0.08, 0.15, 0.33, 0.41, 0.48, 0.66, 0.74, 0.81],
+                                  ease: 'easeInOut',
+                                  repeat: Infinity,
+                                  delay: i * 0.4,
+                                }}
+                              >
+                                <div
+                                  className="rounded-2xl overflow-hidden relative z-10"
                                 style={{ boxShadow: `0 0 15px ${neon}88, 0 0 30px ${neon}44, 0 4px 20px rgba(0,0,0,0.5)`, border: `2px solid ${neon}88` }}
                               >
                                 <WarriorImage tokenId={w.tokenId} element={w.element} size={imgSize} className="" />
                               </div>
                             </motion.div>
+                            </div>
+                            {/* Impact shockwave */}
+                            <div
+                              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full pointer-events-none z-20"
+                              style={{
+                                border: `2px solid ${myNeon}`,
+                                boxShadow: `0 0 12px ${myNeon}`,
+                                animation: `shockwave-left 4.5s ease-out infinite`,
+                                animationDelay: `${i * 0.4}s`,
+                              }}
+                            />
+                            {/* Health Bar */}
+                            <div className="w-full mt-1.5 px-1">
+                              <div
+                                className="relative h-2 rounded-full overflow-hidden"
+                                style={{ background: 'rgba(255,255,255,0.08)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.5)', animation: 'hp-shake 0.15s ease-in-out infinite' }}
+                              >
+                                {/* Damage trail (red, follows slowly) */}
+                                <div
+                                  className="absolute inset-0 rounded-full"
+                                  style={{
+                                    background: '#ff4444',
+                                    animation: `hp-trail-right 5s ease-out forwards`,
+                                    animationDelay: `${i * 0.2}s`,
+                                  }}
+                                />
+                                {/* Main HP */}
+                                <div
+                                  className="absolute inset-0 rounded-full"
+                                  style={{
+                                    background: `linear-gradient(90deg, ${neon}, #44ff44)`,
+                                    boxShadow: `0 0 6px ${neon}66`,
+                                    animation: `hp-drain-right 5s ease-out forwards`,
+                                    animationDelay: `${i * 0.2}s`,
+                                  }}
+                                />
+                              </div>
+                            </div>
                             {/* Neon name badge */}
                             <motion.div
-                              className="mt-2 text-center"
+                              className="mt-1 text-center"
                               initial={{ opacity: 0 }}
                               animate={{ opacity: 1 }}
                               transition={{ delay: 0.5 + i * 0.1 }}

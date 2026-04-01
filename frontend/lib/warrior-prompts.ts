@@ -109,8 +109,9 @@ export function buildWarriorPrompt(warrior: {
     `${power}.`,
     `${elementTheme.aura}.`,
     `Color palette: ${elementTheme.palette}.`,
-    `Game character portrait, NFT collectible art style, dark dramatic lighting, highly detailed digital painting, 4K quality.`,
-    `No text, no watermarks, no borders, clean background with elemental effects.`,
+    `16-bit pixel art style retro game character portrait, clean pixel edges, limited color palette, dark dramatic lighting, NFT collectible.`,
+    `Pixel art aesthetic like classic SNES/GBA RPG sprites upscaled to HD, no anti-aliasing on character edges, crisp pixels visible.`,
+    `No text, no watermarks, no borders, clean dark background with subtle elemental particle effects.`,
   ].join(' ');
 }
 

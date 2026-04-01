@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, Orbitron, JetBrains_Mono, Silkscreen } from 'next/font/google';
+import { Inter, Press_Start_2P, JetBrains_Mono, Silkscreen } from 'next/font/google';
 import { ThemeProvider } from '@/providers/ThemeProvider';
 import { Web3Provider } from '@/providers/Web3Provider';
 import { EventProvider } from '@/providers/EventProvider';
@@ -27,9 +27,10 @@ const inter = Inter({
   display: 'swap',
 });
 
-const orbitron = Orbitron({
+const pressStart = Press_Start_2P({
+  weight: '400',
   subsets: ['latin'],
-  variable: '--font-orbitron',
+  variable: '--font-press-start',
   display: 'swap',
 });
 
@@ -138,7 +139,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${orbitron.variable} ${jetbrainsMono.variable} ${silkscreen.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} ${pressStart.variable} ${jetbrainsMono.variable} ${silkscreen.variable}`} suppressHydrationWarning>
       <body className="font-sans antialiased min-h-screen">
         <script
           type="application/ld+json"

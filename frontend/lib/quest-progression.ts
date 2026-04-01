@@ -85,22 +85,22 @@ const ENEMY_PREFIXES = ['Elite', 'Veteran', 'Ancient', 'Mythic', 'Legendary'];
  * Must match the values in the deploy script / QuestEngine contract.
  */
 const CHAIN_QUEST_DURATIONS: Record<number, number> = {
-  // Zone 0: Inferno Caldera (Fire)
-  0: 300, 1: 7200, 2: 21600, 3: 64800,
+  // Zone 0: Inferno Caldera (Fire) — halved
+  0: 150, 1: 3600, 2: 10800, 3: 32400,
   // Zone 1: Abyssal Depths (Water)
-  4: 420, 5: 5400, 6: 18000, 7: 72000,
+  4: 210, 5: 2700, 6: 9000, 7: 36000,
   // Zone 2: Stormhowl Peaks (Wind)
-  8: 540, 9: 3600, 10: 14400, 11: 57600,
+  8: 270, 9: 1800, 10: 7200, 11: 28800,
   // Zone 3: Glacial Expanse (Ice)
-  12: 600, 13: 7200, 14: 28800, 15: 86400,
+  12: 300, 13: 3600, 14: 14400, 15: 43200,
   // Zone 4: Ironroot Badlands (Earth)
-  16: 720, 17: 5400, 18: 21600, 19: 64800,
+  16: 360, 17: 2700, 18: 10800, 19: 32400,
   // Zone 5: Voltspire Heights (Thunder)
-  20: 840, 21: 3600, 22: 18000, 23: 57600,
+  20: 420, 21: 1800, 22: 9000, 23: 28800,
   // Zone 6: Umbral Wastes (Shadow)
-  24: 900, 25: 7200, 26: 21600, 27: 72000,
+  24: 450, 25: 3600, 26: 10800, 27: 36000,
   // Zone 7: Solaris Citadel (Light)
-  28: 300, 29: 5400, 30: 14400, 31: 86400,
+  28: 150, 29: 2700, 30: 7200, 31: 43200,
 };
 
 export function getTierDifficulties(tier: number): [Difficulty, Difficulty] {

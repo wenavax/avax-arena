@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 import {
   GitMerge,
   Sword,
@@ -30,7 +31,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { ELEMENTS, MERGE_PRICE, CONTRACT_ADDRESSES, ACTIVE_CHAIN_ID } from '@/lib/constants';
-import { FROSTBITE_WARRIOR_ABI, BATTLE_ENGINE_ABI, TEAM_BATTLE_ABI, QUEST_ENGINE_ABI, MARKETPLACE_ABI } from '@/lib/contracts';
+import { FROSTBITE_WARRIOR_ABI, BATTLE_ENGINE_ABI, TEAM_BATTLE_ABI, QUEST_ENGINE_ABI, MARKETPLACE_ABI, FROSTBITE_ACCOUNT_ABI } from '@/lib/contracts';
 import {
   useAccount,
   useWriteContract,
@@ -39,8 +40,9 @@ import {
   useSwitchChain,
   useWalletClient,
 } from 'wagmi';
-import { parseEther, decodeEventLog } from 'viem';
+import { parseEther, decodeEventLog, formatEther, type Address } from 'viem';
 import { usePublicClient } from 'wagmi';
+import { getWarriorTBAAddress, isAccountDeployed, getAccountBalance } from '@/lib/tba';
 
 /* ---------------------------------------------------------------------------
  * Element Icon Mapping
@@ -360,7 +362,7 @@ function WarriorSelectCard({
         <div className="relative w-full aspect-square bg-white/[0.02]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/metadata/${tokenId}/image?element=${warrior.element}`}
+            src={`/avalanche/api/metadata/${tokenId}/image?element=${warrior.element}`}
             alt={`Warrior #${tokenId}`}
             className="w-full h-full object-cover"
             loading="lazy"
@@ -501,7 +503,7 @@ function SelectedWarriorSlot({
         <div className="relative w-full aspect-square rounded-xl overflow-hidden bg-white/[0.02] border border-white/5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/metadata/${tokenId}/image?element=${warrior.element}`}
+            src={`/avalanche/api/metadata/${tokenId}/image?element=${warrior.element}`}
             alt={`Warrior #${tokenId}`}
             className="w-full h-full object-cover"
           />
@@ -696,7 +698,7 @@ function MergeResultPreview({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/api/metadata/${resultTokenId}/image?element=${resultWarrior?.element ?? 0}`}
+            src={`/avalanche/api/metadata/${resultTokenId}/image?element=${resultWarrior?.element ?? 0}`}
             alt={`Warrior #${resultTokenId}`}
             className="w-full h-full object-cover"
           />
@@ -1122,6 +1124,16 @@ export default function MergePage() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [isPostingApi, setIsPostingApi] = useState(false);
 
+  // TBA fusion warning state
+  const [fusionWarning, setFusionWarning] = useState<{
+    tba1: { addr: Address; balance: bigint; tokenId: number };
+    tba2: { addr: Address; balance: bigint; tokenId: number };
+    mode: 'single' | 'batch';
+    batchPairIndex?: number;
+  } | null>(null);
+  const [isSweepingTBA, setIsSweepingTBA] = useState(false);
+  const [isCheckingTBA, setIsCheckingTBA] = useState(false);
+
   // Read owned warriors
   const { data: ownedTokenIds, refetch: refetchOwned } = useReadContract({
     address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
@@ -1212,27 +1224,32 @@ export default function MergePage() {
         }
       } catch { /* ignore */ }
 
-      // Check quests and marketplace for each warrior
-      const checks = await Promise.allSettled(
-        tokenIds.flatMap((id) => [
-          publicClient!.readContract({
+      // Check quests and marketplace for each warrior (individually, ignore errors)
+      for (const id of tokenIds) {
+        // Quest check
+        try {
+          const onQuest = await publicClient!.readContract({
             address: CONTRACT_ADDRESSES.questEngine as `0x${string}`,
             abi: QUEST_ENGINE_ABI,
             functionName: 'isWarriorOnQuest',
             args: [BigInt(id)],
-          }).then((onQuest) => { if (onQuest) locked.add(id); }),
-          publicClient!.readContract({
+          });
+          if (onQuest) locked.add(id);
+        } catch { /* quest contract may not exist or warrior not registered */ }
+
+        // Marketplace listing check
+        try {
+          const listing = await publicClient!.readContract({
             address: CONTRACT_ADDRESSES.marketplace as `0x${string}`,
             abi: MARKETPLACE_ABI,
             functionName: 'getListing',
             args: [BigInt(id)],
-          }).then((listing) => {
-            const l = listing as Record<string, unknown>;
-            const price = BigInt(String(l.price ?? l[1] ?? 0));
-            if (price > 0n) locked.add(id);
-          }),
-        ])
-      );
+          });
+          const l = listing as Record<string, unknown>;
+          const active = Boolean(l.active ?? l[2] ?? false);
+          if (active) locked.add(id);
+        } catch { /* listing may not exist */ }
+      }
 
       if (!cancelled) setLockedTokenIds(locked);
     }
@@ -1330,6 +1347,49 @@ export default function MergePage() {
   // Both slots filled check
   const bothSlotsFilled = slot1TokenId !== null && slot2TokenId !== null;
 
+  // Check TBA balances for a pair of warriors
+  async function checkTBABalances(tokenId1: number, tokenId2: number): Promise<{
+    tba1: { addr: Address; balance: bigint };
+    tba2: { addr: Address; balance: bigint };
+    hasBalance: boolean;
+  } | null> {
+    if (!publicClient) return null;
+    try {
+      const [tba1Addr, tba2Addr] = await Promise.all([
+        getWarriorTBAAddress(publicClient, tokenId1),
+        getWarriorTBAAddress(publicClient, tokenId2),
+      ]);
+      const [deployed1, deployed2] = await Promise.all([
+        isAccountDeployed(publicClient, tba1Addr),
+        isAccountDeployed(publicClient, tba2Addr),
+      ]);
+
+      let tba1Balance = 0n, tba2Balance = 0n;
+      if (deployed1) tba1Balance = (await getAccountBalance(publicClient, tba1Addr)).raw;
+      if (deployed2) tba2Balance = (await getAccountBalance(publicClient, tba2Addr)).raw;
+
+      return {
+        tba1: { addr: tba1Addr, balance: tba1Balance },
+        tba2: { addr: tba2Addr, balance: tba2Balance },
+        hasBalance: tba1Balance > 0n || tba2Balance > 0n,
+      };
+    } catch (err) {
+      console.error('TBA balance check failed:', err);
+      return null;
+    }
+  }
+
+  // Execute single fusion (called after TBA check passes or user confirms)
+  function executeSingleFuse() {
+    fuseMerge({
+      address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
+      abi: FROSTBITE_WARRIOR_ABI,
+      functionName: 'mergeWarriors',
+      args: [BigInt(slot1TokenId!), BigInt(slot2TokenId!)],
+      value: parseEther(MERGE_PRICE),
+    });
+  }
+
   // Handle fuse button click
   async function handleFuse() {
     if (!isConnected || !bothSlotsFilled) return;
@@ -1344,13 +1404,75 @@ export default function MergePage() {
     setResultTokenId(null);
     setApiError(null);
 
-    fuseMerge({
-      address: CONTRACT_ADDRESSES.frostbiteWarrior as `0x${string}`,
-      abi: FROSTBITE_WARRIOR_ABI,
-      functionName: 'mergeWarriors',
-      args: [BigInt(slot1TokenId!), BigInt(slot2TokenId!)],
-      value: parseEther(MERGE_PRICE),
-    });
+    // Check TBA balances before merge
+    setIsCheckingTBA(true);
+    const tbaResult = await checkTBABalances(slot1TokenId!, slot2TokenId!);
+    setIsCheckingTBA(false);
+
+    if (tbaResult && tbaResult.hasBalance) {
+      setFusionWarning({
+        tba1: { ...tbaResult.tba1, tokenId: slot1TokenId! },
+        tba2: { ...tbaResult.tba2, tokenId: slot2TokenId! },
+        mode: 'single',
+      });
+      return; // Block — user must withdraw or confirm
+    }
+
+    executeSingleFuse();
+  }
+
+  // Sweep TBA funds and then proceed with fusion
+  async function handleSweepAndFuse() {
+    if (!walletClient || !address || !fusionWarning) return;
+
+    setIsSweepingTBA(true);
+    try {
+      const sweepPromises: Promise<any>[] = [];
+
+      if (fusionWarning.tba1.balance > 0n) {
+        sweepPromises.push(
+          walletClient.writeContract({
+            address: fusionWarning.tba1.addr,
+            abi: FROSTBITE_ACCOUNT_ABI,
+            functionName: 'execute',
+            args: [address, fusionWarning.tba1.balance, '0x' as `0x${string}`, 0],
+            chain: walletClient.chain,
+            account: walletClient.account,
+          }).then((hash) => publicClient!.waitForTransactionReceipt({ hash }))
+        );
+      }
+
+      if (fusionWarning.tba2.balance > 0n) {
+        sweepPromises.push(
+          walletClient.writeContract({
+            address: fusionWarning.tba2.addr,
+            abi: FROSTBITE_ACCOUNT_ABI,
+            functionName: 'execute',
+            args: [address, fusionWarning.tba2.balance, '0x' as `0x${string}`, 0],
+            chain: walletClient.chain,
+            account: walletClient.account,
+          }).then((hash) => publicClient!.waitForTransactionReceipt({ hash }))
+        );
+      }
+
+      await Promise.all(sweepPromises);
+
+      // Close warning and proceed with fusion
+      const mode = fusionWarning.mode;
+      setFusionWarning(null);
+      setIsSweepingTBA(false);
+
+      if (mode === 'single') {
+        executeSingleFuse();
+      } else {
+        // For batch, restart batch fuse (funds are now swept)
+        handleBatchFuseInternal();
+      }
+    } catch (err: any) {
+      console.error('TBA sweep failed:', err);
+      setIsSweepingTBA(false);
+      // Don't close modal — let user retry or cancel
+    }
   }
 
   // After tx success, parse WarriorsMerged event and post to /api/v1/merge
@@ -1386,7 +1508,7 @@ export default function MergePage() {
 
         setResultTokenId(newTokenId);
 
-        const res = await fetch('/api/v1/merge', {
+        const res = await fetch('/avalanche/api/v1/merge', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1407,6 +1529,14 @@ export default function MergePage() {
 
         setMergeSuccess(true);
         refetchOwned();
+        // Record fusion points
+        if (address) {
+          fetch('/avalanche/api/v1/points', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: address, activity: 'fusion' }),
+          }).catch(() => {});
+        }
       } catch (err: any) {
         console.error('Merge API failed:', err);
         setApiError(err.message || 'Failed to record merge.');
@@ -1463,14 +1593,13 @@ export default function MergePage() {
     });
   }
 
-  function handleSelectAllLowPower() {
-    const lowPower = availableTokenIds.filter((id) => {
+  function handleSelectByPower(threshold: number) {
+    const filtered = availableTokenIds.filter((id) => {
       const pwr = warriorPowerScores.get(id) ?? 0;
-      return pwr > 0 && pwr < BATCH_POWER_THRESHOLD;
+      return pwr > 0 && pwr < threshold;
     });
-    // Ensure even number
-    if (lowPower.length % 2 !== 0) lowPower.pop();
-    setBatchSelected(new Set(lowPower));
+    if (filtered.length % 2 !== 0) filtered.pop();
+    setBatchSelected(new Set(filtered));
   }
 
   function handleSelectAll() {
@@ -1494,6 +1623,30 @@ export default function MergePage() {
         return;
       }
     }
+
+    // Check TBA balances for all batch pairs before starting
+    setIsCheckingTBA(true);
+    for (let i = 0; i < batchPairs.length; i++) {
+      const pair = batchPairs[i];
+      const tbaResult = await checkTBABalances(pair[0], pair[1]);
+      if (tbaResult && tbaResult.hasBalance) {
+        setIsCheckingTBA(false);
+        setFusionWarning({
+          tba1: { ...tbaResult.tba1, tokenId: pair[0] },
+          tba2: { ...tbaResult.tba2, tokenId: pair[1] },
+          mode: 'batch',
+          batchPairIndex: i,
+        });
+        return; // Block — user must withdraw or confirm
+      }
+    }
+    setIsCheckingTBA(false);
+
+    handleBatchFuseInternal();
+  }
+
+  async function handleBatchFuseInternal() {
+    if (!walletClient || !publicClient || batchPairs.length === 0) return;
 
     setBatchError(null);
     setBatchComplete(false);
@@ -1530,7 +1683,7 @@ export default function MergePage() {
 
               // Post to API
               try {
-                await fetch('/api/v1/merge', {
+                await fetch('/avalanche/api/v1/merge', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -1597,55 +1750,72 @@ export default function MergePage() {
       </div>
 
       {/* ================================================================
-       * HERO SECTION
+       * COMPACT HEADER
        * ================================================================ */}
-      <section className="relative pt-20 pb-8 px-4">
-        <div className="max-w-6xl mx-auto text-center">
+      <section className="relative pt-16 pb-6 px-4">
+        <div className="max-w-lg mx-auto text-center">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
+            transition={{ duration: 0.5 }}
           >
-            <div className="flex items-center justify-center gap-3 mb-6">
-              <GitMerge className="w-8 h-8 text-frost-cyan" />
-              <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-black gradient-text">
-                WARRIOR FUSION
+            <div className="flex items-center justify-center gap-3 mb-3">
+              <div className="relative flex items-center gap-1">
+                <motion.div
+                  animate={{ opacity: [0.2, 1, 0.2], scale: [0.8, 1.2, 0.8] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                >
+                  <Sparkles className="w-4 h-4 text-frost-cyan" />
+                </motion.div>
+                <motion.div
+                  animate={{ opacity: [0.3, 1, 0.3], y: [2, -3, 2] }}
+                  transition={{ duration: 1.8, repeat: Infinity, delay: 0.6 }}
+                >
+                  <GitMerge className="w-5 h-5 text-frost-cyan/60" />
+                </motion.div>
+              </div>
+
+              <Image
+                src="/avalanche/logo.png"
+                alt="Frostbite"
+                width={44}
+                height={44}
+                className="rounded-lg"
+              />
+              <h1 className="font-display text-3xl sm:text-4xl font-black gradient-text">
+                FUSION
               </h1>
-              <Sparkles className="w-8 h-8 text-frost-pink" />
+
+              <div className="relative flex items-center gap-1">
+                <motion.div
+                  animate={{ opacity: [0.3, 1, 0.3], y: [-2, 3, -2] }}
+                  transition={{ duration: 1.8, repeat: Infinity, delay: 0.3 }}
+                >
+                  <Layers className="w-5 h-5 text-frost-pink/60" />
+                </motion.div>
+                <motion.div
+                  animate={{ opacity: [0.2, 1, 0.2], scale: [0.8, 1.2, 0.8] }}
+                  transition={{ duration: 2, repeat: Infinity, delay: 0.9 }}
+                >
+                  <Sparkles className="w-4 h-4 text-frost-pink" />
+                </motion.div>
+              </div>
             </div>
 
-            <p className="text-lg text-white/50 max-w-2xl mx-auto mb-4">
-              Combine two warriors to forge a new, more powerful warrior.
-              The fusion inherits averaged stats with a +20% bonus.
+            <p className="text-sm text-white/40 mb-4">
+              Combine two warriors to forge a stronger one. Averaged stats with +20% bonus.
             </p>
 
-            {/* Cost badge */}
-            <motion.div
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full glass-card border-frost-cyan/20"
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.3 }}
-              whileHover={{ scale: 1.05 }}
-            >
-              <div className="w-2 h-2 rounded-full bg-frost-green animate-pulse" />
-              <span className="text-sm font-mono text-white/70">Fusion Cost:</span>
-              <span className="font-display text-lg font-bold text-frost-cyan text-glow-cyan">
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-cyan/10 border border-frost-cyan/20 text-xs font-mono text-frost-cyan">
+                <div className="w-1.5 h-1.5 rounded-full bg-frost-cyan animate-pulse" />
                 {MERGE_PRICE} AVAX
               </span>
-            </motion.div>
-          </motion.div>
-
-          {/* Network badge */}
-          <motion.div
-            className="mt-4 flex items-center justify-center gap-3 text-white/30 text-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-          >
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-green/10 border border-frost-green/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
-              <span className="text-[10px] font-pixel text-frost-green/80">MAINNET</span>
-            </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-frost-green/10 border border-frost-green/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
+                <span className="text-[10px] font-pixel text-frost-green/80">MAINNET</span>
+              </span>
+            </div>
           </motion.div>
         </div>
       </section>
@@ -1852,10 +2022,10 @@ export default function MergePage() {
               {!mergeSuccess ? (
                 <motion.button
                   onClick={handleFuse}
-                  disabled={!bothSlotsFilled || isMerging}
+                  disabled={!bothSlotsFilled || isMerging || isCheckingTBA}
                   className="w-full relative group overflow-hidden rounded-xl font-display text-lg font-bold uppercase tracking-wider py-4 px-8 transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50"
-                  whileHover={bothSlotsFilled && !isMerging ? { scale: 1.03, boxShadow: '0 0 30px rgba(0,240,255,0.3)' } : {}}
-                  whileTap={bothSlotsFilled && !isMerging ? { scale: 0.98 } : {}}
+                  whileHover={bothSlotsFilled && !isMerging && !isCheckingTBA ? { scale: 1.03, boxShadow: '0 0 30px rgba(0,240,255,0.3)' } : {}}
+                  whileTap={bothSlotsFilled && !isMerging && !isCheckingTBA ? { scale: 0.98 } : {}}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.6 }}
@@ -1908,7 +2078,12 @@ export default function MergePage() {
 
                   {/* Content */}
                   <span className="relative z-10 flex items-center justify-center gap-3 text-white">
-                    {isMerging ? (
+                    {isCheckingTBA ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Checking Wallets...
+                      </>
+                    ) : isMerging ? (
                       <>
                         <Loader2 className="w-5 h-5 animate-spin" />
                         {isFusePending
@@ -2014,14 +2189,13 @@ export default function MergePage() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, margin: '-40px' }}
               >
-                <h2 className="font-display text-2xl sm:text-3xl font-bold gradient-text mb-2">
-                  SELECT WARRIORS
+                <h2 className="font-display text-lg font-bold text-white/70 mb-1">
+                  Select Warriors
                 </h2>
-                <p className="text-white/40 text-sm">
-                  Choose two warriors from your collection to fuse.
-                  You own{' '}
+                <p className="text-white/30 text-xs">
+                  Choose two warriors to fuse —{' '}
                   <span className="text-frost-cyan font-bold font-mono">{tokenIds.length}</span>{' '}
-                  {tokenIds.length === 1 ? 'warrior' : 'warriors'}.
+                  {tokenIds.length === 1 ? 'warrior' : 'warriors'} owned
                 </p>
                 {/* Sort + legend */}
                 <div className="flex items-center justify-center gap-3 mt-3">
@@ -2229,7 +2403,7 @@ export default function MergePage() {
                               <div className="w-8 h-8 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                  src={`/api/metadata/${pair[0]}/image`}
+                                  src={`/avalanche/api/metadata/${pair[0]}/image`}
                                   alt={`#${pair[0]}`}
                                   className="w-full h-full object-cover"
                                   loading="lazy"
@@ -2248,7 +2422,7 @@ export default function MergePage() {
                               <div className="w-8 h-8 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
-                                  src={`/api/metadata/${pair[1]}/image`}
+                                  src={`/avalanche/api/metadata/${pair[1]}/image`}
                                   alt={`#${pair[1]}`}
                                   className="w-full h-full object-cover"
                                   loading="lazy"
@@ -2285,10 +2459,10 @@ export default function MergePage() {
                 <div className="max-w-md mx-auto">
                   <motion.button
                     onClick={handleBatchFuse}
-                    disabled={batchPairs.length === 0 || !!batchProgress}
+                    disabled={batchPairs.length === 0 || !!batchProgress || isCheckingTBA}
                     className="w-full relative group overflow-hidden rounded-xl font-display text-lg font-bold uppercase tracking-wider py-4 px-8 transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    whileHover={batchPairs.length > 0 ? { scale: 1.03, boxShadow: '0 0 30px rgba(168,85,247,0.3)' } : {}}
-                    whileTap={batchPairs.length > 0 ? { scale: 0.98 } : {}}
+                    whileHover={batchPairs.length > 0 && !isCheckingTBA ? { scale: 1.03, boxShadow: '0 0 30px rgba(168,85,247,0.3)' } : {}}
+                    whileTap={batchPairs.length > 0 && !isCheckingTBA ? { scale: 0.98 } : {}}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.3 }}
@@ -2313,10 +2487,19 @@ export default function MergePage() {
                     }`} />
                     {batchPairs.length > 0 && <div className="absolute inset-0 shimmer" />}
                     <span className="relative z-10 flex items-center justify-center gap-3 text-white">
-                      <Layers className="w-5 h-5" />
-                      {batchPairs.length > 0
-                        ? `Batch Fuse (${batchPairs.length} ${batchPairs.length === 1 ? 'pair' : 'pairs'}) - ${batchTotalCost} AVAX`
-                        : 'Select Warriors to Batch Fuse'}
+                      {isCheckingTBA ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Checking Wallets...
+                        </>
+                      ) : (
+                        <>
+                          <Layers className="w-5 h-5" />
+                          {batchPairs.length > 0
+                            ? `Batch Fuse (${batchPairs.length} ${batchPairs.length === 1 ? 'pair' : 'pairs'}) - ${batchTotalCost} AVAX`
+                            : 'Select Warriors to Batch Fuse'}
+                        </>
+                      )}
                     </span>
                   </motion.button>
                 </div>
@@ -2337,16 +2520,14 @@ export default function MergePage() {
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, margin: '-40px' }}
                 >
-                  <h2 className="font-display text-2xl sm:text-3xl font-bold gradient-text mb-2">
-                    SELECT WARRIORS FOR BATCH FUSION
+                  <h2 className="font-display text-lg font-bold text-white/70 mb-1">
+                    Batch Fusion
                   </h2>
-                  <p className="text-white/40 text-sm">
-                    Select multiple warriors. They will be auto-paired by lowest power score.
-                    <br />
+                  <p className="text-white/30 text-xs">
+                    Auto-paired by lowest power score —{' '}
                     <span className="text-frost-cyan font-bold font-mono">{batchSelected.size}</span>{' '}
-                    selected out of{' '}
-                    <span className="text-frost-cyan font-bold font-mono">{availableTokenIds.length}</span>{' '}
-                    available.
+                    selected / <span className="text-frost-cyan font-bold font-mono">{availableTokenIds.length}</span>{' '}
+                    available
                   </p>
 
                   {/* Action buttons + legend */}
@@ -2358,13 +2539,16 @@ export default function MergePage() {
                       <CheckCircle2 className="w-3 h-3" />
                       Select All
                     </button>
-                    <button
-                      onClick={handleSelectAllLowPower}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-pixel uppercase tracking-wider bg-purple-500/15 border border-purple-500/30 text-purple-400 hover:bg-purple-500/25 transition-all"
-                    >
-                      <Zap className="w-3 h-3" />
-                      Low Power (&lt;{BATCH_POWER_THRESHOLD})
-                    </button>
+                    {[700, 800, 900].map((threshold) => (
+                      <button
+                        key={threshold}
+                        onClick={() => handleSelectByPower(threshold)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-pixel uppercase tracking-wider bg-purple-500/15 border border-purple-500/30 text-purple-400 hover:bg-purple-500/25 transition-all"
+                      >
+                        <Zap className="w-3 h-3" />
+                        &lt;{threshold}
+                      </button>
+                    ))}
                     <button
                       onClick={handleBatchClearSelection}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-pixel uppercase tracking-wider bg-white/5 border border-white/10 text-white/40 hover:text-white/60 transition-all"
@@ -2462,7 +2646,7 @@ export default function MergePage() {
                             <div className="relative w-full aspect-square bg-white/[0.02]">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
-                                src={`/api/metadata/${id}/image`}
+                                src={`/avalanche/api/metadata/${id}/image`}
                                 alt={`Warrior #${id}`}
                                 className="w-full h-full object-cover"
                                 loading="lazy"
@@ -2496,6 +2680,109 @@ export default function MergePage() {
           )}
         </>
       )}
+
+      {/* ================================================================
+       * TBA FUSION WARNING MODAL
+       * ================================================================ */}
+      <AnimatePresence>
+        {fusionWarning && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => { if (!isSweepingTBA) setFusionWarning(null); }}
+          >
+            <motion.div
+              className="relative w-full max-w-md bg-gradient-to-b from-[#1a1028] to-[#0d0a14] border border-amber-500/30 rounded-2xl p-6 shadow-[0_0_40px_rgba(245,158,11,0.15)]"
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
+                  <Wallet className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="font-display text-lg font-bold text-amber-400">
+                    Warrior Wallet Warning
+                  </h3>
+                  <p className="text-xs text-white/40">Pre-fusion balance detected</p>
+                </div>
+                {!isSweepingTBA && (
+                  <button
+                    onClick={() => setFusionWarning(null)}
+                    className="absolute top-4 right-4 text-white/40 hover:text-white/80 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Balance Info */}
+              <div className="space-y-3 mb-5">
+                {fusionWarning.tba1.balance > 0n && (
+                  <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
+                    <span className="text-sm text-white/70">
+                      Warrior <span className="font-mono font-bold text-white">#{fusionWarning.tba1.tokenId}</span>
+                    </span>
+                    <span className="font-mono font-bold text-amber-400">
+                      {parseFloat(formatEther(fusionWarning.tba1.balance)).toFixed(4)} AVAX
+                    </span>
+                  </div>
+                )}
+                {fusionWarning.tba2.balance > 0n && (
+                  <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
+                    <span className="text-sm text-white/70">
+                      Warrior <span className="font-mono font-bold text-white">#{fusionWarning.tba2.tokenId}</span>
+                    </span>
+                    <span className="font-mono font-bold text-amber-400">
+                      {parseFloat(formatEther(fusionWarning.tba2.balance)).toFixed(4)} AVAX
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Warning Message */}
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-5">
+                <p className="text-sm text-red-300/90 leading-relaxed">
+                  These funds will be <span className="font-bold text-red-400">PERMANENTLY LOCKED</span> if you fuse these warriors. Withdraw funds first, or proceed at your own risk.
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <button
+                  onClick={handleSweepAndFuse}
+                  disabled={isSweepingTBA}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-black font-bold text-sm hover:from-amber-400 hover:to-orange-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSweepingTBA ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Withdrawing...
+                    </>
+                  ) : (
+                    <>
+                      <Wallet className="w-4 h-4" />
+                      Withdraw & Continue
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setFusionWarning(null)}
+                  disabled={isSweepingTBA}
+                  className="px-4 py-3 rounded-xl border border-white/10 text-white/60 font-medium text-sm hover:bg-white/5 hover:text-white/80 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

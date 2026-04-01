@@ -3,6 +3,7 @@ import {
   completeQuestRun,
   abandonQuestRun,
   getActiveQuestByToken,
+  recordActivity,
 } from '@/lib/db-queries';
 import {
   getOrCreateProgression,
@@ -98,6 +99,14 @@ export async function POST(request: NextRequest) {
         txHashComplete: txHash,
       });
     }
+
+    // Record quest points based on tier difficulty
+    try {
+      const tierNum = activeTierQuest?.tier ?? newTier ?? 0;
+      const difficulty = tierNum <= 2 ? 'easy' : tierNum <= 4 ? 'medium' : tierNum <= 6 ? 'hard' : 'boss';
+      const questActivity = `quest_${difficulty}_${won ? 'win' : 'fail'}` as Parameters<typeof recordActivity>[1];
+      recordActivity(walletAddress, questActivity);
+    } catch { /* ignore */ }
 
     return NextResponse.json({
       success: true,

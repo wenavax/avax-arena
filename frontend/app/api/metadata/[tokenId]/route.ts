@@ -58,7 +58,7 @@ export async function GET(
     const cachedImage = imageCache.get(tokenId);
     const imageUrl = cachedImage
       ? cachedImage
-      : `${baseUrl}/api/metadata/${tokenId}/image`;
+      : `${baseUrl}/avalanche/api/metadata/${tokenId}/image`;
 
     const metadata = {
       name: getWarriorName(tokenId, warrior.element),

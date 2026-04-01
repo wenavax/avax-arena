@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  basePath: '/avalanche',
+  trailingSlash: false,
   compress: false,
   poweredByHeader: false,
   reactStrictMode: true,
@@ -10,7 +12,7 @@ const nextConfig = {
     ignoreBuildErrors: false,
   },
   images: {
-    unoptimized: false,
+    unoptimized: true,
     formats: ['image/webp', 'image/avif'],
     remotePatterns: [
       { protocol: 'https', hostname: 'api.app.layer.ai' },

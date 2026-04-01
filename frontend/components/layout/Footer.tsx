@@ -18,8 +18,8 @@ export function Footer() {
           {/* Left: Logo + Network Badge */}
           <div className="flex flex-col items-center md:items-start gap-3">
             <div className="flex items-center gap-2">
-              <Image src="/logo.png" alt="Frostbite" width={28} height={28} className="rounded-md" />
-              <span className="font-display text-sm font-semibold tracking-wider text-white/60">
+              <Image src="/avalanche/logo.png" alt="Frostbite" width={28} height={28} className="rounded-md" />
+              <span className="font-display text-[9px] font-semibold tracking-wider text-white/60">
                 Frostbite
               </span>
             </div>

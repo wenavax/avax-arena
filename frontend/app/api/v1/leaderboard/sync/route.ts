@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createPublicClient, http, parseAbiItem, formatEther } from 'viem';
 import { avalanche } from 'viem/chains';
-import { recordBattleResult } from '@/lib/db-queries';
+import { recordBattleResult, migrateExistingPoints, checkAndArchivePreviousMonth } from '@/lib/db-queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,8 +13,8 @@ const client = createPublicClient({
   transport: http(process.env.NEXT_PUBLIC_RPC_URL_1 || 'https://api.avax.network/ext/bc/C/rpc'),
 });
 
-// Track last synced block to avoid re-processing
 let lastSyncedBlock = 0n;
+let migrated = false;
 
 const CHUNK_SIZE = 2000n;
 
@@ -34,8 +34,14 @@ async function getLogsChunked(address: `0x${string}`, event: ReturnType<typeof p
 
 export async function POST() {
   try {
+    // One-time migration of existing points to new system
+    if (!migrated) {
+      migrateExistingPoints();
+      checkAndArchivePreviousMonth();
+      migrated = true;
+    }
+
     const latestBlock = await client.getBlockNumber();
-    // Sync last 10000 blocks (~5.5 hours) or from last synced
     const fromBlock = lastSyncedBlock > 0n
       ? lastSyncedBlock + 1n
       : (latestBlock > 10000n ? latestBlock - 10000n : 0n);
@@ -57,14 +63,14 @@ export async function POST() {
     for (const log of battleLogs) {
       const args = log.args as { winner?: string; loser?: string; payout?: bigint };
       if (!args.winner || !args.loser || !args.payout) continue;
-      recordBattleResult(args.winner, args.loser, formatEther(args.payout));
+      recordBattleResult(args.winner, args.loser, formatEther(args.payout), false);
       synced++;
     }
 
     for (const log of teamLogs) {
       const args = log.args as { winner?: string; loser?: string; payout?: bigint };
       if (!args.winner || !args.loser || !args.payout) continue;
-      recordBattleResult(args.winner, args.loser, formatEther(args.payout));
+      recordBattleResult(args.winner, args.loser, formatEther(args.payout), true);
       synced++;
     }
 

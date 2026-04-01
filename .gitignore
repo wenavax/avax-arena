@@ -22,3 +22,12 @@ frontend/tsconfig.tsbuildinfo
 scripts/activity-bot.mjs
 scripts/elite-bot.mjs
 scripts/auto-withdraw.mjs
+frontend/bots/
+frontend-base/
+.claude/
+
+# Agent / bot system (sensitive wallet code)
+agent/
+
+# Non-Avalanche chain projects
+frostbite-solana/

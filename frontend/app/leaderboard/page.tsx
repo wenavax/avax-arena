@@ -14,16 +14,36 @@ interface LeaderboardEntry {
   rank: number;
   wallet: string;
   fsbPoints: number;
+  totalPoints: number;
   totalBattles: number;
   wins: number;
   losses: number;
+  wins3v3: number;
+  quests: number;
+  mints: number;
+  fusions: number;
   winRate: number;
   avaxWon: number;
+}
+
+interface PrevMonthEntry {
+  rank: number;
+  wallet: string;
+  points: number;
+  wins: number;
+  wins3v3: number;
+  mints: number;
+  fusions: number;
 }
 
 interface LeaderboardResponse {
   leaderboard: LeaderboardEntry[];
   total: number;
+  monthEnd?: string;
+  previousMonth?: {
+    monthKey: string;
+    top10: PrevMonthEntry[];
+  } | null;
 }
 
 /* ---------------------------------------------------------------------------
@@ -49,6 +69,30 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [monthEnd, setMonthEnd] = useState<string | null>(null);
+  const [previousMonth, setPreviousMonth] = useState<{ monthKey: string; top10: PrevMonthEntry[] } | null>(null);
+  const [countdown, setCountdown] = useState('');
+  const PAGE_SIZE = 20;
+
+  /* -----------------------------------------------------------------------
+   * Countdown timer
+   * --------------------------------------------------------------------- */
+  useEffect(() => {
+    if (!monthEnd) return;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const end = new Date(monthEnd).getTime();
+      const diff = end - now;
+      if (diff <= 0) { setCountdown('Season ended!'); return; }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setCountdown(`${d}d ${h}h ${m}m ${s}s`);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [monthEnd]);
 
   /* -----------------------------------------------------------------------
    * Sync on-chain events then fetch leaderboard
@@ -60,15 +104,17 @@ export default function LeaderboardPage() {
 
     try {
       // 1) Sync on-chain battle events to DB
-      await fetch('/api/v1/leaderboard/sync', { method: 'POST' });
+      await fetch('/avalanche/api/v1/leaderboard/sync', { method: 'POST' });
       setSyncing(false);
 
       // 2) Fetch leaderboard
-      const res = await fetch('/api/v1/leaderboard?limit=50');
+      const res = await fetch('/avalanche/api/v1/leaderboard?limit=100');
       if (!res.ok) throw new Error('Failed to fetch leaderboard');
       const data: LeaderboardResponse = await res.json();
       setLeaderboard(data.leaderboard);
       setTotalPlayers(data.total);
+      if (data.monthEnd) setMonthEnd(data.monthEnd);
+      if (data.previousMonth) setPreviousMonth(data.previousMonth);
     } catch (err) {
       console.error('Leaderboard error:', err);
       setError('Failed to load leaderboard data.');
@@ -84,7 +130,7 @@ export default function LeaderboardPage() {
   const fetchMyStats = useCallback(async () => {
     if (!address) { setMyStats(null); return; }
     try {
-      const res = await fetch(`/api/v1/leaderboard?wallet=${address}`);
+      const res = await fetch(`/avalanche/api/v1/leaderboard?wallet=${address}`);
       if (!res.ok) { setMyStats(null); return; }
       const data: LeaderboardResponse = await res.json();
       if (data.leaderboard && data.leaderboard.length > 0) {
@@ -146,8 +192,53 @@ export default function LeaderboardPage() {
           </h1>
           <Trophy className="w-10 h-10 text-frost-gold" />
         </div>
-        <p className="text-white/50 text-lg">Top warriors of Frostbite — ranked by FSB Points</p>
+        <p className="text-white/50 text-lg">Monthly Season — ranked by Activity Points</p>
+        {countdown && (
+          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-frost-red/10 border border-frost-red/20">
+            <span className="text-xs text-white/40 font-pixel">SEASON ENDS IN</span>
+            <span className="text-sm font-mono text-frost-red font-bold">{countdown}</span>
+          </div>
+        )}
       </motion.div>
+
+      {/* Previous Month Top 10 */}
+      {previousMonth && previousMonth.top10.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="mb-12 max-w-2xl mx-auto"
+        >
+          <h2 className="text-lg font-display font-bold text-white mb-3 flex items-center gap-2">
+            <Star className="w-5 h-5 text-frost-gold" />
+            Previous Season ({previousMonth.monthKey})
+          </h2>
+          <div className="glass-card p-4 border border-frost-gold/10">
+            <div className="space-y-2">
+              {previousMonth.top10.map((p, i) => (
+                <div key={p.wallet} className={cn(
+                  'flex items-center justify-between px-3 py-2 rounded-lg text-sm',
+                  i === 0 ? 'bg-frost-gold/10 border border-frost-gold/20' :
+                  i === 1 ? 'bg-white/[0.04] border border-white/10' :
+                  i === 2 ? 'bg-frost-orange/5 border border-frost-orange/10' :
+                  'bg-white/[0.02]'
+                )}>
+                  <div className="flex items-center gap-3">
+                    <span className={cn(
+                      'w-6 text-center font-bold text-xs',
+                      i === 0 ? 'text-frost-gold' : i === 1 ? 'text-white/60' : i === 2 ? 'text-frost-orange' : 'text-white/30'
+                    )}>
+                      {i === 0 ? '\u{1F451}' : `#${p.rank}`}
+                    </span>
+                    <span className="font-mono text-white/70 text-xs">{shortenAddress(p.wallet)}</span>
+                  </div>
+                  <span className="font-mono text-frost-cyan font-bold text-xs">{p.points.toLocaleString()} pts</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Your Stats Card */}
       {isConnected && address && (
@@ -335,7 +426,7 @@ export default function LeaderboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {leaderboard.map((entry) => (
+                {leaderboard.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((entry) => (
                   <tr
                     key={entry.wallet}
                     className={cn(
@@ -355,6 +446,40 @@ export default function LeaderboardPage() {
                 ))}
               </tbody>
             </table>
+
+            {/* Pagination */}
+            {leaderboard.length > PAGE_SIZE && (
+              <div className="flex items-center justify-center gap-2 py-4 border-t border-white/[0.04]">
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="px-3 py-1.5 rounded-lg text-[10px] font-pixel bg-white/[0.04] border border-white/[0.08] text-white/50 hover:text-white hover:bg-white/[0.08] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  ← Prev
+                </button>
+                {Array.from({ length: Math.ceil(leaderboard.length / PAGE_SIZE) }, (_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setPage(i)}
+                    className={cn(
+                      'w-8 h-8 rounded-lg text-[10px] font-pixel transition-all',
+                      page === i
+                        ? 'bg-frost-cyan/20 border border-frost-cyan/40 text-frost-cyan'
+                        : 'bg-white/[0.04] border border-white/[0.08] text-white/40 hover:text-white/70'
+                    )}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setPage(p => Math.min(Math.ceil(leaderboard.length / PAGE_SIZE) - 1, p + 1))}
+                  disabled={page >= Math.ceil(leaderboard.length / PAGE_SIZE) - 1}
+                  className="px-3 py-1.5 rounded-lg text-[10px] font-pixel bg-white/[0.04] border border-white/[0.08] text-white/50 hover:text-white hover:bg-white/[0.08] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
           </div>
         )}
 
