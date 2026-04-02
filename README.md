@@ -83,3 +83,7 @@ cd frontend && npm run dev
 ## License
 
 MIT
+
+---
+
+Built by **hts**
