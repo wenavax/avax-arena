@@ -31,3 +31,15 @@ agent/
 
 # Non-Avalanche chain projects
 frostbite-solana/
+
+# Superpowers brainstorming companion
+.superpowers/
+
+# FrozenFriends build artifacts
+frozenfriends/frontend/node_modules/
+frozenfriends/frontend/.next/
+frozenfriends/backend/node_modules/
+frozenfriends/backend/dist/
+frozenfriends/contracts/out/
+frozenfriends/contracts/cache/
+frozenfriends/contracts/lib/
