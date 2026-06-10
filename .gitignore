@@ -7,8 +7,8 @@ coverage/
 coverage.json
 deployments/*.json
 .env
-.env.*
 .env.local
+.env.*.local
 *.log
 .next/
 agent/wallets/
@@ -43,3 +43,4 @@ frozenfriends/backend/dist/
 frozenfriends/contracts/out/
 frozenfriends/contracts/cache/
 frozenfriends/contracts/lib/
+frozenfriends/contracts/.env
