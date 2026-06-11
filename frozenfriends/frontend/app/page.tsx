@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Sparkles, MessageSquare, Heart, ArrowRight, Check } from 'lucide-react';
+import { Demo } from '@/components/Demo';
 
 const features = [
   {
@@ -81,6 +82,27 @@ export default function Landing() {
             <div className="w-2 h-2 bg-frost-500 rounded-full pulse-glow" />
             <span className="text-sm text-frost-300 font-medium">In development · Launching soon</span>
           </div>
+        </motion.section>
+
+        {/* Demo */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.3 }}
+          className="mb-20"
+        >
+          <div className="text-center mb-8">
+            <div className="inline-block text-xs uppercase tracking-widest text-frost-300 mb-3 px-3 py-1 bg-frost-500/10 border border-frost-500/30 rounded-full">
+              Try the gameplay
+            </div>
+            <h2 className="text-3xl md:text-4xl font-bold mb-3">
+              See how a Frost Sprite lives
+            </h2>
+            <p className="text-white/50 max-w-xl mx-auto text-sm md:text-base">
+              Spawn a random sprite, skip ahead 24 hours, and read what happened. This demo uses pre-written narratives; the real game generates them with AI.
+            </p>
+          </div>
+          <Demo />
         </motion.section>
 
         {/* Features */}
