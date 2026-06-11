@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    background: radial-gradient(ellipse at top, #1e1b4b 0%, #0c1a3d 60%, #050817 100%);
+    color: #fff;
+    min-height: 100vh;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+}
+
+@theme {
+  --color-frost-50: #ecfeff;
+  --color-frost-300: #67e8f9;
+  --color-frost-500: #06b6d4;
+  --color-frost-700: #0e7490;
+  --color-frost-900: #164e63;
+  --color-ice-blue: #3b82f6;
+  --color-violet-glow: #a855f7;
+}
+
+/* Aurora glow background */
+.aurora {
+  background: conic-gradient(from 90deg at 50% 50%, #06b6d4, #a855f7, #06b6d4);
+  filter: blur(120px);
+  opacity: 0.15;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-20px) rotate(5deg); }
+}
+
+.float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(6, 182, 212, 0.5); }
+  50% { box-shadow: 0 0 40px rgba(6, 182, 212, 0.8); }
+}
+
+.pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
