@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { motion, useInView, AnimatePresence } from 'framer-motion';
+import { motion, useInView, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   Sparkles,
   Swords,
@@ -218,24 +218,35 @@ function LiveTicker() {
  * ========================================================================= */
 
 function HeroSection({ stats }: { stats: LiveStats }) {
+  const reduce = useReducedMotion();
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden px-4">
       {/* Background orbs */}
       <div className="absolute top-20 -left-32 w-80 h-80 rounded-full bg-frost-primary/[0.04] blur-[100px] pointer-events-none hidden sm:block" />
       <div className="absolute bottom-20 -right-32 w-96 h-96 rounded-full bg-frost-secondary/[0.03] blur-[100px] pointer-events-none hidden sm:block" />
 
+      {/* Cinematic crimson stage spotlight behind the wordmark */}
+      <div className="hero-spotlight absolute inset-0 pointer-events-none" aria-hidden="true" />
+
       {/* WarriorShowdown as background element */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.15] scale-150">
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.10] scale-150">
         <WarriorShowdown />
       </div>
 
       {/* Centered content */}
       <div className="relative z-10 text-center max-w-3xl w-full flex flex-col items-center">
         <FadeIn>
-          <h1 className="font-display font-black leading-none tracking-tight mb-2">
-            <span className="gradient-text text-6xl sm:text-7xl lg:text-8xl">FROSTBITE</span>
-          </h1>
-          <h2 className="text-frost-primary text-2xl sm:text-3xl lg:text-4xl font-display font-bold tracking-widest mb-4 drop-shadow-[0_0_20px_rgba(255,32,32,0.3)]">
+          <motion.h1
+            initial={reduce ? false : { opacity: 0, scale: 1.12, filter: 'blur(6px)' }}
+            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+            transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
+            className="font-stamp uppercase leading-[0.82] tracking-tight mb-3 text-white relative z-10"
+            style={{ fontSize: 'clamp(4.5rem, 17vw, 13rem)', letterSpacing: '-0.03em', textShadow: '0 4px 0 rgba(0,0,0,0.55), 0 0 60px rgb(237 47 57 / 0.18)' }}
+          >
+            <span>FROST</span><span className="text-frost-primary">BITE</span>
+          </motion.h1>
+          <div className="h-[2px] w-24 bg-frost-primary mx-auto mb-4 shadow-[0_0_16px_rgb(237_47_57/0.6)]" />
+          <h2 className="font-display text-white/55 text-xl sm:text-2xl lg:text-3xl font-semibold uppercase tracking-[0.55em] pl-[0.55em] mb-5 relative z-10">
             BATTLE ARENA
           </h2>
         </FadeIn>
@@ -247,7 +258,7 @@ function HeroSection({ stats }: { stats: LiveStats }) {
         </FadeIn>
 
         <FadeIn delay={0.15}>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-frost-green/10 border border-frost-green/30 text-frost-green text-[10px] font-pixel uppercase tracking-wider mb-8">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-frost-green/10 border border-frost-green/30 text-frost-green text-[10px] font-sans font-semibold uppercase tracking-wider mb-8">
             <span className="w-1.5 h-1.5 rounded-full bg-frost-green animate-pulse" />
             Live on Avalanche
           </span>
@@ -266,21 +277,21 @@ function HeroSection({ stats }: { stats: LiveStats }) {
 
         {/* Mini stats row */}
         <FadeIn delay={0.25}>
-          <div className="flex items-center gap-4 sm:gap-8">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:flex sm:items-center sm:gap-8">
             {[
               { label: 'Minted', value: stats.warriorsMinted, icon: Shield },
               { label: 'Fused', value: stats.warriorsFused, icon: GitMerge },
               { label: 'Battles', value: stats.totalBattles + stats.teamBattles, icon: Swords },
               { label: 'Volume', value: stats.avaxVolume, suffix: '', prefix: '', icon: Coins },
             ].map((s, i) => (
-              <div key={s.label} className="flex items-center gap-4">
+              <div key={s.label} className="flex items-center justify-center gap-4">
                 <div className="text-center">
                   <div className="text-xl sm:text-2xl font-mono font-bold text-white">
                     <AnimatedCounter target={s.value} suffix={s.suffix} prefix={s.prefix} />
                   </div>
-                  <div className="text-[9px] text-white/30 font-pixel uppercase mt-0.5">{s.label}</div>
+                  <div className="text-[9px] text-white/30 font-sans font-semibold uppercase mt-0.5">{s.label}</div>
                 </div>
-                {i < 3 && <div className="stat-divider" />}
+                {i < 3 && <div className="stat-divider hidden sm:block" />}
               </div>
             ))}
           </div>
@@ -342,7 +353,7 @@ function WarriorShowdown() {
                   <div className="flex justify-between"><span>DEF</span><span className="text-white/70">{leftStats.d}</span></div>
                   <div className="flex justify-between"><span>SPD</span><span className="text-white/70">{leftStats.s}</span></div>
                 </div>
-                <div className="mt-2 pt-2 border-t border-white/[0.06] text-[10px] font-pixel text-white/40">
+                <div className="mt-2 pt-2 border-t border-white/[0.06] text-[10px] font-sans font-semibold text-white/40">
                   Power <span className="ml-1 text-sm font-mono font-bold text-frost-gold">{leftStats.a + leftStats.d + leftStats.s}</span>
                 </div>
               </div>
@@ -377,7 +388,7 @@ function WarriorShowdown() {
                   <div className="flex justify-between"><span>DEF</span><span className="text-white/70">{rightStats.d}</span></div>
                   <div className="flex justify-between"><span>SPD</span><span className="text-white/70">{rightStats.s}</span></div>
                 </div>
-                <div className="mt-2 pt-2 border-t border-white/[0.06] text-[10px] font-pixel text-white/40">
+                <div className="mt-2 pt-2 border-t border-white/[0.06] text-[10px] font-sans font-semibold text-white/40">
                   Power <span className="ml-1 text-sm font-mono font-bold text-frost-gold">{rightStats.a + rightStats.d + rightStats.s}</span>
                 </div>
               </div>
@@ -394,12 +405,12 @@ function WarriorShowdown() {
  * ========================================================================= */
 
 const FEATURES = [
-  { icon: Shield, title: 'On-Chain Warriors', desc: 'Every warrior is a unique ERC-721 NFT with randomized stats — Attack, Defense, Speed, Element — stored permanently on Avalanche.', gradient: 'from-frost-cyan to-blue-500' },
+  { icon: Shield, title: 'On-Chain Warriors', desc: 'Every warrior is a unique ERC-721 NFT with randomized stats — Attack, Defense, Speed, Element — stored permanently on Avalanche.', gradient: 'from-frost-primary to-rose-600' },
   { icon: Swords, title: '1v1 & 3v3 PvP Battles', desc: 'Stake AVAX and battle other players. Winners take the pot minus a small platform fee. Element advantages add strategic depth.', gradient: 'from-frost-primary to-orange-500' },
-  { icon: GitMerge, title: 'Warrior Fusion', desc: 'Burn two warriors to forge a stronger one. The fused warrior inherits boosted stats from both parents.', gradient: 'from-purple-500 to-fuchsia-500' },
-  { icon: Map, title: 'Quest System', desc: '8 elemental zones with 32 quests. Complete quests to earn XP, level up, and progress through difficulty tiers.', gradient: 'from-green-500 to-emerald-500' },
-  { icon: Store, title: 'NFT Marketplace', desc: 'List warriors for sale, place bids, or make offers. Full-featured decentralized marketplace with auctions.', gradient: 'from-amber-500 to-yellow-500' },
-  { icon: Trophy, title: 'Tournaments', desc: 'Compete in bracket-style tournaments with AVAX prize pools. Climb the seasonal leaderboard for glory.', gradient: 'from-cyan-400 to-teal-500' },
+  { icon: GitMerge, title: 'Warrior Fusion', desc: 'Burn two warriors to forge a stronger one. The fused warrior inherits boosted stats from both parents.', gradient: 'from-rose-500 to-frost-primary' },
+  { icon: Map, title: 'Quest System', desc: '8 elemental zones with 32 quests. Complete quests to earn XP, level up, and progress through difficulty tiers.', gradient: 'from-orange-500 to-frost-primary' },
+  { icon: Store, title: 'NFT Marketplace', desc: 'List warriors for sale, place bids, or make offers. Full-featured decentralized marketplace with auctions.', gradient: 'from-frost-primary to-red-700' },
+  { icon: Trophy, title: 'Tournaments', desc: 'Compete in bracket-style tournaments with AVAX prize pools. Climb the seasonal leaderboard for glory.', gradient: 'from-rose-500 to-orange-500' },
 ];
 
 function FeaturesSection() {
@@ -409,8 +420,8 @@ function FeaturesSection() {
       <div className="mx-auto max-w-5xl relative z-10">
         <FadeIn>
           <div className="text-center mb-16">
-            <span className="inline-block font-pixel text-[10px] text-frost-primary uppercase tracking-[0.3em] mb-3">Platform Features</span>
-            <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold gradient-text mb-4">THE FROSTBITE EXPERIENCE</h2>
+            <span className="inline-block font-sans font-semibold text-[10px] text-frost-primary uppercase tracking-[0.3em] mb-3">Platform Features</span>
+            <h2 className="font-stamp uppercase text-5xl sm:text-6xl md:text-7xl tracking-tight leading-[0.9] text-white mb-4">THE FROSTBITE <span className="text-frost-primary">EXPERIENCE</span></h2>
             <p className="text-white/40 text-sm sm:text-base max-w-xl mx-auto leading-relaxed">
               A fully on-chain NFT battle arena built on Avalanche. Fast transactions, low fees, and high-stakes PvP combat.
             </p>
@@ -455,7 +466,7 @@ function HowItWorksSection() {
       <div className="mx-auto max-w-5xl relative z-10">
         <FadeIn>
           <div className="text-center mb-16">
-            <span className="inline-block font-pixel text-[10px] text-frost-cyan uppercase tracking-[0.3em] mb-3">Getting Started</span>
+            <span className="inline-block font-sans font-semibold text-[10px] text-frost-cyan uppercase tracking-[0.3em] mb-3">Getting Started</span>
             <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4">
               How It <span className="text-frost-primary">Works</span>
             </h2>
@@ -468,7 +479,7 @@ function HowItWorksSection() {
               <div className="glass-card p-6 text-center relative group">
                 {/* Step number */}
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-frost-surface border border-white/[0.08]">
-                  <span className="font-pixel text-[10px] text-frost-primary">{s.step}</span>
+                  <span className="font-sans font-semibold text-[10px] text-frost-primary">{s.step}</span>
                 </div>
                 <s.icon className={`w-8 h-8 mx-auto mb-4 mt-2 ${s.color}`} />
                 <h3 className="font-display text-sm font-bold text-white mb-2">{s.title}</h3>
@@ -506,7 +517,7 @@ function BattleMechanicsSection() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div>
             <FadeIn>
-              <span className="inline-block font-pixel text-[10px] text-frost-secondary uppercase tracking-[0.3em] mb-3">Battle System</span>
+              <span className="inline-block font-sans font-semibold text-[10px] text-frost-secondary uppercase tracking-[0.3em] mb-3">Battle System</span>
               <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-6">
                 Strategic <span className="text-frost-primary">On-Chain</span> Combat
               </h2>
@@ -543,7 +554,7 @@ function BattleMechanicsSection() {
                     </div>
                   ))}
                 </div>
-                <p className="text-center text-[10px] text-white/25 mt-4 font-pixel">
+                <p className="text-center text-[10px] text-white/25 mt-4 font-sans font-semibold">
                   Each element has strengths and weaknesses — choose wisely!
                 </p>
               </div>
@@ -574,7 +585,7 @@ function ContractsSection() {
       <div className="mx-auto max-w-5xl relative z-10">
         <FadeIn>
           <div className="text-center mb-12">
-            <span className="inline-block font-pixel text-[10px] text-frost-green uppercase tracking-[0.3em] mb-3">Verified & Open</span>
+            <span className="inline-block font-sans font-semibold text-[10px] text-frost-green uppercase tracking-[0.3em] mb-3">Verified & Open</span>
             <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mb-3">
               Smart Contracts on <span className="text-frost-cyan">Avalanche C-Chain</span>
             </h2>
@@ -595,7 +606,7 @@ function ContractsSection() {
             ))}
           </div>
           <div className="text-center mt-4">
-            <Link href="/docs" className="inline-flex items-center gap-1.5 text-xs text-frost-cyan/60 hover:text-frost-cyan transition-colors font-pixel">
+            <Link href="/docs" className="inline-flex items-center gap-1.5 text-xs text-frost-cyan/60 hover:text-frost-cyan transition-colors font-sans font-semibold">
               View Full Documentation <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
@@ -624,7 +635,7 @@ function TabbedInfoPanel() {
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 sm:px-6 py-2.5 font-pixel text-[10px] sm:text-xs uppercase tracking-wider rounded-t-lg border-b-2 transition-all duration-200
+              className={`px-4 sm:px-6 py-2.5 font-sans font-semibold text-[10px] sm:text-xs uppercase tracking-wider rounded-t-lg border-b-2 transition-all duration-200
                 ${activeTab === tab
                   ? 'bg-frost-primary/15 text-frost-primary border-frost-primary'
                   : 'text-white/40 hover:text-white/60 border-transparent hover:bg-white/[0.03]'
@@ -661,8 +672,8 @@ function TabFeatures() {
   return (
     <div>
       <div className="text-center mb-10">
-        <span className="inline-block font-pixel text-[10px] text-frost-primary uppercase tracking-[0.3em] mb-3">Platform Features</span>
-        <h2 className="font-display text-2xl sm:text-3xl md:text-4xl font-bold gradient-text mb-3">THE FROSTBITE EXPERIENCE</h2>
+        <span className="inline-block font-sans font-semibold text-[10px] text-frost-primary uppercase tracking-[0.3em] mb-3">Platform Features</span>
+        <h2 className="font-stamp uppercase text-4xl sm:text-5xl md:text-6xl tracking-tight leading-[0.9] text-white mb-3">THE FROSTBITE <span className="text-frost-primary">EXPERIENCE</span></h2>
         <p className="text-white/40 text-sm max-w-xl mx-auto leading-relaxed">
           A fully on-chain NFT battle arena built on Avalanche. Fast transactions, low fees, and high-stakes PvP combat.
         </p>
@@ -689,7 +700,7 @@ function TabHowItWorks() {
   return (
     <div>
       <div className="text-center mb-10">
-        <span className="inline-block font-pixel text-[10px] text-frost-cyan uppercase tracking-[0.3em] mb-3">Getting Started</span>
+        <span className="inline-block font-sans font-semibold text-[10px] text-frost-cyan uppercase tracking-[0.3em] mb-3">Getting Started</span>
         <h2 className="font-display text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-3">
           How It <span className="text-frost-primary">Works</span>
         </h2>
@@ -698,7 +709,7 @@ function TabHowItWorks() {
         {STEPS.map((s, i) => (
           <div key={s.step} className="glass-card p-6 text-center relative group">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-frost-surface border border-white/[0.08]">
-              <span className="font-pixel text-[10px] text-frost-primary">{s.step}</span>
+              <span className="font-sans font-semibold text-[10px] text-frost-primary">{s.step}</span>
             </div>
             <s.icon className={`w-8 h-8 mx-auto mb-4 mt-2 ${s.color}`} />
             <h3 className="font-display text-sm font-bold text-white mb-2">{s.title}</h3>
@@ -724,7 +735,7 @@ function TabBattleSystem() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
       <div>
-        <span className="inline-block font-pixel text-[10px] text-frost-secondary uppercase tracking-[0.3em] mb-3">Battle System</span>
+        <span className="inline-block font-sans font-semibold text-[10px] text-frost-secondary uppercase tracking-[0.3em] mb-3">Battle System</span>
         <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mb-4">
           Strategic <span className="text-frost-primary">On-Chain</span> Combat
         </h2>
@@ -757,7 +768,7 @@ function TabBattleSystem() {
               </div>
             ))}
           </div>
-          <p className="text-center text-[10px] text-white/25 mt-4 font-pixel">
+          <p className="text-center text-[10px] text-white/25 mt-4 font-sans font-semibold">
             Each element has strengths and weaknesses — choose wisely!
           </p>
         </div>
@@ -779,7 +790,7 @@ function TabContracts() {
   return (
     <div>
       <div className="text-center mb-10">
-        <span className="inline-block font-pixel text-[10px] text-frost-green uppercase tracking-[0.3em] mb-3">Verified & Open</span>
+        <span className="inline-block font-sans font-semibold text-[10px] text-frost-green uppercase tracking-[0.3em] mb-3">Verified & Open</span>
         <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mb-3">
           Smart Contracts on <span className="text-frost-cyan">Avalanche C-Chain</span>
         </h2>
@@ -798,7 +809,7 @@ function TabContracts() {
         ))}
       </div>
       <div className="text-center mt-4">
-        <Link href="/docs" className="inline-flex items-center gap-1.5 text-xs text-frost-cyan/60 hover:text-frost-cyan transition-colors font-pixel">
+        <Link href="/docs" className="inline-flex items-center gap-1.5 text-xs text-frost-cyan/60 hover:text-frost-cyan transition-colors font-sans font-semibold">
           View Full Documentation <ArrowRight className="w-3 h-3" />
         </Link>
       </div>
@@ -818,7 +829,7 @@ function CTASection() {
       </div>
       <FadeIn>
         <div className="mx-auto max-w-2xl text-center relative z-10">
-          <h2 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-4">
+          <h2 className="font-stamp uppercase text-5xl sm:text-6xl md:text-7xl tracking-tight leading-[0.9] text-white mb-4">
             Ready to <span className="text-frost-primary">Fight</span>?
           </h2>
           <p className="text-white/40 text-sm sm:text-base mb-8 leading-relaxed">
@@ -826,7 +837,7 @@ function CTASection() {
             The battlefield awaits.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/mint" className="btn-3d btn-3d-cyan flex items-center gap-2 px-8 py-3.5 text-sm sm:text-base">
+            <Link href="/mint" className="btn-3d btn-3d-red flex items-center gap-2 px-8 py-3.5 text-sm sm:text-base">
               <Sparkles className="h-4 w-4" />
               Mint Your First Warrior
             </Link>
@@ -850,19 +861,19 @@ function StatsBar({ stats }: { stats: LiveStats }) {
       <div className="mx-auto max-w-5xl grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
         <div>
           <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.warriorsMinted} /></div>
-          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">Total Minted</div>
+          <div className="text-[10px] text-white/25 font-sans font-semibold uppercase mt-1">Total Minted</div>
         </div>
         <div>
           <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.warriorsFused} /></div>
-          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">Warriors Fused</div>
+          <div className="text-[10px] text-white/25 font-sans font-semibold uppercase mt-1">Warriors Fused</div>
         </div>
         <div>
           <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.totalBattles + stats.teamBattles} /></div>
-          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">Total Battles</div>
+          <div className="text-[10px] text-white/25 font-sans font-semibold uppercase mt-1">Total Battles</div>
         </div>
         <div>
           <div className="text-2xl sm:text-3xl font-mono font-bold text-white"><AnimatedCounter target={stats.avaxVolume} /></div>
-          <div className="text-[10px] text-white/25 font-pixel uppercase mt-1">AVAX Volume</div>
+          <div className="text-[10px] text-white/25 font-sans font-semibold uppercase mt-1">AVAX Volume</div>
         </div>
       </div>
     </div>
