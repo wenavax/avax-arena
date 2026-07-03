@@ -1,11 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { RainbowKitProvider, darkTheme, lightTheme } from '@rainbow-me/rainbowkit';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PrivyProvider } from '@privy-io/react-auth';
+import { WagmiProvider as PrivyWagmiProvider } from '@privy-io/wagmi';
 import { WagmiProvider } from 'wagmi';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
-import { config } from '@/lib/wagmi';
+import { avalanche } from 'viem/chains';
+import { config, readOnlyConfig } from '@/lib/wagmi';
+
+const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || '';
 
 export function Web3Provider({ children }: { children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();
@@ -21,29 +25,45 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
       })
   );
 
-  const rainbowTheme = resolvedTheme === 'light'
-    ? lightTheme({
-        accentColor: '#dc2626',
-        accentColorForeground: '#ffffff',
-        borderRadius: 'medium',
-        fontStack: 'system',
-        overlayBlur: 'small',
-      })
-    : darkTheme({
-        accentColor: '#ff2020',
-        accentColorForeground: '#0a0a0f',
-        borderRadius: 'medium',
-        fontStack: 'system',
-        overlayBlur: 'small',
-      });
+  // Fallback: without a Privy App ID we still provide a read-only wagmi context
+  // so on-chain reads render and the app never crashes (wallet actions disabled).
+  if (!PRIVY_APP_ID) {
+    if (typeof window !== 'undefined') {
+      console.error(
+        '[Web3Provider] NEXT_PUBLIC_PRIVY_APP_ID is not set — wallet actions disabled (read-only mode).'
+      );
+    }
+    return (
+      <WagmiProvider config={readOnlyConfig}>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </WagmiProvider>
+    );
+  }
 
   return (
-    <WagmiProvider config={config}>
+    <PrivyProvider
+      appId={PRIVY_APP_ID}
+      config={{
+        appearance: {
+          theme: resolvedTheme === 'light' ? 'light' : 'dark',
+          accentColor: '#ed2f39',
+          logo: '/favicon-32x32.png',
+          landingHeader: 'Frostbite Arena',
+          loginMessage: 'Enter the arena — email, social, or wallet',
+        },
+        loginMethods: ['email', 'google', 'twitter', 'wallet'],
+        defaultChain: avalanche,
+        supportedChains: [avalanche],
+        embeddedWallets: {
+          ethereum: {
+            createOnLogin: 'users-without-wallets',
+          },
+        },
+      }}
+    >
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={rainbowTheme}>
-          {children}
-        </RainbowKitProvider>
+        <PrivyWagmiProvider config={config}>{children}</PrivyWagmiProvider>
       </QueryClientProvider>
-    </WagmiProvider>
+    </PrivyProvider>
   );
 }

@@ -32,7 +32,8 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Fira Code", "monospace"],
-        display: ["var(--font-press-start)", "monospace"],
+        display: ["var(--font-space-grotesk)", "system-ui", "sans-serif"],
+        stamp: ["var(--font-anton)", "Impact", "sans-serif"],
         pixel: ["var(--font-silkscreen)", "monospace"],
       },
       backgroundImage: {

@@ -2,50 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Press Start 2P is wider than Orbitron — scale down font-display globally */
+/* Space Grotesk display — modern, tight, premium headings */
 .font-display {
-  font-size: 0.65em;
-  line-height: 1.4;
-  letter-spacing: 0.05em;
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+}
+
+/* Anton stamp — colossal condensed battle wordmark (intrinsically ultra-bold) */
+.font-stamp {
+  font-family: var(--font-anton), Impact, sans-serif;
+  font-weight: 400;
+  line-height: 0.85;
+  letter-spacing: -0.03em;
+}
+
+/* Cinematic crimson stage spotlight behind the hero wordmark */
+.hero-spotlight {
+  background: radial-gradient(circle at 50% 42%, rgb(237 47 57 / 0.20), rgb(237 47 57 / 0.05) 38%, transparent 62%);
+  animation: spotlight-breathe 6s ease-in-out infinite;
+}
+@keyframes spotlight-breathe {
+  0%, 100% { opacity: 0.65; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-spotlight { animation: none; opacity: 0.8; }
 }
 
 /* ===== DARK MODE (default) ===== */
 :root {
-  --frost-bg: 10 10 15;
-  --frost-surface: 18 18 26;
-  --frost-card: 30 10 10;
-  --frost-border: 42 26 26;
-  --frost-primary: 255 32 32;
-  --frost-secondary: 255 107 107;
+  --frost-bg: 13 13 16;
+  --frost-surface: 20 20 26;
+  --frost-card: 22 22 28;
+  --frost-border: 40 40 48;
+  --frost-primary: 237 47 57;
+  --frost-secondary: 248 113 113;
   --frost-accent: 255 255 255;
 
-  --frost-green: #00ff88;
-  --frost-orange: #ff8800;
-  --frost-red: #ff3366;
-  --frost-gold: #ffd700;
+  --frost-green: #22c55e;
+  --frost-orange: #f97316;
+  --frost-red: #ef4444;
+  --frost-gold: #f5c542;
 
-  --frost-text: #e0e0e0;
+  --frost-text: #ececee;
   --frost-text-muted: rgba(255, 255, 255, 0.5);
 
-  --mesh-dot-1: rgba(255, 32, 32, 0.12);
-  --mesh-dot-2: rgba(255, 107, 107, 0.08);
-  --mesh-dot-3: rgba(255, 255, 255, 0.04);
+  --mesh-dot-1: rgba(237, 47, 57, 0.05);
+  --mesh-dot-2: rgba(255, 255, 255, 0.035);
+  --mesh-dot-3: rgba(255, 255, 255, 0.02);
 
-  --particle-opacity: 1;
-  --scanline-opacity: 0.08;
+  --particle-opacity: 0.55;
+  --scanline-opacity: 0.02;
 
-  --glass-bg: rgba(255, 255, 255, 0.03);
-  --glass-card-bg: rgba(30, 10, 10, 0.6);
-  --glass-card-border: rgba(255, 255, 255, 0.08);
-  --glass-card-hover-border: rgba(255, 32, 32, 0.3);
-  --glass-card-hover-shadow: 0 0 30px rgba(255, 32, 32, 0.1), 0 8px 32px rgba(0, 0, 0, 0.4);
+  --glass-bg: rgba(255, 255, 255, 0.025);
+  --glass-card-bg: rgba(22, 22, 28, 0.6);
+  --glass-card-border: rgba(255, 255, 255, 0.07);
+  --glass-card-hover-border: rgba(237, 47, 57, 0.35);
+  --glass-card-hover-shadow: 0 0 0 1px rgba(237, 47, 57, 0.12), 0 12px 40px rgba(0, 0, 0, 0.45);
 
-  --btn-primary-bg: linear-gradient(135deg, rgb(255, 32, 32), rgb(255, 107, 107));
-  --btn-primary-shadow: 0 4px 20px rgba(255, 32, 32, 0.2);
-  --btn-primary-hover-shadow: 0 6px 30px rgba(255, 32, 32, 0.35), 0 0 60px rgba(255, 107, 107, 0.2);
+  --btn-primary-bg: linear-gradient(135deg, rgb(237, 47, 57), rgb(214, 40, 49));
+  --btn-primary-shadow: 0 4px 20px rgba(237, 47, 57, 0.2);
+  --btn-primary-hover-shadow: 0 6px 30px rgba(237, 47, 57, 0.35), 0 0 60px rgba(237, 47, 57, 0.15);
 
-  --table-hover-bg: rgba(255, 32, 32, 0.04);
-  --table-hover-border: rgba(255, 32, 32, 0.1);
+  --table-hover-bg: rgba(237, 47, 57, 0.05);
+  --table-hover-border: rgba(237, 47, 57, 0.12);
 }
 
 /* ===== LIGHT MODE — Clean White + Red accent ===== */
@@ -92,6 +113,7 @@
 .light .text-white\/30 { color: rgba(0, 0, 0, 0.35); }
 .light .text-white\/40 { color: rgba(0, 0, 0, 0.4); }
 .light .text-white\/50 { color: rgba(0, 0, 0, 0.5); }
+.light .text-white\/55 { color: rgba(0, 0, 0, 0.55); }
 .light .text-white\/60 { color: rgba(0, 0, 0, 0.6); }
 .light .text-white\/70 { color: rgba(0, 0, 0, 0.7); }
 .light .text-white\/80 { color: rgba(0, 0, 0, 0.8); }
@@ -295,12 +317,10 @@ body {
 
   /* Animated gradient text */
   .gradient-text {
-    background: linear-gradient(135deg, rgb(var(--frost-primary)), rgb(var(--frost-secondary)), rgb(var(--frost-accent)));
-    background-size: 200% 200%;
+    background: linear-gradient(115deg, #ffffff 0%, #ffe3e3 42%, rgb(var(--frost-secondary)) 70%, rgb(var(--frost-primary)) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    animation: gradient-shift 4s ease infinite;
   }
 
   /* Pixel grid background */
@@ -769,16 +789,16 @@ body {
   justify-content: center;
   gap: 0.5rem;
   padding: 0.75rem 2rem;
-  font-family: var(--font-silkscreen), monospace;
-  font-size: 0.875rem;
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+  font-size: 0.95rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
   border: none;
   border-radius: 0.75rem;
   cursor: pointer;
   transition: transform 0.1s, box-shadow 0.1s, filter 0.15s;
-  box-shadow: 0 4px 0 0 var(--btn-3d-shadow, #1a1a1a), 0 6px 20px rgba(0,0,0,0.3);
+  box-shadow: 0 3px 0 0 var(--btn-3d-shadow, #1a1a1a), 0 6px 20px rgba(0,0,0,0.3);
 }
 
 .btn-3d:hover {
@@ -793,9 +813,9 @@ body {
 }
 
 .btn-3d-red {
-  background: linear-gradient(135deg, #ff2020, #ff4444);
+  background: linear-gradient(135deg, #ed2f39, #c81e28);
   color: white;
-  --btn-3d-shadow: #991111;
+  --btn-3d-shadow: #8f1219;
 }
 
 .btn-3d-cyan {
@@ -814,4 +834,14 @@ body {
   background: linear-gradient(135deg, #00ff88, #0ace79);
   color: #1a1a1a;
   --btn-3d-shadow: #066a3e;
+}
+
+/* ===========================================================================
+ * LIGHT MODE override — .gradient-text was redefined white-leading (invisible
+ * on a light bg); restore a dark→crimson gradient under .light
+ * ========================================================================= */
+.light .gradient-text {
+  background: linear-gradient(115deg, rgb(var(--frost-accent)) 0%, rgb(var(--frost-primary)) 58%, rgb(var(--frost-secondary)) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
 }
