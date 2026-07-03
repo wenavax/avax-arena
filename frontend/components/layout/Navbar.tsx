@@ -4,9 +4,9 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { usePrivy } from '@privy-io/react-auth';
 import { useAccount } from 'wagmi';
-import { Menu, X, Swords, Sparkles, BarChart3, Store, GitMerge, User, Map } from 'lucide-react';
+import { Menu, X, Swords, Sparkles, BarChart3, Store, GitMerge, User, Map, Wallet, LogOut } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +23,7 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const { address, isConnected } = useAccount();
+  const { ready, authenticated, login, logout } = usePrivy();
 
   const navLinks = isConnected && address
     ? [...NAV_LINKS, { href: `/profile/${address}`, label: 'Profile', icon: User }]
@@ -76,20 +77,26 @@ export function Navbar() {
         {/* Right side: Theme toggle + Connect + Mobile toggle */}
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <div className="hidden sm:block">
-            <ConnectButton
-              chainStatus="icon"
-              accountStatus="avatar"
-              showBalance={false}
-            />
-          </div>
-          <div className="sm:hidden">
-            <ConnectButton
-              chainStatus="none"
-              accountStatus="avatar"
-              showBalance={false}
-            />
-          </div>
+          {ready && authenticated && address ? (
+            <button
+              onClick={logout}
+              title="Disconnect"
+              className="flex items-center gap-2 rounded-lg bg-white/[0.04] border border-white/[0.06] px-3 py-2 text-xs font-mono text-white/60 hover:text-white hover:bg-white/[0.08] transition-colors"
+            >
+              <span className="w-2 h-2 rounded-full bg-frost-green" />
+              {`${address.slice(0, 6)}...${address.slice(-4)}`}
+              <LogOut className="h-3 w-3" />
+            </button>
+          ) : (
+            <button
+              onClick={login}
+              disabled={!ready}
+              className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-frost-primary/20 to-frost-secondary/20 border border-frost-primary/30 px-3 py-2 text-xs font-semibold text-frost-primary hover:text-white hover:border-frost-primary/50 transition-all"
+            >
+              <Wallet className="h-3.5 w-3.5" />
+              Connect
+            </button>
+          )}
 
           {/* Mobile hamburger */}
           <button
