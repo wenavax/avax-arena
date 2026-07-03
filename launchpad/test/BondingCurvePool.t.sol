@@ -149,4 +149,45 @@ contract BondingCurvePoolTest is Test {
         vm.expectRevert(BondingCurvePool.NotTrading.selector);
         pool.buy{value: 1e18}(0, block.timestamp);
     }
+
+    function test_init_revertsOnUnreachableThreshold() public {
+        BondingCurvePool p2 = BondingCurvePool(payable(Clones.clone(address(poolImpl))));
+        LaunchToken t2 = LaunchToken(Clones.clone(address(tokenImpl)));
+        t2.initialize("M2", "M2", TOTAL, address(p2));
+        vm.expectRevert(BondingCurvePool.BadCurveParams.selector);
+        p2.initialize(BondingCurvePool.InitParams({
+            factory: address(factory), token: address(t2), vAvax0: V_AVAX0, y0: Y0,
+            curveSupply: CURVE, lpReserve: LP, graduationThreshold: 400e18, // > R_exhaust(~88)
+            tradingFeeBps: FEE, treasury: address(0x7), joeRouter: address(router)
+        }));
+    }
+
+    function test_init_revertsOnHighFee() public {
+        BondingCurvePool p2 = BondingCurvePool(payable(Clones.clone(address(poolImpl))));
+        vm.expectRevert(BondingCurvePool.FeeTooHigh.selector);
+        p2.initialize(BondingCurvePool.InitParams({
+            factory: address(factory), token: address(token), vAvax0: V_AVAX0, y0: Y0,
+            curveSupply: CURVE, lpReserve: LP, graduationThreshold: GRAD,
+            tradingFeeBps: 1001, treasury: address(0x7), joeRouter: address(router)
+        }));
+    }
+
+    function test_init_revertsOnZeroAddress() public {
+        BondingCurvePool p2 = BondingCurvePool(payable(Clones.clone(address(poolImpl))));
+        vm.expectRevert(BondingCurvePool.ZeroAddress.selector);
+        p2.initialize(BondingCurvePool.InitParams({
+            factory: address(factory), token: address(0), vAvax0: V_AVAX0, y0: Y0,
+            curveSupply: CURVE, lpReserve: LP, graduationThreshold: GRAD,
+            tradingFeeBps: FEE, treasury: address(0x7), joeRouter: address(router)
+        }));
+    }
+
+    function test_graduation_burnsUnsoldCurveTokens() public {
+        vm.prank(alice);
+        pool.buy{value: 70e18}(0, block.timestamp); // graduates (net 69.3 > GRAD 60)
+        assertEq(uint256(pool.state()), uint256(BondingCurvePool.State.Graduated));
+        // After graduation the pool holds ZERO tokens: lpReserve went to the router,
+        // unsold curve tokens were burned.
+        assertEq(token.balanceOf(address(pool)), 0, "no tokens stranded in pool");
+    }
 }

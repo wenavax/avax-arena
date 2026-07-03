@@ -5,6 +5,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {CurveMath} from "./libraries/CurveMath.sol";
 import {IJoeRouter} from "./interfaces/IJoeRouter.sol";
 import {IPausableFactory} from "./interfaces/IPausableFactory.sol";
@@ -17,6 +18,7 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     address internal constant BURN = 0x000000000000000000000000000000000000dEaD;
+    uint16 internal constant MAX_FEE_BPS = 1000; // 10% hard ceiling
 
     enum State { Trading, Graduated }
 
@@ -56,6 +58,9 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
     error ExceedsCurveSupply();
     error ExceedsSold();
     error TransferFailed();
+    error ZeroAddress();
+    error FeeTooHigh();
+    error BadCurveParams();
 
     event Buy(address indexed buyer, uint256 avaxIn, uint256 fee, uint256 tokensOut, uint256 reserveAfter);
     event Sell(address indexed seller, uint256 tokensIn, uint256 fee, uint256 avaxOut, uint256 reserveAfter);
@@ -66,6 +71,13 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
     }
 
     function initialize(InitParams calldata p) external initializer {
+        if (p.factory == address(0) || p.token == address(0) || p.treasury == address(0) || p.joeRouter == address(0)) revert ZeroAddress();
+        if (p.tradingFeeBps > MAX_FEE_BPS) revert FeeTooHigh();
+        if (p.y0 <= p.curveSupply) revert BadCurveParams();
+        // Graduation must be reachable BEFORE the curve exhausts its supply, else
+        // buys would revert (ExceedsCurveSupply) and graduation could never fire.
+        // R_exhaust = vAvax0 * curveSupply / (y0 - curveSupply).
+        if (p.graduationThreshold > Math.mulDiv(p.vAvax0, p.curveSupply, p.y0 - p.curveSupply)) revert BadCurveParams();
         factory = p.factory;
         token = IERC20(p.token);
         vAvax0 = p.vAvax0;
@@ -93,6 +105,7 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
         uint256 fee = (msg.value * tradingFeeBps) / 10000;
         uint256 avaxIn = msg.value - fee;
         out = CurveMath.tokensOut(vAvax0, y0, realAvax, avaxIn);
+        if (out == 0) revert ZeroAmount();
         if (out < minTokensOut) revert Slippage();
         if (tokensSold + out > curveSupply) revert ExceedsCurveSupply();
 
@@ -103,7 +116,7 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
         token.safeTransfer(msg.sender, out);
         emit Buy(msg.sender, avaxIn, fee, out, realAvax);
 
-        if (realAvax >= graduationThreshold) _graduate();
+        if (realAvax >= graduationThreshold || tokensSold >= curveSupply) _graduate();
     }
 
     function sell(uint256 tokenIn, uint256 minAvaxOut, uint256 deadline)
@@ -139,6 +152,9 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
         IJoeRouter(joeRouter).addLiquidityAVAX{value: avaxToLp}(
             address(token), tokensToLp, tokensToLp, avaxToLp, BURN, block.timestamp
         );
+        // Burn unsold curve tokens (curveSupply - tokensSold) so none are stranded.
+        uint256 leftover = token.balanceOf(address(this));
+        if (leftover > 0) token.safeTransfer(BURN, leftover);
         emit Graduated(avaxToLp, tokensToLp);
     }
 
