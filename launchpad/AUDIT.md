@@ -3,7 +3,7 @@
 **Scope:** `launchpad/src/**` — `LaunchpadFactory.sol`, `BondingCurvePool.sol`, `LaunchToken.sol`, `libraries/CurveMath.sol`, `interfaces/*`.
 **Reviewed at commit:** `df6f266` (branch `frozenfriends-mvp`).
 **Design spec:** `../docs/superpowers/specs/2026-07-03-launchpad-design.md`.
-**Status:** Core on-chain system built + tested + reviewed; the HIGH graduation-DoS (F6) is **code-fixed** (donation-resistant direct pair mint). **Pending:** real-DEX fork validation of graduation (needs Fuji RPC + confirmed Trader Joe V1 addresses) and a final parameter lock. **External professional audit is recommended before mainnet with real liquidity.**
+**Status:** Core on-chain system built + tested + reviewed; the HIGH graduation-DoS (F6) is **fixed and fork-validated against the real Trader Joe V1 on Fuji**. **Pending:** a final tokenomics parameter lock (deploy config). **External professional audit is recommended before mainnet with real liquidity.**
 
 ## Methodology
 - **Foundry tests — 29 passing:** unit + fuzz (CurveMath monotonicity, round-trip non-profit, avaxOut ≤ reserve), pool buy/sell/graduate/init-bounds, factory launch/fee/pause/governance, and **invariant tests** (solvency `balance ≥ realAvax`, supply conservation `tokensSold ≤ curveSupply`, `poolTokenBalance == totalSupply − tokensSold`) over 256 runs × 16,384 calls with zero violations.
@@ -33,8 +33,8 @@
 - Non-ruggable token: fixed supply, no owner, no mint/blacklist/fee-on-transfer/transfer-pause.
 
 ## Residual risks / open items
-1. **F6 graduation griefing (HIGH — code-fixed in T11, fork-validation pending).** `_graduate` now get-or-creates the pair atomically and seeds via direct `pair.mint`, eliminating the permanent-DoS vector; unit-tested against a pre-created pair. **Still to do (T10):** validate on a Fuji fork against the real Trader Joe V1 pair that (a) mint succeeds against a skewed pre-seed and (b) the resulting price skew from a realistic attacker donation is acceptably diluted by the seed.
-2. **Real-DEX fork validation (T10) not done.** Graduation against a live Trader Joe V1 pool is untested; needs `FUJI_RPC_URL` + confirmed router addresses (Fuji + mainnet).
+1. **F6 graduation griefing (HIGH — code-fixed in T11, fork-validated in T10).** `_graduate` get-or-creates the pair atomically and seeds via direct `pair.mint`. **Fork-validated against the real Trader Joe V1 on Fuji** (`test/fork/Graduation.fork.t.sol`): a fresh graduation seeds a real pair (200M tokens + ≥60 AVAX, LP burned, no stranded tokens), and a moderate pre-created/donated skew does NOT DoS graduation (the donation is absorbed into the burned LP). **Residual (theoretical):** an attacker who pre-creates the pair AND calls `mint()` to set extreme reserves before graduation could dilute the burned LP; forcing an outright `INSUFFICIENT_LIQUIDITY_MINTED` revert requires the attacker to out-capitalize the protocol's 200M-token + ~60-AVAX seed (economically self-defeating). Flagged for the external audit; an optional `skim`/reserve-check hardening pass could close it fully.
+2. **Real-DEX fork validation (T10) — DONE.** Graduation validated against the live Trader Joe V1 on Fuji (fresh + moderate-skew). Confirmed addresses: Fuji router `0xd7f655E3376cE2D7A2b08fF01Eb3B1023191A901`, mainnet router `0x60aE616a2155Ee3d9A68541Ba4544862310933d4`.
 3. **Parameter lock (T12).** `P_grad` / `P_init` → `vAvax0`, `y0`, and `lpReserve` (F5) must be finalized and re-simulated; the deploy script must assert `totalSupply == curveSupply + lpReserve` and `graduationThreshold ≤ R_exhaust`.
 4. **Treasury trust.** A pool's `treasury` is snapshotted immutably at launch; if it becomes a reverting contract, that pool's *accrued fees* lock (trading is unaffected). Treasury is the platform's trusted Safe.
 5. **MEV / sniping** on launch and the graduating buy is inherent and only economically dampened (launch fee); documented, not eliminated.
