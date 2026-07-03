@@ -7,7 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {CurveMath} from "./libraries/CurveMath.sol";
-import {IJoeRouter} from "./interfaces/IJoeRouter.sol";
+import {IJoeRouter, IJoeFactoryLike, IJoePair, IWAVAX} from "./interfaces/IJoeRouter.sol";
 import {IPausableFactory} from "./interfaces/IPausableFactory.sol";
 
 /// @title BondingCurvePool
@@ -163,13 +163,27 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
         uint256 avaxToLp = realAvax;
         uint256 tokensToLp = lpReserve;
 
-        token.forceApprove(joeRouter, tokensToLp);
-        IJoeRouter(joeRouter).addLiquidityAVAX{value: avaxToLp}(
-            address(token), tokensToLp, tokensToLp, avaxToLp, BURN, block.timestamp
-        );
-        // Burn unsold curve tokens (curveSupply - tokensSold) so none are stranded.
+        address wavax = IJoeRouter(joeRouter).WAVAX();
+        address jfactory = IJoeRouter(joeRouter).factory();
+        address pair = IJoeFactoryLike(jfactory).getPair(address(token), wavax);
+        if (pair == address(0)) {
+            pair = IJoeFactoryLike(jfactory).createPair(address(token), wavax);
+        }
+
+        // Seed the pair directly and mint LP to the burn address. Using pair.mint
+        // (not the router's exact-min addLiquidity) means a pre-created/skewed pair
+        // cannot revert graduation — no permanent DoS. Any attacker pre-donation is
+        // absorbed into the burned (locked) LP and diluted by this large seed.
+        IWAVAX(wavax).deposit{value: avaxToLp}();
+        IERC20(wavax).safeTransfer(pair, avaxToLp);
+        token.safeTransfer(pair, tokensToLp);
+        // slither-disable-next-line unused-return — LP amount is irrelevant; we burn to DEAD.
+        IJoePair(pair).mint(BURN);
+
+        // Burn any unsold curve tokens so nothing is stranded.
         uint256 leftover = token.balanceOf(address(this));
         if (leftover > 0) token.safeTransfer(BURN, leftover);
+
         emit Graduated(avaxToLp, tokensToLp);
     }
 

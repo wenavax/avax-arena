@@ -7,6 +7,7 @@ import {LaunchToken} from "../src/LaunchToken.sol";
 import {BondingCurvePool} from "../src/BondingCurvePool.sol";
 import {CurveMath} from "../src/libraries/CurveMath.sol";
 import {MockJoeRouter} from "./mocks/MockJoeRouter.sol";
+import {MockJoePair} from "./mocks/MockJoePair.sol";
 
 contract StubFactory {
     bool public paused;
@@ -28,6 +29,7 @@ contract BondingCurvePoolTest is Test {
     uint16 constant FEE = 100; // 1%
 
     address alice = address(0xA11CE);
+    address constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     LaunchToken token;
     BondingCurvePool pool;
@@ -132,15 +134,27 @@ contract BondingCurvePoolTest is Test {
         vm.stopPrank();
     }
 
-    function test_graduation_triggersAtThreshold_seedsRouter_burnsLp() public {
+    function test_graduation_seedsPair_burnsLp() public {
         vm.prank(alice);
-        pool.buy{value: 70e18}(0, block.timestamp); // net=69.3 > GRAD=60; tokens≈748M < CURVE=800M
-
+        pool.buy{value: 70e18}(0, block.timestamp);
         assertEq(uint256(pool.state()), uint256(BondingCurvePool.State.Graduated), "graduated");
-        assertTrue(router.called(), "router seeded");
-        assertEq(router.lastTo(), address(0x000000000000000000000000000000000000dEaD), "LP burned");
-        assertEq(router.lastAmountToken(), LP, "LP token amount");
-        assertGe(router.lastAmountAVAX(), GRAD, "AVAX to LP >= threshold");
+        address pair = router.joeFactory().getPair(address(token), address(router.wavax()));
+        assertTrue(pair != address(0), "pair created");
+        assertEq(MockJoePair(pair).lastMintTo(), DEAD, "LP minted to burn");
+        assertEq(token.balanceOf(pair), LP, "pair holds LP token reserve");
+        assertGe(router.wavax().balanceOf(pair), GRAD, "pair seeded with >= threshold WAVAX");
+    }
+
+    function test_graduation_survivesPreCreatedPair() public {
+        // Attacker pre-creates the pair before graduation.
+        router.joeFactory().createPair(address(token), address(router.wavax()));
+        // Graduation must still succeed (get-or-create finds the existing pair, mints).
+        vm.prank(alice);
+        pool.buy{value: 70e18}(0, block.timestamp);
+        assertEq(uint256(pool.state()), uint256(BondingCurvePool.State.Graduated), "graduation not DoS'd by pre-created pair");
+        address pair = router.joeFactory().getPair(address(token), address(router.wavax()));
+        assertEq(MockJoePair(pair).lastMintTo(), DEAD, "LP still minted to burn");
+        assertEq(token.balanceOf(pair), LP, "pair seeded with LP tokens");
     }
 
     function test_buy_revertsAfterGraduation() public {
