@@ -48,6 +48,7 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
 
     uint256 public realAvax;
     uint256 public tokensSold;
+    uint256 public pendingFees;
     State public state;
 
     error Expired();
@@ -65,6 +66,7 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
     event Buy(address indexed buyer, uint256 avaxIn, uint256 fee, uint256 tokensOut, uint256 reserveAfter);
     event Sell(address indexed seller, uint256 tokensIn, uint256 fee, uint256 avaxOut, uint256 reserveAfter);
     event Graduated(uint256 avaxToLp, uint256 tokensToLp);
+    event FeesWithdrawn(uint256 amount);
 
     constructor() {
         _disableInitializers();
@@ -78,6 +80,7 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
         // buys would revert (ExceedsCurveSupply) and graduation could never fire.
         // R_exhaust = vAvax0 * curveSupply / (y0 - curveSupply).
         if (p.graduationThreshold > Math.mulDiv(p.vAvax0, p.curveSupply, p.y0 - p.curveSupply)) revert BadCurveParams();
+        if (IERC20(p.token).balanceOf(address(this)) < p.curveSupply + p.lpReserve) revert BadCurveParams();
         factory = p.factory;
         token = IERC20(p.token);
         vAvax0 = p.vAvax0;
@@ -112,7 +115,7 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
         realAvax += avaxIn;
         tokensSold += out;
 
-        if (fee > 0) _sendAvax(treasury, fee);
+        pendingFees += fee;
         token.safeTransfer(msg.sender, out);
         emit Buy(msg.sender, avaxIn, fee, out, realAvax);
 
@@ -138,9 +141,21 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
         tokensSold -= tokenIn;
 
         token.safeTransferFrom(msg.sender, address(this), tokenIn);
-        if (fee > 0) _sendAvax(treasury, fee);
+        pendingFees += fee;
         _sendAvax(msg.sender, net);
         emit Sell(msg.sender, tokenIn, fee, net, realAvax);
+    }
+
+    /// @notice Push accrued trading fees to the treasury. Permissionless trigger;
+    ///         trading never depends on the treasury accepting AVAX, so a broken
+    ///         treasury can never block buys or (critically) sells/exits.
+    function withdrawFees() external {
+        uint256 amount = pendingFees;
+        pendingFees = 0;
+        if (amount > 0) {
+            _sendAvax(treasury, amount);
+            emit FeesWithdrawn(amount);
+        }
     }
 
     function _graduate() internal {

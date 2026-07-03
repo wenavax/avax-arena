@@ -68,8 +68,9 @@ contract BondingCurvePoolTest is Test {
         assertEq(out, expected, "tokens out");
         assertEq(token.balanceOf(alice), expected);
         assertEq(pool.realAvax(), sent - fee, "reserve excludes fee");
-        assertEq(address(pool).balance, sent - fee, "AVAX held == realAvax");
-        assertEq(address(0x7).balance, fee, "fee to treasury");
+        assertEq(pool.pendingFees(), fee, "fee accrued as pending");
+        assertEq(address(pool).balance, sent, "pool holds reserve + pending fee");
+        assertEq(address(0x7).balance, 0, "treasury not paid until withdrawFees");
     }
 
     function test_buy_revertsOnSlippage() public {
@@ -190,4 +191,40 @@ contract BondingCurvePoolTest is Test {
         // unsold curve tokens were burned.
         assertEq(token.balanceOf(address(pool)), 0, "no tokens stranded in pool");
     }
+
+    function test_withdrawFees_paysTreasury() public {
+        vm.prank(alice);
+        pool.buy{value: 10e18}(0, block.timestamp);
+        uint256 pending = pool.pendingFees();
+        assertGt(pending, 0);
+        pool.withdrawFees();
+        assertEq(address(0x7).balance, pending, "treasury paid on withdraw");
+        assertEq(pool.pendingFees(), 0);
+    }
+
+    function test_sell_worksEvenIfTreasuryReverts() public {
+        // Point the pool's treasury at a contract that rejects AVAX by re-init on a
+        // fresh clone (treasury = a reverting contract).
+        RejectAvax bad = new RejectAvax();
+        BondingCurvePool p2 = BondingCurvePool(payable(Clones.clone(address(poolImpl))));
+        LaunchToken t2 = LaunchToken(Clones.clone(address(tokenImpl)));
+        t2.initialize("M2", "M2", TOTAL, address(p2));
+        p2.initialize(BondingCurvePool.InitParams({
+            factory: address(factory), token: address(t2), vAvax0: V_AVAX0, y0: Y0,
+            curveSupply: CURVE, lpReserve: LP, graduationThreshold: GRAD,
+            tradingFeeBps: FEE, treasury: address(bad), joeRouter: address(router)
+        }));
+        vm.deal(alice, 1000e18);
+        vm.prank(alice);
+        uint256 bought = p2.buy{value: 5e18}(0, block.timestamp); // fee accrues, no send -> ok
+        vm.startPrank(alice);
+        t2.approve(address(p2), bought);
+        uint256 got = p2.sell(bought, 0, block.timestamp); // must NOT revert despite bad treasury
+        vm.stopPrank();
+        assertGt(got, 0, "exit stays open even with a reverting treasury");
+    }
+}
+
+contract RejectAvax {
+    receive() external payable { revert("no avax"); }
 }
