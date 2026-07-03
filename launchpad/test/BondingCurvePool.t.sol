@@ -130,4 +130,23 @@ contract BondingCurvePoolTest is Test {
         pool.sell(bought, type(uint256).max, block.timestamp);
         vm.stopPrank();
     }
+
+    function test_graduation_triggersAtThreshold_seedsRouter_burnsLp() public {
+        vm.prank(alice);
+        pool.buy{value: 70e18}(0, block.timestamp); // net=69.3 > GRAD=60; tokens≈748M < CURVE=800M
+
+        assertEq(uint256(pool.state()), uint256(BondingCurvePool.State.Graduated), "graduated");
+        assertTrue(router.called(), "router seeded");
+        assertEq(router.lastTo(), address(0x000000000000000000000000000000000000dEaD), "LP burned");
+        assertEq(router.lastAmountToken(), LP, "LP token amount");
+        assertGe(router.lastAmountAVAX(), GRAD, "AVAX to LP >= threshold");
+    }
+
+    function test_buy_revertsAfterGraduation() public {
+        vm.prank(alice);
+        pool.buy{value: 70e18}(0, block.timestamp);
+        vm.prank(alice);
+        vm.expectRevert(BondingCurvePool.NotTrading.selector);
+        pool.buy{value: 1e18}(0, block.timestamp);
+    }
 }
