@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { usePrivy } from '@privy-io/react-auth';
+import { LogOut } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import {
   Menu,
@@ -37,12 +38,12 @@ import { cn } from '@/lib/utils';
 /* ---------- Inline Music Controls ---------- */
 
 const TRACKS = [
-  { src: '/music/track1.mp3', title: '1' },
-  { src: '/music/track2.mp3', title: '2' },
-  { src: '/music/track3.mp3', title: '3' },
-  { src: '/music/track4.mp3', title: '4' },
-  { src: '/music/track5.mp3', title: '5' },
-  { src: '/music/track6.mp3', title: '6' },
+  { src: '/avalanche/music/track1.mp3', title: '1' },
+  { src: '/avalanche/music/track2.mp3', title: '2' },
+  { src: '/avalanche/music/track3.mp3', title: '3' },
+  { src: '/avalanche/music/track4.mp3', title: '4' },
+  { src: '/avalanche/music/track5.mp3', title: '5' },
+  { src: '/avalanche/music/track6.mp3', title: '6' },
 ];
 
 function MusicControls() {
@@ -132,83 +133,71 @@ const NAV_LINKS = [
 
 function WalletButton({ compact = false }: { compact?: boolean }) {
   const [copied, setCopied] = useState(false);
+  const { ready, authenticated, login, logout } = usePrivy();
+  const { address } = useAccount();
 
-  const copyAddress = (address: string) => {
-    navigator.clipboard.writeText(address);
+  const copyAddress = (addr: string) => {
+    navigator.clipboard.writeText(addr);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const connected = ready && authenticated && !!address;
+  const displayName = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
+
   return (
-    <ConnectButton.Custom>
-      {({ account, chain, openConnectModal, openAccountModal, mounted }) => {
-        const ready = mounted;
-        const connected = ready && account && chain;
-
-        return (
-          <div
-            {...(!ready && {
-              'aria-hidden': true,
-              style: { opacity: 0, pointerEvents: 'none' as const, userSelect: 'none' as const },
-            })}
+    <div
+      {...(!ready && {
+        'aria-hidden': true,
+        style: { opacity: 0, pointerEvents: 'none' as const, userSelect: 'none' as const },
+      })}
+    >
+      {!connected ? (
+        <button
+          onClick={login}
+          disabled={!ready}
+          className={cn(
+            'w-full flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-200',
+            'bg-gradient-to-r from-frost-primary/20 to-frost-secondary/20',
+            'border border-frost-primary/30 hover:border-frost-primary/50',
+            'text-frost-primary hover:text-white',
+            'hover:shadow-[0_0_20px_rgba(255,32,32,0.2)]',
+            compact ? 'text-[11px] px-3 py-1.5' : 'text-xs px-4 py-2.5'
+          )}
+        >
+          <Wallet className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+          <span>Connect Wallet</span>
+        </button>
+      ) : (
+        <div className={cn('flex items-center gap-1.5', !compact && 'w-full')}>
+          <button
+            onClick={() => copyAddress(address!)}
+            title="Copy address"
+            className={cn(
+              'flex items-center gap-2 rounded-xl transition-all duration-200',
+              'bg-white/[0.04] border border-white/[0.06]',
+              'hover:bg-white/[0.08] hover:border-white/[0.12]',
+              compact ? 'text-[10px] px-2 py-1' : 'flex-1 text-[11px] px-3 py-2.5'
+            )}
           >
-            {(() => {
-              if (!connected) {
-                return (
-                  <button
-                    onClick={openConnectModal}
-                    className={cn(
-                      'w-full flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-200',
-                      'bg-gradient-to-r from-frost-primary/20 to-frost-secondary/20',
-                      'border border-frost-primary/30 hover:border-frost-primary/50',
-                      'text-frost-primary hover:text-white',
-                      'hover:shadow-[0_0_20px_rgba(255,32,32,0.2)]',
-                      compact
-                        ? 'text-[11px] px-3 py-1.5'
-                        : 'text-xs px-4 py-2.5'
-                    )}
-                  >
-                    <Wallet className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
-                    <span>Connect Wallet</span>
-                  </button>
-                );
-              }
-
-              return (
-                <div className={cn(
-                  'flex items-center gap-1.5',
-                  !compact && 'w-full'
-                )}>
-                  <button
-                    onClick={openAccountModal}
-                    className={cn(
-                      'flex items-center gap-2 rounded-xl transition-all duration-200',
-                      'bg-white/[0.04] border border-white/[0.06]',
-                      'hover:bg-white/[0.08] hover:border-white/[0.12]',
-                      compact
-                        ? 'text-[10px] px-2 py-1'
-                        : 'flex-1 text-[11px] px-3 py-2.5'
-                    )}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-frost-green flex-shrink-0 shadow-[0_0_6px_rgba(74,222,128,0.4)]" />
-                    <span className="font-mono text-white/60">
-                      {account.displayName}
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => copyAddress(account.address)}
-                    className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/[0.03] hover:bg-white/[0.07] text-white/30 hover:text-white/60 transition-all border border-white/[0.04]"
-                    title="Copy address"
-                  >
-                    {copied ? <Check className="h-3 w-3 text-frost-green" /> : <Copy className="h-3 w-3" />}
-                  </button>
-                </div>
-              );
-            })()}
-          </div>
-        );
-      }}
-    </ConnectButton.Custom>
+            <span className="w-2 h-2 rounded-full bg-frost-green flex-shrink-0 shadow-[0_0_6px_rgba(74,222,128,0.4)]" />
+            <span className="font-mono text-white/60">{copied ? 'Copied!' : displayName}</span>
+            {copied ? (
+              <Check className="h-3 w-3 text-frost-green flex-shrink-0" />
+            ) : (
+              <Copy className="h-3 w-3 text-white/30 flex-shrink-0" />
+            )}
+          </button>
+          <button
+            onClick={logout}
+            title="Disconnect"
+            className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/[0.03] hover:bg-frost-primary/10 text-white/30 hover:text-frost-primary transition-all border border-white/[0.04]"
+          >
+            <LogOut className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

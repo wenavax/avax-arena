@@ -23,7 +23,6 @@ const GameplayDemo = dynamic(
   () => import('@/components/layout/GameplayDemo').then(mod => mod.GameplayDemo),
   { ssr: false }
 );
-import '@rainbow-me/rainbowkit/styles.css';
 import './globals.css';
 
 const inter = Inter({
