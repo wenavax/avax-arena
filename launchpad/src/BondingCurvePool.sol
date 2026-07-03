@@ -106,6 +106,30 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
         if (realAvax >= graduationThreshold) _graduate();
     }
 
+    function sell(uint256 tokenIn, uint256 minAvaxOut, uint256 deadline)
+        external
+        nonReentrant
+        returns (uint256 net)
+    {
+        if (block.timestamp > deadline) revert Expired();
+        if (state != State.Trading) revert NotTrading();
+        if (tokenIn == 0) revert ZeroAmount();
+        if (tokenIn > tokensSold) revert ExceedsSold();
+
+        uint256 gross = CurveMath.avaxOut(vAvax0, y0, realAvax, tokenIn);
+        uint256 fee = (gross * tradingFeeBps) / 10000;
+        net = gross - fee;
+        if (net < minAvaxOut) revert Slippage();
+
+        realAvax -= gross;
+        tokensSold -= tokenIn;
+
+        token.safeTransferFrom(msg.sender, address(this), tokenIn);
+        if (fee > 0) _sendAvax(treasury, fee);
+        _sendAvax(msg.sender, net);
+        emit Sell(msg.sender, tokenIn, fee, net, realAvax);
+    }
+
     function _graduate() internal {
         state = State.Graduated; // effects before external calls
         uint256 avaxToLp = realAvax;

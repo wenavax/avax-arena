@@ -91,4 +91,43 @@ contract BondingCurvePoolTest is Test {
         vm.expectRevert(BondingCurvePool.Expired.selector);
         pool.buy{value: 1e18}(0, 999);
     }
+
+    function test_sell_returnsAvax_takesFee_reducesReserve() public {
+        vm.prank(alice);
+        uint256 bought = pool.buy{value: 10e18}(0, block.timestamp);
+
+        uint256 reserveBefore = pool.realAvax();
+        uint256 gross = CurveMath.avaxOut(V_AVAX0, Y0, reserveBefore, bought);
+        uint256 fee = gross * FEE / 10000;
+
+        vm.startPrank(alice);
+        token.approve(address(pool), bought);
+        uint256 got = pool.sell(bought, 0, block.timestamp);
+        vm.stopPrank();
+
+        assertEq(got, gross - fee, "net avax to seller");
+        assertEq(pool.realAvax(), reserveBefore - gross, "reserve drops by gross");
+        assertEq(pool.tokensSold(), 0, "all sold tokens returned");
+    }
+
+    function test_sell_worksWhenPaused() public {
+        vm.prank(alice);
+        uint256 bought = pool.buy{value: 5e18}(0, block.timestamp);
+        factory.setPaused(true); // halt must NOT block exits
+        vm.startPrank(alice);
+        token.approve(address(pool), bought);
+        uint256 got = pool.sell(bought, 0, block.timestamp);
+        vm.stopPrank();
+        assertGt(got, 0, "sell must remain open under pause");
+    }
+
+    function test_sell_revertsOnSlippage() public {
+        vm.prank(alice);
+        uint256 bought = pool.buy{value: 5e18}(0, block.timestamp);
+        vm.startPrank(alice);
+        token.approve(address(pool), bought);
+        vm.expectRevert(BondingCurvePool.Slippage.selector);
+        pool.sell(bought, type(uint256).max, block.timestamp);
+        vm.stopPrank();
+    }
 }
