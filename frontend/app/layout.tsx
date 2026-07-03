@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter, Press_Start_2P, JetBrains_Mono, Silkscreen } from 'next/font/google';
+import { Inter, Space_Grotesk, JetBrains_Mono, Silkscreen, Anton } from 'next/font/google';
 import { ThemeProvider } from '@/providers/ThemeProvider';
 import { Web3Provider } from '@/providers/Web3Provider';
 import { EventProvider } from '@/providers/EventProvider';
@@ -18,6 +18,11 @@ const ParticleBackground = dynamic(
   () => import('@/components/layout/ParticleBackground').then(mod => mod.ParticleBackground),
   { ssr: false }
 );
+
+const GameplayDemo = dynamic(
+  () => import('@/components/layout/GameplayDemo').then(mod => mod.GameplayDemo),
+  { ssr: false }
+);
 import '@rainbow-me/rainbowkit/styles.css';
 import './globals.css';
 
@@ -27,10 +32,9 @@ const inter = Inter({
   display: 'swap',
 });
 
-const pressStart = Press_Start_2P({
-  weight: '400',
+const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
-  variable: '--font-press-start',
+  variable: '--font-space-grotesk',
   display: 'swap',
 });
 
@@ -44,6 +48,13 @@ const silkscreen = Silkscreen({
   weight: ['400', '700'],
   subsets: ['latin'],
   variable: '--font-silkscreen',
+  display: 'swap',
+});
+
+const anton = Anton({
+  weight: '400',
+  subsets: ['latin'],
+  variable: '--font-anton',
   display: 'swap',
 });
 
@@ -139,8 +150,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${pressStart.variable} ${jetbrainsMono.variable} ${silkscreen.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} ${silkscreen.variable} ${anton.variable}`} suppressHydrationWarning>
       <body className="font-sans antialiased min-h-screen">
+        {/* Pre-hydration: resolve collapsed-feed width before first paint (no margin slide) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var c=localStorage.getItem('frostbite_feed_collapsed')==='1';document.documentElement.style.setProperty('--feed-w',c?'48px':'280px');}catch(e){}})();`,
+          }}
+        />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -156,7 +173,7 @@ export default function RootLayout({
             {/* App shell: sidebar + main + activity ticker */}
             <div className="mx-auto max-w-[1560px] w-full flex min-h-screen relative">
               <Sidebar />
-              <div className="flex-1 min-w-0 flex flex-col min-h-screen xl:mr-[280px]">
+              <div className="flex-1 min-w-0 flex flex-col min-h-screen xl:[margin-right:var(--feed-w,280px)] transition-[margin] duration-300">
                 <MobileTopBar />
                 <ChainGuard />
                 <main className="relative flex-1 pb-4 px-3 sm:px-6 lg:px-8">{children}</main>
@@ -164,6 +181,7 @@ export default function RootLayout({
               </div>
               <ActivityTicker />
             </div>
+            <GameplayDemo />
           </EventProvider>
           </Web3Provider>
         </ThemeProvider>
