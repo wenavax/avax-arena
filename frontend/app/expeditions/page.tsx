@@ -2,11 +2,26 @@
 
 // Frostbite Expeditions — Phase 0 playable prototype (off-chain, no contracts).
 // Deterministic engine: lib/game/expeditions/*. Demo squad; FSB/entry simulated.
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Swords, Shield, Zap, Sparkles, Skull, Coins, ArrowDown, Heart, LogOut } from 'lucide-react';
 import { ELEMENT_ICONS } from '@/lib/game/elements';
-import type { ExpeditionWarrior, RunState, CombatResult, Relic, Rarity } from '@/lib/game/expeditions/types';
-import { startRun, descend, takeRelic, healAndAdvance, extract } from '@/lib/game/expeditions/run';
+import type { ExpeditionWarrior, RunState, CombatResult, FloorBoss, Rarity } from '@/lib/game/expeditions/types';
+import { startRun, descend, takeRelic, healAndAdvance, extract, partyPower } from '@/lib/game/expeditions/run';
+import { previewBossSkeletons, fetchBossFlavors, applyFlavor } from '@/lib/game/expeditions/aiFlavor';
+
+type AiStatus = 'idle' | 'loading' | 'ready' | 'off';
+
+// When AI flavor arrives after a floor's log line was written with the
+// procedural name, rewrite ONLY that floor's lines so the log, card, and button
+// all show the same boss identity. Scoped by floor tag to avoid clobbering other
+// floors that happen to share a procedural name.
+function reconcileCurrentFloorLog(log: string[], floor: number, oldBoss: FloorBoss, newBoss: FloorBoss): string[] {
+  if (oldBoss.name === newBoss.name && oldBoss.title === newBoss.title) return log;
+  const floorRe = new RegExp(`Floor ${floor}\\b`);
+  const onCurrentFloor = (line: string) => floorRe.test(line) || (floor === 1 && line.startsWith('Expedition begins'));
+  const swap = (line: string) => line.split(oldBoss.name).join(newBoss.name).split(oldBoss.title).join(newBoss.title);
+  return log.map((line) => (onCurrentFloor(line) ? swap(line) : line));
+}
 
 const DEMO_SQUAD: ExpeditionWarrior[] = [
   { tokenId: 101, attack: 74, defense: 42, speed: 58, element: 'fire', specialPower: 66, level: 9 },
@@ -38,11 +53,46 @@ function HpBar({ hp, max, tone }: { hp: number; max: number; tone: 'squad' | 'bo
 export default function ExpeditionsPage() {
   const [run, setRun] = useState<RunState | null>(null);
   const [result, setResult] = useState<CombatResult | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
+  const activeSeed = useRef<string>('');
+  const aiAbort = useRef<AbortController | null>(null);
+
+  // Cancel any in-flight flavor request when the page unmounts.
+  useEffect(() => () => aiAbort.current?.abort(), []);
 
   const begin = useCallback(() => {
     const seed = `exp-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
+    activeSeed.current = seed;
     setResult(null);
-    setRun(startRun({ seed, warriors: DEMO_SQUAD }));
+    const fresh = startRun({ seed, warriors: DEMO_SQUAD });
+    setRun(fresh);
+    setAiStatus('loading');
+
+    // Fire-and-forget: Claude authors every floor's boss identity in one batch.
+    // Gameplay never waits on it — if it's slow/unconfigured/errors/times out,
+    // the procedural boss text already on screen simply stays. A 15s timeout
+    // (and abort on a new run / unmount) guarantees the badge leaves 'loading'.
+    aiAbort.current?.abort();
+    const controller = new AbortController();
+    aiAbort.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+
+    const skeletons = previewBossSkeletons(seed, partyPower(DEMO_SQUAD), fresh.maxFloors);
+    fetchBossFlavors(seed, skeletons, controller.signal).then((map) => {
+      clearTimeout(timeout);
+      if (activeSeed.current !== seed) return; // a newer run began; ignore stale reply
+      if (Object.keys(map).length === 0) { setAiStatus('off'); return; }
+      setRun((prev) => {
+        if (!prev || prev.seed !== seed) return prev;
+        // Re-skin the on-screen boss and reconcile its floor's log lines, and
+        // hand the map to the engine so future floors are flavored on advance().
+        const flavor = map[prev.floor];
+        const nextBoss = prev.boss ? applyFlavor(prev.boss, flavor) : prev.boss;
+        const log = prev.boss && nextBoss ? reconcileCurrentFloorLog(prev.log, prev.floor, prev.boss, nextBoss) : prev.log;
+        return { ...prev, flavors: map, boss: nextBoss, log };
+      });
+      setAiStatus('ready');
+    });
   }, []);
 
   const onDescend = useCallback(() => {
@@ -69,6 +119,7 @@ export default function ExpeditionsPage() {
           FROSTBITE <span className="text-frost-primary">EXPEDITIONS</span>
         </h1>
         <p className="mt-2 text-white/45 text-sm">Descend an idle on-chain roguelike gauntlet · <span className="text-white/30">Phase 0 · token-free core</span></p>
+        {run && <div className="mt-3 flex justify-center"><AiBadge status={aiStatus} /></div>}
       </div>
 
       {/* START */}
@@ -208,6 +259,24 @@ export default function ExpeditionsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function AiBadge({ status }: { status: AiStatus }) {
+  if (status === 'idle') return null;
+  const map = {
+    loading: { dot: 'bg-frost-primary animate-pulse', text: 'Summoning bosses…', tone: 'text-white/45 border-white/10' },
+    ready: { dot: 'bg-emerald-400', text: 'AI-authored bosses', tone: 'text-emerald-300/70 border-emerald-500/20' },
+    off: { dot: 'bg-white/30', text: 'Procedural bosses', tone: 'text-white/35 border-white/10' },
+  } as const;
+  const s = map[status as keyof typeof map];
+  if (!s) return null;
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-wider ${s.tone}`}>
+      <Sparkles className="h-3 w-3" />
+      <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+      {s.text}
+    </span>
   );
 }
 

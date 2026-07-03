@@ -1,12 +1,13 @@
 // ─── Expedition run orchestration ───
 // Pure state machine over a run: start -> descend -> choose (relic/heal/extract)
 // -> descend ... until extract (bank reward) or death (reward lost, depth kept).
-import type { ExpeditionWarrior, Relic, RunState, Squad, CombatResult } from './types';
+import type { ExpeditionWarrior, Relic, RunState, Squad, CombatResult, BossFlavor } from './types';
 import { bossForFloor } from './bosses';
 import { resolveFloor } from './combat';
 import { draftRelics } from './relics';
 import { Rng } from './rng';
 import { FreeEconomy, ECONOMIES, type EconomyProvider } from './economy';
+import { applyFlavor } from './aiFlavor';
 
 const RELIC_OFFERS = 3;
 
@@ -41,9 +42,10 @@ export interface StartOpts {
   startingRelics?: Relic[];
   maxFloors?: number;
   economy?: EconomyProvider; // default: token-free FreeEconomy
+  flavors?: Record<number, BossFlavor>; // optional AI-authored identities; combat is unaffected
 }
 
-export function startRun({ seed, warriors, startingRelics = [], maxFloors = 12, economy = FreeEconomy }: StartOpts): RunState {
+export function startRun({ seed, warriors, startingRelics = [], maxFloors = 12, economy = FreeEconomy, flavors }: StartOpts): RunState {
   const relics = [...startingRelics];
   const maxHp = computeMaxHp(warriors, relics);
   const squad: Squad = {
@@ -53,7 +55,7 @@ export function startRun({ seed, warriors, startingRelics = [], maxFloors = 12, 
     relics,
     survivalCharges: survivalPerFloor(relics),
   };
-  const boss = bossForFloor(seed, 1, partyPower(warriors));
+  const boss = applyFlavor(bossForFloor(seed, 1, partyPower(warriors)), flavors?.[1]);
   return {
     seed,
     economyId: economy.id,
@@ -66,6 +68,7 @@ export function startRun({ seed, warriors, startingRelics = [], maxFloors = 12, 
     reward: 0,
     offeredRelics: [],
     log: [`Expedition begins. ${boss.name} ${boss.title} blocks Floor 1.`],
+    flavors,
   };
 }
 
@@ -132,7 +135,7 @@ export function extract(run: RunState): void {
 
 function advance(run: RunState): void {
   run.floor += 1;
-  run.boss = bossForFloor(run.seed, run.floor, partyPower(run.squad.warriors));
+  run.boss = applyFlavor(bossForFloor(run.seed, run.floor, partyPower(run.squad.warriors)), run.flavors?.[run.floor]);
   run.offeredRelics = [];
   run.status = 'active';
   run.log.push(`Floor ${run.floor}: ${run.boss.name} ${run.boss.title}${run.boss.isElite ? ' (ELITE)' : ''}. "${run.boss.entranceDialogue}"`);

@@ -60,6 +60,19 @@ export interface FloorBoss {
   lore: string;
 }
 
+/**
+ * Claude-authored *flavor* for a boss — identity only, never combat stats.
+ * Layered over the deterministic FloorBoss skeleton so the run stays verifiable
+ * (element/hp/atk/def/spd are untouched). Absence => procedural fallback.
+ */
+export interface BossFlavor {
+  name: string;
+  title: string;
+  lore: string;
+  entranceDialogue: string;
+  defeatDialogue: string;
+}
+
 export interface Squad {
   warriors: ExpeditionWarrior[];
   hp: number;
@@ -101,4 +114,5 @@ export interface RunState {
   reward: number;         // accumulated FSB reward if extracted (simulated in Phase 0)
   offeredRelics: Relic[]; // between-floor draft options
   log: string[];
+  flavors?: Record<number, BossFlavor>; // floor -> AI-authored identity; merged at boss creation (optional)
 }

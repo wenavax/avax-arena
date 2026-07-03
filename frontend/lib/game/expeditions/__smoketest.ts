@@ -1,6 +1,6 @@
 // Run: npx tsx lib/game/expeditions/__smoketest.ts   (from frontend/)
 import { startRun, descend, takeRelic, healAndAdvance, extract } from './run';
-import type { ExpeditionWarrior, RunState } from './types';
+import type { ExpeditionWarrior, RunState, BossFlavor } from './types';
 
 const WARRIORS: ExpeditionWarrior[] = [
   { tokenId: 1, attack: 72, defense: 40, speed: 55, element: 'fire', specialPower: 60, level: 8 },
@@ -10,8 +10,8 @@ const WARRIORS: ExpeditionWarrior[] = [
 
 type Strategy = 'greedy' | 'smart';
 
-function autoPlay(seed: string, strategy: Strategy = 'greedy') {
-  const run: RunState = startRun({ seed, warriors: WARRIORS });
+function autoPlay(seed: string, strategy: Strategy = 'greedy', flavors?: Record<number, BossFlavor>) {
+  const run: RunState = startRun({ seed, warriors: WARRIORS, flavors });
   let guard = 0;
   while ((run.status === 'active' || run.status === 'choosing') && guard++ < 100) {
     if (run.status === 'active') { descend(run); continue; }
@@ -56,4 +56,46 @@ for (const strat of ['greedy', 'smart'] as const) {
 // 3) SANITY: a run must terminate in a terminal state
 const term = autoPlay('term-check');
 console.log(`\n[sanity] terminal state reached: ${(term.status === 'extracted' || term.status === 'dead') ? '✅ PASS' : '❌ FAIL'} (${term.status})`);
+
+// 4) FLAVOR-INVARIANCE: AI-authored boss identity must NOT change the run's
+//    mechanical outcome (anti-cheat: flavor never touches combat stats). Only
+//    the log text (which embeds boss names) may differ.
+const FAKE_FLAVORS: Record<number, BossFlavor> = {};
+for (let f = 1; f <= 20; f++) {
+  FAKE_FLAVORS[f] = {
+    name: `Testwraith${f}`, title: 'the Mocked',
+    lore: 'a mock boss', entranceDialogue: 'mock taunt', defeatDialogue: 'mock death',
+  };
+}
+const plain = autoPlay('flavor-check', 'smart');
+const flavored = autoPlay('flavor-check', 'smart', FAKE_FLAVORS);
+const combatIdentical =
+  plain.status === flavored.status &&
+  plain.floor === flavored.floor &&
+  plain.reward === flavored.reward &&
+  plain.relics === flavored.relics;
+const flavorApplied = flavored.logHash.includes('Testwraith');
+console.log(`\n[flavor-invariance] combat outcome unchanged by AI flavor: ${combatIdentical ? '✅ PASS' : '❌ FAIL'}`);
+console.log(`[flavor-invariance] flavor actually reached boss + logs:    ${flavorApplied ? '✅ PASS' : '❌ FAIL'}`);
+if (!combatIdentical) { console.log('  plain', plain); console.log('  flavored', flavored); }
+
+// 5) HOSTILE-SHAPE: a malicious/oddly-shaped AI response that smuggles
+//    combat-shaped keys (atk/def/element/maxHp/...) must STILL not change the
+//    run. This guards against a future regression where applyFlavor spreads the
+//    flavor instead of picking identity fields.
+const HOSTILE: Record<number, any> = {};
+for (let f = 1; f <= 20; f++) {
+  HOSTILE[f] = {
+    name: `Testwraith${f}`, title: 'the Mocked', lore: '', entranceDialogue: 'x', defeatDialogue: '',
+    element: 'shadow', maxHp: 1, hp: 1, atk: 999999, def: 0, spd: 999, isElite: false, level: 99, __proto__: { atk: 5 },
+  };
+}
+const hostile = autoPlay('flavor-check', 'smart', HOSTILE as any);
+const hostileSafe =
+  plain.status === hostile.status &&
+  plain.floor === hostile.floor &&
+  plain.reward === hostile.reward &&
+  plain.relics === hostile.relics;
+console.log(`[hostile-shape] injected combat keys cannot reach combat:  ${hostileSafe ? '✅ PASS' : '❌ FAIL'}`);
+if (!hostileSafe) { console.log('  plain', plain); console.log('  hostile', hostile); }
 console.log('');
