@@ -8,13 +8,15 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 /// @title Deploy — LaunchpadFactory deployment (chain-aware)
 /// @notice Picks the Trader Joe V1 router by chainId (Fuji 43113 / Avalanche 43114).
 ///
-///         The tokenomics below are PROPOSED and fork-validated on Fuji against the
-///         real Trader Joe V1. CONFIRM them before mainnet. The factory constructor
-///         runs `_validateConfig`, so a bad param set reverts the deploy (fail-fast):
+///         The tokenomics below are LOCKED (2026-07-05) and fork-validated on Fuji
+///         against the real Trader Joe V1. The factory constructor runs
+///         `_validateConfig`, so a bad param set reverts the deploy (fail-fast):
 ///         it enforces `totalSupply == curveSupply + lpReserve`, `y0 > curveSupply`,
 ///         `tradingFeeBps <= 500`, non-zero treasury/router, and that
 ///         `graduationThreshold <= vAvax0 * curveSupply / (y0 - curveSupply)` (so
 ///         graduation is always reachable before the curve exhausts).
+///         graduationThreshold is Safe-governable post-deploy; mainnet may scale the
+///         raise up (see the tokenomics note below) before its own broadcast.
 ///
 ///         Run (dry): forge script script/Deploy.s.sol --rpc-url $FUJI_RPC_URL
 ///         Broadcast: forge script script/Deploy.s.sol --rpc-url $FUJI_RPC_URL --broadcast --private-key $DEPLOYER_PK
@@ -27,10 +29,10 @@ contract Deploy is Script {
     address constant TREASURY = 0x301b013280317a75f808A3C0D23e82e9027A6b77; // fee recipient
     address constant SAFE = 0xc4d1cCb6C18dF7254014c9f43cD1D32cb5D44d07;     // Gnosis Safe 2/3 → final owner
 
-    // --- PROPOSED tokenomics (fork-validated). CONFIRM before mainnet. ---
+    // --- LOCKED tokenomics (2026-07-05, fork-validated). ---
     // 1B supply: 800M sold on the curve, 200M seeded to the graduation LP.
     // vAvax0/y0 are pump.fun-style virtual reserves → the curve exhausts at
-    // R_exhaust = vAvax0*curveSupply/(y0-curveSupply) ≈ 87.9 AVAX, so a 60-AVAX
+    // R_exhaust = vAvax0*curveSupply/(y0-curveSupply) ≈ 87.9 AVAX, so the 60-AVAX
     // graduationThreshold is reachable (graduates at ~715M sold). At graduation the
     // DEX opens ~19% above the last curve price — a small listing premium for the
     // top-of-curve buyers, not a down-cliff (F5).
