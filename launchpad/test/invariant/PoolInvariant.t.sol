@@ -9,8 +9,8 @@ import {MockJoeRouter} from "../mocks/MockJoeRouter.sol";
 
 contract StubFactory2 { function paused() external pure returns (bool) { return false; } }
 
-/// Bounded actor that buys and sells but never lets the pool graduate, so the
-/// balance-based invariants apply to a live curve for the whole run.
+/// Bounded actor that buys, sells, and withdraws fees but never lets the pool
+/// graduate, so the exact balance accounting identity applies for the whole run.
 contract Handler is Test {
     BondingCurvePool public pool;
     LaunchToken public token;
@@ -47,6 +47,12 @@ contract Handler is Test {
         try pool.sell(amt, 0, block.timestamp) {} catch {}
         vm.stopPrank();
     }
+
+    /// Exercise fee withdrawal so the fuzzer verifies the accounting identity
+    /// still holds after pendingFees are flushed to the treasury.
+    function withdrawFees() external {
+        try pool.withdrawFees() {} catch {}
+    }
 }
 
 contract PoolInvariantTest is Test {
@@ -77,9 +83,11 @@ contract PoolInvariantTest is Test {
         targetContract(address(handler));
     }
 
-    /// The pool's AVAX balance always covers its accounted reserve.
+    /// The pool's AVAX balance is exactly the trading reserve plus accrued
+    /// (un-withdrawn) fees — the exact accounting identity, not just a lower bound.
     function invariant_solvent() public view {
-        assertGe(address(pool).balance, pool.realAvax());
+        // Pool AVAX balance is exactly the trading reserve plus accrued (un-withdrawn) fees.
+        assertEq(address(pool).balance, pool.realAvax() + pool.pendingFees());
     }
 
     /// Never sell more than the curve allows; pool holds every unsold token.
