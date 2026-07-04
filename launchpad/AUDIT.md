@@ -3,7 +3,7 @@
 **Scope:** `launchpad/src/**` — `LaunchpadFactory.sol`, `BondingCurvePool.sol`, `LaunchToken.sol`, `libraries/CurveMath.sol`, `interfaces/*`.
 **Reviewed at commit:** `df6f266` (branch `frozenfriends-mvp`).
 **Design spec:** `../docs/superpowers/specs/2026-07-03-launchpad-design.md`.
-**Status:** Core on-chain system built + tested + reviewed; the HIGH graduation-DoS (F6) is **fixed and fork-validated against the real Trader Joe V1 on Fuji**. **Pending:** a final tokenomics parameter lock (deploy config). **External professional audit is recommended before mainnet with real liquidity.**
+**Status:** Core on-chain system built + tested + reviewed + **deep-audited (two rounds)**; the HIGH graduation-DoS (F6) is **fixed and fork-validated against the real Trader Joe V1 on Fuji** (empirically not a DoS). Round-2 deep audit surfaced only one actionable low-severity item (config bounds), now fixed. **Pending:** a final tokenomics parameter lock (deploy config). **External professional audit is still recommended before mainnet with real liquidity** — an in-house audit reduces risk but does not provide independent attestation.
 
 ## Methodology
 - **Foundry tests — 29 passing:** unit + fuzz (CurveMath monotonicity, round-trip non-profit, avaxOut ≤ reserve), pool buy/sell/graduate/init-bounds, factory launch/fee/pause/governance, and **invariant tests** (solvency `balance ≥ realAvax`, supply conservation `tokensSold ≤ curveSupply`, `poolTokenBalance == totalSupply − tokensSold`) over 256 runs × 16,384 calls with zero violations.
@@ -31,6 +31,25 @@
 - `paused()` blocks new launches + buys but **never** sells (exits always open).
 - Factory clones + initializes token and pool atomically in one tx → the un-access-controlled `initialize` cannot be front-run.
 - Non-ruggable token: fixed supply, no owner, no mint/blacklist/fee-on-transfer/transfer-pause.
+
+## Deep audit round 2 (2026-07-04)
+
+A second, deeper pass at the user's request. **Additional methodology:**
+- **Strengthened property/invariant fuzzing** (Echidna-equivalent via Foundry): tightened solvency to the exact identity `poolBalance == realAvax + pendingFees`, and added a factory-driven multi-pool invariant suite (`address(factory).balance == 0`, per-pool solvency + supply conservation, launchCount). Both held over 256 runs × 16,384 calls, 0 violations.
+- **7-lens multi-agent adversarial audit** (MEV/ordering, arithmetic/precision, reentrancy, access/init/clone, graduation/DEX, economic/griefing/DoS, lifecycle/state) with an independent adversarial verifier refuting each finding.
+- **F6 extreme-reserve fork test** against real Trader Joe V1 on Fuji.
+- Slither (done earlier). Mythril was attempted but is unavailable in this environment (blocked from downloading a solc binary); the multi-agent audit + Foundry fuzz/invariant + Slither cover the same ground.
+
+**Result: 10 raw findings → 2 confirmed (both low/info), 8 refuted.** 0 critical / high / medium.
+
+| ID | Severity | Finding | Status |
+|----|----------|---------|--------|
+| D1 | LOW | `_validateConfig` + pool init lacked positive lower-bounds and uint112 upper-bounds on `vAvax0`/`curveSupply`/`lpReserve`/`graduationThreshold` → a trusted-owner misconfig (e.g. `lpReserve=0`) passes validation but bricks graduation (no attacker path, no fund loss — sells stay open) | **FIXED** — positivity + uint112 bounds added to `_validateConfig` and pool init |
+
+The 8 refuted findings (verified false positives / by-design): graduation listing-premium "MEV extraction" (self-funded, no extractable value — pool AVAX is conserved), first-block sniping (inherent, intentional pump.fun property; sniper pays fair curve price, no theft), `avaxOut` recompute drift (dust-bounded, the clamp keeps the pool over-collateralized), launch-fee push to treasury (owner-gated, self-healing via mutable `setTreasury`), pool-treasury immutability stranding fees (owner-gated, protocol-revenue-only, `_sendAvax` to a codeless address succeeds), zero-fee launch spam (no on-chain DoS; `launches[]` never iterated), and the **F6 "permanent DoS"** claim (refuted independently — see below).
+
+### F6 — final characterization (fork-validated)
+The extreme-reserve variant of F6 was fork-tested on real Trader Joe V1: **graduation does NOT revert / is NOT a DoS** (`pair.mint` succeeds because the protocol's 200M-token + ~69-AVAX seed guarantees non-zero liquidity). The verifier independently reached the same conclusion and added that even a maximally-skewed pair **self-heals** (arbitrageurs drain the attacker's mispriced WAVAX, `sync`-ing reserves back down) and is **permissionlessly recoverable**, at an economically irrational attacker cost (~60k AVAX to sustain). The genuine residual is a **bounded economic griefing**: an attacker who front-runs graduation by pre-minting the pair can capture a share of the graduation LP (measured ~57% in one skewed run), but must lock significant capital that arbitrage then bleeds. It is **not** a DoS and **not** protocol/user fund theft. A fully clean fix (protocol-owned pair / custom AMM) is an architecture change out of this scope; flagged for the external audit.
 
 ## Residual risks / open items
 1. **F6 graduation griefing (HIGH — code-fixed in T11, fork-validated in T10).** `_graduate` get-or-creates the pair atomically and seeds via direct `pair.mint`. **Fork-validated against the real Trader Joe V1 on Fuji** (`test/fork/Graduation.fork.t.sol`): a fresh graduation seeds a real pair (200M tokens + ≥60 AVAX, LP burned, no stranded tokens), and a moderate pre-created/donated skew does NOT DoS graduation (the donation is absorbed into the burned LP). **Residual (theoretical):** an attacker who pre-creates the pair AND calls `mint()` to set extreme reserves before graduation could dilute the burned LP; forcing an outright `INSUFFICIENT_LIQUIDITY_MINTED` revert requires the attacker to out-capitalize the protocol's 200M-token + ~60-AVAX seed (economically self-defeating). Flagged for the external audit; an optional `skim`/reserve-check hardening pass could close it fully.
