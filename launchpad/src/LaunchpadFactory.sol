@@ -47,6 +47,8 @@ contract LaunchpadFactory is Ownable, Pausable, ReentrancyGuard {
     event ConfigUpdated();
 
     function _validateConfig(Config memory c) internal pure {
+        require(c.vAvax0 > 0 && c.curveSupply > 0 && c.lpReserve > 0 && c.graduationThreshold > 0, "zero param");
+        require(c.curveSupply <= type(uint112).max && c.lpReserve <= type(uint112).max, "reserve too large");
         require(c.treasury != address(0) && c.joeRouter != address(0), "zero addr");
         require(c.tradingFeeBps <= 500, "fee too high");
         require(c.y0 > c.curveSupply, "y0<=curveSupply");

@@ -75,6 +75,8 @@ contract BondingCurvePool is Initializable, ReentrancyGuard {
     function initialize(InitParams calldata p) external initializer {
         if (p.factory == address(0) || p.token == address(0) || p.treasury == address(0) || p.joeRouter == address(0)) revert ZeroAddress();
         if (p.tradingFeeBps > MAX_FEE_BPS) revert FeeTooHigh();
+        if (p.vAvax0 == 0 || p.curveSupply == 0 || p.lpReserve == 0 || p.graduationThreshold == 0) revert BadCurveParams();
+        if (p.curveSupply > type(uint112).max || p.lpReserve > type(uint112).max) revert BadCurveParams();
         if (p.y0 <= p.curveSupply) revert BadCurveParams();
         // Graduation must be reachable BEFORE the curve exhausts its supply, else
         // buys would revert (ExceedsCurveSupply) and graduation could never fire.
