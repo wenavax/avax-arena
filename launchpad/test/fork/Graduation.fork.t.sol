@@ -10,6 +10,13 @@ import {IJoeRouter, IJoeFactoryLike} from "../../src/interfaces/IJoeRouter.sol";
 contract StubFactoryF { function paused() external pure returns (bool) { return false; } }
 interface IWAVAXf { function deposit() external payable; function transfer(address,uint256) external returns (bool); function balanceOf(address) external view returns (uint256); }
 interface IERC20f { function balanceOf(address) external view returns (uint256); function transfer(address,uint256) external returns (bool); }
+interface IPairFull {
+    function mint(address to) external returns (uint256);
+    function getReserves() external view returns (uint112 r0, uint112 r1, uint32);
+    function token0() external view returns (address);
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address) external view returns (uint256);
+}
 
 contract GraduationForkTest is Test {
     address constant JOE_ROUTER = 0xd7f655E3376cE2D7A2b08fF01Eb3B1023191A901; // Fuji V1 (verified)
@@ -80,5 +87,68 @@ contract GraduationForkTest is Test {
         pool.buy{value: 70e18}(0, block.timestamp);
         assertEq(uint256(pool.state()), uint256(BondingCurvePool.State.Graduated), "survived moderate skew");
         assertGt(IERC20f(pair).balanceOf(DEAD), 0, "LP still minted to burn");
+    }
+
+    // F6 residual: empirically test whether an attacker who pre-creates the pair AND
+    // sets EXTREME reserves (massive token side, 1-wei WAVAX) before graduation causes
+    // a DoS (revert) or merely dilution/price-skew.
+    function test_fork_graduationVsExtremeReserveSkew() public {
+        (LaunchToken token, BondingCurvePool pool) = _fresh();
+        vm.deal(buyer, 2000e18);
+        address attacker = address(0xA77ACC);
+        vm.deal(attacker, 100e18);
+
+        // 1. attacker creates the pair
+        address pair = IJoeFactoryLike(jfactory).createPair(address(token), wavax);
+
+        // 2. attacker buys a large token inventory on the curve.
+        //    10e18 gross (9.9e18 net) → ~266M tokens (33% of 800M curve supply).
+        //    NOTE: 40e18 was originally specified but that depletes the curve to the
+        //    point where the subsequent 70e18 graduation buy overshoots (841M > 800M
+        //    curveSupply) and reverts ExceedsCurveSupply — a separate invariant, NOT
+        //    the F6 pair.mint DoS. 10e18 leaves ~778M total tokens used, safely under
+        //    the 800M limit, so this test correctly isolates the F6 hypothesis.
+        vm.prank(attacker);
+        uint256 inv = pool.buy{value: 10e18}(0, block.timestamp);
+        emit log_named_uint("attacker token inventory", inv);
+
+        // 3. attacker sets EXTREME reserves: many tokens, almost no WAVAX
+        vm.prank(attacker);
+        IERC20f(address(token)).transfer(pair, inv);            // huge token side
+        vm.prank(attacker);
+        IWAVAXf(wavax).deposit{value: 1}();                     // 1 wei AVAX -> 1 wei WAVAX
+        vm.prank(attacker);
+        IWAVAXf(wavax).transfer(pair, 1);                       // tiny wavax side
+        vm.prank(attacker);
+        try IPairFull(pair).mint(attacker) returns (uint256 lp) {
+            emit log_named_uint("attacker LP minted", lp);
+        } catch Error(string memory reason) {
+            emit log_named_string("attacker mint reverted", reason);
+        }
+        (uint112 r0, uint112 r1,) = IPairFull(pair).getReserves();
+        emit log_named_uint("reserve0 after attacker skew", r0);
+        emit log_named_uint("reserve1 after attacker skew", r1);
+
+        // 4. a normal buyer graduates the pool
+        vm.prank(buyer);
+        try pool.buy{value: 70e18}(0, block.timestamp) {
+            emit log_string("graduation buy SUCCEEDED");
+        } catch Error(string memory reason) {
+            emit log_named_string("graduation buy REVERTED", reason);
+        } catch (bytes memory) {
+            emit log_string("graduation buy REVERTED (low-level)");
+        }
+
+        // Record the empirical outcome
+        bool graduated = uint256(pool.state()) == uint256(BondingCurvePool.State.Graduated);
+        emit log_named_uint("graduated (1=yes)", graduated ? 1 : 0);
+        if (graduated) {
+            emit log_named_uint("protocol LP burned to DEAD", IPairFull(pair).balanceOf(DEAD));
+            (uint112 a0, uint112 a1,) = IPairFull(pair).getReserves();
+            emit log_named_uint("final reserve0", a0);
+            emit log_named_uint("final reserve1", a1);
+        }
+        // KEY assertion: graduation must NOT be permanently DoS'd by extreme reserve skew.
+        assertTrue(graduated, "graduation should not be DoS'd even by extreme reserve skew");
     }
 }
