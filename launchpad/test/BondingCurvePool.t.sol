@@ -216,6 +216,105 @@ contract BondingCurvePoolTest is Test {
         assertEq(pool.pendingFees(), 0);
     }
 
+    // ─── Part B: branch-coverage additions ───────────────────────────────────
+
+    /// Buy with tradingFeeBps == 0: hits the fee==0 path in buy (fee stays 0,
+    /// pendingFees never grows, treasury receives nothing).
+    function test_buy_zeroTradingFee_noFeeAccrued() public {
+        BondingCurvePool p0 = BondingCurvePool(payable(Clones.clone(address(poolImpl))));
+        LaunchToken t0 = LaunchToken(Clones.clone(address(tokenImpl)));
+        t0.initialize("Z", "Z", TOTAL, address(p0));
+        p0.initialize(BondingCurvePool.InitParams({
+            factory: address(factory), token: address(t0),
+            vAvax0: V_AVAX0, y0: Y0, curveSupply: CURVE, lpReserve: LP,
+            graduationThreshold: GRAD,
+            tradingFeeBps: 0, // zero fee
+            treasury: address(0x7), joeRouter: address(router)
+        }));
+        vm.prank(alice);
+        uint256 out = p0.buy{value: 10e18}(0, block.timestamp);
+        assertGt(out, 0, "tokens received");
+        assertEq(p0.pendingFees(), 0, "no fee accrued with feeBps==0");
+        assertEq(p0.realAvax(), 10e18, "full value goes to reserve");
+        assertEq(address(p0).balance, 10e18, "balance == realAvax (no pending fees)");
+    }
+
+    /// deadline == block.timestamp: the guard is strictly >, so this must NOT revert.
+    function test_deadline_exactlyBlockTimestamp_doesNotRevert() public {
+        vm.warp(1000);
+        vm.prank(alice);
+        uint256 out = pool.buy{value: 1e18}(0, block.timestamp); // deadline == timestamp
+        assertGt(out, 0, "buy succeeds at deadline == now");
+    }
+
+    /// Sell exactly tokensSold (full unwind): tokensSold reaches 0, realAvax
+    /// drops back to 0 (minus rounding), no ExceedsSold revert.
+    function test_sell_fullUnwind() public {
+        vm.prank(alice);
+        uint256 bought = pool.buy{value: 5e18}(0, block.timestamp);
+
+        vm.startPrank(alice);
+        token.approve(address(pool), bought);
+        pool.sell(bought, 0, block.timestamp); // sell exactly tokensSold
+        vm.stopPrank();
+
+        assertEq(pool.tokensSold(), 0, "tokensSold back to zero");
+        // realAvax may have tiny rounding residue; balance must still equal
+        // realAvax + pendingFees (solvency invariant).
+        assertEq(address(pool).balance, pool.realAvax() + pool.pendingFees(), "solvency holds");
+    }
+
+    /// Sell more than tokensSold reverts ExceedsSold.
+    function test_sell_exceedsSold_reverts() public {
+        vm.prank(alice);
+        uint256 bought = pool.buy{value: 5e18}(0, block.timestamp);
+
+        vm.startPrank(alice);
+        token.approve(address(pool), bought + 1);
+        // Mint extra so Alice actually holds bought+1 tokens
+        // (we can't, but we can test with 0 tokensSold instead)
+        vm.stopPrank();
+
+        // Test with tokenIn = 1 when tokensSold == 0 (no prior buys in fresh pool).
+        BondingCurvePool pFresh = BondingCurvePool(payable(Clones.clone(address(poolImpl))));
+        LaunchToken tFresh = LaunchToken(Clones.clone(address(tokenImpl)));
+        tFresh.initialize("F", "F", TOTAL, address(pFresh));
+        pFresh.initialize(BondingCurvePool.InitParams({
+            factory: address(factory), token: address(tFresh),
+            vAvax0: V_AVAX0, y0: Y0, curveSupply: CURVE, lpReserve: LP,
+            graduationThreshold: GRAD, tradingFeeBps: FEE,
+            treasury: address(0x7), joeRouter: address(router)
+        }));
+        // tokensSold == 0: selling 1 token exceeds sold
+        vm.expectRevert(BondingCurvePool.ExceedsSold.selector);
+        pFresh.sell(1, 0, block.timestamp);
+    }
+
+    /// graduation where pair does NOT pre-exist: createPair branch (getPair returns 0).
+    /// (Complements test_graduation_survivesPreCreatedPair which covers the else path.)
+    function test_graduation_createPairBranch_explicitCheck() public {
+        // Before graduation, the pair must not exist
+        address wavax = address(router.wavax());
+        address pairBefore = router.joeFactory().getPair(address(token), wavax);
+        assertEq(pairBefore, address(0), "pair absent before graduation");
+
+        vm.prank(alice);
+        pool.buy{value: 70e18}(0, block.timestamp);
+
+        assertEq(uint256(pool.state()), uint256(BondingCurvePool.State.Graduated));
+        address pairAfter = router.joeFactory().getPair(address(token), wavax);
+        assertTrue(pairAfter != address(0), "pair created during graduation");
+    }
+
+    /// withdrawFees when pendingFees == 0: must not revert and must not transfer anything.
+    function test_withdrawFees_zeroPendingFees_isNoOp() public {
+        assertEq(pool.pendingFees(), 0, "no pending fees at start");
+        uint256 treasuryBefore = address(0x7).balance;
+        pool.withdrawFees(); // must not revert
+        assertEq(pool.pendingFees(), 0);
+        assertEq(address(0x7).balance, treasuryBefore, "no transfer when amount==0");
+    }
+
     function test_sell_worksEvenIfTreasuryReverts() public {
         // Point the pool's treasury at a contract that rejects AVAX by re-init on a
         // fresh clone (treasury = a reverting contract).
