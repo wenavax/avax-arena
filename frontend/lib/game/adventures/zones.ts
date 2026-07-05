@@ -11,6 +11,7 @@ export const ZONES: Zone[] = [
     blurb: 'A still, rime-crusted pool. Every Frostling can forage here.',
     ratePerMin: 60,
     primaryStats: ['atk'],
+    favoredElement: 'fire',
     gate: { minLevel: 1, minStats: {} },
   },
   {
@@ -20,6 +21,7 @@ export const ZONES: Zone[] = [
     blurb: 'Fast meltwater rewards the quick.',
     ratePerMin: 60,
     primaryStats: ['spd'],
+    favoredElement: 'wind',
     gate: { minLevel: 1, minStats: {} },
   },
   {
@@ -29,6 +31,7 @@ export const ZONES: Zone[] = [
     blurb: 'Treacherous ice favours the sturdy.',
     ratePerMin: 60,
     primaryStats: ['def'],
+    favoredElement: 'earth',
     gate: { minLevel: 1, minStats: {} },
   },
   {
@@ -38,6 +41,7 @@ export const ZONES: Zone[] = [
     blurb: 'A roaring frozen river. Strength and wits both count.',
     ratePerMin: 150,
     primaryStats: ['atk', 'wisdom'],
+    favoredElement: 'ice',
     gate: { minLevel: 10, minStats: { atk: 5, wisdom: 5 } },
   },
   {
@@ -47,6 +51,7 @@ export const ZONES: Zone[] = [
     blurb: 'A silent frost-forest that tests body and mind.',
     ratePerMin: 300,
     primaryStats: ['spd', 'def', 'wisdom'],
+    favoredElement: 'shadow',
     gate: { minLevel: 15, minStats: { spd: 5, def: 5, wisdom: 5 } },
   },
   {
@@ -56,9 +61,13 @@ export const ZONES: Zone[] = [
     blurb: 'The frozen heart of the world. Only the mightiest endure.',
     ratePerMin: 600,
     primaryStats: ['atk', 'def', 'spd', 'wisdom'],
+    favoredElement: 'thunder',
     gate: { minLevel: 20, minStats: { atk: 5, def: 5, spd: 5, wisdom: 5 } },
   },
 ];
+
+/** Elemental affinity: a hero whose element matches the biome earns this ×share. */
+export const AFFINITY_MULT = 1.35;
 
 export const ZONE_BY_ID: Record<string, Zone> = Object.fromEntries(
   ZONES.map((z) => [z.id, z]),
