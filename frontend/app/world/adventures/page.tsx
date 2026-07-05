@@ -6,6 +6,7 @@
 // shards to level up or recruit new Frostlings. 100% off-chain, ZERO token risk.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { ELEMENT_LABELS, ELEMENT_ICONS, generateHeroTraits, heroToDataURL } from '@/lib/game/nft/heroGenerator';
 import type { AdventuresState, AdventureHero, Rarity, GameEvent } from '@/lib/game/adventures/types';
 import { ZONES, AFFINITY_MULT } from '@/lib/game/adventures/zones';
@@ -100,7 +101,7 @@ export default function AdventuresPage() {
             <div style={{ fontSize: 11, color: '#556677' }}>Frost Shards{totalRate > 0 ? ` · +${totalRate.toFixed(1)}/s` : ''}</div>
           </div>
           <button style={btnGhost} onClick={() => setState(claimAll(state, now()))}>Claim All</button>
-          <a href="/world" style={{ ...btnGhost, textDecoration: 'none' }}>← World</a>
+          <Link href="/world" style={{ ...btnGhost, textDecoration: 'none' }}>← World</Link>
         </div>
       </header>
 
