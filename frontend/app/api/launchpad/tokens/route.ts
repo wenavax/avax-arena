@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPublicClient, http, parseAbiItem } from 'viem';
+import { createPublicClient, http, parseAbiItem, erc20Abi } from 'viem';
 import getDb from '@/lib/db';
 import {
   LAUNCHPAD_FACTORY_ADDRESS,
@@ -30,6 +30,8 @@ const BUY_EVENT = parseAbiItem(
 const SELL_EVENT = parseAbiItem(
   'event Sell(address indexed seller, uint256 tokensIn, uint256 fee, uint256 avaxOut, uint256 reserveAfter)'
 );
+const GRADUATED_EVENT = parseAbiItem('event Graduated(uint256 avaxToLp, uint256 tokensToLp)');
+const STATE_ABI = parseAbiItem('function state() view returns (uint8)');
 
 const CHUNK = 2000n; // public RPC getLogs range limit is 2048 blocks
 const MAX_CHUNKS_PER_REQUEST = 30;
@@ -69,11 +71,18 @@ function ensureTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_launchpad_trades_pool ON launchpad_trades(chain, pool, block);
   `);
-  // Older deployments created launchpad_tokens without the chain column.
-  try {
-    db.exec(`ALTER TABLE launchpad_tokens ADD COLUMN chain INTEGER NOT NULL DEFAULT 43114`);
-  } catch {
-    /* column already exists */
+  // Older deployments miss these columns — add idempotently.
+  for (const col of [
+    `chain INTEGER NOT NULL DEFAULT 43114`,
+    `graduated INTEGER NOT NULL DEFAULT 0`,
+    `name TEXT NOT NULL DEFAULT ''`,
+    `symbol TEXT NOT NULL DEFAULT ''`,
+  ]) {
+    try {
+      db.exec(`ALTER TABLE launchpad_tokens ADD COLUMN ${col}`);
+    } catch {
+      /* column already exists */
+    }
   }
   return db;
 }
@@ -111,6 +120,8 @@ async function sync(db: ReturnType<typeof getDb>): Promise<{ synced: boolean; sy
       INSERT INTO launchpad_sync (key, value) VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `);
+    const setTokenInfo = db.prepare(`UPDATE launchpad_tokens SET name = ?, symbol = ? WHERE chain = ? AND id = ?`);
+    const setGraduated = db.prepare(`UPDATE launchpad_tokens SET graduated = 1 WHERE chain = ? AND lower(pool) = ?`);
 
     const poolSet = new Set<string>(
       (db.prepare(`SELECT pool FROM launchpad_tokens WHERE chain = ?`).all(LAUNCHPAD_CHAIN_ID) as { pool: string }[]).map(
@@ -135,13 +146,22 @@ async function sync(db: ReturnType<typeof getDb>): Promise<{ synced: boolean; sy
         if (id === undefined || !token || !pool || !creator) continue;
         upsertToken.run(Number(id), token, pool, creator, metadataURI ?? '', Number(log.blockNumber ?? 0n), now, LAUNCHPAD_CHAIN_ID);
         poolSet.add(pool.toLowerCase());
+        try {
+          const [nm, sym] = await Promise.all([
+            client.readContract({ address: token, abi: erc20Abi, functionName: 'name' }),
+            client.readContract({ address: token, abi: erc20Abi, functionName: 'symbol' }),
+          ]);
+          setTokenInfo.run(nm, sym, LAUNCHPAD_CHAIN_ID, Number(id));
+        } catch {
+          /* backfill doldurur */
+        }
       }
 
       // 2) trades on all known pools in the same range (incl. pools launched in this chunk)
       if (poolSet.size > 0) {
         const tradeLogs = await client.getLogs({
           address: [...poolSet] as `0x${string}`[],
-          events: [BUY_EVENT, SELL_EVENT],
+          events: [BUY_EVENT, SELL_EVENT, GRADUATED_EVENT],
           fromBlock: from,
           toBlock: to,
         });
@@ -162,6 +182,10 @@ async function sync(db: ReturnType<typeof getDb>): Promise<{ synced: boolean; sy
           })
         );
         for (const log of tradeLogs) {
+          if (log.eventName === 'Graduated') {
+            setGraduated.run(LAUNCHPAD_CHAIN_ID, log.address.toLowerCase());
+            continue;
+          }
           const bn = (log.blockNumber ?? 0n).toString();
           const ts = tsByBlock.get(bn) ?? now;
           const a = log.args as Record<string, bigint | string>;
@@ -190,6 +214,28 @@ async function sync(db: ReturnType<typeof getDb>): Promise<{ synced: boolean; sy
       chunks++;
     }
     synced = from > latest;
+
+    // Backfill: bu kod deploy edilmeden ONCE launch/graduate olmus satirlar
+    const stale = db
+      .prepare(`SELECT id, token, pool, name, graduated FROM launchpad_tokens WHERE chain = ? AND (name = '' OR graduated = 0) LIMIT 6`)
+      .all(LAUNCHPAD_CHAIN_ID) as { id: number; token: string; pool: string; name: string; graduated: number }[];
+    for (const row of stale) {
+      try {
+        if (!row.name) {
+          const [nm, sym] = await Promise.all([
+            client.readContract({ address: row.token as `0x${string}`, abi: erc20Abi, functionName: 'name' }),
+            client.readContract({ address: row.token as `0x${string}`, abi: erc20Abi, functionName: 'symbol' }),
+          ]);
+          setTokenInfo.run(nm, sym, LAUNCHPAD_CHAIN_ID, row.id);
+        }
+        if (!row.graduated) {
+          const st = await client.readContract({ address: row.pool as `0x${string}`, abi: [STATE_ABI], functionName: 'state' });
+          if (Number(st) === 1) setGraduated.run(LAUNCHPAD_CHAIN_ID, row.pool.toLowerCase());
+        }
+      } catch {
+        /* sonraki istekte tekrar denenir */
+      }
+    }
   } catch (err) {
     synced = false;
     syncError = err instanceof Error ? err.message.slice(0, 120) : 'sync failed';

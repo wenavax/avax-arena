@@ -656,6 +656,12 @@ export default function TokenDetailPage() {
                   >
                     Trade on Trader Joe <ExternalLink className="w-4 h-4" />
                   </a>
+                  <Link
+                    href={`/swap?buy=${pd.token}`}
+                    className="mt-2 w-full py-3 rounded-xl bg-white/[0.06] border border-white/[0.08] hover:bg-white/[0.1] hover:border-white/[0.15] text-sm text-white/70 inline-flex items-center justify-center gap-2 transition-all"
+                  >
+                    Swap on Frostbite ⇄
+                  </Link>
                 </div>
               ) : (
                 <>

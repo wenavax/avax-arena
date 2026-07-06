@@ -208,6 +208,9 @@ export interface LaunchMeta {
   ts: number;
   vol24h?: number;    // AVAX volume, last 24h (indexed trades)
   trades24h?: number;
+  graduated?: number; // 1 = TJ'ye mezun (swap listesine girer)
+  name?: string;      // ERC20 name (indexer okur)
+  symbol?: string;
 }
 
 /** Indexed trade row served by /api/launchpad/tokens?pool=… */

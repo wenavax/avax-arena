@@ -27,6 +27,7 @@ import { usePublicClient } from 'wagmi';
 import { parseUnits, formatUnits, type Address, type Hex, erc20Abi, parseAbi } from 'viem';
 import { ACTIVE_CHAIN_ID, EXPLORER_URL } from '@/lib/constants';
 import { cn } from '@/lib/utils';
+import { parseTokenMeta, type LaunchMeta } from '@/lib/launchpad';
 
 /* ---------------------------------------------------------------------------
  * Trader Joe V2.2 Liquidity Book Constants & ABIs
@@ -340,6 +341,35 @@ export default function SwapPage() {
   // Token state
   const [sellToken, setSellToken] = useState<Token>(AVALANCHE_TOKENS[0]); // AVAX
   const [buyToken, setBuyToken] = useState<Token>(AVALANCHE_TOKENS[2]); // USDC
+  // Launchpad'den mezun tokenlar (TJ'de gerçek likidite, LP yakılmış) — dinamik listeye eklenir
+  const [launchpadTokens, setLaunchpadTokens] = useState<Token[]>([]);
+  useEffect(() => {
+    fetch('/avalanche/api/launchpad/tokens')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d?.tokens) return;
+        const base = new Set(AVALANCHE_TOKENS.map((t) => t.address.toLowerCase()));
+        const toks: Token[] = (d.tokens as LaunchMeta[])
+          .filter((t) => t.graduated === 1 && t.symbol && t.name && !base.has(t.token.toLowerCase()))
+          .map((t) => ({
+            symbol: t.symbol as string,
+            name: t.name as string,
+            address: t.token,
+            decimals: 18,
+            logo: parseTokenMeta(t.metadata).image || '/logo.png',
+          }));
+        setLaunchpadTokens(toks);
+      })
+      .catch(() => {});
+  }, []);
+  const allTokens = useMemo(() => [...AVALANCHE_TOKENS, ...launchpadTokens], [launchpadTokens]);
+  // /swap?buy=<tokenAdresi> — launchpad "Swap on Frostbite" linki için ön-seçim
+  useEffect(() => {
+    const buy = new URLSearchParams(window.location.search).get('buy')?.toLowerCase();
+    if (!buy) return;
+    const t = allTokens.find((x) => x.address.toLowerCase() === buy);
+    if (t) setBuyToken(t);
+  }, [allTokens]);
   const [sellAmount, setSellAmount] = useState('');
   const [buyAmount, setBuyAmount] = useState('');
 
@@ -399,7 +429,7 @@ export default function SwapPage() {
     }
 
     // ERC20 balances
-    const erc20Tokens = AVALANCHE_TOKENS.filter((t) => !isNativeToken(t.address));
+    const erc20Tokens = allTokens.filter((t) => !isNativeToken(t.address));
     const results = await Promise.allSettled(
       erc20Tokens.map((t) =>
         publicClient.readContract({
@@ -418,7 +448,7 @@ export default function SwapPage() {
     });
 
     setTokenBalances(balMap);
-  }, [address, publicClient, nativeBalance]);
+  }, [address, publicClient, nativeBalance, allTokens]);
 
   useEffect(() => {
     fetchBalances();
@@ -991,7 +1021,7 @@ export default function SwapPage() {
       <AnimatePresence>
         {showSellTokenModal && (
           <TokenSelectorModal
-            tokens={AVALANCHE_TOKENS}
+            tokens={allTokens}
             onSelect={(t) => {
               if (t.address === buyToken.address) flipTokens();
               else setSellToken(t);
@@ -1005,7 +1035,7 @@ export default function SwapPage() {
       <AnimatePresence>
         {showBuyTokenModal && (
           <TokenSelectorModal
-            tokens={AVALANCHE_TOKENS}
+            tokens={allTokens}
             onSelect={(t) => {
               if (t.address === sellToken.address) flipTokens();
               else setBuyToken(t);
