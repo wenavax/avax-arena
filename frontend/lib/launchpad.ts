@@ -1,17 +1,33 @@
 import { parseAbi } from 'viem';
+import { avalanche, avalancheFuji } from 'viem/chains';
 
 /* ---------------------------------------------------------------------------
  * Frostbite Launchpad — pump.fun-style bonding-curve token launcher
  * Factory (Avalanche mainnet): deployed 2026-07-06, owner = Gnosis Safe.
  * Pools have NO on-chain quote views — quoteBuy/quoteSell below replicate
  * CurveMath exactly in bigint (all divisions floor, identical results).
+ *
+ * Chain-flex: NEXT_PUBLIC_LAUNCHPAD_CHAIN=fuji points the whole launchpad
+ * (pages + indexer API) at the Fuji TEST factory (launchFee 0, graduation
+ * 0.08 AVAX) for rehearsals. Production default is mainnet.
  * ------------------------------------------------------------------------- */
 
-export const LAUNCHPAD_FACTORY_ADDRESS = (process.env.NEXT_PUBLIC_LAUNCHPAD_FACTORY_ADDRESS ||
-  '0x7b9E30ADc9a3Acf1FFC5e61eb53267003F8317b4') as `0x${string}`;
+const IS_FUJI = process.env.NEXT_PUBLIC_LAUNCHPAD_CHAIN === 'fuji';
 
-// Factory CREATE block on mainnet — indexer scans TokenLaunched from here.
-export const LAUNCHPAD_DEPLOY_BLOCK = 89637163n;
+export const LAUNCHPAD_CHAIN_ID = (IS_FUJI ? 43113 : 43114) as 43113 | 43114;
+export const LAUNCHPAD_VIEM_CHAIN = IS_FUJI ? avalancheFuji : avalanche;
+export const LAUNCHPAD_EXPLORER = IS_FUJI ? 'https://testnet.snowtrace.io' : 'https://snowtrace.io';
+export const LAUNCHPAD_RPC = IS_FUJI
+  ? 'https://api.avax-test.network/ext/bc/C/rpc'
+  : process.env.NEXT_PUBLIC_MAINNET_RPC_URL || 'https://api.avax.network/ext/bc/C/rpc';
+
+export const LAUNCHPAD_FACTORY_ADDRESS = (process.env.NEXT_PUBLIC_LAUNCHPAD_FACTORY_ADDRESS ||
+  (IS_FUJI
+    ? '0x483d6D484A55bAf20E8f662C5e685B1Ee32415C7' // Fuji TEST factory (fee 0, grad 0.08)
+    : '0x7b9E30ADc9a3Acf1FFC5e61eb53267003F8317b4')) as `0x${string}`;
+
+// Factory CREATE block — indexer scans TokenLaunched from here.
+export const LAUNCHPAD_DEPLOY_BLOCK = IS_FUJI ? 56791300n : 89637163n;
 
 export const LAUNCHPAD_FACTORY_ABI = parseAbi([
   // Writes
@@ -162,4 +178,18 @@ export interface LaunchMeta {
   metadata: string;
   block: number;
   ts: number;
+  vol24h?: number;    // AVAX volume, last 24h (indexed trades)
+  trades24h?: number;
+}
+
+/** Indexed trade row served by /api/launchpad/tokens?pool=… */
+export interface IndexedTrade {
+  kind: 'buy' | 'sell';
+  account: string;
+  avax: string;          // wei string (net of fee)
+  tokens: string;        // wei string
+  reserveAfter: string;  // realAvax after the trade — price basis for charts
+  block: number;
+  ts: number;
+  tx: string;
 }

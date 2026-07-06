@@ -14,12 +14,12 @@ import {
 } from 'wagmi';
 import { erc20Abi, formatEther, parseEther } from 'viem';
 import { cn } from '@/lib/utils';
-import { ACTIVE_CHAIN_ID, EXPLORER_URL } from '@/lib/constants';
 import TokenAvatar from '@/components/launchpad/TokenAvatar';
 import {
   BONDING_POOL_ABI, POOL_STATE_GRADUATED,
   quoteBuy, quoteSell, spotPrice, curveExhaustionAvax, graduationProgressPct,
-  formatCompact, formatPrice, shortAddr, traderJoeUrl, type LaunchMeta,
+  formatCompact, formatPrice, shortAddr, traderJoeUrl, type LaunchMeta, type IndexedTrade,
+  LAUNCHPAD_CHAIN_ID, LAUNCHPAD_EXPLORER,
 } from '@/lib/launchpad';
 
 const SLIPPAGE_OPTIONS = [50, 100, 200, 500] as const; // bps
@@ -42,7 +42,7 @@ export default function TokenDetailPage() {
   const { address, isConnected, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
-  const publicClient = usePublicClient({ chainId: 43114 });
+  const publicClient = usePublicClient({ chainId: LAUNCHPAD_CHAIN_ID });
 
   const [tab, setTab] = useState<'buy' | 'sell'>('buy');
   const [amount, setAmount] = useState('');
@@ -51,6 +51,8 @@ export default function TokenDetailPage() {
   const [step, setStep] = useState<'idle' | 'approving' | 'signing'>('idle');
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [allTrades, setAllTrades] = useState<IndexedTrade[]>([]);
+  const [chartTab, setChartTab] = useState<'price' | 'curve'>('curve');
   const [meta, setMeta] = useState<LaunchMeta | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -59,7 +61,7 @@ export default function TokenDetailPage() {
     () =>
       validPool
         ? (['token', 'state', 'realAvax', 'tokensSold', 'graduationThreshold', 'vAvax0', 'y0', 'tradingFeeBps', 'curveSupply'] as const).map(
-            (functionName) => ({ address: pool, abi: BONDING_POOL_ABI, functionName, chainId: 43114 as const })
+            (functionName) => ({ address: pool, abi: BONDING_POOL_ABI, functionName, chainId: LAUNCHPAD_CHAIN_ID })
           )
         : [],
     [pool, validPool]
@@ -88,13 +90,13 @@ export default function TokenDetailPage() {
     () =>
       pd
         ? [
-            { address: pd.token, abi: erc20Abi, functionName: 'name' as const, chainId: 43114 as const },
-            { address: pd.token, abi: erc20Abi, functionName: 'symbol' as const, chainId: 43114 as const },
-            { address: pd.token, abi: erc20Abi, functionName: 'totalSupply' as const, chainId: 43114 as const },
+            { address: pd.token, abi: erc20Abi, functionName: 'name' as const, chainId: LAUNCHPAD_CHAIN_ID },
+            { address: pd.token, abi: erc20Abi, functionName: 'symbol' as const, chainId: LAUNCHPAD_CHAIN_ID },
+            { address: pd.token, abi: erc20Abi, functionName: 'totalSupply' as const, chainId: LAUNCHPAD_CHAIN_ID },
             ...(address
               ? [
-                  { address: pd.token, abi: erc20Abi, functionName: 'balanceOf' as const, args: [address] as const, chainId: 43114 as const },
-                  { address: pd.token, abi: erc20Abi, functionName: 'allowance' as const, args: [address, pool] as const, chainId: 43114 as const },
+                  { address: pd.token, abi: erc20Abi, functionName: 'balanceOf' as const, args: [address] as const, chainId: LAUNCHPAD_CHAIN_ID },
+                  { address: pd.token, abi: erc20Abi, functionName: 'allowance' as const, args: [address, pool] as const, chainId: LAUNCHPAD_CHAIN_ID },
                 ]
               : []),
           ]
@@ -117,7 +119,7 @@ export default function TokenDetailPage() {
     };
   }, [tokenData]);
 
-  const { data: avaxBalance, refetch: refetchAvax } = useBalance({ address, chainId: 43114 });
+  const { data: avaxBalance, refetch: refetchAvax } = useBalance({ address, chainId: LAUNCHPAD_CHAIN_ID });
 
   /* ------------------------- Metadata + trades feed ------------------------ */
   useEffect(() => {
@@ -132,7 +134,30 @@ export default function TokenDetailPage() {
   }, [pool, validPool]);
 
   const loadTrades = useCallback(async () => {
-    if (!publicClient || !validPool) return;
+    if (!validPool) return;
+    // Primary: indexed full history from our API (real timestamps, no block-range limit).
+    try {
+      const res = await fetch(`/avalanche/api/launchpad/tokens?pool=${pool}`);
+      if (res.ok) {
+        const d = await res.json();
+        const rows = (d?.trades ?? []) as IndexedTrade[];
+        setAllTrades(rows);
+        setTrades(
+          rows.slice(-25).reverse().map((t) => ({
+            type: t.kind,
+            account: t.account,
+            avax: BigInt(t.avax),
+            tokens: BigInt(t.tokens),
+            txHash: t.tx,
+            blockNumber: BigInt(t.block),
+          }))
+        );
+        return;
+      }
+    } catch {
+      /* fall through to direct RPC (recent window only) */
+    }
+    if (!publicClient) return;
     try {
       const latest = await publicClient.getBlockNumber();
       const fromBlock = latest > 2000n ? latest - 2000n : 0n;
@@ -243,8 +268,8 @@ export default function TokenDetailPage() {
       return { label: `Insufficient ${td.symbol} balance`, disabled: true, spinning: false };
     if (quote?.exceedsCurve) return { label: 'Amount exceeds remaining curve supply', disabled: true, spinning: false };
     if (quote?.exceedsSold) return { label: 'Amount exceeds tokens sold on curve', disabled: true, spinning: false };
-    if (chainId !== ACTIVE_CHAIN_ID) return { label: 'Switch to Avalanche & Trade', disabled: false, spinning: false };
-    if (needsApproval) return { label: `Approve & ${tab === 'buy' ? 'Buy' : 'Sell'}`, disabled: false, spinning: false };
+    if (chainId !== LAUNCHPAD_CHAIN_ID) return { label: 'Switch to Avalanche & Trade', disabled: false, spinning: false };
+    if (needsApproval) return { label: 'Approve & Sell', disabled: false, spinning: false };
     return { label: tab === 'buy' ? `Buy ${td?.symbol ?? ''}` : `Sell ${td?.symbol ?? ''}`, disabled: false, spinning: false };
   }, [graduated, step, isConfirming, isConnected, amountWei, tab, avaxBalance, td, quote, chainId, needsApproval]);
 
@@ -252,9 +277,9 @@ export default function TokenDetailPage() {
     setError('');
     if (buttonState.disabled || !pd || !quote || amountWei <= 0n) return;
 
-    if (chainId !== ACTIVE_CHAIN_ID) {
+    if (chainId !== LAUNCHPAD_CHAIN_ID) {
       try {
-        await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+        await switchChainAsync({ chainId: LAUNCHPAD_CHAIN_ID });
       } catch {
         return;
       }
@@ -269,7 +294,7 @@ export default function TokenDetailPage() {
           abi: erc20Abi,
           functionName: 'approve',
           args: [pool, amountWei],
-          chainId: 43114,
+          chainId: LAUNCHPAD_CHAIN_ID,
         });
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
       }
@@ -282,14 +307,14 @@ export default function TokenDetailPage() {
               functionName: 'buy',
               args: [quote.minOut, deadline],
               value: amountWei,
-              chainId: 43114,
+              chainId: LAUNCHPAD_CHAIN_ID,
             })
           : await writeContractAsync({
               address: pool,
               abi: BONDING_POOL_ABI,
               functionName: 'sell',
               args: [amountWei, quote.minOut, deadline],
-              chainId: 43114,
+              chainId: LAUNCHPAD_CHAIN_ID,
             });
       setTxHash(hash);
     } catch (err) {
@@ -360,6 +385,30 @@ export default function TokenDetailPage() {
     };
   }, [pd]);
 
+  // Real price history from indexed trades (price basis: reserveAfter per trade).
+  const priceChart = useMemo(() => {
+    if (!pd || allTrades.length === 0) return null;
+    const pts = [
+      spotPrice(pd.vAvax0, pd.y0, 0n), // launch price
+      ...allTrades.map((t) => spotPrice(pd.vAvax0, pd.y0, BigInt(t.reserveAfter))),
+    ];
+    const min = Math.min(...pts);
+    const max = Math.max(...pts);
+    const range = max - min || max || 1;
+    const W = 100;
+    const H = 40;
+    const coords = pts.map((p, i) => `${(i / (pts.length - 1)) * W},${H - ((p - min) / range) * (H - 6) - 3}`);
+    return {
+      line: coords.join(' '),
+      fill: `0,${H} ${coords.join(' ')} ${W},${H}`,
+      up: pts[pts.length - 1] >= pts[0],
+      last: pts[pts.length - 1],
+      n: allTrades.length,
+      W,
+      H,
+    };
+  }, [pd, allTrades]);
+
   /* --------------------------------- Render -------------------------------- */
   if (!validPool) {
     return (
@@ -408,7 +457,7 @@ export default function TokenDetailPage() {
                     {shortAddr(pd.token)} {copied ? <Check className="w-3 h-3 text-frost-green" /> : <Copy className="w-3 h-3" />}
                   </button>
                   <a
-                    href={`${EXPLORER_URL}/address/${pd.token}`}
+                    href={`${LAUNCHPAD_EXPLORER}/address/${pd.token}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 hover:text-white/70 transition-colors"
@@ -468,32 +517,89 @@ export default function TokenDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           {/* Left: chart + trades */}
           <div className="lg:col-span-3 space-y-4">
-            {/* Bonding curve chart */}
+            {/* Chart: real price history (indexed trades) / bonding curve position */}
             {chart && (
               <div className="glass-card rounded-2xl p-4">
-                <div className="text-[10px] uppercase tracking-wider text-white/30 font-pixel mb-3">Bonding Curve</div>
-                <svg viewBox={`0 0 ${chart.W} ${chart.H}`} className="w-full h-40" preserveAspectRatio="none">
-                  <defs>
-                    <linearGradient id="curveFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="rgb(237,47,57)" stopOpacity="0.35" />
-                      <stop offset="100%" stopColor="rgb(237,47,57)" stopOpacity="0.02" />
-                    </linearGradient>
-                  </defs>
-                  <polygon points={chart.fill} fill="url(#curveFill)" />
-                  <polyline points={chart.line} fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="0.6" />
-                  <line
-                    x1={chart.gradX} y1="0" x2={chart.gradX} y2={chart.H}
-                    stroke="rgba(245,197,66,0.5)" strokeWidth="0.4" strokeDasharray="1.5,1.5"
-                  />
-                  <circle cx={chart.curX} cy={chart.curY} r="1.6" fill="rgb(237,47,57)">
-                    <animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite" />
-                  </circle>
-                </svg>
-                <div className="flex justify-between text-[10px] text-white/30 mt-1">
-                  <span>0 AVAX</span>
-                  <span className="text-frost-gold/70">graduation ▲</span>
-                  <span>price ↑ along curve</span>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex gap-1.5">
+                    {(
+                      [
+                        { key: 'price', label: 'Price', disabled: !priceChart },
+                        { key: 'curve', label: 'Curve', disabled: false },
+                      ] as const
+                    ).map((t) => (
+                      <button
+                        key={t.key}
+                        onClick={() => !t.disabled && setChartTab(t.key)}
+                        disabled={t.disabled}
+                        className={cn(
+                          'px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider font-pixel transition-all border',
+                          chartTab === t.key && !t.disabled
+                            ? 'bg-frost-primary/20 text-frost-primary border-frost-primary/30'
+                            : t.disabled
+                              ? 'bg-white/[0.02] text-white/20 border-white/[0.04] cursor-not-allowed'
+                              : 'bg-white/[0.04] text-white/40 border-white/[0.06] hover:bg-white/[0.08]'
+                        )}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  {priceChart && chartTab === 'price' && (
+                    <span className={cn('text-[10px] font-mono', priceChart.up ? 'text-frost-green' : 'text-red-400')}>
+                      {priceChart.n} trade{priceChart.n > 1 ? 's' : ''} · {priceChart.up ? '▲' : '▼'} {formatPrice(priceChart.last)} AVAX
+                    </span>
+                  )}
                 </div>
+                {chartTab === 'price' && priceChart ? (
+                  <>
+                    <svg viewBox={`0 0 ${priceChart.W} ${priceChart.H}`} className="w-full h-40" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={priceChart.up ? 'rgb(34,197,94)' : 'rgb(239,68,68)'} stopOpacity="0.3" />
+                          <stop offset="100%" stopColor={priceChart.up ? 'rgb(34,197,94)' : 'rgb(239,68,68)'} stopOpacity="0.02" />
+                        </linearGradient>
+                      </defs>
+                      <polygon points={priceChart.fill} fill="url(#priceFill)" />
+                      <polyline
+                        points={priceChart.line}
+                        fill="none"
+                        stroke={priceChart.up ? 'rgb(34,197,94)' : 'rgb(239,68,68)'}
+                        strokeWidth="0.7"
+                      />
+                    </svg>
+                    <div className="flex justify-between text-[10px] text-white/30 mt-1">
+                      <span>launch</span>
+                      <span>price per trade →</span>
+                      <span>now</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <svg viewBox={`0 0 ${chart.W} ${chart.H}`} className="w-full h-40" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="curveFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="rgb(237,47,57)" stopOpacity="0.35" />
+                          <stop offset="100%" stopColor="rgb(237,47,57)" stopOpacity="0.02" />
+                        </linearGradient>
+                      </defs>
+                      <polygon points={chart.fill} fill="url(#curveFill)" />
+                      <polyline points={chart.line} fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="0.6" />
+                      <line
+                        x1={chart.gradX} y1="0" x2={chart.gradX} y2={chart.H}
+                        stroke="rgba(245,197,66,0.5)" strokeWidth="0.4" strokeDasharray="1.5,1.5"
+                      />
+                      <circle cx={chart.curX} cy={chart.curY} r="1.6" fill="rgb(237,47,57)">
+                        <animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite" />
+                      </circle>
+                    </svg>
+                    <div className="flex justify-between text-[10px] text-white/30 mt-1">
+                      <span>0 AVAX</span>
+                      <span className="text-frost-gold/70">graduation ▲</span>
+                      <span>price ↑ along curve</span>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -507,7 +613,7 @@ export default function TokenDetailPage() {
                   {trades.map((t) => (
                     <a
                       key={`${t.txHash}-${t.type}-${t.tokens}`}
-                      href={`${EXPLORER_URL}/tx/${t.txHash}`}
+                      href={`${LAUNCHPAD_EXPLORER}/tx/${t.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] border border-white/[0.03] hover:border-white/[0.1] transition-colors text-xs"
@@ -680,7 +786,7 @@ export default function TokenDetailPage() {
                         <Check className="w-4 h-4 text-frost-green flex-shrink-0" />
                         <span className="text-xs text-frost-green flex-1">Trade successful!</span>
                         <a
-                          href={`${EXPLORER_URL}/tx/${txHash}`}
+                          href={`${LAUNCHPAD_EXPLORER}/tx/${txHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-white/40 hover:text-white/70 underline"

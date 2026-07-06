@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Rocket, Search, Flame, GraduationCap, Plus, Loader2 } from 'lucide-react';
+import { Rocket, Search, Flame, GraduationCap, Plus, Loader2, TrendingUp, Clock, BarChart3 } from 'lucide-react';
 import { useReadContract, useReadContracts } from 'wagmi';
 import { erc20Abi, formatEther } from 'viem';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,7 @@ import {
   formatPrice,
   shortAddr,
   type LaunchMeta,
+  LAUNCHPAD_CHAIN_ID, LAUNCHPAD_EXPLORER,
 } from '@/lib/launchpad';
 
 const MAX_LISTED = 60;
@@ -37,18 +38,20 @@ interface TokenRow {
   raisedAvax: number;
   progressPct: number;
   description: string;
+  vol24h: number;
 }
 
 export default function LaunchpadPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'live' | 'graduated'>('all');
+  const [sort, setSort] = useState<'new' | 'trending' | 'mcap'>('new');
   const [meta, setMeta] = useState<Record<string, LaunchMeta>>({});
 
   const { data: launchCount, isLoading: countLoading } = useReadContract({
     address: LAUNCHPAD_FACTORY_ADDRESS,
     abi: LAUNCHPAD_FACTORY_ABI,
     functionName: 'launchCount',
-    chainId: 43114,
+    chainId: LAUNCHPAD_CHAIN_ID,
     query: { refetchInterval: 15_000 },
   });
 
@@ -75,7 +78,7 @@ export default function LaunchpadPage() {
         abi: LAUNCHPAD_FACTORY_ABI,
         functionName: 'launches' as const,
         args: [BigInt(total - 1 - k)] as const, // newest first
-        chainId: 43114 as const,
+        chainId: LAUNCHPAD_CHAIN_ID,
       })),
     [total, listed]
   );
@@ -99,14 +102,14 @@ export default function LaunchpadPage() {
   const statContracts = useMemo(
     () =>
       launches.flatMap((l) => [
-        { address: l.pool, abi: BONDING_POOL_ABI, functionName: 'state' as const, chainId: 43114 as const },
-        { address: l.pool, abi: BONDING_POOL_ABI, functionName: 'realAvax' as const, chainId: 43114 as const },
-        { address: l.pool, abi: BONDING_POOL_ABI, functionName: 'graduationThreshold' as const, chainId: 43114 as const },
-        { address: l.pool, abi: BONDING_POOL_ABI, functionName: 'vAvax0' as const, chainId: 43114 as const },
-        { address: l.pool, abi: BONDING_POOL_ABI, functionName: 'y0' as const, chainId: 43114 as const },
-        { address: l.token, abi: erc20Abi, functionName: 'name' as const, chainId: 43114 as const },
-        { address: l.token, abi: erc20Abi, functionName: 'symbol' as const, chainId: 43114 as const },
-        { address: l.token, abi: erc20Abi, functionName: 'totalSupply' as const, chainId: 43114 as const },
+        { address: l.pool, abi: BONDING_POOL_ABI, functionName: 'state' as const, chainId: LAUNCHPAD_CHAIN_ID },
+        { address: l.pool, abi: BONDING_POOL_ABI, functionName: 'realAvax' as const, chainId: LAUNCHPAD_CHAIN_ID },
+        { address: l.pool, abi: BONDING_POOL_ABI, functionName: 'graduationThreshold' as const, chainId: LAUNCHPAD_CHAIN_ID },
+        { address: l.pool, abi: BONDING_POOL_ABI, functionName: 'vAvax0' as const, chainId: LAUNCHPAD_CHAIN_ID },
+        { address: l.pool, abi: BONDING_POOL_ABI, functionName: 'y0' as const, chainId: LAUNCHPAD_CHAIN_ID },
+        { address: l.token, abi: erc20Abi, functionName: 'name' as const, chainId: LAUNCHPAD_CHAIN_ID },
+        { address: l.token, abi: erc20Abi, functionName: 'symbol' as const, chainId: LAUNCHPAD_CHAIN_ID },
+        { address: l.token, abi: erc20Abi, functionName: 'totalSupply' as const, chainId: LAUNCHPAD_CHAIN_ID },
       ]),
     [launches]
   );
@@ -153,20 +156,27 @@ export default function LaunchpadPage() {
           raisedAvax: Number(formatEther(realAvax)),
           progressPct: graduationProgressPct(realAvax, threshold),
           description: meta[l.pool.toLowerCase()]?.metadata || '',
+          vol24h: meta[l.pool.toLowerCase()]?.vol24h ?? 0,
         };
       })
       .filter(Boolean) as TokenRow[];
   }, [launches, statResults, meta]);
 
-  const visible = rows.filter((r) => {
-    if (filter === 'live' && r.graduated) return false;
-    if (filter === 'graduated' && !r.graduated) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return r.name.toLowerCase().includes(q) || r.symbol.toLowerCase().includes(q) || r.token.toLowerCase() === q;
-    }
-    return true;
-  });
+  const visible = rows
+    .filter((r) => {
+      if (filter === 'live' && r.graduated) return false;
+      if (filter === 'graduated' && !r.graduated) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        return r.name.toLowerCase().includes(q) || r.symbol.toLowerCase().includes(q) || r.token.toLowerCase() === q;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (sort === 'trending') return b.vol24h - a.vol24h || b.id - a.id;
+      if (sort === 'mcap') return b.fdvAvax - a.fdvAvax;
+      return b.id - a.id;
+    });
 
   const isLoading = countLoading || (total > 0 && statsLoading && rows.length === 0);
 
@@ -227,7 +237,7 @@ export default function LaunchpadPage() {
             className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.06] text-sm text-white/80 placeholder-white/20 outline-none focus:border-frost-primary/30 transition-colors"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {(
             [
               { key: 'all', label: 'All', icon: null },
@@ -247,6 +257,28 @@ export default function LaunchpadPage() {
             >
               {f.icon && <f.icon className="w-3.5 h-3.5" />}
               {f.label}
+            </button>
+          ))}
+          <div className="w-px bg-white/[0.08] mx-1 hidden sm:block" />
+          {(
+            [
+              { key: 'new', label: 'New', icon: Clock },
+              { key: 'trending', label: 'Trending', icon: TrendingUp },
+              { key: 'mcap', label: 'MCap', icon: BarChart3 },
+            ] as const
+          ).map((s) => (
+            <button
+              key={s.key}
+              onClick={() => setSort(s.key)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs transition-all border',
+                sort === s.key
+                  ? 'bg-frost-green/15 text-frost-green border-frost-green/30'
+                  : 'bg-white/[0.04] text-white/50 border-white/[0.06] hover:bg-white/[0.08]'
+              )}
+            >
+              <s.icon className="w-3.5 h-3.5" />
+              {s.label}
             </button>
           ))}
         </div>
@@ -312,14 +344,20 @@ export default function LaunchpadPage() {
                   <p className="mt-3 text-xs text-white/40 line-clamp-2">{r.description}</p>
                 )}
 
-                <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
                   <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                     <div className="text-white/30 text-[10px]">Price</div>
-                    <div className="font-mono text-white/80">{formatPrice(r.priceAvax)} AVAX</div>
+                    <div className="font-mono text-white/80 truncate">{formatPrice(r.priceAvax)}</div>
                   </div>
                   <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-                    <div className="text-white/30 text-[10px]">Market Cap</div>
-                    <div className="font-mono text-white/80">{formatCompact(r.fdvAvax)} AVAX</div>
+                    <div className="text-white/30 text-[10px]">MCap</div>
+                    <div className="font-mono text-white/80 truncate">{formatCompact(r.fdvAvax)}</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                    <div className="text-white/30 text-[10px]">24h Vol</div>
+                    <div className={cn('font-mono truncate', r.vol24h > 0 ? 'text-frost-green' : 'text-white/40')}>
+                      {r.vol24h > 0 ? formatCompact(r.vol24h) : '—'}
+                    </div>
                   </div>
                 </div>
 

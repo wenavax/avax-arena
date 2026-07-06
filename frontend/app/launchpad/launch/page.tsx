@@ -8,9 +8,11 @@ import { ArrowLeft, Rocket, Loader2, AlertTriangle, ShieldCheck, Flame, Droplets
 import { useAccount, useBalance, useReadContract, useSwitchChain, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { decodeEventLog, formatEther } from 'viem';
 import { cn } from '@/lib/utils';
-import { ACTIVE_CHAIN_ID, EXPLORER_URL } from '@/lib/constants';
 import TokenAvatar from '@/components/launchpad/TokenAvatar';
-import { LAUNCHPAD_FACTORY_ADDRESS, LAUNCHPAD_FACTORY_ABI, formatCompact } from '@/lib/launchpad';
+import {
+  LAUNCHPAD_FACTORY_ADDRESS, LAUNCHPAD_FACTORY_ABI, formatCompact,
+  LAUNCHPAD_CHAIN_ID, LAUNCHPAD_EXPLORER,
+} from '@/lib/launchpad';
 
 export default function LaunchTokenPage() {
   const router = useRouter();
@@ -30,15 +32,15 @@ export default function LaunchTokenPage() {
     address: LAUNCHPAD_FACTORY_ADDRESS,
     abi: LAUNCHPAD_FACTORY_ABI,
     functionName: 'config',
-    chainId: 43114,
+    chainId: LAUNCHPAD_CHAIN_ID,
   });
   const { data: isPaused } = useReadContract({
     address: LAUNCHPAD_FACTORY_ADDRESS,
     abi: LAUNCHPAD_FACTORY_ABI,
     functionName: 'paused',
-    chainId: 43114,
+    chainId: LAUNCHPAD_CHAIN_ID,
   });
-  const { data: avaxBalance } = useBalance({ address, chainId: 43114 });
+  const { data: avaxBalance } = useBalance({ address, chainId: LAUNCHPAD_CHAIN_ID });
 
   const launchFee = config?.[0];
   const graduationThreshold = config?.[2];
@@ -88,7 +90,7 @@ export default function LaunchTokenPage() {
     if (!symbolOk) return { label: 'Enter a symbol (2–10, A–Z 0–9)', disabled: true, spinning: false };
     if (!descOk) return { label: 'Description too long', disabled: true, spinning: false };
     if (!hasFunds) return { label: 'Insufficient AVAX for launch fee', disabled: true, spinning: false };
-    if (chainId !== ACTIVE_CHAIN_ID) return { label: 'Switch to Avalanche & Launch', disabled: false, spinning: false };
+    if (chainId !== LAUNCHPAD_CHAIN_ID) return { label: 'Switch to Avalanche & Launch', disabled: false, spinning: false };
     return { label: `Launch for ${launchFee !== undefined ? formatEther(launchFee) : '…'} AVAX`, disabled: false, spinning: false };
   }, [newPool, isConfirming, isSubmitting, isConnected, isPaused, nameOk, symbolOk, descOk, hasFunds, chainId, launchFee]);
 
@@ -96,9 +98,9 @@ export default function LaunchTokenPage() {
     setError('');
     if (buttonState.disabled || launchFee === undefined) return;
 
-    if (chainId !== ACTIVE_CHAIN_ID) {
+    if (chainId !== LAUNCHPAD_CHAIN_ID) {
       try {
-        await switchChainAsync({ chainId: ACTIVE_CHAIN_ID });
+        await switchChainAsync({ chainId: LAUNCHPAD_CHAIN_ID });
       } catch {
         return; // user refused the switch
       }
@@ -112,7 +114,7 @@ export default function LaunchTokenPage() {
         functionName: 'createToken',
         args: [name.trim(), symbol, description.trim()],
         value: launchFee,
-        chainId: 43114,
+        chainId: LAUNCHPAD_CHAIN_ID,
       });
       setTxHash(hash);
     } catch (err) {
@@ -235,7 +237,7 @@ export default function LaunchTokenPage() {
                   {newPool ? 'Token launched!' : 'Transaction submitted…'}
                 </span>
                 <a
-                  href={`${EXPLORER_URL}/tx/${txHash}`}
+                  href={`${LAUNCHPAD_EXPLORER}/tx/${txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-white/40 hover:text-white/70 underline"

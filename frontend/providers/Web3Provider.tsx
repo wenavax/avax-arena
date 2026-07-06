@@ -6,7 +6,7 @@ import { WagmiProvider as PrivyWagmiProvider } from '@privy-io/wagmi';
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
-import { avalanche } from 'viem/chains';
+import { avalanche, avalancheFuji } from 'viem/chains';
 import { config, readOnlyConfig } from '@/lib/wagmi';
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || '';
@@ -53,7 +53,7 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
         },
         loginMethods: ['email', 'google', 'twitter', 'wallet'],
         defaultChain: avalanche,
-        supportedChains: [avalanche],
+        supportedChains: [avalanche, avalancheFuji],
         embeddedWallets: {
           ethereum: {
             createOnLogin: 'users-without-wallets',
