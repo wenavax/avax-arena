@@ -23,6 +23,7 @@ import {
   Copy,
   Check,
   Zap,
+  Rocket,
   ChevronRight,
   HelpCircle,
   Play,
@@ -126,6 +127,7 @@ const NAV_LINKS = [
   { href: '/quests', label: 'Quests', desc: 'PvE missions', icon: Map, group: 'play' },
   { href: '/agents', label: 'Agents', desc: 'AI warriors', icon: Bot, group: 'play' },
   { href: '/marketplace', label: 'Market', desc: 'Buy & sell', icon: Store, group: 'trade' },
+  { href: '/launchpad', label: 'Launchpad', desc: 'Launch tokens', icon: Rocket, group: 'trade' },
   { href: '/leaderboard', label: 'Rankings', desc: 'Leaderboard', icon: BarChart3, group: 'social' },
 ];
 
