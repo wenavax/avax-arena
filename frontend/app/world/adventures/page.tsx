@@ -10,7 +10,8 @@ import Link from 'next/link';
 import { ELEMENT_LABELS, ELEMENT_ICONS, generateHeroTraits, heroToDataURL } from '@/lib/game/nft/heroGenerator';
 import type { AdventuresState, AdventureHero, Rarity, GameEvent } from '@/lib/game/adventures/types';
 import { ZONES, AFFINITY_MULT } from '@/lib/game/adventures/zones';
-import { loadState, saveState, createInitialState } from '@/lib/game/adventures/heroes';
+import { loadState, saveState, createInitialState, mergeChainHeroes } from '@/lib/game/adventures/heroes';
+import { useChainAdventureHeroes } from '@/lib/game/adventures/useChainHeroes';
 import {
   settle, stakeHero, unstakeHero, claimZone, claimAll, levelUpHero, recruit,
   costToNextLevel, emissionCap, recruitCost, gateCheck, affinityMult, ratePerSec, totalRatePerSec,
@@ -45,8 +46,14 @@ export default function AdventuresPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const lastEventId = useRef<string | null>(null);
+  const { heroes: chainHeroes, isLoading: chainLoading, isConnected } = useChainAdventureHeroes();
 
   useEffect(() => { setState(settle(loadState(), Date.now())); }, []);
+  // P1-lite: merge the wallet's real NFT heroes into the roster (add-only — staked positions stay valid)
+  useEffect(() => {
+    if (chainHeroes.length === 0) return;
+    setState((prev) => (prev ? mergeChainHeroes(prev, chainHeroes) : prev));
+  }, [chainHeroes]);
   useEffect(() => { if (state) saveState(state); }, [state]);
   useEffect(() => {
     const iv = setInterval(() => setState((prev) => (prev ? settle(prev, Date.now()) : prev)), 1000);
@@ -116,6 +123,15 @@ export default function AdventuresPage() {
           <section style={{ padding: '16px 24px 8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <h2 style={sectionTitle}>Your Frostlings {selected && <span style={{ color: '#00e5ff', fontSize: 12 }}>· pick a biome for {heroById(state, selected)?.name}</span>}</h2>
+              <span style={{ fontSize: 11, color: isConnected ? '#44cc88' : '#5a6b7a' }}>
+                {isConnected
+                  ? chainLoading
+                    ? '⛓ scanning wallet…'
+                    : chainHeroes.length > 0
+                      ? `⛓ ${chainHeroes.length} on-chain hero${chainHeroes.length > 1 ? 'es' : ''} loaded`
+                      : '⛓ no hero NFTs in this wallet'
+                  : '⛓ connect in World to bring your NFT heroes'}
+              </span>
               <button
                 style={{ ...btnGhost, opacity: state.shards >= rCost ? 1 : 0.45, cursor: state.shards >= rCost ? 'pointer' : 'not-allowed' }}
                 disabled={state.shards < rCost}
@@ -137,7 +153,10 @@ export default function AdventuresPage() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontWeight: 700, color: '#e6ecf5', fontSize: 14 }}>{h.name}</span>
-                          <span style={{ ...chip, background: RARITY_COLORS[h.rarity] }}>{h.rarity}</span>
+                          <span style={{ display: 'flex', gap: 4 }}>
+                            {/^\d+$/.test(h.id) && <span style={{ ...chip, background: '#0077cc' }}>NFT</span>}
+                            <span style={{ ...chip, background: RARITY_COLORS[h.rarity] }}>{h.rarity}</span>
+                          </span>
                         </div>
                         <div style={{ fontSize: 11, color: '#8a99a8', marginTop: 2 }}>Lv {h.level} · {ELEMENT_ICONS[h.element]} {ELEMENT_LABELS[h.element]}</div>
                         <div style={{ fontSize: 11, color: '#66788a' }}>ATK {h.atk} · DEF {h.def} · SPD {h.spd}</div>

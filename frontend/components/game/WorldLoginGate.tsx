@@ -414,7 +414,7 @@ export function WorldLoginGate() {
                   Enter World
                 </button>
 
-                <a href="/world/mint" style={{
+                <Link href="/world/mint" style={{
                   width: '100%',
                   padding: '10px 24px',
                   fontSize: 13,
@@ -428,7 +428,7 @@ export function WorldLoginGate() {
                   display: 'block',
                 }}>
                   Mint More Heroes & Items
-                </a>
+                </Link>
               </>
             ) : hasNFT ? (
               <p style={{ color: '#4488aa', fontSize: 14 }}>Scanning for your heroes...</p>
@@ -449,7 +449,7 @@ export function WorldLoginGate() {
                     Wallet: {walletAddress?.slice(0, 10)}...{walletAddress?.slice(-6)}
                   </p>
                 </div>
-                <a href="/world/mint" style={{
+                <Link href="/world/mint" style={{
                   ...styles.primaryBtn,
                   display: 'block',
                   textAlign: 'center' as const,
@@ -458,7 +458,7 @@ export function WorldLoginGate() {
                   boxShadow: '0 4px 20px rgba(204,102,0,0.3)',
                 }}>
                   Mint Your Hero — 1 AVAX
-                </a>
+                </Link>
               </>
             )}
 
@@ -477,7 +477,7 @@ export function WorldLoginGate() {
               Connect Wallet
             </button>
 
-            <a href="/world/mint" style={{
+            <Link href="/world/mint" style={{
               ...styles.guestBtn,
               display: 'block',
               textAlign: 'center' as const,
@@ -486,7 +486,7 @@ export function WorldLoginGate() {
               border: '1px solid rgba(0,229,255,0.2)',
             }}>
               Mint Hero NFT
-            </a>
+            </Link>
           </>
         )}
 

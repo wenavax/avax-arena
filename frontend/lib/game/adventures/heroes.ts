@@ -107,3 +107,14 @@ export function saveState(state: AdventuresState): void {
     /* quota / private mode — non-fatal for a demo */
   }
 }
+
+/** P1-lite: add the wallet's on-chain heroes to the roster.
+ *  ADD-ONLY by design: never updates or removes existing entries — staked
+ *  positions reference roster ids, and local (shard-bought) levels on chain
+ *  heroes are Adventures progression, separate from on-chain level. */
+export function mergeChainHeroes(s: AdventuresState, chain: AdventureHero[]): AdventuresState {
+  const known = new Set(s.roster.map((h) => h.id));
+  const fresh = chain.filter((h) => !known.has(h.id));
+  if (fresh.length === 0) return s;
+  return { ...s, roster: [...fresh, ...s.roster] };
+}
