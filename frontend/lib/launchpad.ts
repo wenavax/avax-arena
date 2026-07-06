@@ -169,6 +169,34 @@ export function traderJoeUrl(token: string): string {
   return `https://lfj.gg/avalanche/trade?outputCurrency=${token}`;
 }
 
+/* ------------------------- metadataURI encode/parse ----------------------- */
+// metadataURI (TokenLaunched event'inde kalıcı) — resimli launch'larda JSON
+// {"d": description, "i": imageUrl}; resimsizse düz metin (v1 geriye dönük).
+
+export interface TokenMeta {
+  description: string;
+  image?: string;
+}
+
+export function encodeTokenMeta(m: TokenMeta): string {
+  if (!m.image) return m.description;
+  return JSON.stringify({ d: m.description, i: m.image });
+}
+
+export function parseTokenMeta(raw: string | undefined | null): TokenMeta {
+  if (!raw) return { description: '' };
+  if (raw.startsWith('{')) {
+    try {
+      const j = JSON.parse(raw) as { d?: string; i?: string };
+      const image = typeof j.i === 'string' && /^(https?:\/\/|\/)/.test(j.i) ? j.i : undefined;
+      return { description: typeof j.d === 'string' ? j.d : '', image };
+    } catch {
+      /* düz metin olarak düş */
+    }
+  }
+  return { description: raw };
+}
+
 /** Metadata row served by /api/launchpad/tokens */
 export interface LaunchMeta {
   id: number;

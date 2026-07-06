@@ -1,16 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Rocket, Loader2, AlertTriangle, ShieldCheck, Flame, Droplets, Check } from 'lucide-react';
+import { ArrowLeft, Rocket, Loader2, AlertTriangle, ShieldCheck, Flame, Droplets, Check, ImagePlus } from 'lucide-react';
 import { useAccount, useBalance, useReadContract, useSwitchChain, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { decodeEventLog, formatEther } from 'viem';
 import { cn } from '@/lib/utils';
 import TokenAvatar from '@/components/launchpad/TokenAvatar';
 import {
-  LAUNCHPAD_FACTORY_ADDRESS, LAUNCHPAD_FACTORY_ABI, formatCompact,
+  LAUNCHPAD_FACTORY_ADDRESS, LAUNCHPAD_FACTORY_ABI, formatCompact, encodeTokenMeta,
   LAUNCHPAD_CHAIN_ID, LAUNCHPAD_EXPLORER,
 } from '@/lib/launchpad';
 
@@ -23,6 +23,9 @@ export default function LaunchTokenPage() {
   const [name, setName] = useState('');
   const [symbol, setSymbol] = useState('');
   const [description, setDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
@@ -84,6 +87,7 @@ export default function LaunchTokenPage() {
     if (newPool) return { label: 'Launched! Opening token page…', disabled: true, spinning: false };
     if (isConfirming) return { label: 'Confirming…', disabled: true, spinning: true };
     if (isSubmitting) return { label: 'Confirm in wallet…', disabled: true, spinning: true };
+    if (isUploading) return { label: 'Uploading image…', disabled: true, spinning: true };
     if (!isConnected) return { label: 'Connect wallet to launch', disabled: true, spinning: false };
     if (isPaused) return { label: 'Launches are paused', disabled: true, spinning: false };
     if (!nameOk) return { label: 'Enter a name (2–32 chars)', disabled: true, spinning: false };
@@ -92,7 +96,7 @@ export default function LaunchTokenPage() {
     if (!hasFunds) return { label: 'Insufficient AVAX for launch fee', disabled: true, spinning: false };
     if (chainId !== LAUNCHPAD_CHAIN_ID) return { label: 'Switch to Avalanche & Launch', disabled: false, spinning: false };
     return { label: `Launch for ${launchFee !== undefined ? formatEther(launchFee) : '…'} AVAX`, disabled: false, spinning: false };
-  }, [newPool, isConfirming, isSubmitting, isConnected, isPaused, nameOk, symbolOk, descOk, hasFunds, chainId, launchFee]);
+  }, [newPool, isConfirming, isSubmitting, isUploading, isConnected, isPaused, nameOk, symbolOk, descOk, hasFunds, chainId, launchFee]);
 
   async function handleLaunch() {
     setError('');
@@ -112,7 +116,7 @@ export default function LaunchTokenPage() {
         address: LAUNCHPAD_FACTORY_ADDRESS,
         abi: LAUNCHPAD_FACTORY_ABI,
         functionName: 'createToken',
-        args: [name.trim(), symbol, description.trim()],
+        args: [name.trim(), symbol, encodeTokenMeta({ description: description.trim(), image: imageUrl ?? undefined })],
         value: launchFee,
         chainId: LAUNCHPAD_CHAIN_ID,
       });
@@ -139,10 +143,46 @@ export default function LaunchTokenPage() {
 
           <div className="glass-card rounded-2xl p-5">
             <div className="flex items-center gap-3 mb-5">
-              <TokenAvatar address={`0xpreview${name}${symbol}`} symbol={symbol || name} size={44} />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                title="Upload token logo (optional, ≤512KB)"
+                className="relative group flex-shrink-0"
+              >
+                <TokenAvatar address={`0xpreview${name}${symbol}`} symbol={symbol || name} size={44} imageUrl={imageUrl ?? undefined} />
+                <span className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  {isUploading ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <ImagePlus className="w-4 h-4 text-white" />}
+                </span>
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!f) return;
+                  if (f.size > 512 * 1024) { setError('Image must be ≤ 512KB'); return; }
+                  setError('');
+                  setIsUploading(true);
+                  try {
+                    const fd = new FormData();
+                    fd.append('file', f);
+                    const res = await fetch('/avalanche/api/launchpad/image', { method: 'POST', body: fd });
+                    const d = await res.json();
+                    if (!res.ok || !d.url) throw new Error(d.error || 'upload failed');
+                    setImageUrl(d.url);
+                  } catch {
+                    setError('Image upload failed — try a smaller png/jpg/webp/gif');
+                  } finally {
+                    setIsUploading(false);
+                  }
+                }}
+              />
               <div>
                 <h1 className="font-display text-xl font-bold text-white/90">Launch a Token</h1>
-                <p className="text-xs text-white/40">Fair launch on the Frostbite bonding curve</p>
+                <p className="text-xs text-white/40">Fair launch on the bonding curve · tap the disc to add a logo</p>
               </div>
             </div>
 

@@ -18,7 +18,7 @@ import TokenAvatar from '@/components/launchpad/TokenAvatar';
 import {
   BONDING_POOL_ABI, POOL_STATE_GRADUATED,
   quoteBuy, quoteSell, spotPrice, curveExhaustionAvax, graduationProgressPct,
-  formatCompact, formatPrice, shortAddr, traderJoeUrl, type LaunchMeta, type IndexedTrade,
+  formatCompact, formatPrice, shortAddr, traderJoeUrl, parseTokenMeta, type LaunchMeta, type IndexedTrade,
   LAUNCHPAD_CHAIN_ID, LAUNCHPAD_EXPLORER,
 } from '@/lib/launchpad';
 
@@ -207,6 +207,8 @@ export default function TokenDetailPage() {
     const t = setInterval(loadTrades, 20_000);
     return () => clearInterval(t);
   }, [loadTrades]);
+
+  const pm = useMemo(() => parseTokenMeta(meta?.metadata), [meta]);
 
   /* --------------------------------- Quote --------------------------------- */
   const graduated = pd?.state === POOL_STATE_GRADUATED;
@@ -441,7 +443,7 @@ export default function TokenDetailPage() {
         <div className="glass-card rounded-2xl p-5 mb-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
             <div className="flex items-center gap-3 flex-1 min-w-0">
-              <TokenAvatar address={pd.token} symbol={td.symbol} size={52} />
+              <TokenAvatar address={pd.token} symbol={td.symbol} size={52} imageUrl={pm.image} />
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="font-display text-2xl font-bold text-white/90 truncate">{td.name}</h1>
@@ -487,7 +489,7 @@ export default function TokenDetailPage() {
             </div>
           </div>
 
-          {meta?.metadata && <p className="mt-3 text-sm text-white/50">{meta.metadata}</p>}
+          {pm.description && <p className="mt-3 text-sm text-white/50">{pm.description}</p>}
 
           {/* Graduation progress */}
           <div className="mt-4">

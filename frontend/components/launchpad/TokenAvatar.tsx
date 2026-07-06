@@ -1,25 +1,46 @@
 'use client';
 
+import { useState } from 'react';
 import { tokenGradient } from '@/lib/launchpad';
 import { cn } from '@/lib/utils';
 
 /**
- * Deterministic generative avatar for a launched token — gradient disc derived
- * from the token address (trustless: no image uploads/hosting in v1).
+ * Token avatar: creator-uploaded image when available (imageUrl from the
+ * on-chain metadataURI), otherwise a deterministic gradient disc derived from
+ * the token address. Broken/blocked images fall back to the gradient.
  */
 export default function TokenAvatar({
   address,
   symbol,
   size = 40,
   className,
+  imageUrl,
 }: {
   address: string;
   symbol?: string;
   size?: number;
   className?: string;
+  imageUrl?: string;
 }) {
+  const [imgFailed, setImgFailed] = useState(false);
   const g = tokenGradient(address);
   const letter = (symbol || '?').replace(/[^a-zA-Z0-9]/g, '').charAt(0).toUpperCase() || '?';
+
+  if (imageUrl && !imgFailed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={imageUrl}
+        alt={symbol || 'token'}
+        width={size}
+        height={size}
+        onError={() => setImgFailed(true)}
+        className={cn('rounded-full object-cover flex-shrink-0 border border-white/15 select-none', className)}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
   return (
     <div
       className={cn('relative rounded-full flex items-center justify-center flex-shrink-0 select-none', className)}

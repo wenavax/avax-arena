@@ -18,6 +18,7 @@ import {
   formatCompact,
   formatPrice,
   shortAddr,
+  parseTokenMeta,
   type LaunchMeta,
   LAUNCHPAD_CHAIN_ID, LAUNCHPAD_EXPLORER,
 } from '@/lib/launchpad';
@@ -38,6 +39,7 @@ interface TokenRow {
   raisedAvax: number;
   progressPct: number;
   description: string;
+  image?: string;
   vol24h: number;
 }
 
@@ -143,6 +145,7 @@ export default function LaunchpadPage() {
           return null;
         }
         const price = spotPrice(vAvax0, y0, realAvax);
+        const pm = parseTokenMeta(meta[l.pool.toLowerCase()]?.metadata);
         return {
           id: l.id,
           token: l.token,
@@ -155,7 +158,8 @@ export default function LaunchpadPage() {
           fdvAvax: price * (Number(totalSupply) / 1e18),
           raisedAvax: Number(formatEther(realAvax)),
           progressPct: graduationProgressPct(realAvax, threshold),
-          description: meta[l.pool.toLowerCase()]?.metadata || '',
+          description: pm.description,
+          image: pm.image,
           vol24h: meta[l.pool.toLowerCase()]?.vol24h ?? 0,
         };
       })
@@ -322,7 +326,7 @@ export default function LaunchpadPage() {
                 className="glass-card rounded-2xl p-4 block hover:border-frost-primary/30 transition-colors group"
               >
                 <div className="flex items-start gap-3">
-                  <TokenAvatar address={r.token} symbol={r.symbol} size={44} />
+                  <TokenAvatar address={r.token} symbol={r.symbol} size={44} imageUrl={r.image} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-display font-semibold text-white/90 truncate group-hover:text-frost-primary transition-colors">
