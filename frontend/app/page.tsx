@@ -22,6 +22,9 @@ import {
   Target,
   Award,
   Globe,
+  Rocket,
+  Snowflake,
+  Compass,
 } from 'lucide-react';
 import { usePublicClient } from 'wagmi';
 import { formatEther } from 'viem';
@@ -881,6 +884,80 @@ function StatsBar({ stats }: { stats: LiveStats }) {
 }
 
 /* ===========================================================================
+ * What's New — freshly shipped products
+ * ========================================================================= */
+
+const WHATS_NEW = [
+  {
+    icon: Rocket,
+    title: 'Launchpad',
+    tag: 'NEW',
+    desc: 'Launch a token on a fair bonding curve — no presale, no team bags. At 60 AVAX raised, liquidity graduates to Trader Joe and is burned forever. Contracts verified on Snowtrace.',
+    href: '/launchpad',
+    cta: 'Launch a token',
+    gradient: 'from-frost-primary to-rose-500',
+  },
+  {
+    icon: Snowflake,
+    title: 'Adventures',
+    tag: 'NEW',
+    desc: 'Idle NFT staking: send Frostlings into frozen biomes, stack Frost Shards while you sleep — now playable with your real on-chain hero NFTs.',
+    href: '/world/adventures',
+    cta: 'Start staking',
+    gradient: 'from-cyan-500 to-frost-primary',
+  },
+  {
+    icon: Compass,
+    title: 'Expeditions',
+    tag: 'NEW',
+    desc: 'Idle roguelike auto-battler with AI-authored bosses. Build your party, launch expeditions, and push ever deeper — token-free core loop.',
+    href: '/expeditions',
+    cta: 'Begin expedition',
+    gradient: 'from-orange-500 to-frost-primary',
+  },
+];
+
+function WhatsNewSection() {
+  return (
+    <section className="relative py-20 sm:py-24 px-4">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-frost-primary/[0.04] blur-[120px] pointer-events-none" />
+      <div className="mx-auto max-w-5xl relative z-10">
+        <FadeIn>
+          <div className="text-center mb-12">
+            <span className="inline-block font-sans font-semibold text-[10px] text-frost-primary uppercase tracking-[0.3em] mb-3">Just Shipped</span>
+            <h2 className="font-stamp uppercase text-4xl sm:text-5xl md:text-6xl tracking-tight leading-[0.9] text-white">
+              NEW THIS <span className="text-frost-primary">WEEK</span>
+            </h2>
+          </div>
+        </FadeIn>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+          {WHATS_NEW.map((n, i) => (
+            <FadeIn key={n.title} delay={i * 0.08}>
+              <Link href={n.href} className="group glass-card p-6 h-full relative overflow-hidden flex flex-col">
+                <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full bg-gradient-to-br ${n.gradient} opacity-0 group-hover:opacity-15 blur-2xl transition-opacity duration-500`} />
+                <div className="flex items-center justify-between mb-4">
+                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${n.gradient} flex items-center justify-center`}>
+                    <n.icon className="w-5 h-5 text-white" />
+                  </div>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-frost-primary/15 text-frost-primary border border-frost-primary/25 tracking-widest animate-pulse">
+                    {n.tag}
+                  </span>
+                </div>
+                <h3 className="font-display font-bold text-lg text-white/90 mb-2 group-hover:text-frost-primary transition-colors">{n.title}</h3>
+                <p className="text-white/40 text-xs leading-relaxed flex-1">{n.desc}</p>
+                <span className="mt-4 inline-flex items-center gap-1 text-xs text-frost-primary/80 group-hover:text-frost-primary group-hover:gap-2 transition-all">
+                  {n.cta} <ArrowRight className="w-3.5 h-3.5" />
+                </span>
+              </Link>
+            </FadeIn>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ===========================================================================
  * Page Export
  * ========================================================================= */
 
@@ -891,6 +968,7 @@ export default function HomePage() {
     <>
       <LiveTicker />
       <HeroSection stats={stats} />
+      <WhatsNewSection />
       <TabbedInfoPanel />
       <CTASection />
       <StatsBar stats={stats} />
