@@ -76,8 +76,8 @@ export default function NftScorePage() {
             <h1 className="font-display text-3xl lg:text-4xl font-bold gradient-text">NFT Score</h1>
           </div>
           <p className="mt-2 text-sm text-white/50 max-w-lg mx-auto">
-            Rate any Avalanche wallet by its NFT holdings — curated tiers × floor price ×
-            holding age × original-mint bonus, plus Frostbite &amp; diversity multipliers. No connection needed.
+            Rate any Avalanche wallet across 450+ verified collections — floor price × holding age ×
+            original-mint bonus, plus Frostbite &amp; diversity multipliers. Verified via Joepegs, no connection needed.
           </p>
         </div>
 

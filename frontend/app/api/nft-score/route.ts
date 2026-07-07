@@ -121,15 +121,24 @@ export async function GET(req: NextRequest) {
     const counts: Record<string, number> = { ...erc721 };
     for (const [a, n] of Object.entries(erc1155)) counts[a] = (counts[a] ?? 0) + n;
 
-    // Yalnız PUANLI koleksiyonlar için holding-age + mint oranı çek (rate-limit dostu).
+    // Scored (verified/curated) collections held by this wallet.
     const scoredAddrs = Object.keys(counts).filter((a) => COLLECTION_BY_ADDRESS[a.toLowerCase()]);
+    // Fetch holding-age + mint only for the highest-weight collections (Routescan
+    // is 2 rps); rest score on count alone (neutral age/mint). Cap keeps latency sane.
+    const MAX_AGE_LOOKUPS = 15;
+    const ranked = [...scoredAddrs].sort(
+      (a, b) => (COLLECTION_BY_ADDRESS[b.toLowerCase()].weight) - (COLLECTION_BY_ADDRESS[a.toLowerCase()].weight)
+    );
+    const ageSet = new Set(ranked.slice(0, MAX_AGE_LOOKUPS));
     const holdings: Record<string, HoldingInfo> = {};
     for (const addr of scoredAddrs) {
       let acq: { avgAgeDays?: number; minterRatio?: number } = {};
-      try {
-        acq = await fetchAcquisition(wallet, addr);
-      } catch {
-        /* age/mint alınamazsa nötr çarpanla devam */
+      if (ageSet.has(addr)) {
+        try {
+          acq = await fetchAcquisition(wallet, addr);
+        } catch {
+          /* neutral age/mint on failure */
+        }
       }
       holdings[addr] = { count: counts[addr], ...acq };
     }

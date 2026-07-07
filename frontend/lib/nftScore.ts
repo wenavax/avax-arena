@@ -62,9 +62,37 @@ export const SCORED_COLLECTIONS: ScoredCollection[] = [
   { address: '0x7b14377212a1c1f34c479df3621167ed647014f5', name: 'giraffe', tier: 'C', weight: 1, lambda: 0.3 },
 ];
 
-export const COLLECTION_BY_ADDRESS: Record<string, ScoredCollection> = Object.fromEntries(
-  SCORED_COLLECTIONS.map((c) => [c.address, c])
-);
+/* Dynamic verified set: every Joepegs-verified Avalanche collection, auto-tiered
+   by Salvor floor+volume (scripts/tier-verified-collections.mjs). This turns the
+   scorer from a 27-entry hand list into ~450 verified collections. Hand-curated
+   entries above take priority (FROST special weights + richer meta); the verified
+   snapshot fills in everything else. Refresh: build-verified-collections.py →
+   tier-verified-collections.mjs (daily). */
+import VERIFIED from './data/verifiedCollections.json';
+
+function buildCollectionMap(): Record<string, ScoredCollection> {
+  const map: Record<string, ScoredCollection> = {};
+  // 1) dynamic verified collections (weights from tier)
+  for (const [addr, info] of Object.entries(VERIFIED as Record<string, { name: string; tier: string; floorAvax?: number }>)) {
+    const tier = info.tier as Exclude<NftTier, 'FROST'>;
+    const weight = TIER_WEIGHTS[tier];
+    if (!weight) continue;
+    map[addr.toLowerCase()] = {
+      address: addr.toLowerCase(),
+      name: info.name,
+      tier,
+      weight,
+      lambda: 1, // Joepegs-verified → trusted; wash collections already gated out
+      floorAvax: info.floorAvax,
+    };
+  }
+  // 2) hand-curated entries override (FROST + richer meta win)
+  for (const c of SCORED_COLLECTIONS) map[c.address] = c;
+  return map;
+}
+
+export const COLLECTION_BY_ADDRESS: Record<string, ScoredCollection> = buildCollectionMap();
+export const SCORED_COLLECTION_COUNT = Object.keys(COLLECTION_BY_ADDRESS).length;
 
 /* --------------------------- geliştirilmiş çarpanlar ---------------------- */
 
