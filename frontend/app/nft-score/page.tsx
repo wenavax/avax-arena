@@ -2,9 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Award, Search, Loader2, AlertTriangle, Snowflake, Sparkles, Trophy, Share2, ImageIcon } from 'lucide-react';
-import { useAccount } from 'wagmi';
+import { Award, Search, Loader2, AlertTriangle, Snowflake, Sparkles, Trophy, Share2, ImageIcon, Check, Link2 } from 'lucide-react';
+import { useAccount, useSwitchChain, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { parseAbi } from 'viem';
 import { cn } from '@/lib/utils';
+
+const ATTEST_ADDRESS = '0xEFB0409A5698bB04EB11262D8915CfD2c68B68d5' as `0x${string}`;
+const ATTEST_ABI = parseAbi(['function attest(uint256 score, bytes32 ref) external']);
+const ZERO_REF = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`;
 import { badgeFor, BADGES, type WalletScore, type NftTier } from '@/lib/nftScore';
 import { shortAddr } from '@/lib/launchpad';
 
@@ -24,7 +29,12 @@ interface LeaderRow {
 }
 
 export default function NftScorePage() {
-  const { address } = useAccount();
+  const { address, chainId } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
+  const { writeContractAsync } = useWriteContract();
+  const [attestTx, setAttestTx] = useState<`0x${string}` | undefined>();
+  const [attesting, setAttesting] = useState(false);
+  const { isSuccess: attestConfirmed } = useWaitForTransactionReceipt({ hash: attestTx });
   const [input, setInput] = useState('');
   const [result, setResult] = useState<WalletScore | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -64,7 +74,34 @@ export default function NftScorePage() {
     [loadLeaderboard]
   );
 
+  async function attestOnChain() {
+    if (!result) return;
+    if (chainId !== 43114) {
+      try {
+        await switchChainAsync({ chainId: 43114 });
+      } catch {
+        return;
+      }
+    }
+    setAttesting(true);
+    try {
+      const hash = await writeContractAsync({
+        address: ATTEST_ADDRESS,
+        abi: ATTEST_ABI,
+        functionName: 'attest',
+        args: [BigInt(result.score), ZERO_REF],
+        chainId: 43114,
+      });
+      setAttestTx(hash);
+    } catch {
+      /* user rejected / failed — silent */
+    } finally {
+      setAttesting(false);
+    }
+  }
+
   const badge = result ? badgeFor(result.score) : null;
+  const ownWallet = !!address && !!result && result.wallet.toLowerCase() === address.toLowerCase();
 
   return (
     <div className="min-h-[calc(100vh-3.5rem)] lg:min-h-screen py-8 lg:py-12 max-w-4xl mx-auto w-full">
@@ -171,6 +208,27 @@ export default function NftScorePage() {
                       >
                         <ImageIcon className="w-3.5 h-3.5" /> View card
                       </a>
+                      {ownWallet && (
+                        <button
+                          onClick={attestOnChain}
+                          disabled={attesting || attestConfirmed}
+                          className={cn(
+                            'flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs transition-all border',
+                            attestConfirmed
+                              ? 'bg-frost-green/15 border-frost-green/30 text-frost-green'
+                              : 'bg-frost-gold/15 border-frost-gold/30 text-frost-gold hover:bg-frost-gold/25'
+                          )}
+                          title="Record your score on Avalanche (1 tx)"
+                        >
+                          {attestConfirmed ? (
+                            <><Check className="w-3.5 h-3.5" /> Attested on-chain</>
+                          ) : attesting ? (
+                            <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Attesting…</>
+                          ) : (
+                            <><Link2 className="w-3.5 h-3.5" /> Attest on-chain</>
+                          )}
+                        </button>
+                      )}
                     </div>
                   );
                 })()}
