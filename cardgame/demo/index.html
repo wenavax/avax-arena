@@ -63,32 +63,32 @@
   .cpflag{position:absolute;top:3px;font-size:8px;color:rgba(77,208,225,.7);transform:translateX(-50%);z-index:1;font-family:'JetBrains Mono',monospace}
   .finish{position:absolute;top:0;bottom:0;right:0;width:7px;z-index:1;
     background:repeating-linear-gradient(45deg,#fff 0 4px,#111 4px 8px);opacity:.8}
-  /* ── neon stick-figure runners ── */
-  .car{position:absolute;top:2px;height:46px;display:flex;align-items:center;gap:6px;
-    transition:left .1s linear;white-space:nowrap;z-index:2;--cycle:.46s}
-  .stickwrap{position:relative;width:34px;height:46px;flex:0 0 auto}
-  .stick{width:34px;height:46px;overflow:visible;transform:rotate(7deg);filter:drop-shadow(0 0 5px var(--c))}
-  .stick line{stroke:var(--c);stroke-width:3;stroke-linecap:round;fill:none}
-  .stick .head{fill:var(--c);stroke:none}
-  .armF,.armB{transform-origin:17px 15px}
-  .legF,.legB{transform-origin:17px 27px}
-  .run .stick{animation:bob var(--cycle) ease-in-out infinite}
-  .run .armF{animation:swingA var(--cycle) ease-in-out infinite}
-  .run .armB{animation:swingB var(--cycle) ease-in-out infinite}
-  .run .legF{animation:swingLA var(--cycle) ease-in-out infinite}
-  .run .legB{animation:swingLB var(--cycle) ease-in-out infinite}
-  @keyframes bob{0%,100%{transform:rotate(7deg) translateY(0)}50%{transform:rotate(7deg) translateY(-2.6px)}}
-  @keyframes swingA{0%,100%{transform:rotate(42deg)}50%{transform:rotate(-36deg)}}
-  @keyframes swingB{0%,100%{transform:rotate(-36deg)}50%{transform:rotate(42deg)}}
-  @keyframes swingLA{0%,100%{transform:rotate(-40deg)}50%{transform:rotate(44deg)}}
-  @keyframes swingLB{0%,100%{transform:rotate(44deg)}50%{transform:rotate(-40deg)}}
-  .car.boost{--cycle:.24s}
-  .car.boost .stick{filter:drop-shadow(0 0 8px var(--c)) drop-shadow(0 0 20px var(--c))}
-  .car.fin .stick,.car.fin .stick g{animation:none}
-  .car.fin .stick{transform:none;filter:drop-shadow(0 0 6px var(--c))}
+  /* ── neon cars (spinning wheels = run cycle) ── */
+  .car{position:absolute;top:8px;height:34px;display:flex;align-items:center;gap:6px;
+    transition:left .1s linear;white-space:nowrap;z-index:2;--cycle:.5s}
+  .carwrap{position:relative;width:56px;height:32px;flex:0 0 auto}
+  .carsvg{width:56px;height:32px;overflow:visible;filter:drop-shadow(0 0 6px var(--c))}
+  .carsvg .body{fill:color-mix(in srgb,var(--c) 20%,transparent);stroke:var(--c);stroke-width:2;stroke-linejoin:round}
+  .carsvg .glass{fill:none;stroke:var(--c);stroke-width:1.5;opacity:.65}
+  .carsvg .light{fill:#fff;filter:drop-shadow(0 0 5px #fff)}
+  .carsvg .wheel circle{fill:#0d0d10;stroke:var(--c);stroke-width:2}
+  .carsvg .wheel line{stroke:var(--c);stroke-width:1.6;stroke-linecap:round;opacity:.9}
+  .w1{transform-origin:16px 24px}
+  .w2{transform-origin:42px 24px}
+  .run .w1,.run .w2{animation:wheelspin var(--cycle) linear infinite}
+  @keyframes wheelspin{to{transform:rotate(360deg)}}
+  .run .carsvg{animation:carbob .34s ease-in-out infinite}
+  @keyframes carbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.3px)}}
+  .flame{opacity:0;transform-origin:9px 18px}
+  .boost .flame{opacity:1;animation:flame .13s steps(2) infinite}
+  @keyframes flame{50%{transform:scaleX(1.55) scaleY(.85)}}
+  .car.boost{--cycle:.16s}
+  .car.boost .carsvg{filter:drop-shadow(0 0 9px var(--c)) drop-shadow(0 0 22px var(--c))}
+  .car.fin .carsvg,.car.fin .w1,.car.fin .w2,.car.fin .flame{animation:none}
+  .car.fin .carsvg{filter:drop-shadow(0 0 6px var(--c))}
 
   /* ── card-coloured neon auras (fx ring around the runner) ── */
-  .fx{position:absolute;inset:-7px -4px;border-radius:50%;opacity:0;pointer-events:none;transition:opacity .15s}
+  .fx{position:absolute;width:50px;height:50px;left:3px;top:-9px;border-radius:50%;opacity:0;pointer-events:none;transition:opacity .15s}
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes hueshift{to{filter:hue-rotate(360deg)}}
   @keyframes flicker{50%{opacity:.3}}
@@ -419,14 +419,15 @@ function cssv(n){return getComputedStyle(document.documentElement).getPropertyVa
 function popup(txt,cls){const tk=document.getElementById('track');const el=document.createElement('div');
   el.className='popup'+(cls?' '+cls:'');el.textContent=txt;tk.appendChild(el);setTimeout(()=>el.remove(),1400);}
 
-/* neon koşucu — uzuvlar ayrı <g>'lerde ki CSS keyframe'ler döndürebilsin */
-const STICK_SVG=`<svg class="stick" viewBox="0 0 34 46">
-  <circle class="head" cx="17" cy="7" r="4.4"/>
-  <line x1="17" y1="12" x2="17" y2="27"/>
-  <g class="armB"><line x1="17" y1="15" x2="17" y2="26"/></g>
-  <g class="armF"><line x1="17" y1="15" x2="17" y2="26"/></g>
-  <g class="legB"><line x1="17" y1="27" x2="17" y2="42"/></g>
-  <g class="legF"><line x1="17" y1="27" x2="17" y2="42"/></g>
+/* neon araba — tekerlekler ayrı <g>'lerde ki CSS keyframe'ler döndürebilsin */
+const CAR_SVG=`<svg class="carsvg" viewBox="0 0 56 32">
+  <g class="flame"><path d="M9 15.5 L-3 13 L3 16.5 L-5 19.5 L9 20.5 Z" fill="#f5c542"/>
+    <path d="M9 16.5 L1 15 L5 17 L1 19 L9 19.5 Z" fill="#ed2f39"/></g>
+  <path class="body" d="M6 22 L8 16 Q13 9 22 8 L32 8 Q41 9 47 15 L52 18 Q54 19 54 21 L53 22 Z"/>
+  <path class="glass" d="M21 9.5 L19 15 L35 15 L33 9.5"/>
+  <circle class="light" cx="52.2" cy="19" r="1.6"/>
+  <g class="wheel w1"><circle cx="16" cy="24" r="5.5"/><line x1="16" y1="20" x2="16" y2="28"/><line x1="12" y1="24" x2="20" y2="24"/></g>
+  <g class="wheel w2"><circle cx="42" cy="24" r="5.5"/><line x1="42" y1="20" x2="42" y2="28"/><line x1="38" y1="24" x2="46" y2="24"/></g>
 </svg>`;
 
 /* Track DOM'u tur başına BİR KEZ kurulur; tick'ler yalnızca günceller —
@@ -443,7 +444,7 @@ function buildTrack(){
     const fin=document.createElement('div');fin.className='finish';lane.appendChild(fin);
     const car=document.createElement('div');car.className='car run';
     car.style.setProperty('--c',cssv(COLORS[p.id]).trim());
-    car.innerHTML=`<span class="stickwrap"><span class="fx"></span>${STICK_SVG}</span>
+    car.innerHTML=`<span class="carwrap"><span class="fx"></span>${CAR_SVG}</span>
       <span class="tag"></span><span class="hud"></span>`;
     lane.appendChild(car);tk.appendChild(lane);
     laneRefs[p.id]={car,tag:car.querySelector('.tag'),hud:car.querySelector('.hud')};
