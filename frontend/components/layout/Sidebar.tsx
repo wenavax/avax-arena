@@ -271,15 +271,15 @@ export function Sidebar() {
     <aside className="hidden lg:flex sticky top-0 z-40 w-[16.5rem] flex-shrink-0 h-screen flex-col bg-[rgb(var(--frost-bg))]/95 backdrop-blur-sm border-r border-white/[0.04]">
       {/* Logo area */}
       <Link href="/" className="flex items-center gap-3.5 px-5 h-[4.5rem] group flex-shrink-0 border-b border-white/[0.04]">
-        <div className="relative flex h-10 w-10 items-center justify-center rounded-xl overflow-hidden ring-1 ring-white/[0.08] shadow-[0_0_15px_rgba(255,32,32,0.1)] group-hover:shadow-[0_0_20px_rgba(255,32,32,0.2)] transition-shadow">
-          <Image src="/avalanche/logo.png" alt="Frostbite" width={40} height={40} className="rounded-xl" priority />
+        <div className="relative flex h-11 w-11 items-center justify-center rounded-xl overflow-hidden ring-1 ring-white/[0.08] shadow-[0_0_15px_rgba(255,32,32,0.1)] group-hover:shadow-[0_0_20px_rgba(255,32,32,0.2)] transition-shadow">
+          <Image src="/avalanche/logo.png" alt="Frostbite" width={44} height={44} className="rounded-xl" priority />
         </div>
         <div>
-          <div className="font-display text-[10px] font-bold tracking-wider leading-tight">
+          <div className="font-display text-xl font-bold tracking-wide leading-none">
             <span className="gradient-text">FROST</span>
             <span className="text-white/80 ml-0.5">BITE</span>
           </div>
-          <div className="text-[7px] font-pixel uppercase tracking-[0.15em] text-white/20 mt-0.5">Battle Arena</div>
+          <div className="text-[9px] font-pixel uppercase tracking-[0.15em] text-white/25 mt-1">Battle Arena</div>
         </div>
       </Link>
 
@@ -353,8 +353,8 @@ export function MobileTopBar() {
       {/* Top bar */}
       <header className="lg:hidden sticky top-0 z-50 flex items-center justify-between h-14 px-4 bg-[rgb(var(--frost-bg))]/95 backdrop-blur-xl border-b border-white/[0.04]">
         <Link href="/" className="flex items-center gap-2">
-          <Image src="/avalanche/logo.png" alt="Frostbite" width={28} height={28} className="rounded-lg" priority />
-          <span className="font-display text-[9px] font-bold tracking-wider">
+          <Image src="/avalanche/logo.png" alt="Frostbite" width={30} height={30} className="rounded-lg" priority />
+          <span className="font-display text-base font-bold tracking-wide">
             <span className="gradient-text">FROST</span>
             <span className="text-white/90 ml-0.5">BITE</span>
           </span>

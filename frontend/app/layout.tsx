@@ -74,11 +74,14 @@ export const metadata: Metadata = {
   publisher: 'Frostbite',
   category: 'Gaming',
   icons: {
+    // basePath (/avalanche) Next metadata icon URL'lerine OTOMATİK eklenmez —
+    // elle prefix'lemezsek tarayıcı root'tan ister ve 404 alır (favicon kaybolur).
     icon: [
-      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
-      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/avalanche/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/avalanche/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/avalanche/favicon.ico', sizes: 'any' },
     ],
-    apple: '/apple-touch-icon.png',
+    apple: '/avalanche/apple-touch-icon.png',
   },
   openGraph: {
     title: 'Frostbite | NFT Battle Arena on Avalanche',
