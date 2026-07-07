@@ -47,7 +47,8 @@ export function Web3Provider({ children }: { children: React.ReactNode }) {
         appearance: {
           theme: resolvedTheme === 'light' ? 'light' : 'dark',
           accentColor: '#ed2f39',
-          logo: '/favicon-32x32.png',
+          // basePath tuzağı: kök yollar frostbite.pro/'a gider (404) — /avalanche şart
+          logo: '/avalanche/favicon-32x32.png',
           landingHeader: 'Frostbite Arena',
           loginMessage: 'Enter the arena — email, social, or wallet',
         },
