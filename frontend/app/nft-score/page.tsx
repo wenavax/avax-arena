@@ -76,8 +76,8 @@ export default function NftScorePage() {
             <h1 className="font-display text-3xl lg:text-4xl font-bold gradient-text">NFT Score</h1>
           </div>
           <p className="mt-2 text-sm text-white/50 max-w-lg mx-auto">
-            Rate any Avalanche wallet by its NFT holdings — curated collection tiers, Frostbite
-            bonus, diversity multiplier. No wallet connection needed.
+            Rate any Avalanche wallet by its NFT holdings — curated tiers × floor price ×
+            holding age × original-mint bonus, plus Frostbite &amp; diversity multipliers. No connection needed.
           </p>
         </div>
 
@@ -159,7 +159,24 @@ export default function NftScorePage() {
                         <span className={cn('px-1.5 py-0.5 rounded-md border text-[10px] font-bold w-14 text-center', TIER_COLORS[b.tier])}>
                           {b.tier}
                         </span>
-                        <span className="text-white/80 flex-1 truncate">{b.name}</span>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-white/80 truncate block">{b.name}</span>
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            {b.floorAvax ? (
+                              <span className="text-[9px] text-white/30">◈ {b.floorAvax} AVAX floor</span>
+                            ) : null}
+                            {b.avgAgeDays !== undefined && (
+                              <span className={cn('text-[9px]', b.avgAgeDays >= 365 ? 'text-frost-gold' : b.avgAgeDays < 7 ? 'text-white/25' : 'text-white/40')}>
+                                ⏳ {b.avgAgeDays >= 365 ? `${(b.avgAgeDays / 365).toFixed(1)}y` : `${b.avgAgeDays}g`} tutuyor
+                              </span>
+                            )}
+                            {b.minterRatio ? (
+                              <span className="text-[9px] text-frost-primary">
+                                ⛏ {b.minterRatio >= 0.999 ? 'orijinal mint' : `%${Math.round(b.minterRatio * 100)} mint`}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
                         <span className="text-white/40 font-mono">×{b.count}</span>
                         <span className="text-frost-green font-mono w-16 text-right">+{b.points}p</span>
                       </div>

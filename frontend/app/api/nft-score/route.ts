@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import getDb from '@/lib/db';
-import { computeWalletScore, type WalletScore } from '@/lib/nftScore';
+import { computeWalletScore, COLLECTION_BY_ADDRESS, type WalletScore, type HoldingInfo } from '@/lib/nftScore';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -14,8 +14,41 @@ export const runtime = 'nodejs';
  */
 
 const ROUTESCAN = 'https://api.routescan.io/v2/network/mainnet/evm/43114/address';
+const ROUTESCAN_ETH = 'https://api.routescan.io/v2/network/mainnet/evm/43114/etherscan/api';
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_PAGES = 8; // 8×100 = 800 NFT/tip — makul tavan
+const ZERO = '0x0000000000000000000000000000000000000000';
+const DAY = 86_400;
+
+/** Bir puanlı koleksiyon için: cüzdanın hâlâ tuttuğu token'ların ortalama edinme
+ *  yaşı + orijinal-mint oranı (from 0x0). tokennfttx tüm transfer'leri verir;
+ *  her tokenId için son kayıt to==wallet ise elde sayılır. */
+async function fetchAcquisition(wallet: string, collection: string): Promise<{ avgAgeDays?: number; minterRatio?: number }> {
+  const url = `${ROUTESCAN_ETH}?module=account&action=tokennfttx&contractaddress=${collection}&address=${wallet}&page=1&offset=1000&sort=asc`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) return {};
+  const d = (await res.json()) as { status?: string; result?: unknown };
+  if (d.status !== '1' || !Array.isArray(d.result)) return {};
+  const w = wallet.toLowerCase();
+  // her tokenId için son transfer'i tut (asc sıralı → sonuncusu geçerli durum)
+  const last = new Map<string, { ts: number; from: string; to: string }>();
+  for (const t of d.result as { tokenID?: string; timeStamp?: string; from?: string; to?: string }[]) {
+    if (!t.tokenID) continue;
+    last.set(t.tokenID, { ts: Number(t.timeStamp ?? 0), from: (t.from ?? '').toLowerCase(), to: (t.to ?? '').toLowerCase() });
+  }
+  const now = Math.floor(Date.now() / 1000);
+  let ageSum = 0;
+  let held = 0;
+  let minted = 0;
+  for (const rec of last.values()) {
+    if (rec.to !== w) continue; // token cüzdandan çıkmış — elde değil
+    held++;
+    ageSum += Math.max(0, (now - rec.ts) / DAY);
+    if (rec.from === ZERO) minted++;
+  }
+  if (held === 0) return {};
+  return { avgAgeDays: ageSum / held, minterRatio: minted / held };
+}
 
 function ensureTables() {
   const db = getDb();
@@ -88,7 +121,20 @@ export async function GET(req: NextRequest) {
     const counts: Record<string, number> = { ...erc721 };
     for (const [a, n] of Object.entries(erc1155)) counts[a] = (counts[a] ?? 0) + n;
 
-    const result = computeWalletScore(wallet, counts);
+    // Yalnız PUANLI koleksiyonlar için holding-age + mint oranı çek (rate-limit dostu).
+    const scoredAddrs = Object.keys(counts).filter((a) => COLLECTION_BY_ADDRESS[a.toLowerCase()]);
+    const holdings: Record<string, HoldingInfo> = {};
+    for (const addr of scoredAddrs) {
+      let acq: { avgAgeDays?: number; minterRatio?: number } = {};
+      try {
+        acq = await fetchAcquisition(wallet, addr);
+      } catch {
+        /* age/mint alınamazsa nötr çarpanla devam */
+      }
+      holdings[addr] = { count: counts[addr], ...acq };
+    }
+
+    const result = computeWalletScore(wallet, holdings);
     db.prepare(
       `INSERT INTO nft_scores (wallet, score, badge, total_nfts, payload, ts) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(wallet) DO UPDATE SET score = excluded.score, badge = excluded.badge,
