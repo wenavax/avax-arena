@@ -190,7 +190,10 @@ body {
   }
 
   .glass-card {
-    background: var(--glass-card-bg);
+    /* subtle top-edge highlight over the base fill → reads as real glass */
+    background:
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.045), transparent 42%),
+      var(--glass-card-bg);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--glass-card-border);
@@ -337,6 +340,37 @@ body {
     background-position: 0 0, 12px 12px, 6px 6px;
     image-rendering: pixelated;
     transition: background-color 0.3s ease;
+  }
+
+  /* Ambient depth: soft drifting colour orbs behind everything — breaks the
+     flat dark-red monotony, fills wide empty space, adds slow life. */
+  .mesh-bg::before {
+    content: '';
+    position: absolute;
+    inset: -20%;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(38rem 38rem at 18% 12%, rgba(237, 47, 57, 0.14), transparent 60%),
+      radial-gradient(34rem 34rem at 85% 22%, rgba(56, 152, 236, 0.10), transparent 62%),
+      radial-gradient(40rem 40rem at 72% 88%, rgba(147, 82, 224, 0.09), transparent 64%),
+      radial-gradient(30rem 30rem at 8% 82%, rgba(237, 47, 57, 0.08), transparent 62%);
+    filter: blur(12px);
+    animation: ambient-drift 34s ease-in-out infinite alternate;
+  }
+  .light .mesh-bg::before {
+    background-image:
+      radial-gradient(38rem 38rem at 18% 12%, rgba(220, 38, 38, 0.07), transparent 60%),
+      radial-gradient(34rem 34rem at 85% 22%, rgba(56, 152, 236, 0.06), transparent 62%),
+      radial-gradient(40rem 40rem at 72% 88%, rgba(147, 82, 224, 0.05), transparent 64%);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mesh-bg::before { animation: none; }
+  }
+  @keyframes ambient-drift {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    50%  { transform: translate3d(-2.5%, 2%, 0) scale(1.06); }
+    100% { transform: translate3d(2%, -1.5%, 0) scale(1.03); }
   }
 
   /* Scanline overlay */
