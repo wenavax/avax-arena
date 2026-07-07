@@ -52,11 +52,11 @@ export default function NftScorePage() {
       try {
         const res = await fetch(`/avalanche/api/nft-score?wallet=${w}`);
         const d = await res.json();
-        if (!res.ok) throw new Error(d.error || 'skor alınamadı');
+        if (!res.ok) throw new Error(d.error || 'failed to fetch score');
         setResult(d as WalletScore);
         loadLeaderboard();
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Skor alınamadı — tekrar dene');
+        setError(e instanceof Error ? e.message : 'Failed to fetch score — try again');
       } finally {
         setIsLoading(false);
       }
@@ -133,7 +133,7 @@ export default function NftScorePage() {
                 <div className="text-5xl mb-1">{badge.icon}</div>
                 <div className="font-display text-lg text-white/60">{badge.label}</div>
                 <div className="font-mono text-6xl font-bold gradient-text my-2">{result.score}</div>
-                <div className="text-xs text-white/40 font-mono">{shortAddr(result.wallet)} · {result.totalNfts} puanlı NFT</div>
+                <div className="text-xs text-white/40 font-mono">{shortAddr(result.wallet)} · {result.totalNfts} scored NFTs</div>
                 <div className="mt-3 flex items-center justify-center gap-2 text-[11px] text-white/40 flex-wrap">
                   {result.frostBonus && (
                     <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-frost-primary/10 text-frost-primary border border-frost-primary/25">
