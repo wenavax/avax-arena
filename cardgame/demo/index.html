@@ -63,13 +63,48 @@
   .cpflag{position:absolute;top:3px;font-size:8px;color:rgba(77,208,225,.7);transform:translateX(-50%);z-index:1;font-family:'JetBrains Mono',monospace}
   .finish{position:absolute;top:0;bottom:0;right:0;width:7px;z-index:1;
     background:repeating-linear-gradient(45deg,#fff 0 4px,#111 4px 8px);opacity:.8}
-  .car{position:absolute;top:9px;height:32px;display:flex;align-items:center;gap:7px;
-    transition:left .1s linear;white-space:nowrap;z-index:2}
-  .carbody{width:36px;height:20px;border-radius:6px;position:relative;box-shadow:0 2px 8px rgba(0,0,0,.5)}
-  .carbody:after{content:'';position:absolute;top:4px;right:-4px;width:8px;height:12px;background:inherit;border-radius:2px;opacity:.8}
-  .car.boost .carbody{box-shadow:0 0 16px 2px currentColor,0 2px 8px rgba(0,0,0,.5)}
-  .trail{position:absolute;right:100%;top:8px;width:34px;height:4px;border-radius:2px;
-    background:linear-gradient(90deg,transparent,currentColor);opacity:.7}
+  /* ── neon stick-figure runners ── */
+  .car{position:absolute;top:2px;height:46px;display:flex;align-items:center;gap:6px;
+    transition:left .1s linear;white-space:nowrap;z-index:2;--cycle:.46s}
+  .stickwrap{position:relative;width:34px;height:46px;flex:0 0 auto}
+  .stick{width:34px;height:46px;overflow:visible;transform:rotate(7deg);filter:drop-shadow(0 0 5px var(--c))}
+  .stick line{stroke:var(--c);stroke-width:3;stroke-linecap:round;fill:none}
+  .stick .head{fill:var(--c);stroke:none}
+  .armF,.armB{transform-origin:17px 15px}
+  .legF,.legB{transform-origin:17px 27px}
+  .run .stick{animation:bob var(--cycle) ease-in-out infinite}
+  .run .armF{animation:swingA var(--cycle) ease-in-out infinite}
+  .run .armB{animation:swingB var(--cycle) ease-in-out infinite}
+  .run .legF{animation:swingLA var(--cycle) ease-in-out infinite}
+  .run .legB{animation:swingLB var(--cycle) ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:rotate(7deg) translateY(0)}50%{transform:rotate(7deg) translateY(-2.6px)}}
+  @keyframes swingA{0%,100%{transform:rotate(42deg)}50%{transform:rotate(-36deg)}}
+  @keyframes swingB{0%,100%{transform:rotate(-36deg)}50%{transform:rotate(42deg)}}
+  @keyframes swingLA{0%,100%{transform:rotate(-40deg)}50%{transform:rotate(44deg)}}
+  @keyframes swingLB{0%,100%{transform:rotate(44deg)}50%{transform:rotate(-40deg)}}
+  .car.boost{--cycle:.24s}
+  .car.boost .stick{filter:drop-shadow(0 0 8px var(--c)) drop-shadow(0 0 20px var(--c))}
+  .car.fin .stick,.car.fin .stick g{animation:none}
+  .car.fin .stick{transform:none;filter:drop-shadow(0 0 6px var(--c))}
+
+  /* ── card-coloured neon auras (fx ring around the runner) ── */
+  .fx{position:absolute;inset:-7px -4px;border-radius:50%;opacity:0;pointer-events:none;transition:opacity .15s}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes hueshift{to{filter:hue-rotate(360deg)}}
+  @keyframes flicker{50%{opacity:.3}}
+  .car.fx-val .fx{opacity:1;border:2px dotted rgba(236,236,238,.55);box-shadow:0 0 10px 2px rgba(236,236,238,.25);animation:spin 1.8s linear infinite}
+  .car.fx-ice .fx{opacity:1;border:2px dashed rgba(77,208,225,.85);box-shadow:0 0 16px 3px rgba(77,208,225,.5);animation:spin 1.3s linear infinite}
+  .car.fx-epic .fx{opacity:1;border:2px dashed rgba(167,139,250,.9);box-shadow:0 0 18px 4px rgba(167,139,250,.55);animation:spin .9s linear infinite}
+  .car.fx-nitro .fx{opacity:1;border:2px dashed rgba(245,197,66,.9);box-shadow:0 0 20px 5px rgba(245,197,66,.6);animation:spin .7s linear infinite}
+  .car.fx-max .fx{opacity:1;border:3px solid transparent;border-radius:50%;
+    background:conic-gradient(from 0deg,#ed2f39,#f5c542,#4dd0e1,#a78bfa,#6ee7a0,#ed2f39) border-box;
+    -webkit-mask:linear-gradient(#fff 0 0) padding-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;
+    mask:linear-gradient(#fff 0 0) padding-box,linear-gradient(#fff 0 0);mask-composite:exclude;
+    animation:spin .7s linear infinite,hueshift 2.2s linear infinite;box-shadow:0 0 26px 7px rgba(255,255,255,.28)}
+  /* debuffs (declared last so they win over self-fx) */
+  .car.fx-hit .fx{opacity:1;background:none;border:2px solid rgba(237,47,57,.95);box-shadow:0 0 18px 5px rgba(237,47,57,.6);animation:flicker .28s steps(2) infinite;mask:none;-webkit-mask:none}
+  .car.fx-oil .fx{opacity:1;background:none;border:2px dotted rgba(124,130,153,.95);box-shadow:0 0 14px 5px rgba(40,44,58,.9);animation:spin 2.4s linear infinite reverse;mask:none;-webkit-mask:none}
+
   .tag{font-size:10px;font-weight:600;background:rgba(0,0,0,.55);padding:2px 8px;border-radius:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.3px}
   .hud{display:flex;gap:6px;font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace}
 
@@ -79,6 +114,13 @@
     text-shadow:0 0 24px rgba(245,197,66,.6);pointer-events:none;animation:rise 1.4s ease-out forwards}
   @keyframes rise{0%{opacity:0;transform:translate(-50%,14px) scale(.8)}18%{opacity:1;transform:translate(-50%,0) scale(1.06)}
     30%{transform:translate(-50%,-2px) scale(1)}100%{opacity:0;transform:translate(-50%,-42px) scale(.96)}}
+  .popup.fx-val{color:#ececee;text-shadow:0 0 20px rgba(255,255,255,.4)}
+  .popup.fx-ice{color:#4dd0e1;text-shadow:0 0 24px rgba(77,208,225,.65)}
+  .popup.fx-epic{color:#a78bfa;text-shadow:0 0 24px rgba(167,139,250,.65)}
+  .popup.fx-nitro{color:#f5c542;text-shadow:0 0 26px rgba(245,197,66,.7)}
+  .popup.fx-max{background:linear-gradient(90deg,#ed2f39,#f5c542,#4dd0e1,#a78bfa);
+    -webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;
+    filter:drop-shadow(0 0 18px rgba(245,197,66,.5));animation:rise 1.4s ease-out forwards,hueshift 1.2s linear infinite}
 
   /* panels */
   .grid{display:grid;grid-template-columns:1fr 340px;gap:14px}
@@ -259,7 +301,7 @@ function evaluate(cards){
 let deck,players,t,roundIndex,tickH,selected=new Set(),awaitingVehicle=false;
 const usedVeh={P1:{},P2:{},P3:{},P4:{}};
 function mkPlayers(){return['P1','P2','P3','P4'].map(id=>({id,veh:null,base:0,hlim:0,hand:[],dist:0,fin:false,ft:null,
-  cdUntil:0,nm:null,magics:[],scores:[],times:[],total:0,cp:new Set()}));}
+  cdUntil:0,nm:null,magics:[],scores:[],times:[],total:0,cp:new Set(),fx:null,debuff:null}));}
 function draw(n){return deck.splice(0,n);}
 function grant(hlim,cur){return Math.max(0,Math.min(3,hlim-cur));}
 
@@ -273,8 +315,9 @@ function startRound(choices){
   players.forEach(p=>{
     selectVeh(p,choices[p.id]);autoDiscard(p);
     if(roundIndex>0)p.hand.push(...draw(grant(p.hlim,p.hand.length)));
-    p.dist=0;p.fin=false;p.ft=null;p.cdUntil=0;p.nm=null;p.magics=[];p.cp=new Set();
+    p.dist=0;p.fin=false;p.ft=null;p.cdUntil=0;p.nm=null;p.magics=[];p.cp=new Set();p.fx=null;p.debuff=null;
   });
+  buildTrack();
   t=0;tickH=setInterval(tick,100);
   document.getElementById('vehRow').style.display='none';awaitingVehicle=false;
   document.getElementById('roundChip').textContent=`ROUND ${roundIndex+1}/3`;
@@ -284,14 +327,23 @@ function speed(p){let nm=(p.nm&&t<p.nm.endsAt)?p.nm.mult:1;let mg=1;p.magics.for
   return p.base*nm*mg;}
 function fastestOpp(p){const o=players.filter(q=>q!==p&&!q.fin);o.sort((a,b)=>speed(b)-speed(a)||b.dist-a.dist);return o[0];}
 
+/* fx sınıfı: oynanan kartların rengine göre neon aura */
+function fxClass(r){
+  if(r.magic.some(m=>m.type==='NITRO'))return 'fx-nitro';
+  if(r.combo==='FOUR_OF_A_KIND'||r.combo==='TWO_TRIOS'||r.mult>=CFG.CAP)return 'fx-max';
+  if(r.combo&&COMBO[r.combo]>=150)return 'fx-epic';
+  if(r.combo)return 'fx-ice';
+  return 'fx-val';
+}
 function applyPlay(p,idxs){
   if(p.fin||t<p.cdUntil||idxs.length<1||idxs.length>8)return{ok:false};
   const cards=idxs.map(i=>p.hand[i]);const r=evaluate(cards);
   p.nm={mult:r.mult,endsAt:t+CFG.DUR};
+  p.fx={cls:fxClass(r),until:t+CFG.DUR};
   r.magic.forEach(m=>{
     if(m.t==='SELF')p.magics.push({mult:m.m,endsAt:t+CFG.DUR});
-    else if(m.t==='FAST'){const tg=fastestOpp(p);if(tg)tg.magics.push({mult:m.m,endsAt:t+CFG.DUR});}
-    else players.forEach(q=>{if(q!==p&&!q.fin)q.magics.push({mult:m.m,endsAt:t+CFG.DUR});});
+    else if(m.t==='FAST'){const tg=fastestOpp(p);if(tg){tg.magics.push({mult:m.m,endsAt:t+CFG.DUR});tg.debuff={cls:'fx-hit',until:t+CFG.DUR};}}
+    else players.forEach(q=>{if(q!==p&&!q.fin){q.magics.push({mult:m.m,endsAt:t+CFG.DUR});q.debuff={cls:'fx-oil',until:t+CFG.DUR};}});
   });
   const set=new Set(idxs);p.hand=p.hand.filter((_,i)=>!set.has(i));p.cdUntil=t+CFG.COOLDOWN;
   return{ok:true,r};
@@ -364,25 +416,51 @@ function finishMatch(){
 
 // ---- Rendering ----
 function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n);}
-function popup(txt){const tk=document.getElementById('track');const el=document.createElement('div');
-  el.className='popup';el.textContent=txt;tk.appendChild(el);setTimeout(()=>el.remove(),1400);}
-function render(finalOrder,rw){
-  // track
+function popup(txt,cls){const tk=document.getElementById('track');const el=document.createElement('div');
+  el.className='popup'+(cls?' '+cls:'');el.textContent=txt;tk.appendChild(el);setTimeout(()=>el.remove(),1400);}
+
+/* neon koşucu — uzuvlar ayrı <g>'lerde ki CSS keyframe'ler döndürebilsin */
+const STICK_SVG=`<svg class="stick" viewBox="0 0 34 46">
+  <circle class="head" cx="17" cy="7" r="4.4"/>
+  <line x1="17" y1="12" x2="17" y2="27"/>
+  <g class="armB"><line x1="17" y1="15" x2="17" y2="26"/></g>
+  <g class="armF"><line x1="17" y1="15" x2="17" y2="26"/></g>
+  <g class="legB"><line x1="17" y1="27" x2="17" y2="42"/></g>
+  <g class="legF"><line x1="17" y1="27" x2="17" y2="42"/></g>
+</svg>`;
+
+/* Track DOM'u tur başına BİR KEZ kurulur; tick'ler yalnızca günceller —
+   her tick yeniden kurmak koşu animasyonlarını sıfırlar (ve tıklama yutar) */
+let laneRefs={};
+function buildTrack(){
   const tk=document.getElementById('track');
   [...tk.querySelectorAll('.lane')].forEach(l=>l.remove());
+  laneRefs={};
   players.forEach(p=>{
     const lane=document.createElement('div');lane.className='lane';
     CFG.CP.forEach((cp,i)=>{const d=document.createElement('div');d.className='cp';d.style.left=(cp/10)+'%';lane.appendChild(d);
       const f=document.createElement('div');f.className='cpflag';f.style.left=(cp/10)+'%';f.textContent='CP'+(i+1);lane.appendChild(f);});
     const fin=document.createElement('div');fin.className='finish';lane.appendChild(fin);
-    const boosted=(p.nm&&t<p.nm.endsAt)&&!p.fin;
-    const car=document.createElement('div');car.className='car'+(boosted?' boost':'');
-    car.style.left=(p.dist/CFG.TRACK*93)+'%';car.style.color=cssv(COLORS[p.id]);
-    const cd=Math.max(0,p.cdUntil-t);
-    car.innerHTML=`<div class="carbody" style="background:${cssv(COLORS[p.id])}">${boosted?'<i class="trail"></i>':''}</div>
-      <span class="tag">${nameOf(p.id)}${p.veh?' · '+p.veh[0]:''}</span>
-      <span class="hud">${p.fin?'✔ '+p.ft+'s':Math.round(speed(p))+'u/s'}${cd>0?' · cd'+cd.toFixed(1):''}</span>`;
+    const car=document.createElement('div');car.className='car run';
+    car.style.setProperty('--c',cssv(COLORS[p.id]).trim());
+    car.innerHTML=`<span class="stickwrap"><span class="fx"></span>${STICK_SVG}</span>
+      <span class="tag"></span><span class="hud"></span>`;
     lane.appendChild(car);tk.appendChild(lane);
+    laneRefs[p.id]={car,tag:car.querySelector('.tag'),hud:car.querySelector('.hud')};
+  });
+}
+function render(finalOrder,rw){
+  // track: yalnızca konum/sınıf/metin güncelle
+  players.forEach(p=>{
+    const ref=laneRefs[p.id];if(!ref)return;
+    const boosted=(p.nm&&t<p.nm.endsAt)&&!p.fin;
+    const fxCls=(p.fx&&t<p.fx.until&&!p.fin)?' '+p.fx.cls:'';
+    const dbCls=(p.debuff&&t<p.debuff.until&&!p.fin)?' '+p.debuff.cls:'';
+    ref.car.style.left=(p.dist/CFG.TRACK*93)+'%';
+    ref.car.className='car'+(p.fin?' fin':' run')+(boosted?' boost':'')+fxCls+dbCls;
+    ref.tag.textContent=`${nameOf(p.id)}${p.veh?' · '+p.veh[0]:''}`;
+    const cd=Math.max(0,p.cdUntil-t);
+    ref.hud.textContent=p.fin?`✔ ${p.ft}s`:`${Math.round(speed(p))}u/s${cd>0?' · cd'+cd.toFixed(1):''}`;
   });
   // hand (P1) — DOM'u yalnızca el/seçim değişince yeniden kur (tick başına
   // innerHTML sıfırlamak tıklamayı yutuyordu)
@@ -424,7 +502,7 @@ let toastT;function toast(s){const el=document.getElementById('toast');el.textCo
 document.getElementById('playBtn').onclick=()=>{
   const p1=players[0];const idxs=[...selected].sort((a,b)=>a-b);const res=applyPlay(p1,idxs);
   if(res.ok){log(`You played <b>${res.r.combo||res.r.kind}</b> (x${res.r.mult.toFixed(2)})`+(res.r.magic.length?` + ${res.r.magic.map(m=>m.type).join(', ')}`:''));
-    popup(`${res.r.combo||res.r.kind} ×${res.r.mult.toFixed(2)}`);
+    popup(`${res.r.combo||res.r.kind} ×${res.r.mult.toFixed(2)}`,fxClass(res.r));
     selected.clear();updatePreview();render();}
 };
 document.getElementById('clearBtn').onclick=()=>{selected.clear();updatePreview();render();};
