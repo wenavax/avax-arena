@@ -71,10 +71,12 @@
 
 /* ===== LIGHT MODE — Clean White + Red accent ===== */
 .light {
-  --frost-bg: 248 250 252;
-  --frost-surface: 241 245 249;
-  --frost-card: 255 255 255;
-  --frost-border: 226 232 240;
+  /* Soft off-white — was near-pure white (248/255) which glared. Muted slate
+     tones ease the eyes; cards sit a touch lighter than the bg for separation. */
+  --frost-bg: 232 235 240;
+  --frost-surface: 224 228 234;
+  --frost-card: 244 246 250;
+  --frost-border: 208 214 223;
   --frost-primary: 220 38 38;
   --frost-secondary: 239 68 68;
   --frost-accent: 15 23 42;
@@ -84,8 +86,8 @@
   --frost-red: #dc2626;
   --frost-gold: #ca8a04;
 
-  --frost-text: #0f172a;
-  --frost-text-muted: rgba(15, 23, 42, 0.55);
+  --frost-text: #1e293b;
+  --frost-text-muted: rgba(30, 41, 59, 0.55);
 
   --mesh-dot-1: rgba(220, 38, 38, 0.04);
   --mesh-dot-2: rgba(239, 68, 68, 0.03);
@@ -94,9 +96,9 @@
   --particle-opacity: 0.25;
   --scanline-opacity: 0.015;
 
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-card-bg: rgba(255, 255, 255, 0.85);
-  --glass-card-border: rgba(15, 23, 42, 0.08);
+  --glass-bg: rgba(248, 250, 253, 0.72);
+  --glass-card-bg: rgba(248, 250, 253, 0.82);
+  --glass-card-border: rgba(15, 23, 42, 0.09);
   --glass-card-hover-border: rgba(220, 38, 38, 0.3);
   --glass-card-hover-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(220, 38, 38, 0.12);
 
@@ -205,6 +207,10 @@ body {
     border-color: var(--glass-card-hover-border);
     box-shadow: var(--glass-card-hover-shadow);
     transform: translateY(-4px);
+  }
+  /* the top highlight is for dark glass; on light bg it just adds glare */
+  .light .glass-card {
+    background: var(--glass-card-bg);
   }
 
   /* Gradient Border */
