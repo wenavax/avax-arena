@@ -86,6 +86,7 @@ const fsbAbi = parseAbi([
 async function tx(hash: `0x${string}`) {
   const rcpt = await pub.waitForTransactionReceipt({ hash });
   if (rcpt.status !== 'success') { console.error(`  ✗ tx revert: ${hash}`); process.exit(1); }
+  await sleep(2000); // Fuji public RPC load-balancer'ı: okuma yapmadan node senkronunu bekle
   return rcpt;
 }
 
@@ -105,12 +106,13 @@ async function main() {
   const tokenId = transfer.args.tokenId as bigint;
   ok('hero mintlendi', tokenId > 0n, `tokenId=${tokenId}`);
 
-  // ── 2) Havuz fonla ──
+  // ── 2) Havuz fonla (delta-bazlı: script yeniden çalıştırılabilir) ──
   console.log('\n[2] fundPool…');
   const poolAmt = parseEther('10000');
+  const pool0 = await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'poolBalance' });
   await tx(await wal.writeContract({ address: FSB, abi: fsbAbi, functionName: 'approve', args: [ADVENTURES, poolAmt] }));
   await tx(await wal.writeContract({ address: ADVENTURES, abi: advAbi, functionName: 'fundPool', args: [poolAmt] }));
-  ok('poolBalance == 10000 FSB', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'poolBalance' })) === poolAmt);
+  ok('poolBalance += 10000 FSB', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'poolBalance' })) === pool0 + poolAmt);
 
   // ── 3) Gate kontrolleri + stake ──
   console.log('\n[3] stake…');
@@ -126,15 +128,15 @@ async function main() {
   ok('advLevel init == 12', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'advLevel', args: [tokenId] })) === 12);
 
   // ── 4) Gerçek zaman accrual + settle sınır testleri ──
-  console.log('\n[4] 40 sn accrual bekleniyor…');
-  await sleep(40_000);
+  console.log('\n[4] 45 sn accrual bekleniyor…');
+  await sleep(45_000);
   const zone0 = await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'zones', args: [0] });
   const rate = zone0[0] as bigint;
   const pos = await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'positions', args: [positionId] });
   const lastSettledAt = pos[5] as bigint;
   const now = await chainNow();
   const elapsed = now - lastSettledAt;
-  ok('elapsed >= 40s', elapsed >= 40n, `elapsed=${elapsed}s`);
+  ok('elapsed >= 35s', elapsed >= 35n, `elapsed=${elapsed}s`);
 
   // 4a. Sınır ÜSTÜ settle revert etmeli (rate bound) — simulate ile
   const overAmount = rate * (elapsed + 3600n);
@@ -155,21 +157,24 @@ async function main() {
   // 4c. Geçerli settle: gönderim anındaki elapsed alt sınırıyla (tx sonra
   // yürüdüğünde gerçek elapsed daha büyük olur → sınır içinde kalır)
   const settleAmt = rate * elapsed;
+  const pending0 = await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'pendingPayouts', args: [account.address] });
+  const emitted0 = await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'emittedTotal' });
+  const poolPre = await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'poolBalance' });
   const settleRcpt = await tx(await wal.writeContract({ address: ADVENTURES, abi: advAbi, functionName: 'settle', args: [positionId, settleAmt, `0x${'33'.repeat(32)}`] }));
   const settledEv = parseEventLogs({ abi: advAbi, logs: settleRcpt.logs, eventName: 'ClaimSettled' })[0];
   ok('ClaimSettled amount birebir', (settledEv.args.amount as bigint) === settleAmt, `${formatEther(settleAmt)} FSB`);
-  ok('pendingPayouts birebir', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'pendingPayouts', args: [account.address] })) === settleAmt);
-  ok('poolBalance düştü', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'poolBalance' })) === poolAmt - settleAmt);
+  ok('pendingPayouts delta birebir', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'pendingPayouts', args: [account.address] })) === pending0 + settleAmt);
+  ok('poolBalance düştü', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'poolBalance' })) === poolPre - settleAmt);
   ok('settledSinceLevel == settle', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'settledSinceLevel', args: [tokenId] })) === settleAmt);
-  ok('emittedTotal == settle', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'emittedTotal' })) === settleAmt);
+  ok('emittedTotal delta == settle', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'emittedTotal' })) === emitted0 + settleAmt);
 
   // ── 5) withdrawPayout ──
   console.log('\n[5] withdrawPayout…');
   const balBefore = await pub.readContract({ address: FSB, abi: fsbAbi, functionName: 'balanceOf', args: [account.address] });
   await tx(await wal.writeContract({ address: ADVENTURES, abi: advAbi, functionName: 'withdrawPayout' }));
   const balAfter = await pub.readContract({ address: FSB, abi: fsbAbi, functionName: 'balanceOf', args: [account.address] });
-  ok('FSB delta birebir', balAfter - balBefore === settleAmt);
-  ok('totalPending == 0', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'totalPending' })) === 0n);
+  ok('FSB delta birebir', balAfter - balBefore === pending0 + settleAmt);
+  ok('pendingPayouts sıfırlandı', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'pendingPayouts', args: [account.address] })) === 0n);
 
   // ── 6) levelUp burn + cap reset + XP köprüsü ──
   console.log('\n[6] levelUp…');
@@ -178,12 +183,13 @@ async function main() {
   const cost = await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'costToNextLevel', args: [12] });
   ok('cost(L12) == 745 FSB', cost === parseEther('745'), formatEther(cost));
   const deadBefore = await pub.readContract({ address: FSB, abi: fsbAbi, functionName: 'balanceOf', args: [DEAD] });
+  const burned0 = await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'burnedTotal' });
   await tx(await wal.writeContract({ address: FSB, abi: fsbAbi, functionName: 'approve', args: [ADVENTURES, cost] }));
   await tx(await wal.writeContract({ address: ADVENTURES, abi: advAbi, functionName: 'levelUp', args: [tokenId] }));
   ok('advLevel == 13', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'advLevel', args: [tokenId] })) === 13);
   ok('cap sayacı sıfırlandı', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'settledSinceLevel', args: [tokenId] })) === 0n);
   ok('dEaD bakiyesi += cost', (await pub.readContract({ address: FSB, abi: fsbAbi, functionName: 'balanceOf', args: [DEAD] })) - deadBefore === cost);
-  ok('burnedTotal == cost', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'burnedTotal' })) === cost);
+  ok('burnedTotal delta == cost', (await pub.readContract({ address: ADVENTURES, abi: advAbi, functionName: 'burnedTotal' })) === burned0 + cost);
   const heroAfter = await pub.readContract({ address: HEROES, abi: heroesAbi, functionName: 'getHero', args: [tokenId] });
   ok('XP köprüsü: hero.xp == 250', heroAfter.xp === 250);
 

@@ -29,6 +29,7 @@ const ABI = [
   'function advLevel(uint256) view returns (uint32)',
   'function settledSinceLevel(uint256) view returns (uint256)',
   'function emissionCap(uint32) view returns (uint256)',
+  'function zoneBudgetRemaining(uint8) view returns (uint256)',
   'function poolBalance() view returns (uint256)',
   'function heroes() view returns (address)',
   'function settleBatch(uint256[] positionIds, uint256[] amounts, bytes32 resultHash)',
@@ -89,6 +90,7 @@ async function runOnce() {
       return { ...it, capLeft: cap > used ? cap - used : 0n };
     }));
     const totalW = capState.filter((it) => it.capLeft > 0n).reduce((s, it) => s + it.w, 0n);
+    let zoneBudgetLeft = await adventures.zoneBudgetRemaining(zoneId);
     for (const it of capState) {
       let amt = 0n;
       if (it.capLeft > 0n && totalW > 0n) {
@@ -96,8 +98,10 @@ async function runOnce() {
         if (amt > it.capLeft) amt = it.capLeft;               // emission cap clamp
         const rateBound = BigInt(zone.ratePerSec) * it.elapsed;
         if (amt > rateBound) amt = rateBound;                  // tekil sınır (güvence)
+        if (amt > zoneBudgetLeft) amt = zoneBudgetLeft;        // bölge tüm-zamanlar bütçesi
         if (amt > pool) amt = pool;                            // havuz clamp
       }
+      zoneBudgetLeft -= amt;
       pool -= amt;
       ids.push(it.id);
       amounts.push(amt); // 0 => checkpoint (lastSettledAt ilerler, cap-locked konumlar için)
