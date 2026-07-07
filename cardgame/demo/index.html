@@ -4,77 +4,181 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CAR(D) GAME — Frostbite</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0b0e14; --panel:#151a24; --panel2:#1d2432; --line:#2a3346;
-    --text:#e6ebf5; --muted:#8b97ad; --accent:#4dd0e1; --gold:#ffd54a;
-    --p1:#ff6b6b; --p2:#4dd0e1; --p3:#a78bfa; --p4:#6ee7a0;
+    /* Frostbite design tokens (mirrors frostbite.pro/avalanche globals) */
+    --bg:#0d0d10; --card:rgba(22,22,28,.6); --line:rgba(255,255,255,.07);
+    --text:#ececee; --muted:rgba(255,255,255,.5);
+    --red:#ed2f39; --red2:#d62831; --gold:#f5c542; --green:#22c55e; --ice:#4dd0e1;
+    --p1:#ed2f39; --p2:#4dd0e1; --p3:#a78bfa; --p4:#6ee7a0;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-    background:var(--bg);color:var(--text);padding:18px}
-  h1{font-size:20px;margin:0 0 2px} .sub{color:var(--muted);font-size:13px;margin-bottom:14px}
-  .wrap{max-width:1000px;margin:0 auto}
-  .track{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
-  .lane{position:relative;height:46px;margin:8px 0;border-radius:8px;background:
-    linear-gradient(90deg,var(--panel2),#111623);overflow:hidden}
-  .cp{position:absolute;top:0;bottom:0;width:2px;background:#39435a}
-  .cpflag{position:absolute;top:2px;font-size:9px;color:var(--muted);transform:translateX(-50%)}
-  .finish{position:absolute;top:0;bottom:0;right:0;width:6px;
-    background:repeating-linear-gradient(45deg,#fff 0 5px,#000 5px 10px)}
-  .car{position:absolute;top:8px;height:30px;display:flex;align-items:center;gap:6px;
-    transition:left .1s linear;white-space:nowrap}
-  .carbody{width:34px;height:20px;border-radius:5px;position:relative;box-shadow:0 2px 6px rgba(0,0,0,.4)}
-  .carbody:after{content:'';position:absolute;top:4px;right:-4px;width:8px;height:12px;
-    background:inherit;border-radius:2px;opacity:.8}
-  .tag{font-size:11px;font-weight:600;background:rgba(0,0,0,.5);padding:1px 6px;border-radius:10px}
-  .hud{display:flex;gap:6px;font-size:10px;color:var(--muted)}
-  .grid{display:grid;grid-template-columns:1fr 320px;gap:14px}
-  @media(max-width:820px){.grid{grid-template-columns:1fr}}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
-  .panel h3{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-  .hand{display:flex;flex-wrap:wrap;gap:6px}
-  .card{width:46px;height:64px;border-radius:8px;background:linear-gradient(160deg,#eef3fb,#c9d4e6);
-    color:#1a2233;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    font-weight:700;cursor:pointer;border:2px solid transparent;user-select:none;position:relative;font-size:18px}
-  .card small{font-size:8px;font-weight:600;position:absolute;bottom:4px;text-transform:uppercase}
-  .card.magic{background:linear-gradient(160deg,#ffe9a8,#ffcf5c);color:#5a3d00}
-  .card.nail{background:linear-gradient(160deg,#ffc4c4,#ff8f8f)}
-  .card.oil{background:linear-gradient(160deg,#c9c9d6,#8f8fa8);color:#fff}
-  .card.sel{border-color:var(--accent);transform:translateY(-6px)}
-  .btn{background:var(--accent);color:#00303a;border:0;border-radius:8px;padding:9px 14px;
-    font-weight:700;cursor:pointer;font-size:13px}
-  .btn:disabled{opacity:.4;cursor:not-allowed}
-  .btn.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
-  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
-  .cooldown{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:8px}
-  .cooldown>div{height:100%;background:var(--accent);width:0%}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  td,th{text-align:left;padding:5px 4px;border-bottom:1px solid var(--line)}
-  .pill{font-size:11px;padding:2px 8px;border-radius:10px;background:var(--panel2);color:var(--muted)}
-  .log{font-size:12px;color:var(--muted);height:120px;overflow:auto;line-height:1.5}
-  .log b{color:var(--accent)}
-  .veh{display:flex;gap:8px;margin-top:6px}
-  .veh button{flex:1}
-  .toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:var(--gold);color:#3a2c00;
-    padding:8px 16px;border-radius:20px;font-weight:700;opacity:0;transition:opacity .3s;font-size:13px;z-index:9}
+    background:var(--bg);color:var(--text);padding:20px;overflow-x:hidden}
+  h1,h3,.btn,.pool{font-family:'Chakra Petch',sans-serif}
+  .mono{font-family:'JetBrains Mono',monospace}
+  .dim{color:var(--muted)} .gold{color:var(--gold)}
+
+  /* ambient depth orbs (site idiom) */
+  .orb{position:fixed;border-radius:50%;filter:blur(90px);pointer-events:none;z-index:0}
+  .orb-red{width:520px;height:520px;background:rgba(237,47,57,.13);top:-160px;right:-120px;animation:drift 26s ease-in-out infinite alternate}
+  .orb-ice{width:460px;height:460px;background:rgba(77,208,225,.09);bottom:-140px;left:-120px;animation:drift 32s ease-in-out infinite alternate-reverse}
+  @keyframes drift{from{transform:translate(0,0)}to{transform:translate(-60px,50px)}}
+
+  .wrap{max-width:1060px;margin:0 auto;position:relative;z-index:1}
+  .glass{background:var(--card);border:1px solid var(--line);border-radius:16px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+
+  /* header */
+  .top{display:flex;justify-content:space-between;gap:16px;align-items:stretch;margin-bottom:12px;flex-wrap:wrap}
+  .eyebrow{font-size:11px;letter-spacing:3px;color:var(--muted);margin-bottom:4px}
+  h1{font-size:30px;margin:0;letter-spacing:1px} h1 .red{color:var(--red)}
+  .sub{color:var(--muted);font-size:13px;margin-top:6px;max-width:420px;line-height:1.5}
+  .sub b{color:var(--text)}
+  .backlink{color:var(--muted);text-decoration:none;font-weight:600}
+  .backlink:hover{color:var(--red)}
+  .escrow{padding:14px 18px;min-width:300px;display:flex;flex-direction:column;gap:8px}
+  .esc-top{font-size:10px;letter-spacing:1.5px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .simtag{margin-left:auto;font-size:9px;border:1px solid rgba(245,197,66,.4);color:var(--gold);padding:1px 7px;border-radius:10px;letter-spacing:1px}
+  .pool{font-size:13px;letter-spacing:1px;color:var(--muted)}
+  .pool b{font-size:22px;color:var(--text);margin-left:8px}
+  .pool b i{font-style:normal;color:var(--red)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{font-size:11px;padding:3px 10px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted)}
+  .chip.gold{border-color:rgba(245,197,66,.4);color:var(--gold)}
+  .metaRow{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+  .chip.tick{border-color:rgba(34,197,94,.5);color:var(--green);transition:.3s}
+
+  /* track */
+  .track{padding:16px;margin-bottom:14px;position:relative;overflow:hidden}
+  .lane{position:relative;height:50px;margin:9px 0;border-radius:10px;overflow:hidden;
+    background:linear-gradient(90deg,rgba(255,255,255,.035),rgba(255,255,255,.012) 60%,rgba(77,208,225,.03));
+    border:1px solid rgba(255,255,255,.04)}
+  .lane:after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 46px,rgba(255,255,255,.025) 46px 48px)}
+  .cp{position:absolute;top:0;bottom:0;width:2px;background:rgba(77,208,225,.5);box-shadow:0 0 10px rgba(77,208,225,.5);z-index:1}
+  .cpflag{position:absolute;top:3px;font-size:8px;color:rgba(77,208,225,.7);transform:translateX(-50%);z-index:1;font-family:'JetBrains Mono',monospace}
+  .finish{position:absolute;top:0;bottom:0;right:0;width:7px;z-index:1;
+    background:repeating-linear-gradient(45deg,#fff 0 4px,#111 4px 8px);opacity:.8}
+  .car{position:absolute;top:9px;height:32px;display:flex;align-items:center;gap:7px;
+    transition:left .1s linear;white-space:nowrap;z-index:2}
+  .carbody{width:36px;height:20px;border-radius:6px;position:relative;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+  .carbody:after{content:'';position:absolute;top:4px;right:-4px;width:8px;height:12px;background:inherit;border-radius:2px;opacity:.8}
+  .car.boost .carbody{box-shadow:0 0 16px 2px currentColor,0 2px 8px rgba(0,0,0,.5)}
+  .trail{position:absolute;right:100%;top:8px;width:34px;height:4px;border-radius:2px;
+    background:linear-gradient(90deg,transparent,currentColor);opacity:.7}
+  .tag{font-size:10px;font-weight:600;background:rgba(0,0,0,.55);padding:2px 8px;border-radius:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.3px}
+  .hud{display:flex;gap:6px;font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+
+  /* combo popup */
+  .popup{position:absolute;left:50%;top:36%;transform:translateX(-50%);z-index:5;
+    font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:26px;color:var(--gold);
+    text-shadow:0 0 24px rgba(245,197,66,.6);pointer-events:none;animation:rise 1.4s ease-out forwards}
+  @keyframes rise{0%{opacity:0;transform:translate(-50%,14px) scale(.8)}18%{opacity:1;transform:translate(-50%,0) scale(1.06)}
+    30%{transform:translate(-50%,-2px) scale(1)}100%{opacity:0;transform:translate(-50%,-42px) scale(.96)}}
+
+  /* panels */
+  .grid{display:grid;grid-template-columns:1fr 340px;gap:14px}
+  @media(max-width:840px){.grid{grid-template-columns:1fr}.top{flex-direction:column}}
+  .panel{padding:16px}
+  .panel h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:var(--muted)}
+
+  /* playing cards */
+  .hand{display:flex;flex-wrap:wrap;gap:8px}
+  .card{width:54px;height:76px;border-radius:9px;position:relative;cursor:pointer;user-select:none;
+    background:linear-gradient(160deg,#eef3fb,#c3cfe3);color:#141a26;
+    border:2px solid transparent;box-shadow:0 3px 10px rgba(0,0,0,.35);
+    transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease;
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px;
+    font-family:'Chakra Petch',sans-serif}
+  .card:hover{transform:translateY(-4px)}
+  .card .ix{position:absolute;top:4px;left:6px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:600;opacity:.75}
+  .card .ix2{position:absolute;bottom:4px;right:6px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:600;opacity:.75;transform:rotate(180deg)}
+  .card small{font-size:7.5px;font-weight:700;position:absolute;bottom:5px;left:0;right:0;text-align:center;letter-spacing:1px}
+  .card.magic{background:linear-gradient(160deg,#ffe9a8,#f5c542);color:#4a3500}
+  .card.nail{background:linear-gradient(160deg,#ffb8b8,#ed6b6b);color:#4a0d0d}
+  .card.oil{background:linear-gradient(160deg,#b9bfd1,#7c8299);color:#14161f}
+  .card.sel{border-color:var(--red);transform:translateY(-9px);
+    box-shadow:0 0 0 1px rgba(237,47,57,.35),0 10px 24px rgba(237,47,57,.28)}
+
+  .btn{background:linear-gradient(135deg,var(--red),var(--red2));color:#fff;border:0;border-radius:10px;
+    padding:10px 18px;font-weight:700;cursor:pointer;font-size:13px;letter-spacing:1px;
+    box-shadow:0 4px 20px rgba(237,47,57,.2);transition:box-shadow .2s,transform .1s}
+  .btn:hover:not(:disabled){box-shadow:0 6px 30px rgba(237,47,57,.35),0 0 60px rgba(237,47,57,.15)}
+  .btn:active:not(:disabled){transform:translateY(1px)}
+  .btn:disabled{opacity:.35;cursor:not-allowed}
+  .btn.ghost{background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--text);box-shadow:none;letter-spacing:.4px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .cooldown{height:5px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden;margin-top:10px}
+  .cooldown>div{height:100%;background:linear-gradient(90deg,var(--red),var(--gold));width:0%}
+  .pill{font-size:11px;padding:3px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted)}
+  .veh{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+
+  /* standings */
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  td,th{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line)}
+  tr:hover td{background:rgba(237,47,57,.05)}
+  .av{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .addr{font-family:'JetBrains Mono',monospace;font-size:11px}
+
+  /* settlement */
+  .settleBox{margin-top:12px;border:1px solid rgba(34,197,94,.25);border-radius:12px;padding:10px;background:rgba(34,197,94,.04)}
+  .settleHead{font-size:11px;color:var(--green);margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .settleRow{display:flex;gap:8px;align-items:center;font-size:11.5px;padding:5px 2px;border-top:1px solid rgba(255,255,255,.05)}
+  .settleRow b{margin-left:auto}
+  .settleRow .txh{font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:10px}
+  .ok{color:var(--green)}
+
+  .log{font-size:11.5px;color:var(--muted);height:130px;overflow:auto;line-height:1.65}
+  .log b{color:var(--red)} .log .mono{font-size:10px}
+  .toast{position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:9;
+    background:rgba(22,22,28,.92);border:1px solid rgba(245,197,66,.45);color:var(--gold);
+    padding:9px 20px;border-radius:22px;font-weight:700;opacity:0;transition:opacity .3s;font-size:13px;
+    font-family:'Chakra Petch',sans-serif;backdrop-filter:blur(10px)}
+  .foot{margin-top:14px;font-size:11px;line-height:1.6;text-align:center}
 </style>
 </head>
 <body>
+<div class="orb orb-red"></div><div class="orb orb-ice"></div>
 <div class="toast" id="toast"></div>
 <div class="wrap">
-  <h1>CAR(D) GAME <span class="pill">playable demo</span> <a href="/avalanche" style="float:right;font-size:12px;color:var(--muted);text-decoration:none;font-weight:600">❄ Frostbite ›</a></h1>
-  <div class="sub">You are <b style="color:var(--p1)">P1</b>. Bots drive P2–P4. Race to 1000 units. Play cards for speed bonuses. (Off-chain logic only — no wallet.)</div>
+  <header class="top">
+    <div>
+      <div class="eyebrow">❄ FROSTBITE · AVALANCHE</div>
+      <h1>CAR(D) <span class="red">GAME</span></h1>
+      <div class="sub">You race 3 bots to <b>1000u</b>. Play card combos for speed — non-magic cap ×5.00.
+        Off-chain demo, no wallet. <a class="backlink" href="/avalanche">❄ Frostbite ›</a></div>
+    </div>
+    <div class="escrow glass">
+      <div class="esc-top"><span class="dot"></span> ESCROW · AVALANCHE C-CHAIN <span class="simtag">SIMULATED</span></div>
+      <div class="pool">PRIZE POOL <b><i>◆</i> 4.00 AVAX</b></div>
+      <div class="chips">
+        <span class="chip">Entry 1 AVAX × 4</span>
+        <span class="chip gold">1st · 2.0</span><span class="chip">2nd · 1.0</span>
+        <span class="chip">3rd · 0.5</span><span class="chip">4th · 0.3</span>
+      </div>
+      <div class="mono dim" style="font-size:10px" id="roomHash"></div>
+    </div>
+  </header>
 
-  <div class="track" id="track"></div>
+  <div class="metaRow">
+    <span class="chip mono" id="seedChip"></span>
+    <span class="chip mono" id="blockChip"></span>
+    <span class="chip" id="roundChip">ROUND 1/3</span>
+  </div>
+
+  <div class="track glass" id="track"></div>
 
   <div class="grid">
-    <div class="panel">
+    <div class="panel glass">
       <h3>Your hand — <span id="handLimit"></span></h3>
       <div class="hand" id="hand"></div>
       <div class="cooldown"><div id="cdbar"></div></div>
       <div class="row">
-        <button class="btn" id="playBtn">Play selected</button>
+        <button class="btn" id="playBtn">PLAY SELECTED</button>
         <button class="btn ghost" id="clearBtn">Clear</button>
         <span class="pill" id="playPreview">select 1–8 cards</span>
       </div>
@@ -84,13 +188,17 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel glass">
       <h3>Standings — Round <span id="roundNo">1</span>/3</h3>
       <table id="scoreTable"><tbody></tbody></table>
+      <div id="settle"></div>
       <h3 style="margin-top:14px">Event log</h3>
       <div class="log" id="log"></div>
     </div>
   </div>
+
+  <footer class="foot dim">Server-authoritative rules · deterministic seed → every match is replayable &amp; auditable ·
+    settlement by signed result (<span class="mono">MatchEscrow.sol</span>, entry 1 AVAX × 4 → payouts 2.0 / 1.0 / 0.5 / 0.3, fee 0.2)</footer>
 </div>
 
 <script>
@@ -103,6 +211,14 @@ const COMBO={PAIR:50,THREE_OF_A_KIND:150,FOUR_OF_A_KIND:500,TWO_PAIRS:100,THREE_
   FOUR_PAIRS:250,FULL_HOUSE:150,TWO_TRIOS:400,STRAIGHT_3:20,STRAIGHT_4:100,STRAIGHT_5:200,
   STRAIGHT_6:250,STRAIGHT_7:300,STRAIGHT_8:350};
 const COLORS={P1:'--p1',P2:'--p2',P3:'--p3',P4:'--p4'};
+const MAGIC_ICON={NITRO:'⚡',NAIL:'✕',OIL:'●'};
+
+// ---- Blockchain dressing (cosmetic — mirrors the MatchEscrow flow) ----
+function mockHex(n){let s='0x';for(let i=0;i<n;i++)s+='0123456789abcdef'[Math.floor(Math.random()*16)];return s;}
+function short(a){return a.slice(0,6)+'…'+a.slice(-4);}
+const ADDR={P1:mockHex(40),P2:mockHex(40),P3:mockHex(40),P4:mockHex(40)};
+function nameOf(id){return id==='P1'?'YOU':short(ADDR[id]);}
+let blockNo=48213000+Math.floor(Math.random()*9000);
 
 // ---- Deterministic-ish deck ----
 let cid=0;
@@ -161,6 +277,7 @@ function startRound(choices){
   });
   t=0;tickH=setInterval(tick,100);
   document.getElementById('vehRow').style.display='none';awaitingVehicle=false;
+  document.getElementById('roundChip').textContent=`ROUND ${roundIndex+1}/3`;
   log(`<b>Round ${roundIndex+1}</b> started`);render();
 }
 function speed(p){let nm=(p.nm&&t<p.nm.endsAt)?p.nm.mult:1;let mg=1;p.magics.forEach(e=>{if(t<e.endsAt)mg*=e.mult;});
@@ -187,7 +304,7 @@ function botAct(p){
   let best=null;byv.forEach(idxs=>{if(idxs.length>=2&&(!best||idxs.length>best.length))best=idxs.slice(0,8);});
   if(!best){let hi=0;p.hand.forEach((c,i)=>{if(c.value>p.hand[hi].value)hi=i;});best=[hi];}
   const res=applyPlay(p,best);
-  if(res.ok&&res.r.combo)log(`${p.id} played <b>${res.r.combo}</b> (x${res.r.mult.toFixed(2)})`);
+  if(res.ok&&res.r.combo)log(`${nameOf(p.id)} played <b>${res.r.combo}</b> (x${res.r.mult.toFixed(2)})`);
 }
 
 // ---- Tick loop ----
@@ -199,7 +316,7 @@ function tick(){
       const g=grant(p.hlim,p.hand.length);if(g>0)p.hand.push(...draw(g));
       if(p.id==='P1')log(`Passed CP-${i+1}: +${g} cards`);}});
     if(p.dist>=CFG.TRACK){const need=CFG.TRACK-prev,prog=p.dist-prev;p.fin=true;
-      p.ft=+(t+0.1*(prog>0?need/prog:0)).toFixed(2);p.dist=CFG.TRACK;log(`${p.id} <b>finished</b> @ ${p.ft}s`);}
+      p.ft=+(t+0.1*(prog>0?need/prog:0)).toFixed(2);p.dist=CFG.TRACK;log(`${nameOf(p.id)} <b>finished</b> @ ${p.ft}s`);}
   });
   render();
   if(players.every(p=>p.fin)||t>=CFG.TIMEOUT){clearInterval(tickH);endRound();}
@@ -210,14 +327,15 @@ function endRound(){
   const dnf=players.filter(p=>!p.fin).sort((a,b)=>b.dist-a.dist);
   const rank=[...fin,...dnf];
   rank.forEach((p,i)=>{const pts=CFG.SCORE[i+1];p.scores.push(pts);p.times.push(p.ft??CFG.TIMEOUT);p.total+=pts;});
-  toast(`Round ${roundIndex+1}: ${rank[0].id} wins!`);
+  toast(`Round ${roundIndex+1}: ${nameOf(rank[0].id)} wins!`);
+  log(`Round result signed ✓ <span class="mono">${short(mockHex(130))}</span>`);
   roundIndex++;
   if(roundIndex>=3){finishMatch();return;}
   // ask P1 for next vehicle
   awaitingVehicle=true;render();
   document.getElementById('vehRow').style.display='flex';
   const box=document.getElementById('vehChoices');box.innerHTML='';
-  remainingVeh('P1').forEach(v=>{const b=document.createElement('button');b.className='btn';
+  remainingVeh('P1').forEach(v=>{const b=document.createElement('button');b.className='btn ghost';
     b.textContent=`${v} (spd ${CFG.VEH[v].s})`;b.onclick=()=>{
       const choices={P1:v};players.forEach(p=>{if(p.id!=='P1')choices[p.id]=remainingVeh(p.id)[0];});
       document.getElementById('roundNo').textContent=roundIndex+1;startRound(choices);};
@@ -229,31 +347,45 @@ function finishMatch(){
     b.scores.filter(s=>s===5).length-a.scores.filter(s=>s===5).length||
     a.times.reduce((s,x)=>s+x,0)-b.times.reduce((s,x)=>s+x,0));
   const rw=[2.0,1.0,0.5,0.3];
-  toast(`🏆 ${arr[0].id} wins the match!`);
-  log(`<b>MATCH OVER.</b> Final: `+arr.map((p,i)=>`${i+1}. ${p.id} (${p.total}pts, ${rw[i]} AVAX)`).join(' · '));
+  toast(`🏆 ${nameOf(arr[0].id)} wins the match!`);
+  log(`<b>MATCH OVER.</b> Final: `+arr.map((p,i)=>`${i+1}. ${nameOf(p.id)} (${p.total}pts, ${rw[i]} AVAX)`).join(' · '));
+  // settlement panel — the on-chain half of the design (simulated)
+  const st=document.getElementById('settle');
+  st.innerHTML=`<div class="settleBox"><div class="settleHead">✓ RESULT SIGNED &amp; SETTLED
+      <span class="mono dim">sig ${short(mockHex(130))}</span></div>`+
+    arr.map((p,i)=>`<div class="settleRow"><span class="dim">#${i+1}</span>
+      <span class="addr"><i class="av" style="background:${cssv(COLORS[p.id])}"></i>${nameOf(p.id)}</span>
+      <b class="gold">◆ ${rw[i].toFixed(1)}</b>
+      <span class="txh">${short(mockHex(64))}</span><span class="ok">✓</span></div>`).join('')+
+    `<div class="settleRow"><span class="dim">fee</span><span class="addr">treasury</span>
+      <b class="dim">◆ 0.2</b><span class="txh">${short(mockHex(64))}</span><span class="ok">✓</span></div></div>`;
   render(arr,rw);
 }
 
 // ---- Rendering ----
 function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n);}
+function popup(txt){const tk=document.getElementById('track');const el=document.createElement('div');
+  el.className='popup';el.textContent=txt;tk.appendChild(el);setTimeout(()=>el.remove(),1400);}
 function render(finalOrder,rw){
   // track
-  const tk=document.getElementById('track');tk.innerHTML='';
+  const tk=document.getElementById('track');
+  [...tk.querySelectorAll('.lane')].forEach(l=>l.remove());
   players.forEach(p=>{
     const lane=document.createElement('div');lane.className='lane';
     CFG.CP.forEach((cp,i)=>{const d=document.createElement('div');d.className='cp';d.style.left=(cp/10)+'%';lane.appendChild(d);
       const f=document.createElement('div');f.className='cpflag';f.style.left=(cp/10)+'%';f.textContent='CP'+(i+1);lane.appendChild(f);});
     const fin=document.createElement('div');fin.className='finish';lane.appendChild(fin);
-    const car=document.createElement('div');car.className='car';car.style.left=(p.dist/CFG.TRACK*93)+'%';
+    const boosted=(p.nm&&t<p.nm.endsAt)&&!p.fin;
+    const car=document.createElement('div');car.className='car'+(boosted?' boost':'');
+    car.style.left=(p.dist/CFG.TRACK*93)+'%';car.style.color=cssv(COLORS[p.id]);
     const cd=Math.max(0,p.cdUntil-t);
-    car.innerHTML=`<div class="carbody" style="background:${cssv(COLORS[p.id])}"></div>
-      <span class="tag">${p.id}${p.veh?' · '+p.veh[0]:''}</span>
+    car.innerHTML=`<div class="carbody" style="background:${cssv(COLORS[p.id])}">${boosted?'<i class="trail"></i>':''}</div>
+      <span class="tag">${nameOf(p.id)}${p.veh?' · '+p.veh[0]:''}</span>
       <span class="hud">${p.fin?'✔ '+p.ft+'s':Math.round(speed(p))+'u/s'}${cd>0?' · cd'+cd.toFixed(1):''}</span>`;
     lane.appendChild(car);tk.appendChild(lane);
   });
-  // hand (P1) — DOM'u yalnızca el/seçim değişince yeniden kur: tick başına
-  // innerHTML sıfırlamak tıklamayı yutuyordu (element press ile release
-  // arasında değişince click hiç ateşlenmiyor)
+  // hand (P1) — DOM'u yalnızca el/seçim değişince yeniden kur (tick başına
+  // innerHTML sıfırlamak tıklamayı yutuyordu)
   const p1=players[0];document.getElementById('handLimit').textContent=`${p1.hand.length}/${p1.hlim}`;
   const h=document.getElementById('hand');
   const sig=p1.hand.map(c=>c.id).join(',')+'|'+[...selected].sort((a,b)=>a-b).join(',');
@@ -261,7 +393,8 @@ function render(finalOrder,rw){
     h.dataset.sig=sig;h.innerHTML='';
     p1.hand.forEach((c,i)=>{const el=document.createElement('div');
       el.className='card'+(c.type==='MAGIC'?' magic '+(c.magic==='NAIL'?'nail':c.magic==='OIL'?'oil':''):'')+(selected.has(i)?' sel':'');
-      el.innerHTML=`${c.value}${c.magic?`<small>${c.magic}</small>`:''}`;
+      const icon=c.magic?MAGIC_ICON[c.magic]+' ':'';
+      el.innerHTML=`<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>${icon}${c.value}${c.magic?`<small>${c.magic}</small>`:''}`;
       el.onpointerdown=(e)=>{e.preventDefault();
         if(selected.has(i))selected.delete(i);else if(selected.size<8)selected.add(i);
         updatePreview();render();};
@@ -272,10 +405,10 @@ function render(finalOrder,rw){
   document.getElementById('playBtn').disabled=cd>0||selected.size===0||p1.fin;
   // scoreboard
   const order=finalOrder||[...players].sort((a,b)=>b.dist-a.dist);
-  const tb=document.querySelector('#scoreTable tbody');tb.innerHTML='<tr><th>#</th><th>Player</th><th>Dist</th><th>Total</th></tr>';
+  const tb=document.querySelector('#scoreTable tbody');tb.innerHTML='<tr><th>#</th><th>Racer</th><th>Dist</th><th>Total</th></tr>';
   order.forEach((p,i)=>{const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${i+1}</td><td><span class="pill" style="background:${cssv(COLORS[p.id])}22;color:${cssv(COLORS[p.id])}">${p.id}</span></td>
-      <td>${Math.round(p.dist)}</td><td>${p.total}${rw?` · ${rw[i]} AVAX`:''}</td>`;tb.appendChild(tr);});
+    tr.innerHTML=`<td class="dim">${i+1}</td><td><span class="addr"><i class="av" style="background:${cssv(COLORS[p.id])}"></i>${nameOf(p.id)}</span></td>
+      <td class="mono">${Math.round(p.dist)}</td><td>${p.total}${rw?` <span class="gold">· ◆${rw[i]}</span>`:''}</td>`;tb.appendChild(tr);});
 }
 function updatePreview(){
   const p1=players[0];const cards=[...selected].map(i=>p1.hand[i]);
@@ -291,6 +424,7 @@ let toastT;function toast(s){const el=document.getElementById('toast');el.textCo
 document.getElementById('playBtn').onclick=()=>{
   const p1=players[0];const idxs=[...selected].sort((a,b)=>a-b);const res=applyPlay(p1,idxs);
   if(res.ok){log(`You played <b>${res.r.combo||res.r.kind}</b> (x${res.r.mult.toFixed(2)})`+(res.r.magic.length?` + ${res.r.magic.map(m=>m.type).join(', ')}`:''));
+    popup(`${res.r.combo||res.r.kind} ×${res.r.mult.toFixed(2)}`);
     selected.clear();updatePreview();render();}
 };
 document.getElementById('clearBtn').onclick=()=>{selected.clear();updatePreview();render();};
@@ -299,6 +433,12 @@ document.getElementById('clearBtn').onclick=()=>{selected.clear();updatePreview(
 function boot(){
   deck=buildDeck();players=mkPlayers();roundIndex=0;
   players.forEach(p=>p.hand.push(...draw(8)));
+  document.getElementById('roomHash').textContent=`room ${short(mockHex(64))} · players 4/4 · locked`;
+  document.getElementById('seedChip').textContent=`seed ${short(mockHex(64))}`;
+  const bc=document.getElementById('blockChip');
+  const bump=()=>{blockNo++;bc.textContent=`⛓ block #${blockNo.toLocaleString('en-US')}`;
+    bc.classList.add('tick');setTimeout(()=>bc.classList.remove('tick'),350);};
+  bump();setInterval(bump,2000);
   // Round 1 vehicles
   const choices={P1:'LEGENDARY',P2:'EPIC',P3:'COMMON',P4:'LEGENDARY'};
   ['P1','P2','P3','P4'].forEach(id=>usedVeh[id]={});
