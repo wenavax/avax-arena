@@ -65,12 +65,13 @@ interface Token {
 const NATIVE_TOKEN_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 
 const AVALANCHE_TOKENS: Token[] = [
-  { symbol: 'AVAX', name: 'Avalanche', address: NATIVE_TOKEN_ADDRESS, decimals: 18, logo: '/logo-avax.png', popular: true, isNative: true },
-  { symbol: 'WAVAX', name: 'Wrapped AVAX', address: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', decimals: 18, logo: '/logo-avax.png', popular: true },
-  { symbol: 'USDC', name: 'USD Coin', address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', decimals: 6, logo: '/logo-usdc.png', popular: true },
-  { symbol: 'USDT', name: 'Tether', address: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7', decimals: 6, logo: '/logo-usdt.png', popular: true },
-  { symbol: 'FSB', name: 'Frostbite', address: '0x96D9fB6BD38f1E0D9b1A9a9f763595F928B56214', decimals: 18, logo: '/logo.png', popular: true },
-  { symbol: 'JOE', name: 'Trader Joe', address: '0x6e84a6216eA6dACC71eE8E6b0a5B7322EEbC0fDd', decimals: 18, logo: '/logo-joe.png' },
+  // images.unoptimized altında next/image basePath'i eklemiyor → yollar '/avalanche' önekli olmalı
+  { symbol: 'AVAX', name: 'Avalanche', address: NATIVE_TOKEN_ADDRESS, decimals: 18, logo: '/avalanche/logo-avax.png', popular: true, isNative: true },
+  { symbol: 'WAVAX', name: 'Wrapped AVAX', address: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', decimals: 18, logo: '/avalanche/logo-avax.png', popular: true },
+  { symbol: 'USDC', name: 'USD Coin', address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', decimals: 6, logo: '/avalanche/logo-usdc.png', popular: true },
+  { symbol: 'USDT', name: 'Tether', address: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7', decimals: 6, logo: '/avalanche/logo-usdt.png', popular: true },
+  { symbol: 'FSB', name: 'Frostbite', address: '0x96D9fB6BD38f1E0D9b1A9a9f763595F928B56214', decimals: 18, logo: '/avalanche/logo-fsb.png', popular: true },
+  { symbol: 'JOE', name: 'Trader Joe', address: '0x6e84a6216eA6dACC71eE8E6b0a5B7322EEbC0fDd', decimals: 18, logo: '/avalanche/logo-joe.png' },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -356,7 +357,7 @@ export default function SwapPage() {
             name: t.name as string,
             address: t.token,
             decimals: 18,
-            logo: parseTokenMeta(t.metadata).image || '/logo.png',
+            logo: parseTokenMeta(t.metadata).image || '/avalanche/logo-fsb.png',
           }));
         setLaunchpadTokens(toks);
       })
