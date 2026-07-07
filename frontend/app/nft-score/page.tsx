@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Award, Search, Loader2, AlertTriangle, Snowflake, Sparkles, Trophy } from 'lucide-react';
+import { Award, Search, Loader2, AlertTriangle, Snowflake, Sparkles, Trophy, Share2, ImageIcon } from 'lucide-react';
 import { useAccount } from 'wagmi';
 import { cn } from '@/lib/utils';
 import { badgeFor, BADGES, type WalletScore, type NftTier } from '@/lib/nftScore';
@@ -43,7 +43,7 @@ export default function NftScorePage() {
     async (wallet: string) => {
       const w = wallet.trim();
       if (!/^0x[0-9a-fA-F]{40}$/.test(w)) {
-        setError('Geçerli bir Avalanche adresi gir (0x…)');
+        setError('Enter a valid Avalanche address (0x…)');
         return;
       }
       setError('');
@@ -88,7 +88,7 @@ export default function NftScorePage() {
               <Search className="w-4 h-4 text-white/30 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="0x… cüzdan adresi"
+                placeholder="0x… wallet address"
                 value={input}
                 onChange={(e) => setInput(e.target.value.trim())}
                 onKeyDown={(e) => e.key === 'Enter' && check(input)}
@@ -109,7 +109,7 @@ export default function NftScorePage() {
               onClick={() => { setInput(address); check(address); }}
               className="mt-2 text-xs text-frost-primary/70 hover:text-frost-primary transition-colors"
             >
-              → Bağlı cüzdanımı puanla ({shortAddr(address)})
+              → Score my connected wallet ({shortAddr(address)})
             </button>
           )}
           {error && (
@@ -144,9 +144,36 @@ export default function NftScorePage() {
                     çeşitlilik ×{result.diversityMult}
                   </span>
                   <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08]">
-                    taban {result.basePoints}p
+                    base {result.basePoints}p
                   </span>
                 </div>
+
+                {/* Share */}
+                {(() => {
+                  const ogUrl = `/avalanche/api/nft-score/og?w=${encodeURIComponent(shortAddr(result.wallet))}&s=${result.score}&n=${result.totalNfts}&t=${encodeURIComponent(result.breakdown[0]?.name || '')}&frost=${result.frostBonus ? '1' : '0'}`;
+                  const text = `My Frostbite NFT Score: ${result.score} ${badge.icon} ${badge.label} on Avalanche ❄`;
+                  const tweet = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent('https://frostbite.pro/avalanche/nft-score')}`;
+                  return (
+                    <div className="mt-4 flex items-center justify-center gap-2">
+                      <a
+                        href={tweet}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-frost-primary/15 border border-frost-primary/30 text-frost-primary text-xs hover:bg-frost-primary/25 transition-all"
+                      >
+                        <Share2 className="w-3.5 h-3.5" /> Share on X
+                      </a>
+                      <a
+                        href={ogUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/60 text-xs hover:bg-white/[0.08] transition-all"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" /> View card
+                      </a>
+                    </div>
+                  );
+                })()}
 
                 {/* Breakdown */}
                 {result.breakdown.length > 0 ? (
@@ -167,12 +194,12 @@ export default function NftScorePage() {
                             ) : null}
                             {b.avgAgeDays !== undefined && (
                               <span className={cn('text-[9px]', b.avgAgeDays >= 365 ? 'text-frost-gold' : b.avgAgeDays < 7 ? 'text-white/25' : 'text-white/40')}>
-                                ⏳ {b.avgAgeDays >= 365 ? `${(b.avgAgeDays / 365).toFixed(1)}y` : `${b.avgAgeDays}g`} tutuyor
+                                ⏳ held {b.avgAgeDays >= 365 ? `${(b.avgAgeDays / 365).toFixed(1)}y` : `${b.avgAgeDays}d`}
                               </span>
                             )}
                             {b.minterRatio ? (
                               <span className="text-[9px] text-frost-primary">
-                                ⛏ {b.minterRatio >= 0.999 ? 'orijinal mint' : `%${Math.round(b.minterRatio * 100)} mint`}
+                                ⛏ {b.minterRatio >= 0.999 ? 'original mint' : `${Math.round(b.minterRatio * 100)}% minted`}
                               </span>
                             ) : null}
                           </div>
@@ -184,7 +211,7 @@ export default function NftScorePage() {
                   </div>
                 ) : (
                   <p className="mt-5 text-xs text-white/40">
-                    Bu cüzdanda puanlı koleksiyon yok — Frostbite Heroes mint ederek başlayabilirsin ❄
+                    No scored collections in this wallet — mint a Frostbite Hero to get started ❄
                   </p>
                 )}
               </div>
@@ -207,7 +234,7 @@ export default function NftScorePage() {
             <div className="flex items-center gap-2 mb-3">
               <Trophy className="w-4 h-4 text-frost-gold" />
               <h2 className="font-display text-lg text-white/80">Leaderboard</h2>
-              <span className="text-[10px] text-white/30">(sorgulanan cüzdanlar)</span>
+              <span className="text-[10px] text-white/30">(queried wallets)</span>
             </div>
             <div className="glass-card rounded-2xl p-3 space-y-1">
               {leaders.map((l, i) => (

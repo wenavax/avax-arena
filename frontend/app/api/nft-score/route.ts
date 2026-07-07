@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
 
   const wallet = (req.nextUrl.searchParams.get('wallet') || '').toLowerCase();
   if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
-    return NextResponse.json({ error: 'geçerli bir cüzdan adresi ver (?wallet=0x…)' }, { status: 400 });
+    return NextResponse.json({ error: 'provide a valid wallet address (?wallet=0x…)' }, { status: 400 });
   }
 
   const cached = db.prepare(`SELECT payload, ts FROM nft_scores WHERE wallet = ?`).get(wallet) as
@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
     // Routescan geçici hata verirse bayat cache'i servis et
     if (cached) return NextResponse.json({ ...(JSON.parse(cached.payload) as WalletScore), cached: true, stale: true });
     return NextResponse.json(
-      { error: err instanceof Error ? err.message.slice(0, 120) : 'skor hesaplanamadı' },
+      { error: err instanceof Error ? err.message.slice(0, 120) : 'failed to compute score' },
       { status: 502 }
     );
   }
