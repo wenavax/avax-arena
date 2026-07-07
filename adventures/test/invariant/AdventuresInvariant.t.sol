@@ -197,7 +197,10 @@ contract AdventuresInvariantTest is Test {
         handler = new Handler(adventures, fsb, heroes);
         adventures.setAuthorized(address(handler), true);
         // handler also plays owner: pause/unpause + sweepUnallocated
+        // (Ownable2Step: propose + accept)
         adventures.transferOwnership(address(handler));
+        vm.prank(address(handler));
+        adventures.acceptOwnership();
 
         targetContract(address(handler));
         bytes4[] memory sels = new bytes4[](9);

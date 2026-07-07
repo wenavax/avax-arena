@@ -25,6 +25,8 @@ interface IFrostbiteHeroes {
 
     function transferFrom(address from, address to, uint256 tokenId) external;
 
-    /// @dev Gated by FrostbiteHeroes.authorized[msg.sender]; reverts if amount > 1000 (MAX_XP_PER_CALL).
+    /// @dev Gated by FrostbiteHeroes.authorized[msg.sender]. The repo source
+    ///      enforces amount <= 1000 (MAX_XP_PER_CALL) but the LIVE deployed
+    ///      contract predates that check — do not rely on it reverting.
     function addXp(uint256 tokenId, uint32 amount) external;
 }

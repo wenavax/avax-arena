@@ -1127,4 +1127,51 @@ contract FrostbiteAdventuresTest is Test {
         assertEq(adv.advLevel(tokenId), uint32(level) + 1);
         assertEq(adv.settledSinceLevel(tokenId), 0);
     }
+
+    // ─────────────── audit fixes: 2-step ownership + rescue paths ───────────
+
+    function test_renounceOwnership_disabled() public {
+        vm.expectRevert(FrostbiteAdventures.RenounceDisabled.selector);
+        adv.renounceOwnership();
+    }
+
+    function test_transferOwnership_isTwoStep() public {
+        adv.transferOwnership(alice);
+        assertEq(adv.owner(), address(this), "owner unchanged until accept");
+        assertEq(adv.pendingOwner(), alice);
+        vm.prank(alice);
+        adv.acceptOwnership();
+        assertEq(adv.owner(), alice);
+    }
+
+    function test_rescueHero_returnsDirectlyTransferredHero() public {
+        uint256 tokenId = _mintHero(alice, 1, 0, 10, 10, 10);
+        vm.prank(alice);
+        heroes.transferFrom(alice, address(adv), tokenId); // mistake: sent, not staked
+        assertEq(heroes.ownerOf(tokenId), address(adv));
+        adv.rescueHero(tokenId, alice);
+        assertEq(heroes.ownerOf(tokenId), alice);
+    }
+
+    function test_rescueHero_cannotTouchStakedHero() public {
+        (, uint256 tokenId) = _stakeDefault();
+        vm.expectRevert(FrostbiteAdventures.AlreadyStaked.selector);
+        adv.rescueHero(tokenId, address(this));
+    }
+
+    function test_rescueHero_onlyOwner() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        adv.rescueHero(1, alice);
+    }
+
+    function test_rescueToken_recoversForeignToken_rejectsFsb() public {
+        MockFSB other = new MockFSB();
+        other.mint(address(adv), 123e18);
+        adv.rescueToken(IERC20(address(other)), alice);
+        assertEq(other.balanceOf(alice), 123e18, "foreign token rescued");
+
+        vm.expectRevert(FrostbiteAdventures.InvalidParam.selector);
+        adv.rescueToken(IERC20(address(fsb)), alice);
+    }
 }

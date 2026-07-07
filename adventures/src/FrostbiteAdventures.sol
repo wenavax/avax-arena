@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -36,7 +36,7 @@ import {IFrostbiteHeroes} from "./interfaces/IFrostbiteHeroes.sol";
 ///   emissionCap(L)     = 3 * costToNextLevel(L)
 /// Zone rates are placeholders until Phase-2 calibration; all knobs are owner-set
 /// (owner = Gnosis Safe on mainnet).
-contract FrostbiteAdventures is Ownable, Pausable, ReentrancyGuard {
+contract FrostbiteAdventures is Ownable2Step, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ─────────────────────────────── Constants ───────────────────────────────
@@ -44,7 +44,10 @@ contract FrostbiteAdventures is Ownable, Pausable, ReentrancyGuard {
     uint8 public constant ZONE_COUNT = 6;
     uint32 public constant MAX_ADV_LEVEL = 100;
     uint64 public constant SETTLE_GRACE = 7 days;
-    /// @dev FrostbiteHeroes.MAX_XP_PER_CALL — addXp reverts above this.
+    /// @dev Defensive bound on the XP bridge. NOTE: the repo's FrostbiteHeroes
+    ///      source has MAX_XP_PER_CALL=1000, but the LIVE deployed contract
+    ///      (0x8b43...e523) predates it and does not enforce the cap — we keep
+    ///      the bound anyway so a future redeployed Heroes stays compatible.
     uint32 public constant MAX_XP_PER_LEVELUP = 1000;
     /// @dev FSB is not burnable; OZ ERC20 reverts on transfer to address(0).
     address public constant BURN = 0x000000000000000000000000000000000000dEaD;
@@ -133,6 +136,8 @@ contract FrostbiteAdventures is Ownable, Pausable, ReentrancyGuard {
     event PoolSwept(address indexed to, uint256 amount);
     event ExcessSwept(address indexed to, uint256 amount);
     event AuthorizedChanged(address indexed addr, bool auth);
+    event HeroRescued(uint256 indexed tokenId, address indexed to);
+    event TokenRescued(address indexed token, address indexed to, uint256 amount);
     event ZoneChanged(uint8 indexed zoneId);
     event CostUnitChanged(uint256 costUnit);
     event XpPerLevelUpChanged(uint32 xp);
@@ -160,6 +165,7 @@ contract FrostbiteAdventures is Ownable, Pausable, ReentrancyGuard {
     error NothingToSweep();
     error InvalidParam();
     error LengthMismatch();
+    error RenounceDisabled();
 
     // ──────────────────────────────── Modifiers ──────────────────────────────
 
@@ -366,6 +372,33 @@ contract FrostbiteAdventures is Ownable, Pausable, ReentrancyGuard {
         uint256 excess = bal - accounted;
         fsb.safeTransfer(to, excess);
         emit ExcessSwept(to, excess);
+    }
+
+    /// @notice Rescue a hero sent directly via transferFrom instead of stake().
+    ///         Every legitimately custodied hero has activePositionOf != 0,
+    ///         so staked heroes are structurally untouchable.
+    function rescueHero(uint256 tokenId, address to) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        if (activePositionOf[tokenId] != 0) revert AlreadyStaked();
+        heroes.transferFrom(address(this), to, tokenId);
+        emit HeroRescued(tokenId, to);
+    }
+
+    /// @notice Rescue a non-FSB ERC20 sent to the contract by mistake.
+    ///         FSB itself stays governed by sweepUnallocated/sweepExcess accounting.
+    function rescueToken(IERC20 token, address to) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        if (address(token) == address(fsb)) revert InvalidParam();
+        uint256 bal = token.balanceOf(address(this));
+        if (bal == 0) revert NothingToSweep();
+        token.safeTransfer(to, bal);
+        emit TokenRescued(address(token), to, bal);
+    }
+
+    /// @notice Ownership is load-bearing here (resolver revocation, pause, zone
+    ///         rates, pool sweep) — renouncing it is permanently disabled.
+    function renounceOwnership() public view override onlyOwner {
+        revert RenounceDisabled();
     }
 
     // ──────────────────────────────── Admin ──────────────────────────────────
