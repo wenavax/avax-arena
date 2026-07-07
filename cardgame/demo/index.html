@@ -251,14 +251,22 @@ function render(finalOrder,rw){
       <span class="hud">${p.fin?'✔ '+p.ft+'s':Math.round(speed(p))+'u/s'}${cd>0?' · cd'+cd.toFixed(1):''}</span>`;
     lane.appendChild(car);tk.appendChild(lane);
   });
-  // hand (P1)
+  // hand (P1) — DOM'u yalnızca el/seçim değişince yeniden kur: tick başına
+  // innerHTML sıfırlamak tıklamayı yutuyordu (element press ile release
+  // arasında değişince click hiç ateşlenmiyor)
   const p1=players[0];document.getElementById('handLimit').textContent=`${p1.hand.length}/${p1.hlim}`;
-  const h=document.getElementById('hand');h.innerHTML='';
-  p1.hand.forEach((c,i)=>{const el=document.createElement('div');
-    el.className='card'+(c.type==='MAGIC'?' magic '+(c.magic==='NAIL'?'nail':c.magic==='OIL'?'oil':''):'')+(selected.has(i)?' sel':'');
-    el.innerHTML=`${c.value}${c.magic?`<small>${c.magic}</small>`:''}`;
-    el.onclick=()=>{if(selected.has(i))selected.delete(i);else if(selected.size<8)selected.add(i);updatePreview();render();};
-    h.appendChild(el);});
+  const h=document.getElementById('hand');
+  const sig=p1.hand.map(c=>c.id).join(',')+'|'+[...selected].sort((a,b)=>a-b).join(',');
+  if(h.dataset.sig!==sig){
+    h.dataset.sig=sig;h.innerHTML='';
+    p1.hand.forEach((c,i)=>{const el=document.createElement('div');
+      el.className='card'+(c.type==='MAGIC'?' magic '+(c.magic==='NAIL'?'nail':c.magic==='OIL'?'oil':''):'')+(selected.has(i)?' sel':'');
+      el.innerHTML=`${c.value}${c.magic?`<small>${c.magic}</small>`:''}`;
+      el.onpointerdown=(e)=>{e.preventDefault();
+        if(selected.has(i))selected.delete(i);else if(selected.size<8)selected.add(i);
+        updatePreview();render();};
+      h.appendChild(el);});
+  }
   // cooldown bar
   const cd=Math.max(0,p1.cdUntil-t);document.getElementById('cdbar').style.width=(cd/CFG.COOLDOWN*100)+'%';
   document.getElementById('playBtn').disabled=cd>0||selected.size===0||p1.fin;
