@@ -130,6 +130,7 @@ const NAV_LINKS = [
   { href: '/launchpad', label: 'Launchpad', desc: 'Launch tokens', icon: Rocket, group: 'trade' },
   { href: '/swap', label: 'Swap', desc: 'Trade tokens', icon: ArrowLeftRight, group: 'trade' },
   { href: '/leaderboard', label: 'Rankings', desc: 'Leaderboard', icon: BarChart3, group: 'social' },
+  { href: '/nft-score', label: 'NFT Score', desc: 'Wallet rating', icon: Sparkles, group: 'social' },
 ];
 
 /* ---------- Custom Wallet Button ---------- */
