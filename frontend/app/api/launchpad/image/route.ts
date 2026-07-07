@@ -29,12 +29,12 @@ export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
     const file = form.get('file');
-    if (!(file instanceof File)) return NextResponse.json({ error: 'file alanı eksik' }, { status: 400 });
+    if (!(file instanceof File)) return NextResponse.json({ error: 'missing file field' }, { status: 400 });
     if (file.size > MAX_BYTES) return NextResponse.json({ error: 'max 512KB' }, { status: 413 });
 
     const buf = Buffer.from(await file.arrayBuffer());
     const ext = sniffExt(buf);
-    if (!ext) return NextResponse.json({ error: 'sadece png/jpg/webp/gif' }, { status: 415 });
+    if (!ext) return NextResponse.json({ error: 'only png/jpg/webp/gif allowed' }, { status: 415 });
 
     const name = `${createHash('sha256').update(buf).digest('hex').slice(0, 32)}.${ext}`;
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });

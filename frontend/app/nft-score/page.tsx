@@ -141,7 +141,7 @@ export default function NftScorePage() {
                     </span>
                   )}
                   <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08]">
-                    çeşitlilik ×{result.diversityMult}
+                    diversity ×{result.diversityMult}
                   </span>
                   <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08]">
                     base {result.basePoints}p
@@ -200,6 +200,11 @@ export default function NftScorePage() {
                             {b.minterRatio ? (
                               <span className="text-[9px] text-frost-primary">
                                 ⛏ {b.minterRatio >= 0.999 ? 'original mint' : `${Math.round(b.minterRatio * 100)}% minted`}
+                              </span>
+                            ) : null}
+                            {b.avgRarity !== undefined && b.avgRarity > 0 ? (
+                              <span className="text-[9px] text-frost-gold">
+                                ✦ avg rarity {['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'][Math.round(b.avgRarity)]}
                               </span>
                             ) : null}
                           </div>

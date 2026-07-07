@@ -121,10 +121,23 @@ export function mintMult(minterRatio: number | undefined, col: ScoredCollection)
   return 1 + minterRatio * (0.15 + priceBoost);
 }
 
+/** Rarity çarpanı: koleksiyon-içi nadirlik. avgRarity 0..4 (Common..Legendary),
+ *  on-chain kaynaktan (FrostbiteHeroes getHero.rarity). Kaynak yoksa nötr (1). */
+export function rarityMult(avgRarity: number | undefined): number {
+  if (avgRarity === undefined) return 1;
+  // 0→1.0, 1→1.12, 2→1.25, 3→1.45, 4→1.7 (lineer interpolasyon)
+  const steps = [1.0, 1.12, 1.25, 1.45, 1.7];
+  const lo = Math.max(0, Math.min(4, Math.floor(avgRarity)));
+  const hi = Math.min(4, lo + 1);
+  const frac = Math.max(0, Math.min(1, avgRarity - lo));
+  return steps[lo] + (steps[hi] - steps[lo]) * frac;
+}
+
 export interface HoldingInfo {
   count: number;
   avgAgeDays?: number; // tutulan token'ların ortalama edinme yaşı (gün)
   minterRatio?: number; // orijinal mint'lenen token oranı (0..1)
+  avgRarity?: number; // ortalama nadirlik 0..4 (on-chain, yalnız FrostbiteHeroes)
 }
 
 export interface CollectionBreakdown {
@@ -135,6 +148,7 @@ export interface CollectionBreakdown {
   points: number;
   avgAgeDays?: number;
   minterRatio?: number;
+  avgRarity?: number;
   floorAvax?: number;
 }
 
@@ -183,7 +197,8 @@ export function computeWalletScore(
     const fMult = floorMult(col);
     const aMult = ageMult(info.avgAgeDays);
     const mMult = mintMult(info.minterRatio, col);
-    const points = col.lambda * col.weight * fMult * aMult * mMult * effective;
+    const rMult = rarityMult(info.avgRarity);
+    const points = col.lambda * col.weight * fMult * aMult * mMult * rMult * effective;
     basePoints += points;
     totalNfts += info.count;
     if (col.tier === 'FROST') frostHeld = true;
@@ -195,6 +210,7 @@ export function computeWalletScore(
       points: Math.round(points * 10) / 10,
       avgAgeDays: info.avgAgeDays !== undefined ? Math.round(info.avgAgeDays) : undefined,
       minterRatio: info.minterRatio,
+      avgRarity: info.avgRarity,
       floorAvax: col.floorAvax,
     });
   }

@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createPublicClient, http, parseAbi } from 'viem';
+import { avalanche } from 'viem/chains';
 import getDb from '@/lib/db';
 import { computeWalletScore, COLLECTION_BY_ADDRESS, type WalletScore, type HoldingInfo } from '@/lib/nftScore';
+
+// FrostbiteHeroes: on-chain rarity (getHero.rarity 0-4) — our own collection, free & exact.
+const HERO_CONTRACT = '0x8b43A80A8EeBC2bf27EAa934B870AF1742f1e523'.toLowerCase();
+const HERO_ABI = parseAbi([
+  'function getHero(uint256) view returns (uint8 element, uint8 rarity, uint16 level, uint32 xp, uint16 atk, uint16 def, uint16 spd, uint16 baseAtk, uint16 baseDef, uint16 baseSpd)',
+]);
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -23,7 +31,10 @@ const DAY = 86_400;
 /** Bir puanlı koleksiyon için: cüzdanın hâlâ tuttuğu token'ların ortalama edinme
  *  yaşı + orijinal-mint oranı (from 0x0). tokennfttx tüm transfer'leri verir;
  *  her tokenId için son kayıt to==wallet ise elde sayılır. */
-async function fetchAcquisition(wallet: string, collection: string): Promise<{ avgAgeDays?: number; minterRatio?: number }> {
+async function fetchAcquisition(
+  wallet: string,
+  collection: string
+): Promise<{ avgAgeDays?: number; minterRatio?: number; heldTokenIds?: string[] }> {
   const url = `${ROUTESCAN_ETH}?module=account&action=tokennfttx&contractaddress=${collection}&address=${wallet}&page=1&offset=1000&sort=asc`;
   const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(15_000) });
   if (!res.ok) return {};
@@ -40,14 +51,37 @@ async function fetchAcquisition(wallet: string, collection: string): Promise<{ a
   let ageSum = 0;
   let held = 0;
   let minted = 0;
-  for (const rec of last.values()) {
-    if (rec.to !== w) continue; // token cüzdandan çıkmış — elde değil
+  const heldTokenIds: string[] = [];
+  for (const [tokenId, rec] of last.entries()) {
+    if (rec.to !== w) continue; // token left the wallet — not held
     held++;
+    heldTokenIds.push(tokenId);
     ageSum += Math.max(0, (now - rec.ts) / DAY);
     if (rec.from === ZERO) minted++;
   }
   if (held === 0) return {};
-  return { avgAgeDays: ageSum / held, minterRatio: minted / held };
+  return { avgAgeDays: ageSum / held, minterRatio: minted / held, heldTokenIds };
+}
+
+/** Average on-chain rarity (0-4) for held FrostbiteHeroes via getHero multicall. */
+async function fetchHeroRarity(tokenIds: string[]): Promise<number | undefined> {
+  if (tokenIds.length === 0) return undefined;
+  try {
+    const client = createPublicClient({ chain: avalanche, transport: http('https://api.avax.network/ext/bc/C/rpc', { timeout: 15_000 }) });
+    const res = await client.multicall({
+      contracts: tokenIds.slice(0, 50).map((id) => ({
+        address: HERO_CONTRACT as `0x${string}`,
+        abi: HERO_ABI,
+        functionName: 'getHero' as const,
+        args: [BigInt(id)] as const,
+      })),
+    });
+    const rarities = res.filter((r) => r.status === 'success').map((r) => Number((r.result as readonly unknown[])[1]));
+    if (rarities.length === 0) return undefined;
+    return rarities.reduce((a, b) => a + b, 0) / rarities.length;
+  } catch {
+    return undefined;
+  }
 }
 
 function ensureTables() {
@@ -132,7 +166,7 @@ export async function GET(req: NextRequest) {
     const ageSet = new Set(ranked.slice(0, MAX_AGE_LOOKUPS));
     const holdings: Record<string, HoldingInfo> = {};
     for (const addr of scoredAddrs) {
-      let acq: { avgAgeDays?: number; minterRatio?: number } = {};
+      let acq: { avgAgeDays?: number; minterRatio?: number; heldTokenIds?: string[] } = {};
       if (ageSet.has(addr)) {
         try {
           acq = await fetchAcquisition(wallet, addr);
@@ -140,7 +174,12 @@ export async function GET(req: NextRequest) {
           /* neutral age/mint on failure */
         }
       }
-      holdings[addr] = { count: counts[addr], ...acq };
+      // FrostbiteHeroes → add on-chain rarity multiplier
+      let avgRarity: number | undefined;
+      if (addr.toLowerCase() === HERO_CONTRACT && acq.heldTokenIds?.length) {
+        avgRarity = await fetchHeroRarity(acq.heldTokenIds);
+      }
+      holdings[addr] = { count: counts[addr], avgAgeDays: acq.avgAgeDays, minterRatio: acq.minterRatio, avgRarity };
     }
 
     const result = computeWalletScore(wallet, holdings);
