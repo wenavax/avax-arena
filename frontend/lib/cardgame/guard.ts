@@ -24,11 +24,22 @@ export function rateLimit(key: string, max: number, windowMs: number): boolean {
   return true;
 }
 
-/** Best-effort client IP from proxy headers (nginx sets X-Real-IP / X-Forwarded-For). */
+/** Trusted client IP. nginx sets X-Real-IP := $remote_addr (the true peer),
+ *  OVERWRITING any client value, so it is unspoofable through the proxy. We do
+ *  NOT trust the leftmost X-Forwarded-For (fully client-controlled); if X-Real-IP
+ *  is missing we take the RIGHTMOST XFF hop (closest to the proxy). */
 export function clientIp(req: Request): string {
+  const real = req.headers.get('x-real-ip');
+  if (real) return real.trim();
   const xf = req.headers.get('x-forwarded-for');
-  if (xf) return xf.split(',')[0].trim();
-  return req.headers.get('x-real-ip') || 'unknown';
+  if (xf) { const parts = xf.split(','); return parts[parts.length - 1].trim(); }
+  return 'unknown';
+}
+
+/** Global breaker independent of caller identity — bounds how much operator gas
+ *  ANY set of callers can burn per window (fresh-wallet spam defense). */
+export function globalLimit(key: string, max: number, windowMs: number): boolean {
+  return rateLimit(`global:${key}`, max, windowMs);
 }
 
 // ── Wallet-ownership proof ───────────────────────────────────────────────────

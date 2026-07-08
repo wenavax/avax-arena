@@ -27,6 +27,9 @@ export async function POST(req: Request) {
   if (!(await verifyStakeSig(p, nonce as number, sig as Hex))) {
     return NextResponse.json({ error: 'invalid stake signature' }, { status: 401 });
   }
+  if (!rateLimit(`sb:pl:${p.toLowerCase()}`, 8, 60_000)) {
+    return NextResponse.json({ error: 'rate limited for this wallet' }, { status: 429 });
+  }
 
   try {
     const result = await seatBots(matchIdFor(p, nonce as number), p);

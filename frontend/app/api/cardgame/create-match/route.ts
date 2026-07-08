@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isAddress, isHex, type Address, type Hex } from 'viem';
 import { openMatch, matchIdFor, operatorConfigured } from '@/lib/cardgame/server';
-import { rateLimit, clientIp, verifyStakeSig, reserveOpenMatch, releaseOpenMatch } from '@/lib/cardgame/guard';
+import { rateLimit, globalLimit, clientIp, verifyStakeSig, reserveOpenMatch, releaseOpenMatch } from '@/lib/cardgame/guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,6 +16,12 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   if (!operatorConfigured()) {
     return NextResponse.json({ error: 'staked matches unavailable' }, { status: 503 });
+  }
+  // Global operator-gas breaker: a self-issued signature proves nothing (an
+  // attacker owns unlimited wallets), so cap total createMatch spend per window
+  // regardless of caller identity — this is the real bound on operator gas.
+  if (!globalLimit('createMatch', 20, 60_000)) {
+    return NextResponse.json({ error: 'match creation is busy — try again shortly' }, { status: 429 });
   }
   const ip = clientIp(req);
   if (!rateLimit(`cm:ip:${ip}`, 6, 60_000)) {

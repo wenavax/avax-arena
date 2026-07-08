@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isAddress, isHex, type Address, type Hex } from 'viem';
 import { settleMatch, matchIdFor, operatorConfigured } from '@/lib/cardgame/server';
-import { rateLimit, clientIp, verifyStakeSig, releaseOpenMatch } from '@/lib/cardgame/guard';
+import { rateLimit, globalLimit, clientIp, verifyStakeSig, releaseOpenMatch } from '@/lib/cardgame/guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,6 +19,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: Request) {
   if (!operatorConfigured()) return NextResponse.json({ error: 'staked matches unavailable' }, { status: 503 });
+  if (!globalLimit('settle', 30, 60_000)) return NextResponse.json({ error: 'settlement busy — retry shortly' }, { status: 429 });
   const ip = clientIp(req);
   if (!rateLimit(`st:ip:${ip}`, 8, 60_000)) return NextResponse.json({ error: 'rate limited' }, { status: 429 });
 
@@ -35,6 +36,9 @@ export async function POST(req: Request) {
   const p = player as Address;
   if (!(await verifyStakeSig(p, nonce as number, sig as Hex))) {
     return NextResponse.json({ error: 'invalid stake signature' }, { status: 401 });
+  }
+  if (!rateLimit(`st:pl:${p.toLowerCase()}`, 6, 60_000)) {
+    return NextResponse.json({ error: 'rate limited for this wallet' }, { status: 429 });
   }
 
   try {
