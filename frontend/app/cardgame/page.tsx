@@ -5,6 +5,8 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useAccount, useSwitchChain, useWriteContract, usePublicClient, useSignMessage } from 'wagmi';
 import { Wallet, LogOut, Coins, Loader2, Trophy } from 'lucide-react';
 import { mountCardGame } from '@/lib/cardgame/mount';
+import { mountStaked } from '@/lib/cardgame/mountStaked';
+import type { MatchInput } from '@/lib/cardgame/engine';
 import { CARDGAME_ESCROW, CARDGAME_CHAIN_ID, ESCROW_ABI, STATUS } from '@/lib/cardgame/escrow';
 import LiveMatches from '@/components/cardgame/LiveMatches';
 import { formatEther, type Hex } from 'viem';
@@ -59,14 +61,14 @@ export default function CardGamePage() {
   }, [address, publicClient]);
 
   // Settle callback: fired by the game engine when the staked match ends
-  const onFinish = useCallback(async (ranking: string[]) => {
+  const onFinish = useCallback(async (input: MatchInput) => {
     if (!address || !authRef.current) return;
     setPhase('settling');
-    setNote('Submitting signed result…');
+    setNote('Submitting play log — server re-derives the result…');
     try {
       const res = await fetch('/avalanche/api/cardgame/settle', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player: address, nonce: authRef.current.nonce, sig: authRef.current.sig, ranking }),
+        body: JSON.stringify({ player: address, nonce: authRef.current.nonce, sig: authRef.current.sig, input }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'settle failed');
@@ -128,20 +130,23 @@ export default function CardGamePage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ player: address, nonce, sig }),
       });
-      if (!sb.ok) { const d = await sb.json(); throw new Error(d.error || 'seating failed'); }
+      const sbData = await sb.json();
+      if (!sb.ok) throw new Error(sbData.error || 'seating failed');
+      const seed = sbData.seed as string; // server-authoritative match seed
       for (let i = 0; i < 20; i++) {
         const st = await publicClient.readContract({ address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'getStatus', args: [mId] });
         if (STATUS[st] === 'Locked') break;
         await new Promise((r) => setTimeout(r, 1500));
       }
 
-      // 4) mount the interactive game with real addresses; settle on finish
+      // 4) play the shared deterministic engine seeded by the server; capture the
+      //    play log and send it to settle (server re-derives the ranking)
       setPhase('playing');
-      setNote('Match locked — race! Winner takes ◆ 0.02 AVAX.');
+      setNote('Match locked — race! The server verifies your plays. Winner takes ◆ 0.02.');
       cleanupRef.current?.();
       if (rootRef.current) {
-        cleanupRef.current = mountCardGame(rootRef.current, {
-          address, staked: { player: address, bots, onFinish: (r) => onFinishRef.current(r) },
+        cleanupRef.current = mountStaked(rootRef.current, {
+          seed, player: address, bots, onFinish: (inp) => onFinishRef.current(inp),
         });
       }
     } catch (e) {

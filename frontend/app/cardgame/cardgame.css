@@ -61,6 +61,12 @@
 .cgroot .lm-foot{font-size:10px;color:var(--cg-muted);margin-top:8px;font-family:'JetBrains Mono',monospace}
 .cgroot .lm-foot.ok{color:var(--cg-green)}
 
+/* engine-driven staked view */
+.cgroot .eng-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.cgroot .eng-round{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:2px;font-size:13px}
+.cgroot .eng-track{display:flex;flex-direction:column;gap:6px}
+.cgroot .eng-board td,.cgroot .eng-board th{text-align:left;padding:5px 4px;border-bottom:1px solid var(--cg-line)}
+
 /* header */
 .cgroot .top{display:flex;justify-content:space-between;gap:16px;align-items:stretch;margin-bottom:12px;flex-wrap:wrap}
 .cgroot .eyebrow{font-size:11px;letter-spacing:3px;color:var(--cg-muted);margin-bottom:4px}
