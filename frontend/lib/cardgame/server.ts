@@ -75,31 +75,42 @@ export async function entryFee(): Promise<bigint> {
   return pub.readContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'entryFee' });
 }
 
-/** Create a match [player, bot1, bot2, bot3] and join the 3 bots. Player joins client-side. */
-export async function createStakedMatch(player: Address, nonce: number): Promise<{ matchId: Hex; bots: Address[]; entryFee: string }> {
+/** Open a match [player, bot1, bot2, bot3] — createMatch ONLY (operator gas).
+ *  Bots are seated later, after the player has actually paid, so an
+ *  unauthenticated caller cannot lock up bot funds. */
+export async function openMatch(player: Address, nonce: number): Promise<{ matchId: Hex; bots: Address[]; entryFee: string }> {
   const bots = botAddresses();
   const players: [Address, Address, Address, Address] = [player, bots[0], bots[1], bots[2]];
   const matchId = matchIdFor(player, nonce);
-
   const fee = await entryFee();
-  const wallet = opWallet();
 
-  // createMatch (operator)
   const status = await pub.readContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'getStatus', args: [matchId] });
   if (status === 0) {
-    await waitOk(await wallet.writeContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'createMatch', args: [matchId, players] }));
+    await waitOk(await opWallet().writeContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'createMatch', args: [matchId, players] }));
   }
+  return { matchId, bots, entryFee: fee.toString() };
+}
 
-  // join the 3 bots (each from its own wallet)
+/** Seat the 3 bots — ONLY if the player has already paid their entry. This is
+ *  the gate that prevents draining bot funds without a real stake. */
+export async function seatBots(matchId: Hex, player: Address): Promise<{ seated: boolean }> {
+  // the player MUST be a listed player AND have paid before we spend bot AVAX
+  const [isP, paid] = await Promise.all([
+    pub.readContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'isPlayer', args: [matchId, player] }),
+    pub.readContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'hasPaid', args: [matchId, player] }),
+  ]);
+  if (!isP) throw new Error('player is not in this match');
+  if (!paid) throw new Error('player has not paid entry yet');
+
+  const fee = await entryFee();
   for (const pk of BOT_PKS) {
     const botAcct = privateKeyToAccount(pk);
-    const paid = await pub.readContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'hasPaid', args: [matchId, botAcct.address] });
-    if (paid) continue;
+    const already = await pub.readContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'hasPaid', args: [matchId, botAcct.address] });
+    if (already) continue;
     const botWallet = createWalletClient({ chain: avalancheFuji, transport: transport(), account: botAcct });
     await waitOk(await botWallet.writeContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'joinMatch', args: [matchId], value: fee }));
   }
-
-  return { matchId, bots, entryFee: fee.toString() };
+  return { seated: true };
 }
 
 // ── Live spectator feed: aggregate escrow events into match objects ──────────

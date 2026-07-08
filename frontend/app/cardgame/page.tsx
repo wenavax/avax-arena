@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useAccount, useSwitchChain, useWriteContract, usePublicClient } from 'wagmi';
+import { useAccount, useSwitchChain, useWriteContract, usePublicClient, useSignMessage } from 'wagmi';
 import { Wallet, LogOut, Coins, Loader2, Trophy } from 'lucide-react';
 import { mountCardGame } from '@/lib/cardgame/mount';
 import { CARDGAME_ESCROW, CARDGAME_CHAIN_ID, ESCROW_ABI, STATUS } from '@/lib/cardgame/escrow';
@@ -18,9 +18,13 @@ export default function CardGamePage() {
   const { address, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+  const { signMessageAsync } = useSignMessage();
   const publicClient = usePublicClient({ chainId: CARDGAME_CHAIN_ID });
   const rootRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<null | (() => void)>(null);
+  // stake authorization for the current match (signed once, reused for the
+  // create/seat-bots/settle routes so a third party can't act on your match)
+  const authRef = useRef<{ nonce: number; sig: Hex } | null>(null);
 
   const [mode, setMode] = useState<Mode>('practice');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -28,7 +32,6 @@ export default function CardGamePage() {
   const [matchId, setMatchId] = useState<Hex | null>(null);
   const [entryFee, setEntryFee] = useState<bigint | null>(null);
   const [payout, setPayout] = useState<bigint>(0n);
-  const nonceRef = useRef(0);
 
   const shortAddr = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '';
 
@@ -57,13 +60,13 @@ export default function CardGamePage() {
 
   // Settle callback: fired by the game engine when the staked match ends
   const onFinish = useCallback(async (ranking: string[]) => {
-    if (!matchId) return;
+    if (!address || !authRef.current) return;
     setPhase('settling');
     setNote('Submitting signed result…');
     try {
       const res = await fetch('/avalanche/api/cardgame/settle', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ matchId, ranking }),
+        body: JSON.stringify({ player: address, nonce: authRef.current.nonce, sig: authRef.current.sig, ranking }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'settle failed');
@@ -75,7 +78,7 @@ export default function CardGamePage() {
       setPhase('settled');
       setNote(`Settle error: ${(e as Error).message}`);
     }
-  }, [matchId, readPending]);
+  }, [address, readPending]);
 
   // keep the latest onFinish for the mounted engine
   const onFinishRef = useRef(onFinish);
@@ -86,13 +89,20 @@ export default function CardGamePage() {
     setPayout(0n);
     try {
       await ensureFuji();
-      // 1) server creates the match + joins 3 bots
+      const nonce = Math.floor(Math.random() * 2_000_000_000); // avoid id reuse across sessions
+
+      // 0) prove wallet ownership once — gates create/seat-bots/settle server-side
       setPhase('creating');
-      setNote('Opening escrow match & seating bots…');
-      const nonce = nonceRef.current++;
+      setNote('Sign to authorize your staked match…');
+      const message = `Frostbite CAR(D) GAME — authorize staked match\nplayer: ${address.toLowerCase()}\nnonce: ${nonce}`;
+      const sig = (await signMessageAsync({ message })) as Hex;
+      authRef.current = { nonce, sig };
+
+      // 1) server opens the match (createMatch only — bots seated after you pay)
+      setNote('Opening escrow match…');
       const cr = await fetch('/avalanche/api/cardgame/create-match', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player: address, nonce }),
+        body: JSON.stringify({ player: address, nonce, sig }),
       });
       const created = await cr.json();
       if (!cr.ok) throw new Error(created.error || 'create failed');
@@ -111,9 +121,14 @@ export default function CardGamePage() {
       });
       await publicClient.waitForTransactionReceipt({ hash });
 
-      // 3) wait for lock (bots already joined server-side)
+      // 3) now that you've paid, ask the server to seat the 3 bots → lock
       setPhase('waiting');
-      setNote('Locking match…');
+      setNote('Seating opponents & locking match…');
+      const sb = await fetch('/avalanche/api/cardgame/seat-bots', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player: address, nonce, sig }),
+      });
+      if (!sb.ok) { const d = await sb.json(); throw new Error(d.error || 'seating failed'); }
       for (let i = 0; i < 20; i++) {
         const st = await publicClient.readContract({ address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'getStatus', args: [mId] });
         if (STATUS[st] === 'Locked') break;
@@ -135,7 +150,7 @@ export default function CardGamePage() {
       if (!/rejected|denied/i.test(msg)) setNote(`Error: ${msg.slice(0, 140)}`);
       else setNote('');
     }
-  }, [address, publicClient, ensureFuji, writeContractAsync]);
+  }, [address, publicClient, ensureFuji, writeContractAsync, signMessageAsync]);
 
   const withdraw = useCallback(async () => {
     if (!publicClient) return;
