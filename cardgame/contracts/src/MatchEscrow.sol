@@ -53,6 +53,12 @@ contract MatchEscrow is Ownable2Step, Pausable, ReentrancyGuard {
         uint64 createdAt;
         uint8 paidCount;
         address[4] players;
+        // Payout terms are SNAPSHOTTED at createMatch so a later config/treasury
+        // change (even by a compromised owner) cannot redirect an in-flight
+        // match's pool. Players see the exact terms on-chain before they join.
+        address treasury;
+        uint256 platformFee;
+        uint256[4] rewards;
         mapping(address => bool) isPlayer;
         mapping(address => bool) hasPaid;
     }
@@ -157,6 +163,10 @@ contract MatchEscrow is Ownable2Step, Pausable, ReentrancyGuard {
         m.status = Status.Open;
         m.createdAt = uint64(block.timestamp);
         m.players = players;
+        // snapshot the payout terms in force right now (immutable for this match)
+        m.treasury = treasury;
+        m.platformFee = platformFee;
+        m.rewards = rewards;
         for (uint256 i = 0; i < PLAYERS; i++) {
             address p = players[i];
             if (p == address(0)) revert ZeroAddress();
@@ -216,11 +226,14 @@ contract MatchEscrow is Ownable2Step, Pausable, ReentrancyGuard {
         escrowed -= pool;
         totalPending += pool;
 
-        pendingPayouts[treasury] += platformFee;
-        emit FeeCredited(matchId, treasury, platformFee);
+        // pay from the match's SNAPSHOT, not live global config — a compromised
+        // owner cannot redirect this in-flight match's pool to an outsider.
+        address mTreasury = m.treasury;
+        pendingPayouts[mTreasury] += m.platformFee;
+        emit FeeCredited(matchId, mTreasury, m.platformFee);
         for (uint256 i = 0; i < PLAYERS; i++) {
-            pendingPayouts[ranking[i]] += rewards[i];
-            emit RewardCredited(matchId, ranking[i], rewards[i], uint8(i + 1));
+            pendingPayouts[ranking[i]] += m.rewards[i];
+            emit RewardCredited(matchId, ranking[i], m.rewards[i], uint8(i + 1));
         }
         emit MatchSettled(matchId, ranking);
     }
@@ -338,6 +351,16 @@ contract MatchEscrow is Ownable2Step, Pausable, ReentrancyGuard {
 
     function getRewards() external view returns (uint256[4] memory) {
         return rewards;
+    }
+
+    /// @notice The payout terms locked in for a specific match (what settle pays).
+    function matchPayout(bytes32 matchId)
+        external
+        view
+        returns (address treasury_, uint256 platformFee_, uint256[4] memory rewards_)
+    {
+        Match storage m = matches[matchId];
+        return (m.treasury, m.platformFee, m.rewards);
     }
 
     /// @notice The exact digest a signer must sign for `settle` (off-chain helper).

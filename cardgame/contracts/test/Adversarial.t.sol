@@ -276,6 +276,47 @@ contract AdversarialTest is Test {
         vm.expectRevert(MatchEscrow.RenounceDisabled.selector);
         escrow.renounceOwnership();
     }
+
+    // ── audit fix: payout snapshot defeats the owner-drain-of-locked-match path ──
+
+    /// A compromised owner cannot redirect a LOCKED match's pool: settle pays
+    /// from the terms snapshotted at createMatch, not live global config.
+    function test_owner_cannotDrainLockedMatch_viaRetunePlusTreasury() public {
+        _lock(ID); // created + locked under honest config (fee 0.2, rewards 2/1/.5/.3)
+        address attacker = makeAddr("attacker");
+
+        // owner turns malicious AFTER the match is locked
+        escrow.setPayoutConfig(4 ether, [uint256(0), 0, 0, 0]); // fee = whole pool, 0 to players
+        escrow.setTreasury(attacker);
+        escrow.setTrustedSigner(signer); // (already signer; owner could self-sign)
+
+        // settle still pays the SNAPSHOT: players get their rewards, honest
+        // treasury gets the fee, the attacker treasury gets nothing.
+        address[4] memory ranking = _players();
+        escrow.settle(ID, ranking, _sign(ID, ranking));
+
+        assertEq(escrow.pendingPayouts(players[0]), 2 ether, "winner still paid");
+        assertEq(escrow.pendingPayouts(players[3]), 0.3 ether, "4th still paid");
+        assertEq(escrow.pendingPayouts(treasury), FEE, "honest treasury got fee");
+        assertEq(escrow.pendingPayouts(attacker), 0, "attacker got nothing");
+    }
+
+    /// The snapshot is what settle uses, and it is readable before joining.
+    function test_matchPayout_snapshotFrozenAtCreate() public {
+        _create(escrow, ID, _players());
+        (address t0, uint256 f0, uint256[4] memory r0) = escrow.matchPayout(ID);
+        assertEq(t0, treasury);
+        assertEq(f0, FEE);
+        assertEq(r0[0], 2 ether);
+
+        // retune the global config; the match snapshot is unchanged
+        escrow.setPayoutConfig(1 ether, [uint256(1 ether), 1 ether, 0.5 ether, 0.5 ether]);
+        escrow.setTreasury(makeAddr("other"));
+        (address t1, uint256 f1, uint256[4] memory r1) = escrow.matchPayout(ID);
+        assertEq(t1, treasury, "snapshot treasury frozen");
+        assertEq(f1, FEE, "snapshot fee frozen");
+        assertEq(r1[0], 2 ether, "snapshot reward frozen");
+    }
 }
 
 /// Attacker player that tries to re-enter withdrawPayout during its own receive.
