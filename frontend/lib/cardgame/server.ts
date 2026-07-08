@@ -14,6 +14,12 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { avalancheFuji } from 'viem/chains';
 import { CARDGAME_ESCROW } from './escrow';
+import { simulateMatch, type MatchInput, type Pid } from './engine';
+
+// Server secret binds the match seed. The client needs the seed to play (returned
+// at seat time) but CANNOT predict it before committing its nonce, so it can't
+// grind for a favorable deck. Recomputed at settle — no per-match storage needed.
+const SEED_SECRET = process.env.CARDGAME_SEED_SECRET || (process.env.CARDGAME_OPERATOR_PK || 'dev-seed-secret');
 
 // The default public RPC (api.avax-test.network) Cloudflare-blocks some server
 // IPs (the VPS), so use a rotating fallback of Fuji endpoints for reliability.
@@ -110,7 +116,8 @@ export async function seatBots(matchId: Hex, player: Address): Promise<{ seated:
     const botWallet = createWalletClient({ chain: avalancheFuji, transport: transport(), account: botAcct });
     await waitOk(await botWallet.writeContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'joinMatch', args: [matchId], value: fee }));
   }
-  return { seated: true };
+  // reveal the authoritative seed so the client can play the deterministic match
+  return { seated: true, seed: matchSeed(matchId) };
 }
 
 // ── Live spectator feed: aggregate escrow events into match objects ──────────
@@ -170,6 +177,30 @@ export async function getRecentMatches(lookback = 20000n, limit = 24): Promise<{
 
   const matches = [...byId.values()].sort((a, b) => b.block - a.block).slice(0, limit);
   return { matches, entryFee: fee.toString(), rewards: (rewards as bigint[]).map((r) => r.toString()), head: Number(head) };
+}
+
+/** Server-authoritative match seed (client can't predict pre-commit, can't grind). */
+export function matchSeed(matchId: Hex): string {
+  return keccak256(encodeAbiParameters([{ type: 'string' }, { type: 'bytes32' }], [SEED_SECRET, matchId]));
+}
+
+/**
+ * Authoritative settle: re-derive the ranking from (seed, client input) with the
+ * shared deterministic engine and settle with THAT — the client-reported result
+ * is never trusted. Returns the derived ranking + validity. Rejects tampered input.
+ */
+export async function settleFromInput(matchId: Hex, input: MatchInput): Promise<{ txHash: Hex; ranking: Address[]; valid: boolean }> {
+  const seed = matchSeed(matchId);
+  const sim = simulateMatch(seed, input);
+  if (!sim.valid) throw new Error('invalid play log: ' + (sim.reason || 'rejected'));
+
+  // map engine Pids (P1..P4) → the escrow's player order [player, bot1, bot2, bot3]
+  const players = await pub.readContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'getPlayers', args: [matchId] });
+  const pidToAddr: Record<Pid, Address> = { P1: players[0], P2: players[1], P3: players[2], P4: players[3] };
+  const ranking = sim.ranking.map((pid) => pidToAddr[pid]);
+
+  const { txHash } = await settleMatch(matchId, ranking);
+  return { txHash, ranking, valid: true };
 }
 
 /** Sign the final ranking and submit settle (operator = trustedSigner). */
