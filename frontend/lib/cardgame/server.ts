@@ -141,7 +141,9 @@ export interface LiveMatch {
 }
 
 /** Read recent escrow events and fold them into a list of matches (newest first). */
-export async function getRecentMatches(lookback = 20000n, limit = 24): Promise<{ matches: LiveMatch[]; entryFee: string; rewards: string[]; head: number }> {
+export async function getRecentMatches(lookback = 2000n, limit = 24): Promise<{ matches: LiveMatch[]; entryFee: string; rewards: string[]; head: number }> {
+  // Public Fuji RPCs cap eth_getLogs at ~2048 blocks; keep the window small so a
+  // single request succeeds (a "live" feed only needs recent activity anyway).
   const head = await pub.getBlockNumber();
   const from = head - lookback > DEPLOY_BLOCK ? head - lookback : DEPLOY_BLOCK;
 
