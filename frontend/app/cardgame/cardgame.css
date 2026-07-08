@@ -31,6 +31,36 @@
 @keyframes cg-spin2{to{transform:rotate(360deg)}}
 .cgroot .cg-spin{animation:cg-spin2 .8s linear infinite}
 
+/* live matches (watch mode) */
+.cgroot .lm-wrap{margin-top:2px}
+.cgroot .lm-head{padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.cgroot .lm-head-l{display:flex;align-items:center;gap:9px}
+.cgroot .lm-title{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:1.5px;font-size:14px}
+.cgroot .lm-sub{font-size:11px;color:var(--cg-muted);letter-spacing:.5px}
+.cgroot .lm-head-r{font-size:11px;color:var(--cg-muted)}
+.cgroot .lm-live-ic{color:#22c55e;animation:cg-pulse 1.6s infinite}
+.cgroot .lm-off-ic{color:var(--cg-muted)}
+.cgroot .lm-empty{padding:40px 16px;text-align:center;color:var(--cg-muted);font-size:13px}
+.cgroot .lm-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.cgroot .lm-card{padding:13px 15px;transition:box-shadow .3s,border-color .3s}
+.cgroot .lm-card.lm-pulse{border-color:rgba(245,197,66,.5);box-shadow:0 0 0 1px rgba(245,197,66,.2),0 0 24px rgba(245,197,66,.15)}
+.cgroot .lm-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.cgroot .lm-id{font-size:11px;color:var(--cg-muted)}
+.cgroot .lm-badge{font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;padding:3px 8px;border-radius:10px;border:1px solid;display:inline-flex;align-items:center;gap:5px}
+.cgroot .lm-dot{width:6px;height:6px;border-radius:50%;animation:cg-pulse 1s infinite}
+.cgroot .lm-seats{display:flex;flex-direction:column;gap:5px}
+.cgroot .lm-seat{display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 6px;border-radius:7px}
+.cgroot .lm-seat.lm-winner{background:rgba(245,197,66,.08);border:1px solid rgba(245,197,66,.25)}
+.cgroot .lm-seat.lm-me{outline:1px solid rgba(237,47,57,.4)}
+.cgroot .lm-seat.lm-unpaid{opacity:.38}
+.cgroot .lm-av{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.cgroot .lm-trophy{color:var(--cg-gold)}
+.cgroot .lm-reward{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px}
+.cgroot .lm-progress{height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden;margin-top:10px}
+.cgroot .lm-progress>div{height:100%;background:linear-gradient(90deg,var(--cg-ice),var(--cg-gold));transition:width .5s}
+.cgroot .lm-foot{font-size:10px;color:var(--cg-muted);margin-top:8px;font-family:'JetBrains Mono',monospace}
+.cgroot .lm-foot.ok{color:var(--cg-green)}
+
 /* header */
 .cgroot .top{display:flex;justify-content:space-between;gap:16px;align-items:stretch;margin-bottom:12px;flex-wrap:wrap}
 .cgroot .eyebrow{font-size:11px;letter-spacing:3px;color:var(--cg-muted);margin-bottom:4px}

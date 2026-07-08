@@ -6,10 +6,12 @@ import { useAccount, useSwitchChain, useWriteContract, usePublicClient } from 'w
 import { Wallet, LogOut, Coins, Loader2, Trophy } from 'lucide-react';
 import { mountCardGame } from '@/lib/cardgame/mount';
 import { CARDGAME_ESCROW, CARDGAME_CHAIN_ID, ESCROW_ABI, STATUS } from '@/lib/cardgame/escrow';
+import LiveMatches from '@/components/cardgame/LiveMatches';
 import { formatEther, type Hex } from 'viem';
 import './cardgame.css';
 
 type Phase = 'idle' | 'creating' | 'joining' | 'waiting' | 'playing' | 'settling' | 'settled';
+type Mode = 'practice' | 'staked' | 'watch';
 
 export default function CardGamePage() {
   const { ready, authenticated, login, logout } = usePrivy();
@@ -20,7 +22,7 @@ export default function CardGamePage() {
   const rootRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<null | (() => void)>(null);
 
-  const [mode, setMode] = useState<'practice' | 'staked'>('practice');
+  const [mode, setMode] = useState<Mode>('practice');
   const [phase, setPhase] = useState<Phase>('idle');
   const [note, setNote] = useState('');
   const [matchId, setMatchId] = useState<Hex | null>(null);
@@ -30,13 +32,19 @@ export default function CardGamePage() {
 
   const shortAddr = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '';
 
-  // Practice mode: free interactive demo (mount whenever wallet/mode changes)
+  // Practice mode: free interactive demo (mount whenever wallet/mode changes).
+  // Watch mode renders the live feed instead; staked mounts on demand.
   useEffect(() => {
     if (mode !== 'practice' || !rootRef.current) return;
     cleanupRef.current?.();
     cleanupRef.current = mountCardGame(rootRef.current, { address: address ?? null });
     return () => { cleanupRef.current?.(); cleanupRef.current = null; };
   }, [address, mode]);
+
+  // tear down any running game when leaving to watch mode
+  useEffect(() => {
+    if (mode === 'watch') { cleanupRef.current?.(); cleanupRef.current = null; }
+  }, [mode]);
 
   const ensureFuji = useCallback(async () => {
     if (chainId !== CARDGAME_CHAIN_ID) await switchChainAsync({ chainId: CARDGAME_CHAIN_ID });
@@ -158,6 +166,7 @@ export default function CardGamePage() {
             <div className="cg-modes">
               <button className={`cg-mode ${mode === 'practice' ? 'on' : ''}`} onClick={() => { setMode('practice'); setPhase('idle'); setNote(''); }}>Practice</button>
               <button className={`cg-mode ${mode === 'staked' ? 'on' : ''}`} onClick={() => { setMode('staked'); }}>Staked · Testnet</button>
+              <button className={`cg-mode ${mode === 'watch' ? 'on' : ''}`} onClick={() => { setMode('watch'); }}>Watch · Live</button>
             </div>
             <button className="btn ghost" onClick={logout} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <LogOut size={13} /> Disconnect
@@ -168,10 +177,16 @@ export default function CardGamePage() {
             <button className="btn" onClick={login} disabled={!ready} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <Wallet size={15} /> CONNECT WALLET
             </button>
-            <span className="pill">connect to race under your address — staked testnet matches inside</span>
+            <div className="cg-modes">
+              <button className={`cg-mode ${mode === 'practice' ? 'on' : ''}`} onClick={() => { setMode('practice'); }}>Practice</button>
+              <button className={`cg-mode ${mode === 'watch' ? 'on' : ''}`} onClick={() => { setMode('watch'); }}>Watch · Live</button>
+            </div>
+            <span className="pill">connect for staked matches — or watch live now</span>
           </>
         )}
       </div>
+
+      {mode === 'watch' && <LiveMatches myAddress={address ?? undefined} />}
 
       {mode === 'staked' && authenticated && address && (
         <div className="cg-stakebar glass">
@@ -202,7 +217,7 @@ export default function CardGamePage() {
         <div className="cg-stakebar glass"><div className="cg-stake-sub">Connect your wallet to stake a real Fuji testnet match.</div></div>
       )}
 
-      <div ref={rootRef} />
+      <div ref={rootRef} style={{ display: mode === 'watch' ? 'none' : undefined }} />
     </div>
   );
 }

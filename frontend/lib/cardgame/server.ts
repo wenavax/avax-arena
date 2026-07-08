@@ -8,7 +8,7 @@
  */
 import 'server-only';
 import {
-  createPublicClient, createWalletClient, http, fallback, parseAbi, keccak256,
+  createPublicClient, createWalletClient, http, fallback, parseAbi, parseAbiItem, keccak256,
   encodeAbiParameters, type Hex, type Address,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -100,6 +100,65 @@ export async function createStakedMatch(player: Address, nonce: number): Promise
   }
 
   return { matchId, bots, entryFee: fee.toString() };
+}
+
+// ── Live spectator feed: aggregate escrow events into match objects ──────────
+
+const DEPLOY_BLOCK = 56878556n;
+const EV = {
+  created: parseAbiItem('event MatchCreated(bytes32 indexed matchId, address[4] players)'),
+  joined: parseAbiItem('event PlayerJoined(bytes32 indexed matchId, address indexed player, uint8 paidCount)'),
+  locked: parseAbiItem('event MatchLocked(bytes32 indexed matchId)'),
+  settled: parseAbiItem('event MatchSettled(bytes32 indexed matchId, address[4] ranking)'),
+};
+
+export interface LiveMatch {
+  matchId: Hex;
+  status: 'Open' | 'Locked' | 'Settled';
+  players: Address[];
+  paidCount: number;
+  createdBlock: number;
+  ranking?: Address[];
+  block: number; // latest activity block (for ordering)
+}
+
+/** Read recent escrow events and fold them into a list of matches (newest first). */
+export async function getRecentMatches(lookback = 20000n, limit = 24): Promise<{ matches: LiveMatch[]; entryFee: string; rewards: string[]; head: number }> {
+  const head = await pub.getBlockNumber();
+  const from = head - lookback > DEPLOY_BLOCK ? head - lookback : DEPLOY_BLOCK;
+
+  const [fee, rewards, created, joined, locked, settled] = await Promise.all([
+    entryFee(),
+    pub.readContract({ address: CARDGAME_ESCROW, abi: parseAbi(['function getRewards() view returns (uint256[4])']), functionName: 'getRewards' }),
+    pub.getLogs({ address: CARDGAME_ESCROW, event: EV.created, fromBlock: from, toBlock: head }),
+    pub.getLogs({ address: CARDGAME_ESCROW, event: EV.joined, fromBlock: from, toBlock: head }),
+    pub.getLogs({ address: CARDGAME_ESCROW, event: EV.locked, fromBlock: from, toBlock: head }),
+    pub.getLogs({ address: CARDGAME_ESCROW, event: EV.settled, fromBlock: from, toBlock: head }),
+  ]);
+
+  const byId = new Map<Hex, LiveMatch>();
+  for (const l of created) {
+    const id = l.args.matchId as Hex;
+    byId.set(id, {
+      matchId: id, status: 'Open', players: (l.args.players as Address[]) ?? [],
+      paidCount: 0, createdBlock: Number(l.blockNumber), block: Number(l.blockNumber),
+    });
+  }
+  for (const l of joined) {
+    const m = byId.get(l.args.matchId as Hex);
+    if (m) { m.paidCount = Number(l.args.paidCount); m.block = Math.max(m.block, Number(l.blockNumber)); }
+  }
+  for (const l of locked) {
+    const m = byId.get(l.args.matchId as Hex);
+    if (m && m.status === 'Open') { m.status = 'Locked'; m.paidCount = 4; m.block = Math.max(m.block, Number(l.blockNumber)); }
+  }
+  for (const l of settled) {
+    const m = byId.get(l.args.matchId as Hex);
+    if (m) { m.status = 'Settled'; m.ranking = (l.args.ranking as Address[]) ?? []; m.block = Math.max(m.block, Number(l.blockNumber)); }
+  }
+
+  const matches = [...byId.values()].sort((a, b) => b.block - a.block).slice(0, limit);
+  return { matches, entryFee: fee.toString(), rewards: (rewards as bigint[]).map((r) => r.toString()), head: Number(head) };
 }
 
 /** Sign the final ranking and submit settle (operator = trustedSigner). */
