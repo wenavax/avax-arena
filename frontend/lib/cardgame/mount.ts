@@ -8,6 +8,13 @@
 
 export interface CardGameOptions {
   address?: string | null;
+  /** Staked (on-chain) mode: real player + 3 bot addresses; onFinish gets the
+   *  final ranking as on-chain addresses (winner first) for settle(). */
+  staked?: {
+    player: string;
+    bots: string[]; // exactly 3
+    onFinish: (rankingAddresses: string[]) => void;
+  };
 }
 
 const TEMPLATE = `
@@ -109,10 +116,11 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   // ---- Blockchain dressing (cosmetic — mirrors the MatchEscrow flow) ----
   function mockHex(n: number) { let s = '0x'; for (let i = 0; i < n; i++) s += '0123456789abcdef'[Math.floor(Math.random() * 16)]; return s; }
   function short(a: string) { return a.slice(0, 6) + '…' + a.slice(-4); }
-  const ADDR: Record<string, string> = {
-    P1: opts.address || mockHex(40), P2: mockHex(40), P3: mockHex(40), P4: mockHex(40),
-  };
-  function nameOf(id: string) { return id === 'P1' ? (opts.address ? 'YOU ' + short(ADDR.P1) : 'YOU') : short(ADDR[id]); }
+  const ADDR: Record<string, string> = opts.staked
+    ? { P1: opts.staked.player, P2: opts.staked.bots[0], P3: opts.staked.bots[1], P4: opts.staked.bots[2] }
+    : { P1: opts.address || mockHex(40), P2: mockHex(40), P3: mockHex(40), P4: mockHex(40) };
+  const meAddr = opts.staked ? opts.staked.player : opts.address;
+  function nameOf(id: string) { return id === 'P1' ? (meAddr ? 'YOU ' + short(ADDR.P1) : 'YOU') : short(ADDR[id]); }
   let blockNo = 48213000 + Math.floor(Math.random() * 9000);
 
   // ---- Deck ----
@@ -297,6 +305,8 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       `<div class="settleRow"><span class="dim">fee</span><span class="addr">treasury</span>
         <b class="dim">◆ 0.2</b><span class="txh">${short(mockHex(64))}</span><span class="ok">✓</span></div></div>`;
     render(arr, rw);
+    // staked mode: hand the final ranking (winner first) back as on-chain addresses
+    if (opts.staked) opts.staked.onFinish(arr.map((p) => ADDR[p.id]));
   }
 
   // ---- Rendering ----
