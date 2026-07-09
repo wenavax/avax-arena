@@ -64,8 +64,18 @@
 /* engine-driven staked view */
 .cgroot .eng-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .cgroot .eng-round{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:2px;font-size:13px}
-.cgroot .eng-track{display:flex;flex-direction:column;gap:6px}
+.cgroot .eng-track{display:flex;flex-direction:column;gap:6px;position:relative} /* positions .popup / .cg-banner */
 .cgroot .eng-board td,.cgroot .eng-board th{text-align:left;padding:5px 4px;border-bottom:1px solid var(--cg-line)}
+
+/* shared juice for the engine views (staked + multiplayer) */
+.cgroot .cg-banner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:6;pointer-events:none;
+  font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:34px;letter-spacing:8px;color:var(--cg-text);
+  text-shadow:0 0 18px rgba(237,47,57,.6),0 0 44px rgba(237,47,57,.35);animation:cg-bannerfade 1.15s ease forwards}
+@keyframes cg-bannerfade{0%{opacity:0;transform:scale(.82)}18%{opacity:1;transform:scale(1.04)}55%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.06)}}
+.cgroot .cg-elog-hd{margin:14px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:var(--cg-muted);font-family:'Chakra Petch',sans-serif}
+.cgroot .eng-settle:empty{display:none}
+.cgroot .settleHead a.txh{color:var(--cg-ice);text-decoration:none}
+.cgroot .settleHead a.txh:hover{text-decoration:underline}
 
 /* header */
 .cgroot .top{display:flex;justify-content:space-between;gap:16px;align-items:stretch;margin-bottom:12px;flex-wrap:wrap}
@@ -88,10 +98,40 @@
 .cgroot .chip{font-size:11px;padding:3px 10px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid var(--cg-line);color:var(--cg-muted)}
 .cgroot .chip.gold{border-color:rgba(245,197,66,.4);color:var(--cg-gold)}
 .cgroot .metaRow{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.cgroot .metaRow .cg-viewtoggle{margin-left:auto}
+.cgroot .top--slim{margin-bottom:10px}
+.cgroot .top--slim .sub{max-width:560px}
 .cgroot .chip.tick{border-color:rgba(34,197,94,.5);color:var(--cg-green);transition:.3s}
 
 /* track */
 .cgroot .track{padding:16px;margin-bottom:14px;position:relative;overflow:hidden}
+
+/* 3D track view (three.js canvas host) + view toggle */
+.cgroot .track3d{margin-bottom:14px;height:390px;position:relative;overflow:hidden;padding:4px}
+.cgroot .cg-fs{position:absolute;top:10px;right:10px;z-index:6;cursor:pointer;
+  width:34px;height:34px;border-radius:9px;font-size:16px;line-height:1;
+  background:rgba(10,10,16,.65);border:1px solid rgba(255,255,255,.18);color:#ececee;
+  backdrop-filter:blur(6px);transition:border-color .2s,box-shadow .2s}
+.cgroot .cg-fs:hover{border-color:var(--cg-ice);box-shadow:0 0 12px rgba(77,208,225,.35)}
+.cgroot .track3d:fullscreen{height:100vh;width:100vw;border-radius:0;padding:0;margin:0;background:#0a0a10}
+.cgroot .track3d:fullscreen canvas{border-radius:0!important}
+/* iOS fallback: no element-fullscreen API → pin the container over the viewport */
+.cgroot .track3d.cg-fs-fake{position:fixed;inset:0;z-index:70;height:100dvh;width:100vw;
+  border-radius:0;padding:0;margin:0;background:#0a0a10}
+.cgroot .track3d.cg-fs-fake canvas{border-radius:0!important}
+body.cg-noscroll{overflow:hidden}
+/* fullscreen HUD: the hand panel docks to the bottom of the 3D view so you keep
+   playing; the vehicle selector floats centre between rounds */
+.cgroot .track3d .cg-fsdock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
+  width:min(780px,95vw);max-height:46vh;overflow:auto;z-index:8;
+  background:rgba(10,10,16,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.14);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.cgroot .track3d .cg-fsveh{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:min(880px,93vw);z-index:9;margin:0}
+.cgroot .track3d .cg-fsveh:empty{display:none}
+.cgroot .cg-viewtoggle{cursor:pointer;font-family:'Chakra Petch',sans-serif;font-weight:600;letter-spacing:1px;
+  border-color:rgba(77,208,225,.45);color:var(--cg-ice);background:rgba(77,208,225,.07);transition:box-shadow .25s,border-color .25s}
+.cgroot .cg-viewtoggle:hover{border-color:var(--cg-ice);box-shadow:0 0 14px rgba(77,208,225,.3)}
 .cgroot .lane{position:relative;height:50px;margin:9px 0;border-radius:10px;overflow:hidden;
   background:linear-gradient(90deg,rgba(255,255,255,.035),rgba(255,255,255,.012) 60%,rgba(77,208,225,.03));
   border:1px solid rgba(255,255,255,.04)}
@@ -165,23 +205,54 @@
 .cgroot .panel{padding:16px}
 .cgroot .panel h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:var(--cg-muted)}
 
-/* playing cards */
-.cgroot .hand{display:flex;flex-wrap:wrap;gap:8px}
-.cgroot .card{width:54px;height:76px;border-radius:9px;position:relative;cursor:pointer;user-select:none;
-  background:linear-gradient(160deg,#eef3fb,#c3cfe3);color:#141a26;
-  border:2px solid transparent;box-shadow:0 3px 10px rgba(0,0,0,.35);
+/* playing cards — layered face: inner frame, gloss sweep, watermark art */
+.cgroot .hand{display:flex;flex-wrap:wrap;gap:9px}
+.cgroot .card{width:58px;height:82px;border-radius:10px;position:relative;cursor:pointer;user-select:none;
+  overflow:hidden;
+  background:
+    radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.85),transparent 60%),
+    linear-gradient(165deg,#f4f8ff 0%,#dde6f4 45%,#b9c8de 100%);
+  color:#141a26;
+  border:2px solid rgba(255,255,255,.65);box-shadow:0 3px 10px rgba(0,0,0,.4),inset 0 0 0 1px rgba(20,26,38,.12);
   transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease;
-  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px;
+  display:flex;align-items:center;justify-content:center;font-weight:700;
   font-family:'Chakra Petch',sans-serif}
+.cgroot .card::before{content:'';position:absolute;inset:4px;border-radius:6px;
+  border:1px solid rgba(20,26,38,.18);pointer-events:none}
+.cgroot .card::after{content:'';position:absolute;top:-40%;left:-70%;width:55%;height:180%;
+  transform:skewX(-22deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);
+  pointer-events:none;transition:left .5s ease;opacity:.7}
+.cgroot .card:hover::after{left:130%}
 .cgroot .card:hover{transform:translateY(-4px)}
-.cgroot .card .ix{position:absolute;top:4px;left:6px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:600;opacity:.75}
-.cgroot .card .ix2{position:absolute;bottom:4px;right:6px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:600;opacity:.75;transform:rotate(180deg)}
-.cgroot .card small{font-size:7.5px;font-weight:700;position:absolute;bottom:5px;left:0;right:0;text-align:center;letter-spacing:1px}
-.cgroot .card.magic{background:linear-gradient(160deg,#ffe9a8,#f5c542);color:#4a3500}
-.cgroot .card.nail{background:linear-gradient(160deg,#ffb8b8,#ed6b6b);color:#4a0d0d}
-.cgroot .card.oil{background:linear-gradient(160deg,#b9bfd1,#7c8299);color:#14161f}
+.cgroot .card .cv{position:relative;z-index:2;font-size:26px;line-height:1;
+  text-shadow:0 1px 0 rgba(255,255,255,.8),0 2px 4px rgba(20,26,38,.25)}
+.cgroot .card .cardart{position:absolute;bottom:-6px;right:-4px;font-size:40px;font-style:normal;
+  opacity:.13;pointer-events:none;transform:rotate(-14deg);z-index:1}
+.cgroot .card .ix{position:absolute;top:4px;left:6px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:700;opacity:.8;z-index:2}
+.cgroot .card .ix2{position:absolute;bottom:4px;right:6px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:700;opacity:.8;transform:rotate(180deg);z-index:2}
+.cgroot .card small{font-size:7.5px;font-weight:800;position:absolute;bottom:5px;left:0;right:0;text-align:center;letter-spacing:1.5px;z-index:2}
+/* high cards (9-10): gold-trimmed premium face */
+.cgroot .card.hi{border-color:rgba(245,197,66,.8);
+  background:
+    radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.9),transparent 60%),
+    linear-gradient(165deg,#fff7e0 0%,#f7e7b5 45%,#e3c56e 100%)}
+.cgroot .card.hi::before{border-color:rgba(163,116,16,.35)}
+.cgroot .card.hi .cv{color:#5a3f05}
+/* magic cards: saturated faces + glowing icon art */
+.cgroot .card.magic{background:
+    radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.7),transparent 60%),
+    linear-gradient(165deg,#ffe9a8,#f5c542);color:#4a3500;border-color:rgba(245,197,66,.9)}
+.cgroot .card.magic .cardart{opacity:.4;filter:drop-shadow(0 0 6px rgba(245,197,66,.9))}
+.cgroot .card.nail{background:
+    radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.6),transparent 60%),
+    linear-gradient(165deg,#ffb8b8,#ed6b6b);color:#4a0d0d;border-color:rgba(237,47,57,.75)}
+.cgroot .card.nail .cardart{opacity:.4;filter:drop-shadow(0 0 6px rgba(237,47,57,.8))}
+.cgroot .card.oil{background:
+    radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.35),transparent 60%),
+    linear-gradient(165deg,#b9bfd1,#7c8299);color:#14161f;border-color:rgba(124,130,153,.8)}
+.cgroot .card.oil .cardart{opacity:.4;filter:drop-shadow(0 0 5px rgba(40,44,58,.9))}
 .cgroot .card.sel{border-color:var(--cg-red);transform:translateY(-9px);
-  box-shadow:0 0 0 1px rgba(237,47,57,.35),0 10px 24px rgba(237,47,57,.28)}
+  box-shadow:0 0 0 1px rgba(237,47,57,.4),0 10px 24px rgba(237,47,57,.32)}
 
 .cgroot .btn{background:linear-gradient(135deg,var(--cg-red),var(--cg-red2));color:#fff;border:0;border-radius:10px;
   padding:10px 18px;font-weight:700;cursor:pointer;font-size:13px;letter-spacing:1px;
@@ -195,6 +266,38 @@
 .cgroot .cooldown>div{height:100%;background:linear-gradient(90deg,var(--cg-red),var(--cg-gold));width:0%}
 .cgroot .pill{font-size:11px;padding:3px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--cg-line);color:var(--cg-muted)}
 .cgroot .veh{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+
+/* vehicle-selection screen (shared by practice + staked renderers) */
+.cgroot .cg-vsel-slot{margin-bottom:14px}
+.cgroot .cg-vsel-slot:empty,.cgroot .eng-vsel-slot:empty{display:none}
+.cgroot .eng-vsel-slot{margin-bottom:12px}
+.cgroot .cg-vsel{padding:16px}
+.cgroot .cg-vsel-hd{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.cgroot .cg-vsel-ttl{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:2px;font-size:13px}
+.cgroot .cg-vsel-opp{font-size:11px;color:var(--cg-muted)}
+.cgroot .cg-vsel-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(max-width:560px){.cgroot .cg-vsel-cards{grid-template-columns:1fr}}
+.cgroot .cg-vcard{--vc:#8ea0b5;text-align:left;display:flex;flex-direction:column;gap:7px;
+  padding:13px;border-radius:12px;cursor:pointer;color:var(--cg-text);font-family:inherit;
+  background:rgba(255,255,255,.03);border:1px solid var(--cg-line);
+  transition:transform .12s ease,box-shadow .18s ease,border-color .18s ease}
+.cgroot .cg-vcard:hover:not(:disabled){transform:translateY(-3px);border-color:var(--vc);
+  box-shadow:0 0 0 1px var(--vc),0 10px 26px rgba(0,0,0,.35),0 0 34px color-mix(in srgb,var(--vc) 22%,transparent)}
+.cgroot .cg-vcard:active:not(:disabled){transform:translateY(-1px)}
+.cgroot .cg-vcard.used{opacity:.4;cursor:not-allowed;filter:grayscale(.55)}
+.cgroot .cg-vcard.vr-legendary{--vc:#f5c542}
+.cgroot .cg-vcard.vr-epic{--vc:#a78bfa}
+.cgroot .cg-vcard.vr-common{--vc:#8ea0b5}
+.cgroot .cg-vrar{font-size:9px;letter-spacing:2px;font-family:'JetBrains Mono',monospace;color:var(--vc)}
+.cgroot .cg-vname{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:17px;letter-spacing:1px}
+.cgroot .cg-vstat{display:flex;align-items:center;gap:7px;font-size:10px}
+.cgroot .cg-vlab{width:44px;color:var(--cg-muted);font-family:'JetBrains Mono',monospace;letter-spacing:.5px}
+.cgroot .cg-vbar{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+.cgroot .cg-vbar>i{display:block;height:100%;background:var(--vc);border-radius:3px}
+.cgroot .cg-vstat b{width:16px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px}
+.cgroot .cg-vblurb{font-size:10.5px;color:var(--cg-muted);margin-top:2px}
+.cgroot .eng-picks{font-size:11px;margin-bottom:8px}
+.cgroot .eng-picks:empty{display:none}
 
 /* standings */
 .cgroot table{width:100%;border-collapse:collapse;font-size:12px}

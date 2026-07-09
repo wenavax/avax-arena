@@ -5,6 +5,9 @@
  * connected wallet address becomes P1's racer identity in the escrow panel,
  * lane tag and settlement rows.
  */
+import { vehicleSelector, VEH_META, vehAbbr, vehColor } from './vehicles';
+import { bestPlay } from './bestPlay';
+import type { Track3D } from './track3d';
 
 export interface CardGameOptions {
   address?: string | null;
@@ -19,46 +22,35 @@ export interface CardGameOptions {
 
 const TEMPLATE = `
 <div class="toast" id="cgToast"></div>
-<header class="top">
+<header class="top top--slim">
   <div>
     <div class="eyebrow">❄ FROSTBITE · AVALANCHE</div>
-    <h1>CAR(D) <span class="red">GAME</span> <span class="tnet">TESTNET</span></h1>
-    <div class="sub">You race 3 bots to <b>1000u</b>. Play card combos for speed — non-magic cap ×5.00.
-      Off-chain demo — the escrow phase (real 1 AVAX entries) ships later.</div>
-  </div>
-  <div class="escrow glass">
-    <div class="esc-top"><span class="dot"></span> ESCROW · AVALANCHE FUJI <span class="simtag">TESTNET · SIMULATED</span></div>
-    <div class="pool">PRIZE POOL <b><i>◆</i> 4.00 AVAX</b></div>
-    <div class="chips">
-      <span class="chip">Entry 1 AVAX × 4</span>
-      <span class="chip gold">1st · 2.0</span><span class="chip">2nd · 1.0</span>
-      <span class="chip">3rd · 0.5</span><span class="chip">4th · 0.3</span>
-    </div>
-    <div class="mono dim" style="font-size:10px" id="roomHash"></div>
+    <h1>CAR(D) <span class="red">GAME</span></h1>
+    <div class="sub">Race 3 bots to <b>1000u</b> — play card combos for speed. Practice is free; the pot is simulated.</div>
   </div>
 </header>
 
 <div class="metaRow">
-  <span class="chip mono" id="seedChip"></span>
-  <span class="chip mono" id="blockChip"></span>
   <span class="chip" id="roundChip">ROUND 1/3</span>
+  <span class="chip gold">POOL ◆ 4.00 · SIM</span>
+  <span class="chip mono" id="seedChip"></span>
+  <button class="chip cg-viewtoggle" id="viewToggle" title="Switch track view">🎥 3D VIEW</button>
 </div>
 
+<div class="cg-vsel-slot" id="vehSelect"></div>
 <div class="track glass" id="track"></div>
+<div class="track3d glass" id="track3d" style="display:none"><button class="cg-fs" id="fsBtn" title="Fullscreen">⛶</button></div>
 
 <div class="grid">
-  <div class="panel glass">
+  <div class="panel glass" id="handPanel">
     <h3>Your hand — <span id="handLimit"></span></h3>
     <div class="hand" id="hand"></div>
     <div class="cooldown"><div id="cdbar"></div></div>
     <div class="row">
       <button class="btn" id="playBtn">PLAY SELECTED</button>
+      <button class="btn ghost" id="bestBtn">✨ Best</button>
       <button class="btn ghost" id="clearBtn">Clear</button>
       <span class="pill" id="playPreview">select 1–8 cards</span>
-    </div>
-    <div class="row" id="vehRow" style="display:none">
-      <span class="pill">Next round vehicle:</span>
-      <div class="veh" id="vehChoices"></div>
     </div>
   </div>
 
@@ -71,8 +63,7 @@ const TEMPLATE = `
   </div>
 </div>
 
-<footer class="foot dim">Server-authoritative rules · deterministic seed → every match is replayable &amp; auditable ·
-  settlement by signed result (<span class="mono">MatchEscrow.sol</span>, entry 1 AVAX × 4 → payouts 2.0 / 1.0 / 0.5 / 0.3, fee 0.2)</footer>
+<footer class="foot dim">Deterministic seed · replayable &amp; auditable · staked mode settles on-chain via <span class="mono">MatchEscrow.sol</span></footer>
 `;
 
 /* neon araba — tekerlekler ayrı <g>'lerde ki CSS keyframe'ler döndürebilsin */
@@ -121,7 +112,6 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     : { P1: opts.address || mockHex(40), P2: mockHex(40), P3: mockHex(40), P4: mockHex(40) };
   const meAddr = opts.staked ? opts.staked.player : opts.address;
   function nameOf(id: string) { return id === 'P1' ? (meAddr ? 'YOU ' + short(ADDR.P1) : 'YOU') : short(ADDR[id]); }
-  let blockNo = 48213000 + Math.floor(Math.random() * 9000);
 
   // ---- Deck ----
   let cid = 0;
@@ -166,9 +156,12 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   // ---- Game state ----
   let deck: Card[] = [], players: Player[] = [], t = 0, roundIndex = 0;
   let tickH: ReturnType<typeof setInterval> | null = null;
-  let blockH: ReturnType<typeof setInterval> | null = null;
   let toastT: ReturnType<typeof setTimeout> | null = null;
   let selected = new Set<number>();
+  // 3D view (pure renderer swap — the game logic/tick is identical either way)
+  let track3d: Track3D | null = null;
+  let view3dBusy = false;
+  let unmounted = false; // guards the async 3D load racing a page unmount
   const usedVeh: Record<string, Record<string, boolean>> = { P1: {}, P2: {}, P3: {}, P4: {} };
   function mkPlayers(): Player[] {
     return ['P1', 'P2', 'P3', 'P4'].map((id) => ({
@@ -194,9 +187,27 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     });
     buildTrack();
     t = 0; tickH = setInterval(tick, 100);
-    $('vehRow').style.display = 'none';
     $('roundChip').textContent = `ROUND ${roundIndex + 1}/3`;
     log(`<b>Round ${roundIndex + 1}</b> started`); render();
+  }
+
+  /* Vehicle-selection screen (round start). Player picks; bots take first
+   * available (deterministic). Shared card UI with the staked renderer. */
+  function showVehicleSelect() {
+    const box = $('vehSelect'); box.innerHTML = '';
+    box.appendChild(vehicleSelector({
+      round: roundIndex,
+      used: usedVeh.P1,
+      opponents: 'Bots auto-pick the rest',
+      onPick: (v) => {
+        const choices: Record<string, string> = { P1: v };
+        players.forEach((p) => { if (p.id !== 'P1') choices[p.id] = remainingVeh(p.id)[0]; });
+        box.innerHTML = '';
+        $('roundNo').textContent = String(roundIndex + 1);
+        startRound(choices);
+        players.forEach((p) => { if (p.id !== 'P1') log(`${nameOf(p.id)} takes <b>${VEH_META[choices[p.id]]?.rarity ?? choices[p.id]}</b>`); });
+      },
+    }));
   }
   function speed(p: Player) {
     const nm = (p.nm && t < p.nm.endsAt) ? p.nm.mult : 1; let mg = 1;
@@ -274,19 +285,8 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     roundIndex++;
     if (roundIndex >= 3) { finishMatch(); return; }
     render();
-    $('vehRow').style.display = 'flex';
-    const box = $('vehChoices'); box.innerHTML = '';
-    remainingVeh('P1').forEach((v) => {
-      const b = document.createElement('button'); b.className = 'btn ghost';
-      b.textContent = `${v} (spd ${CFG.VEH[v].s})`;
-      b.onclick = () => {
-        const choices: Record<string, string> = { P1: v };
-        players.forEach((p) => { if (p.id !== 'P1') choices[p.id] = remainingVeh(p.id)[0]; });
-        $('roundNo').textContent = String(roundIndex + 1); startRound(choices);
-      };
-      box.appendChild(b);
-    });
     log(`Choose your vehicle for round ${roundIndex + 1}`);
+    showVehicleSelect();
   }
   function finishMatch() {
     const arr = [...players].sort((a, b) => b.total - a.total ||
@@ -312,7 +312,9 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   // ---- Rendering ----
   function cssv(n: string) { return getComputedStyle(root).getPropertyValue(n); }
   function popup(txt: string, cls?: string) {
-    const tk = $('track'); const el = document.createElement('div');
+    // in 3D mode the 2D track is hidden — float combo popups over the 3D scene
+    const tk = track3d ? $('track3d') : $('track');
+    const el = document.createElement('div');
     el.className = 'popup' + (cls ? ' ' + cls : ''); el.textContent = txt; tk.appendChild(el);
     setTimeout(() => el.remove(), 1400);
   }
@@ -339,6 +341,13 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     });
   }
   function render(finalOrder?: Player[], rw?: number[]) {
+    // 3D view: forward a per-tick snapshot; three.js lerps to 60fps on its own
+    track3d?.update(players.map((p) => ({
+      pid: p.id, dist: p.dist, speed: speed(p),
+      boosted: !!(p.nm && t < p.nm.endsAt) && !p.fin,
+      fx: p.fx && t < p.fx.until && !p.fin ? p.fx.cls : (p.debuff && t < p.debuff.until && !p.fin ? p.debuff.cls : null),
+      fin: p.fin, veh: p.veh,
+    })));
     players.forEach((p) => {
       const ref = laneRefs[p.id]; if (!ref) return;
       const boosted = !!(p.nm && t < p.nm.endsAt) && !p.fin;
@@ -346,7 +355,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       const dbCls = (p.debuff && t < p.debuff.until && !p.fin) ? ' ' + p.debuff.cls : '';
       ref.car.style.left = (p.dist / CFG.TRACK * 93) + '%';
       ref.car.className = 'car' + (p.fin ? ' fin' : ' run') + (boosted ? ' boost' : '') + fxCls + dbCls;
-      ref.tag.textContent = `${nameOf(p.id)}${p.veh ? ' · ' + p.veh[0] : ''}`;
+      ref.tag.innerHTML = `${nameOf(p.id)}${p.veh ? ` · <b style="color:${vehColor(p.veh)}">${vehAbbr(p.veh)}</b>` : ''}`;
       const cd = Math.max(0, p.cdUntil - t);
       ref.hud.textContent = p.fin ? `✔ ${p.ft}s` : `${Math.round(speed(p))}u/s${cd > 0 ? ' · cd' + cd.toFixed(1) : ''}`;
     });
@@ -358,9 +367,10 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       h.dataset.sig = sig; h.innerHTML = '';
       p1.hand.forEach((c, i) => {
         const el = document.createElement('div');
-        el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (selected.has(i) ? ' sel' : '');
-        const icon = c.magic ? MAGIC_ICON[c.magic] + ' ' : '';
-        el.innerHTML = `<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>${icon}${c.value}${c.magic ? `<small>${c.magic}</small>` : ''}`;
+        el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(i) ? ' sel' : '');
+        el.innerHTML = `<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
+          <i class="cardart">${c.magic ? MAGIC_ICON[c.magic] : '❄'}</i>
+          <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : ''}`;
         el.onpointerdown = (e) => {
           e.preventDefault();
           if (selected.has(i)) selected.delete(i); else if (selected.size < 8) selected.add(i);
@@ -406,30 +416,107 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     }
   };
   ($('clearBtn')).onclick = () => { selected.clear(); updatePreview(); render(); };
+  ($('bestBtn')).onclick = () => {
+    const p1 = players[0];
+    if (p1.fin || t < p1.cdUntil || !p1.hand.length) return;
+    const pickIds = new Set(bestPlay(p1.hand).map((c) => c.id));
+    selected = new Set(p1.hand.map((c, i) => (pickIds.has(c.id) ? i : -1)).filter((i) => i >= 0));
+    updatePreview(); render();
+  };
+
+  // Fullscreen for the 3D view (Esc exits natively; ResizeObserver re-fits).
+  // iOS Safari has no element requestFullscreen → CSS pseudo-fullscreen fallback.
+  // While fullscreen, the hand panel + vehicle selector + toast are re-parented
+  // INTO the 3D container (only the fullscreened subtree is visible) so you can
+  // keep playing cards at the bottom of the screen. DOM moves keep listeners.
+  const dockMarkers = new Map<HTMLElement, Comment>();
+  function dockIntoFS(on: boolean) {
+    const host = $('track3d');
+    const items: Array<[HTMLElement, string]> = [
+      [$('handPanel'), 'cg-fsdock'],
+      [$('vehSelect'), 'cg-fsveh'],
+      [$('cgToast'), 'cg-fstoast'],
+    ];
+    for (const [el, cls] of items) {
+      if (!el) continue;
+      if (on) {
+        if (dockMarkers.has(el)) continue;
+        const marker = document.createComment('fs-dock');
+        el.parentElement?.insertBefore(marker, el);
+        dockMarkers.set(el, marker);
+        host.appendChild(el);
+        el.classList.add(cls);
+      } else {
+        const marker = dockMarkers.get(el);
+        el.classList.remove(cls);
+        if (marker?.parentNode) { marker.parentNode.insertBefore(el, marker); marker.remove(); }
+        dockMarkers.delete(el);
+      }
+    }
+  }
+  const onFsChange = () => dockIntoFS(document.fullscreenElement === $('track3d'));
+  document.addEventListener('fullscreenchange', onFsChange);
+  ($('fsBtn')).onclick = (e) => {
+    e.stopPropagation();
+    const el = $('track3d');
+    if (typeof el.requestFullscreen === 'function') {
+      if (document.fullscreenElement) void document.exitFullscreen();
+      else void el.requestFullscreen();
+    } else {
+      const on = !el.classList.contains('cg-fs-fake');
+      el.classList.toggle('cg-fs-fake', on);
+      document.body.classList.toggle('cg-noscroll', on);
+      dockIntoFS(on);
+    }
+  };
+
+  // ---- 2D/3D view toggle (lazy-loads three.js on first use) ----
+  ($('viewToggle')).onclick = async () => {
+    if (view3dBusy) return;
+    const btn = $('viewToggle') as HTMLButtonElement;
+    if (track3d) {
+      track3d.destroy(); track3d = null;
+      $('track3d').style.display = 'none';
+      $('track').style.display = '';
+      btn.textContent = '🎥 3D VIEW';
+      return;
+    }
+    view3dBusy = true;
+    btn.textContent = '… LOADING 3D';
+    try {
+      const { createTrack3D } = await import('./track3d');
+      const seats = players.map((p) => ({ pid: p.id, color: cssv(COLORS[p.id]).trim() || '#ed2f39', name: nameOf(p.id) }));
+      $('track3d').style.display = 'block';
+      const inst = await createTrack3D($('track3d'), seats);
+      if (unmounted) { inst.destroy(); return; } // page left while three.js loaded
+      track3d = inst;
+      $('track').style.display = 'none';
+      btn.textContent = '🗺 2D VIEW';
+      render();
+    } catch (e) {
+      $('track3d').style.display = 'none';
+      btn.textContent = '🎥 3D VIEW';
+      log('3D view unavailable on this device');
+    } finally { view3dBusy = false; }
+  };
 
   // ---- Boot ----
   deck = buildDeck(); players = mkPlayers(); roundIndex = 0;
   players.forEach((p) => p.hand.push(...draw(8)));
-  $('roomHash').textContent = opts.address
-    ? `room ${short(mockHex(64))} · you ${short(opts.address)} · players 4/4 · locked`
-    : `room ${short(mockHex(64))} · players 4/4 · locked`;
   $('seedChip').textContent = `seed ${short(mockHex(64))}`;
-  const bc = $('blockChip');
-  const bump = () => {
-    blockNo++; bc.textContent = `⛓ block #${blockNo.toLocaleString('en-US')}`;
-    bc.classList.add('tick'); setTimeout(() => bc.classList.remove('tick'), 350);
-  };
-  bump(); blockH = setInterval(bump, 2000);
-  const choices: Record<string, string> = { P1: 'LEGENDARY', P2: 'EPIC', P3: 'COMMON', P4: 'LEGENDARY' };
   ['P1', 'P2', 'P3', 'P4'].forEach((id) => { usedVeh[id] = {}; });
   $('roundNo').textContent = '1';
-  startRound(choices); updatePreview();
+  showVehicleSelect(); updatePreview();
 
   // ---- Cleanup ----
   return () => {
+    unmounted = true;
     if (tickH) clearInterval(tickH);
-    if (blockH) clearInterval(blockH);
     if (toastT) clearTimeout(toastT);
+    track3d?.destroy(); track3d = null;
+    document.removeEventListener('fullscreenchange', onFsChange);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    document.body.classList.remove('cg-noscroll'); // if unmounted mid pseudo-fullscreen
     root.innerHTML = '';
   };
 }

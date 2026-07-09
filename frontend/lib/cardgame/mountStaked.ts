@@ -3,11 +3,17 @@
  * drives the SHARED deterministic engine (seeded by the server), so every player
  * play is captured as (round, tick, cardIds) that the server re-simulates to the
  * exact same result. The player genuinely plays; the server just re-derives.
+ *
+ * UI parity with practice mode: combo popups, play preview, event log, round
+ * banners, toasts and a settlement panel — all cosmetic; the captured input
+ * (vehicles + plays) and the engine stepping are untouched.
  */
 import {
-  initMatch, startRound, stepTick, roundDone, scoreRound, finalRanking, speed,
-  CFG, VEHICLES, type MatchState, type MatchInput, type PlayEvent, type Pid,
+  initMatch, startRound, stepTick, roundDone, scoreRound, finalRanking, speed, evaluate, fxClass,
+  CFG, type MatchState, type MatchInput, type PlayEvent, type Pid,
 } from './engine';
+import { vehicleSelector, vehAbbr, vehColor } from './vehicles';
+import { bestPlay } from './bestPlay';
 
 export interface StakedOpts {
   seed: string;
@@ -18,6 +24,11 @@ export interface StakedOpts {
 
 const short = (a: string) => a.slice(0, 6) + '…' + a.slice(-4);
 const P_VAR: Record<Pid, string> = { P1: '--p1', P2: '--p2', P3: '--p3', P4: '--p4' };
+const MAGIC_ICON: Record<string, string> = { NITRO: '⚡', NAIL: '✕', OIL: '●' };
+// Fuji escrow economics: entry 0.01 AVAX × 4 → payouts entry × [2, 1, 0.5, 0.3]
+const ENTRY = 0.01;
+const PAYOUT_X = [2, 1, 0.5, 0.3];
+const payoutStr = (rank: number) => String(+(ENTRY * PAYOUT_X[rank]).toFixed(4));
 
 export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   const addr: Record<Pid, string> = { P1: opts.player, P2: opts.bots[0], P3: opts.bots[1], P4: opts.bots[2] };
@@ -29,12 +40,16 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   const plays: PlayEvent[] = [];
   const selected = new Set<number>(); // hand indices selected by the player
   let loopH: ReturnType<typeof setInterval> | null = null;
+  let toastT: ReturnType<typeof setTimeout> | null = null;
   let done = false;
 
   root.innerHTML = `
+    <div class="toast eng-toast"></div>
     <div class="cg-eng glass" style="padding:16px;margin-bottom:12px">
       <div class="eng-hd"><span class="eng-round">ROUND 1/3</span>
         <span class="dim mono" style="font-size:11px">seed ${short(opts.seed)} · deterministic · server-verified</span></div>
+      <div class="eng-picks dim mono"></div>
+      <div class="eng-vsel-slot"></div>
       <div class="eng-track"></div>
     </div>
     <div class="cg-eng glass" style="padding:16px">
@@ -42,19 +57,65 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
       <div class="eng-hand hand"></div>
       <div class="cooldown"><div class="eng-cd"></div></div>
       <div class="row"><button class="btn eng-play">PLAY SELECTED</button>
+        <button class="btn ghost eng-best">✨ Best</button>
         <button class="btn ghost eng-clear">Clear</button>
         <span class="pill eng-note">select 1–8 cards</span></div>
       <table style="width:100%;margin-top:14px;font-size:12px" class="eng-board"><tbody></tbody></table>
+      <div class="eng-settle"></div>
+      <div class="cg-elog-hd">Event log</div>
+      <div class="log eng-log"></div>
     </div>`;
   const $ = (c: string) => root.querySelector('.' + c) as HTMLElement;
 
+  // ── juice helpers (cosmetic only) ────────────────────────────────────
+  function log(html: string) { const l = $('eng-log'); if (l) l.innerHTML = `<div>${html}</div>` + l.innerHTML; }
+  function toast(msg: string) {
+    const el = $('eng-toast'); if (!el) return;
+    el.textContent = msg; el.style.opacity = '1';
+    if (toastT) clearTimeout(toastT); toastT = setTimeout(() => { el.style.opacity = '0'; }, 2200);
+  }
+  function popup(txt: string, cls: string) {
+    const tk = $('eng-track'); if (!tk) return;
+    const el = document.createElement('div'); el.className = 'popup ' + cls; el.textContent = txt;
+    tk.appendChild(el); setTimeout(() => el.remove(), 1400);
+  }
+  function banner(txt: string) {
+    const tk = $('eng-track'); if (!tk) return;
+    const el = document.createElement('div'); el.className = 'cg-banner'; el.textContent = txt;
+    tk.appendChild(el); setTimeout(() => el.remove(), 1400);
+  }
+
+  // Show the vehicle-selection screen for the round; the player's real choice is
+  // what gets recorded into `vehicles` and re-simulated server-side, so picking
+  // stays fully authoritative (a tampered choice just falls back to a legal one).
   function beginRound() {
-    const veh = VEHICLES.filter((v) => !s.usedVeh.P1[v])[0]; // deterministic; recorded
-    vehicles.push(veh);
-    startRound(s, veh);
-    ($('eng-round')).textContent = `ROUND ${s.roundIndex + 1}/3`;
-    buildTrack();
-    loopH = setInterval(loop, 100);
+    const slot = $('eng-vsel-slot');
+    slot.innerHTML = '';
+    slot.appendChild(vehicleSelector({
+      round: s.roundIndex,
+      used: s.usedVeh.P1,
+      opponents: 'Opponents auto-pick from the remaining pool',
+      onPick: (veh) => {
+        vehicles.push(veh);
+        startRound(s, veh);
+        slot.innerHTML = '';
+        ($('eng-round')).textContent = `ROUND ${s.roundIndex + 1}/3`;
+        showPicks();
+        buildTrack();
+        banner(`ROUND ${s.roundIndex + 1}`);
+        log(`<b>Round ${s.roundIndex + 1}</b> started — ${s.players.map((p) => `${nameOf(p.id)} ${vehAbbr(p.veh)}`).join(' · ')}`);
+        renderTrack(); renderHand(); renderBoard();
+        loopH = setInterval(loop, 100);
+      },
+    }));
+  }
+
+  // After vehicles lock, announce every racer's pick (bots are deterministic).
+  function showPicks() {
+    ($('eng-picks')).innerHTML = s.players.map((p) => {
+      const label = p.id === 'P1' ? 'YOU' : short(addr[p.id]);
+      return `${label} <b style="color:${vehColor(p.veh)}">${vehAbbr(p.veh)}</b>`;
+    }).join('  ·  ');
   }
 
   function buildTrack() {
@@ -77,7 +138,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
       const boosted = !!(p.nm && s.t < p.nm.endsAt) && !p.fin;
       car.style.left = (p.dist / CFG.TRACK * 93) + '%';
       car.className = 'car' + (p.fin ? ' fin' : ' run') + (boosted ? ' boost' : '') + (p.fx && s.t < p.fxUntil && !p.fin ? ' ' + p.fx : '') + (p.debuff && s.t < p.debuffUntil && !p.fin ? ' ' + p.debuff : '');
-      (car.querySelector('.tag') as HTMLElement).textContent = nameOf(p.id) + (p.veh ? ' · ' + p.veh[0] : '');
+      (car.querySelector('.tag') as HTMLElement).innerHTML = nameOf(p.id) + (p.veh ? ` · <b style="color:${vehColor(p.veh)}">${vehAbbr(p.veh)}</b>` : '');
       const cd = Math.max(0, p.cdUntil - s.t);
       (car.querySelector('.hud') as HTMLElement).textContent = p.fin ? `✔ ${p.ft}s` : `${Math.round(speed(s, p))}u/s${cd > 0 ? ' · cd' + (cd / 10).toFixed(1) : ''}`;
     }
@@ -86,20 +147,36 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   function renderHand() {
     const p1 = s.players[0];
     ($('eng-hlim')).textContent = `${p1.hand.length}/${p1.hlim}`;
+    // cooldown bar + button state update every tick (not only on hand change)
+    const cd = Math.max(0, p1.cdUntil - s.t);
+    ($('eng-cd')).style.width = (cd / CFG.COOLDOWN_TICKS * 100) + '%';
+    ($('eng-play') as HTMLButtonElement).disabled = cd > 0 || selected.size === 0 || p1.fin;
     const h = $('eng-hand');
     const sig = p1.hand.map((c) => c.id).join(',') + '|' + [...selected].sort((a, b) => a - b).join(',');
     if (h.dataset.sig === sig) return;
     h.dataset.sig = sig; h.innerHTML = '';
     p1.hand.forEach((c, i) => {
       const el = document.createElement('div');
-      el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (selected.has(i) ? ' sel' : '');
-      el.innerHTML = `<span class="ix">${c.value}</span>${c.magic ? '⚡ ' : ''}${c.value}${c.magic ? `<small>${c.magic}</small>` : ''}`;
+      el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(i) ? ' sel' : '');
+      el.innerHTML = `<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
+        <i class="cardart">${c.magic ? MAGIC_ICON[c.magic] || '' : '❄'}</i>
+        <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : ''}`;
       el.onpointerdown = (e) => { e.preventDefault(); if (selected.has(i)) selected.delete(i); else if (selected.size < 8) selected.add(i); renderHand(); };
       h.appendChild(el);
     });
-    const cd = Math.max(0, p1.cdUntil - s.t);
-    ($('eng-cd')).style.width = (cd / CFG.COOLDOWN_TICKS * 100) + '%';
-    ($('eng-play') as HTMLButtonElement).disabled = cd > 0 || selected.size === 0 || p1.fin;
+    updatePreview();
+  }
+
+  // Live evaluation of the current selection — same engine `evaluate()` the play
+  // will get, so the shown "PAIR → x1.50 (+NITRO)" is exactly what happens.
+  function updatePreview() {
+    if (done) return;
+    const p1 = s.players[0];
+    const pv = $('eng-note');
+    const cards = [...selected].map((i) => p1.hand[i]);
+    if (!cards.length) { pv.textContent = 'select 1–8 cards'; return; }
+    const r = evaluate(cards);
+    pv.textContent = `${r.combo || r.kind} → x${r.mult.toFixed(2)}` + (r.magic.length ? ` +${r.magic.map((m) => m.type).join('/')}` : '');
   }
 
   function renderBoard(order?: Pid[]) {
@@ -109,6 +186,14 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
       ranked.map((p, i) => `<tr><td class="dim">${i + 1}</td><td class="addr"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(${P_VAR[p.id]});margin-right:6px"></i>${nameOf(p.id)}</td><td class="mono">${Math.round(p.dist)}</td><td>${p.total}</td></tr>`).join('');
   }
 
+  function renderSettle(ranking: Pid[]) {
+    ($('eng-settle')).innerHTML = `<div class="settleBox"><div class="settleHead">🏁 FINAL RESULT — server re-derives &amp; settles on-chain
+        <span class="mono dim">entry ${ENTRY} AVAX × 4</span></div>` +
+      ranking.map((id, i) => `<div class="settleRow"><span class="dim">#${i + 1}</span>
+        <span class="addr"><i class="av" style="background:${cssv(P_VAR[id])}"></i>${nameOf(id)}</span>
+        <b class="gold">◆ ${payoutStr(i)}</b></div>`).join('') + '</div>';
+  }
+
   // pending player play captured for the CURRENT tick
   let pendingPlay: number[] | null = null;
   ($('eng-play')).onclick = () => {
@@ -116,18 +201,46 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     if (s.t < p1.cdUntil || selected.size === 0) return;
     pendingPlay = [...selected].sort((a, b) => a - b).map((i) => p1.hand[i].id); // cardIds
     selected.clear();
+    renderHand();
   };
   ($('eng-clear')).onclick = () => { selected.clear(); renderHand(); };
+  ($('eng-best')).onclick = () => {
+    const p1 = s.players[0];
+    if (p1.fin || s.t < p1.cdUntil || !p1.hand.length) return;
+    const pickIds = new Set(bestPlay(p1.hand).map((c) => c.id));
+    selected.clear();
+    p1.hand.forEach((c, i) => { if (pickIds.has(c.id)) selected.add(i); });
+    renderHand();
+  };
 
   function loop() {
     const play = pendingPlay ?? undefined;
     if (play) plays.push({ round: s.roundIndex, tick: s.t, cardIds: play });
     pendingPlay = null;
-    stepTick(s, play);
+    // snapshots so we can log transitions (bot boosts, finishes, checkpoints)
+    // without touching the engine — read-only references taken before the step.
+    const nmBefore = new Map(s.players.map((p) => [p.id, p.nm]));
+    const finBefore = new Map(s.players.map((p) => [p.id, p.fin]));
+    const cpBefore = s.players[0].cp.size;
+    const played = stepTick(s, play);
+    if (played) {
+      const label = played.combo || played.kind;
+      popup(`${label} ×${played.mult.toFixed(2)}`, fxClass(played));
+      log(`You played <b>${label}</b> (×${played.mult.toFixed(2)})${played.magic.length ? ' + ' + played.magic.map((m) => m.type).join(', ') : ''}`);
+    }
+    for (const p of s.players) {
+      if (p.id !== 'P1' && p.nm && p.nm !== nmBefore.get(p.id)) log(`${nameOf(p.id)} boosts <b>×${p.nm.mult.toFixed(2)}</b>`);
+      if (!finBefore.get(p.id) && p.fin) log(`${nameOf(p.id)} <b>finished</b> @ ${p.ft}s`);
+    }
+    if (s.players[0].cp.size > cpBefore) log(`Passed CP-${s.players[0].cp.size} — hand refilled`);
     renderTrack(); renderHand(); renderBoard();
     if (roundDone(s)) {
-      if (loopH) clearInterval(loopH);
-      scoreRound(s);
+      if (loopH) clearInterval(loopH); loopH = null;
+      const ended = s.roundIndex; // 0-based; scoreRound advances it
+      const order = scoreRound(s);
+      toast(`Round ${ended + 1}: ${nameOf(order[0])} wins!`);
+      log(`<b>Round ${ended + 1}</b> — ${order.map((id, i) => `${i + 1}. ${nameOf(id)}`).join(' · ')}`);
+      renderBoard();
       if (s.finished) return finish();
       setTimeout(beginRound, 900);
     }
@@ -137,10 +250,17 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     done = true;
     const ranking = finalRanking(s);
     renderBoard(ranking);
+    toast(`🏆 ${nameOf(ranking[0])} wins the match!`);
+    log(`<b>MATCH OVER.</b> ${ranking.map((id, i) => `${i + 1}. ${nameOf(id)} (◆ ${payoutStr(i)})`).join(' · ')}`);
+    renderSettle(ranking);
     ($('eng-note')).textContent = 'Match over — settling on-chain…';
     opts.onFinish({ vehicles, plays }, ranking.map((id) => addr[id]));
   }
 
   beginRound();
-  return () => { if (loopH) clearInterval(loopH); if (!done) root.innerHTML = ''; };
+  return () => {
+    if (loopH) clearInterval(loopH);
+    if (toastT) clearTimeout(toastT);
+    if (!done) root.innerHTML = '';
+  };
 }
