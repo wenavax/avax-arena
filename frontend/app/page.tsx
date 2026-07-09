@@ -22,14 +22,13 @@ import {
   Target,
   Award,
   Globe,
-  Rocket,
-  Snowflake,
-  Compass,
+  Gamepad2,
 } from 'lucide-react';
 import { usePublicClient } from 'wagmi';
 import { formatEther } from 'viem';
 import { ELEMENTS, CONTRACT_ADDRESSES } from '@/lib/constants';
 import { FROSTBITE_WARRIOR_ABI, BATTLE_ENGINE_ABI, TEAM_BATTLE_ABI } from '@/lib/contracts';
+import GamesArcade from '@/components/home/GamesArcade';
 
 /* ===========================================================================
  * Animated Counter
@@ -250,13 +249,13 @@ function HeroSection({ stats }: { stats: LiveStats }) {
           </motion.h1>
           <div className="h-[2px] w-24 bg-frost-primary mx-auto mb-4 shadow-[0_0_16px_rgb(237_47_57/0.6)]" />
           <h2 className="font-display text-white/55 text-xl sm:text-2xl lg:text-3xl font-semibold uppercase tracking-[0.55em] pl-[0.55em] mb-5 relative z-10">
-            BATTLE ARENA
+            ON-CHAIN ARCADE
           </h2>
         </FadeIn>
 
         <FadeIn delay={0.1}>
           <p className="text-lg text-white/50 mb-6">
-            Mint warriors. Battle PvP. Earn AVAX.
+            Battle. Race. Explore. Launch. — one wallet, real stakes.
           </p>
         </FadeIn>
 
@@ -268,14 +267,23 @@ function HeroSection({ stats }: { stats: LiveStats }) {
         </FadeIn>
 
         <FadeIn delay={0.2}>
-          <Link
-            href="/battle"
-            className="btn-3d btn-3d-red px-10 py-4 text-base sm:text-lg mb-10"
-            style={{ boxShadow: '0 4px 0 0 #991111, 0 6px 20px rgba(0,0,0,0.3), 0 0 40px rgba(255,32,32,0.2)' }}
-          >
-            <Swords className="h-5 w-5" />
-            Enter Arena
-          </Link>
+          <div className="mb-10 flex flex-wrap items-center justify-center gap-4">
+            <Link
+              href="#arcade"
+              className="btn-3d btn-3d-red px-10 py-4 text-base sm:text-lg"
+              style={{ boxShadow: '0 4px 0 0 #991111, 0 6px 20px rgba(0,0,0,0.3), 0 0 40px rgba(255,32,32,0.2)' }}
+            >
+              <Gamepad2 className="h-5 w-5" />
+              Browse the Arcade
+            </Link>
+            <Link
+              href="/battle"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-8 py-4 text-base font-semibold text-white/75 transition-colors hover:border-white/35 hover:text-white sm:text-lg"
+            >
+              <Swords className="h-5 w-5" />
+              Enter Arena
+            </Link>
+          </div>
         </FadeIn>
 
         {/* Mini stats row */}
@@ -884,80 +892,6 @@ function StatsBar({ stats }: { stats: LiveStats }) {
 }
 
 /* ===========================================================================
- * What's New — freshly shipped products
- * ========================================================================= */
-
-const WHATS_NEW = [
-  {
-    icon: Rocket,
-    title: 'Launchpad',
-    tag: 'NEW',
-    desc: 'Launch a token on a fair bonding curve — no presale, no team bags. At 60 AVAX raised, liquidity graduates to Trader Joe and is burned forever. Contracts verified on Snowtrace.',
-    href: '/launchpad',
-    cta: 'Launch a token',
-    gradient: 'from-frost-primary to-rose-500',
-  },
-  {
-    icon: Snowflake,
-    title: 'Adventures',
-    tag: 'NEW',
-    desc: 'Idle NFT staking: send Frostlings into frozen biomes, stack Frost Shards while you sleep — now playable with your real on-chain hero NFTs.',
-    href: '/world/adventures',
-    cta: 'Start staking',
-    gradient: 'from-cyan-500 to-frost-primary',
-  },
-  {
-    icon: Compass,
-    title: 'Expeditions',
-    tag: 'NEW',
-    desc: 'Idle roguelike auto-battler with AI-authored bosses. Build your party, launch expeditions, and push ever deeper — token-free core loop.',
-    href: '/expeditions',
-    cta: 'Begin expedition',
-    gradient: 'from-orange-500 to-frost-primary',
-  },
-];
-
-function WhatsNewSection() {
-  return (
-    <section className="relative py-20 sm:py-24 px-4">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-frost-primary/[0.04] blur-[120px] pointer-events-none" />
-      <div className="mx-auto max-w-5xl relative z-10">
-        <FadeIn>
-          <div className="text-center mb-12">
-            <span className="inline-block font-sans font-semibold text-[10px] text-frost-primary uppercase tracking-[0.3em] mb-3">Just Shipped</span>
-            <h2 className="font-stamp uppercase text-4xl sm:text-5xl md:text-6xl tracking-tight leading-[0.9] text-white">
-              NEW THIS <span className="text-frost-primary">WEEK</span>
-            </h2>
-          </div>
-        </FadeIn>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          {WHATS_NEW.map((n, i) => (
-            <FadeIn key={n.title} delay={i * 0.08}>
-              <Link href={n.href} className="group glass-card p-6 h-full relative overflow-hidden flex flex-col">
-                <div className={`absolute -top-12 -right-12 w-32 h-32 rounded-full bg-gradient-to-br ${n.gradient} opacity-0 group-hover:opacity-15 blur-2xl transition-opacity duration-500`} />
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${n.gradient} flex items-center justify-center`}>
-                    <n.icon className="w-5 h-5 text-white" />
-                  </div>
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-frost-primary/15 text-frost-primary border border-frost-primary/25 tracking-widest animate-pulse">
-                    {n.tag}
-                  </span>
-                </div>
-                <h3 className="font-display font-bold text-lg text-white/90 mb-2 group-hover:text-frost-primary transition-colors">{n.title}</h3>
-                <p className="text-white/40 text-xs leading-relaxed flex-1">{n.desc}</p>
-                <span className="mt-4 inline-flex items-center gap-1 text-xs text-frost-primary/80 group-hover:text-frost-primary group-hover:gap-2 transition-all">
-                  {n.cta} <ArrowRight className="w-3.5 h-3.5" />
-                </span>
-              </Link>
-            </FadeIn>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ===========================================================================
  * Page Export
  * ========================================================================= */
 
@@ -968,7 +902,7 @@ export default function HomePage() {
     <>
       <LiveTicker />
       <HeroSection stats={stats} />
-      <WhatsNewSection />
+      <GamesArcade />
       <TabbedInfoPanel />
       <CTASection />
       <StatsBar stats={stats} />

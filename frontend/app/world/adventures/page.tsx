@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import GameStageBanner from '@/components/GameStageBanner';
 import { ELEMENT_LABELS, ELEMENT_ICONS, generateHeroTraits, heroToDataURL } from '@/lib/game/nft/heroGenerator';
 import type { AdventuresState, AdventureHero, Rarity, GameEvent } from '@/lib/game/adventures/types';
 import { ZONES, AFFINITY_MULT } from '@/lib/game/adventures/zones';
@@ -86,6 +87,10 @@ export default function AdventuresPage() {
 
   return (
     <div style={page}>
+      <GameStageBanner
+        stage="TESTNET"
+        message="Test phase — your hero NFTs are read on-chain, but the staking economy is a demo: Frost Shards live in your browser and mainnet rewards are not live yet."
+      />
       {/* Toasts */}
       <div style={toastWrap}>
         {toasts.map((t) => (

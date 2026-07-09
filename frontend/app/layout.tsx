@@ -59,11 +59,11 @@ const anton = Anton({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Frostbite | NFT Battle Arena on Avalanche',
+    default: 'Frostbite | On-Chain Game Arcade on Avalanche',
     template: '%s | Frostbite',
   },
   description:
-    'Mint cyber warriors, battle NFTs, and earn AVAX on Avalanche C-Chain. Element-based PvP battles, quests, fusion, and decentralized marketplace.',
+    'The on-chain arcade on Avalanche: PvP battle arena, card racing, an isometric RPG world, idle expeditions, token launchpad and more — one wallet, real stakes.',
   keywords: [
     'Avalanche', 'AVAX', 'NFT', 'Battle', 'Web3', 'PvP', 'Blockchain Gaming',
     'Frostbite', 'GameFi', 'NFT Game', 'Play to Earn', 'Crypto Gaming',
@@ -84,9 +84,9 @@ export const metadata: Metadata = {
     apple: '/avalanche/apple-touch-icon.png',
   },
   openGraph: {
-    title: 'Frostbite | NFT Battle Arena on Avalanche',
+    title: 'Frostbite | On-Chain Game Arcade on Avalanche',
     description:
-      'Mint cyber warriors, battle NFTs, and earn AVAX. Element-based PvP battles, quests, and marketplace on Avalanche.',
+      'PvP battle arena, card racing, an isometric RPG world, idle expeditions and a token launchpad — one wallet, real stakes on Avalanche.',
     type: 'website',
     url: 'https://frostbite.pro',
     siteName: 'Frostbite',
@@ -96,7 +96,7 @@ export const metadata: Metadata = {
         url: 'https://frostbite.pro/og-image.jpg',
         width: 1200,
         height: 630,
-        alt: 'Frostbite — NFT Battle Arena on Avalanche',
+        alt: 'Frostbite — On-Chain Game Arcade on Avalanche',
       },
     ],
   },
@@ -104,8 +104,8 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: '@frostbiteprol1',
     creator: '@frostbiteprol1',
-    title: 'Frostbite | NFT Battle Arena on Avalanche',
-    description: 'Mint cyber warriors, battle NFTs, and earn AVAX. Element-based PvP battles on Avalanche.',
+    title: 'Frostbite | On-Chain Game Arcade on Avalanche',
+    description: 'The on-chain arcade on Avalanche — battle arena, card racing, RPG world, expeditions, launchpad. One wallet, real stakes.',
     images: ['https://frostbite.pro/og-image.jpg'],
   },
   metadataBase: new URL('https://frostbite.pro'),

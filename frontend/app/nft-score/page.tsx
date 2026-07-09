@@ -12,6 +12,7 @@ const ATTEST_ABI = parseAbi(['function attest(uint256 score, bytes32 ref) extern
 const ZERO_REF = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`;
 import { badgeFor, BADGES, type WalletScore, type NftTier } from '@/lib/nftScore';
 import { shortAddr } from '@/lib/launchpad';
+import GameStageBanner from '@/components/GameStageBanner';
 
 const TIER_COLORS: Record<NftTier, string> = {
   FROST: 'text-frost-primary border-frost-primary/30 bg-frost-primary/10',
@@ -106,6 +107,10 @@ export default function NftScorePage() {
   return (
     <div className="min-h-[calc(100vh-3.5rem)] lg:min-h-screen py-8 lg:py-12 max-w-4xl mx-auto w-full">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        <GameStageBanner
+          stage="BETA"
+          message="Beta — the scoring formula is still being tuned; scores, tiers and ranks may change."
+        />
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3">

@@ -8,6 +8,7 @@ import { ELEMENT_ICONS } from '@/lib/game/elements';
 import type { ExpeditionWarrior, RunState, CombatResult, FloorBoss, Rarity } from '@/lib/game/expeditions/types';
 import { startRun, descend, takeRelic, healAndAdvance, extract, partyPower } from '@/lib/game/expeditions/run';
 import { previewBossSkeletons, fetchBossFlavors, applyFlavor } from '@/lib/game/expeditions/aiFlavor';
+import GameStageBanner from '@/components/GameStageBanner';
 
 type AiStatus = 'idle' | 'loading' | 'ready' | 'off';
 
@@ -113,6 +114,10 @@ export default function ExpeditionsPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10">
+      <GameStageBanner
+        stage="TESTNET"
+        message="Test phase — off-chain prototype with a demo squad; no tokens at stake and progress may reset between updates."
+      />
       {/* Header */}
       <div className="text-center mb-8">
         <h1 className="font-stamp uppercase text-5xl sm:text-7xl tracking-tight leading-[0.9] text-white">

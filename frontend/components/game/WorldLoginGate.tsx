@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useReadContract, useReadContracts } from 'wagmi';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import GameStageBanner from '@/components/GameStageBanner';
 import { HERO_CONTRACT, HERO_ABI, ITEM_CONTRACT, ITEM_ABI } from '@/lib/game/nft/contracts';
 
 declare global {
@@ -287,8 +288,18 @@ export function WorldLoginGate() {
   const isLoadingHeroes = nftLoading || ownersLoading || heroesLoading;
 
   return (
-    <div style={styles.container}>
+    <div style={{ ...styles.container, position: 'relative' }}>
       <div style={styles.gridBg} />
+
+      {/* maturity warning — shown on the gate so it never overlays gameplay */}
+      <div style={{ position: 'absolute', top: 14, left: 14, right: 14, zIndex: 5, display: 'flex', justifyContent: 'center' }}>
+        <div style={{ maxWidth: 760, width: '100%' }}>
+          <GameStageBanner
+            stage="TESTNET"
+            message="Test phase — the world is in active development; features and progress may change or reset."
+          />
+        </div>
+      </div>
 
       <div style={styles.logoSection}>
         <h1 style={styles.title}>FROSTBITE</h1>

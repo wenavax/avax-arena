@@ -213,6 +213,201 @@ body {
     background: var(--glass-card-bg);
   }
 
+  /* ── The Arcade — per-game neon cards (drive --acc inline) ───────────── */
+  .arcade-card {
+    --acc: var(--frost-primary);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    /* uniform card height: warn-line and no-warn cards stay identical across rows */
+    min-height: 196px;
+    height: 100%;
+    padding: 20px;
+    border-radius: 18px;
+    overflow: hidden;
+    background:
+      linear-gradient(158deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012) 55%),
+      var(--glass-card-bg);
+    border: 1px solid var(--glass-card-border);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.35s ease, box-shadow 0.35s ease;
+  }
+  .arcade-card--feat { min-height: 216px; padding: 24px; }
+  .arcade-card:hover {
+    transform: translateY(-6px);
+    border-color: color-mix(in srgb, var(--acc) 55%, transparent);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--acc) 28%, transparent),
+      0 18px 50px rgba(0, 0, 0, 0.5),
+      0 0 64px color-mix(in srgb, var(--acc) 20%, transparent);
+  }
+  .arcade-glow {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(140px 140px at 100% 0%, color-mix(in srgb, var(--acc) 26%, transparent), transparent 68%);
+    opacity: 0.5;
+    transition: opacity 0.35s ease;
+    pointer-events: none;
+  }
+  .arcade-card:hover .arcade-glow { opacity: 1; }
+  .arcade-shine {
+    position: absolute;
+    top: 0;
+    left: -60%;
+    width: 45%;
+    height: 100%;
+    transform: skewX(-20deg);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.09), transparent);
+    pointer-events: none;
+  }
+  .arcade-card:hover .arcade-shine { animation: arcade-sweep 0.85s ease; }
+  @keyframes arcade-sweep { from { left: -60%; } to { left: 140%; } }
+  .arcade-ico {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border-radius: 14px;
+    color: var(--acc);
+    background: color-mix(in srgb, var(--acc) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--acc) 32%, transparent);
+    transition: transform 0.35s ease, box-shadow 0.35s ease;
+  }
+  .arcade-card:hover .arcade-ico {
+    transform: scale(1.08) rotate(-4deg);
+    box-shadow: 0 0 22px color-mix(in srgb, var(--acc) 40%, transparent);
+  }
+  .arcade-title { transition: color 0.3s ease; }
+  .arcade-card:hover .arcade-title { color: var(--acc); }
+  .arcade-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    font-family: var(--font-space-grotesk), sans-serif;
+    color: var(--ctext, #4ade80);
+    background: color-mix(in srgb, var(--dot, #22c55e) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--dot, #22c55e) 30%, transparent);
+  }
+  .arcade-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--dot, #22c55e);
+    box-shadow: 0 0 8px var(--dot, #22c55e);
+    animation: arcade-pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes arcade-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .arcade-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: color-mix(in srgb, var(--acc) 85%, white 15%);
+    transition: gap 0.3s ease, opacity 0.3s ease;
+    opacity: 0.85;
+  }
+  /* maturity warning line on non-production game cards (block: never shares
+     a line with the CTA, which overlapped on wide featured cards) */
+  .arcade-warn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 8px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #fbbf24;
+    opacity: 0.9;
+  }
+  .light .arcade-warn { color: #b45309; }
+  .arcade-card:hover .arcade-cta { gap: 12px; opacity: 1; }
+  /* Procedural cover art: ghosted watermark icon (bottom-right) */
+  .arcade-mark {
+    position: absolute;
+    right: -18px;
+    bottom: -22px;
+    color: var(--acc);
+    opacity: 0.09;
+    transform: rotate(-12deg);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    pointer-events: none;
+  }
+  .arcade-card:hover .arcade-mark {
+    opacity: 0.16;
+    transform: rotate(-7deg) scale(1.06);
+  }
+  /* Procedural cover art: per-game background pattern (accent-tinted) */
+  .arcade-pat {
+    position: absolute;
+    inset: 0;
+    opacity: 0.5;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(115deg, transparent 30%, black 100%);
+    mask-image: linear-gradient(115deg, transparent 30%, black 100%);
+  }
+  .arcade-card:hover .arcade-pat { opacity: 0.85; }
+  .arcade-pat--diag {
+    background: repeating-linear-gradient(-38deg,
+      transparent 0 14px, color-mix(in srgb, var(--acc) 10%, transparent) 14px 16px);
+  }
+  .arcade-pat--lines {
+    background: repeating-linear-gradient(90deg,
+      transparent 0 22px, color-mix(in srgb, var(--acc) 9%, transparent) 22px 24px);
+  }
+  .arcade-pat--grid {
+    background:
+      repeating-linear-gradient(0deg, transparent 0 17px, color-mix(in srgb, var(--acc) 8%, transparent) 17px 18px),
+      repeating-linear-gradient(90deg, transparent 0 17px, color-mix(in srgb, var(--acc) 8%, transparent) 17px 18px);
+  }
+  .arcade-pat--dots {
+    background-image: radial-gradient(color-mix(in srgb, var(--acc) 22%, transparent) 1.2px, transparent 1.3px);
+    background-size: 16px 16px;
+  }
+  .arcade-pat--rings {
+    background:
+      radial-gradient(circle at 88% 82%, transparent 18px, color-mix(in srgb, var(--acc) 10%, transparent) 19px 21px, transparent 22px 40px,
+        color-mix(in srgb, var(--acc) 8%, transparent) 41px 43px, transparent 44px 64px,
+        color-mix(in srgb, var(--acc) 6%, transparent) 65px 67px, transparent 68px);
+  }
+
+  /* Light theme: flip the glass + soften neon for a bright canvas */
+  .light .arcade-card {
+    background:
+      linear-gradient(158deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.35) 55%),
+      var(--glass-card-bg);
+    border-color: var(--glass-card-border);
+  }
+  .light .arcade-card:hover {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--acc) 30%, transparent),
+      0 18px 44px rgba(15, 23, 42, 0.16),
+      0 0 44px color-mix(in srgb, var(--acc) 14%, transparent);
+  }
+  .light .arcade-shine {
+    background: linear-gradient(90deg, transparent, rgba(15, 23, 42, 0.05), transparent);
+  }
+  .light .arcade-glow { opacity: 0.35; }
+  .light .arcade-ico { background: color-mix(in srgb, var(--acc) 12%, white); }
+  .light .arcade-mark { opacity: 0.12; }
+  .light .arcade-chip { background: color-mix(in srgb, var(--dot, #22c55e) 10%, white); }
+  .light .arcade-chip { color: color-mix(in srgb, var(--dot, #22c55e) 75%, black); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .arcade-card, .arcade-ico, .arcade-cta, .arcade-mark, .arcade-pat { transition: none; }
+    .arcade-card:hover { transform: none; }
+    .arcade-card:hover .arcade-shine { animation: none; }
+    .arcade-card:hover .arcade-mark { transform: rotate(-12deg); }
+    .arcade-dot { animation: none; }
+  }
+
   /* Gradient Border */
   .gradient-border {
     position: relative;
