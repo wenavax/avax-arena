@@ -9,6 +9,9 @@ import {MatchEscrow} from "../src/MatchEscrow.sol";
 contract Deploy is Script {
     address constant SAFE = 0xc4d1cCb6C18dF7254014c9f43cD1D32cb5D44d07; // Gnosis Safe 2/3
     address constant TREASURY = 0x301b013280317a75f808A3C0D23e82e9027A6b77;
+    // Dedicated server operator (createMatch caller). On mainnet the Safe must
+    // authorize it post-deploy (owner==Safe, so this script cannot). See below.
+    address constant OPERATOR = 0x3C056E6f3815019Bae464f70C01BFfBceb41b9E5;
 
     function run() external {
         // Fuji: 0.01 AVAX entry (cheap rehearsal), same 5/2.5/1.25/0.75/0.5% split.
@@ -52,5 +55,14 @@ contract Deploy is Script {
         console2.log("owner:", owner_);
         console2.log("signer:", signer_);
         console2.log("entryFee:", entryFee);
+
+        // Mainnet is owner==Safe, so this script CANNOT authorize the operator or
+        // rotate the signer. Both must be executed from the Safe post-deploy:
+        if (block.chainid == 43114) {
+            console2.log("--- REQUIRED post-deploy Safe (2/3) transactions ---");
+            console2.log("1) escrow.setAuthorized(OPERATOR, true) - operator:", OPERATOR);
+            console2.log("2) escrow.setTrustedSigner(HSM_SIGNER) - rotate off the deployer key");
+            console2.log("   (until (1) runs, createMatch reverts NotAuthorized)");
+        }
     }
 }
