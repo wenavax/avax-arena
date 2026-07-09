@@ -1,0 +1,11 @@
+{
+  "name": "frostbite-multiplayer",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node multiplayer-server.mjs"
+  },
+  "dependencies": {
+    "socket.io": "^4.7.4"
+  }
+}

@@ -60,8 +60,14 @@ export interface MatchState {
 
 /** One card play the player made: at (round, tick) they played these cardIds. */
 export interface PlayEvent { round: number; tick: number; cardIds: number[] }
-/** The full recorded player input for a match. */
+/** The full recorded player input for a match (single-human staked mode). */
 export interface MatchInput { vehicles: string[]; plays: PlayEvent[] }
+
+/** Multiplayer: one seat's play at (round, tick). */
+export interface MPAction { pid: Pid; round: number; tick: number; cardIds: number[] }
+/** Full recorded input for a 4-seat match. `vehicles[round][pid]` is each seat's
+ *  chosen vehicle that round; `botSeats` are seats a bot drove (dropout fill). */
+export interface MPInput { vehicles: Partial<Record<Pid, string>>[]; actions: MPAction[]; botSeats: Pid[] }
 
 // ── deterministic RNG (xmur3 seed hash + mulberry32) ─────────────────────────
 
@@ -166,26 +172,37 @@ function autoDiscard(p: PlayerState) {
 }
 function grant(hlim: number, cur: number) { return Math.max(0, Math.min(CFG.CP_DRAW, hlim - cur)); }
 function remainingVeh(s: MatchState, id: Pid): string[] { return VEHICLES.filter((v) => !s.usedVeh[id][v]); }
+function byId(s: MatchState, id: Pid): PlayerState { return s.players.find((p) => p.id === id)!; }
 
-/** Begin a round: assign vehicles (player choice validated; bots deterministic). */
-export function startRound(s: MatchState, playerVehicle: string | null): void {
-  const choices: Record<Pid, string> = {} as Record<Pid, string>;
+/**
+ * Begin a round with per-seat vehicle choices. Any seat whose choice is missing
+ * or already-used falls back to first-available (deterministic) — the same rule
+ * bots and dropped-out seats use. Returns the resolved choice per seat.
+ * This is the general form; `startRound` is the single-human (P1-only) shim.
+ */
+export function startRoundMP(s: MatchState, choices: Partial<Record<Pid, string>>): Record<Pid, string> {
+  const resolved = {} as Record<Pid, string>;
   for (const p of s.players) {
-    if (p.id === 'P1') {
-      const avail = remainingVeh(s, 'P1');
-      choices.P1 = playerVehicle && avail.includes(playerVehicle) ? playerVehicle : avail[0];
-    } else {
-      choices[p.id] = remainingVeh(s, p.id)[0]; // bots: first available (deterministic)
-    }
+    const avail = remainingVeh(s, p.id);
+    const want = choices[p.id];
+    resolved[p.id] = want && avail.includes(want) ? want : avail[0];
   }
   for (const p of s.players) {
-    const v = choices[p.id];
+    const v = resolved[p.id];
     p.veh = v; p.base = CFG.VEH[v].s; p.hlim = CFG.VEH[v].h; s.usedVeh[p.id][v] = true;
     autoDiscard(p);
     if (s.roundIndex > 0) p.hand.push(...s.deck.splice(0, grant(p.hlim, p.hand.length)));
     p.dist = 0; p.fin = false; p.ft = null; p.cdUntil = 0; p.nm = null; p.magics = []; p.cp = new Set<number>(); p.fx = null; p.fxUntil = 0; p.debuff = null; p.debuffUntil = 0;
   }
   s.t = 0; s.roundActive = true;
+  return resolved;
+}
+
+/** Begin a round: P1 chooses (validated), the other seats take first-available
+ *  (deterministic). Thin shim over `startRoundMP` — behaviour is identical to
+ *  the original single-human flow that the live staked mode + tests depend on. */
+export function startRound(s: MatchState, playerVehicle: string | null): void {
+  startRoundMP(s, playerVehicle ? { P1: playerVehicle } : {});
 }
 
 export function speed(s: MatchState, p: PlayerState): number {
@@ -239,19 +256,10 @@ function botAct(s: MatchState, p: PlayerState): void {
   applyPlay(s, p, cardIds);
 }
 
-/**
- * Advance one tick. `playerCardIds` (if given) is a play the human is making
- * THIS tick — applied first, then bots act, then physics. Returns the applied
- * player eval (for the browser's popup) or null.
- */
-export function stepTick(s: MatchState, playerCardIds?: number[]): PlayEval | null {
-  let played: PlayEval | null = null;
-  if (playerCardIds && playerCardIds.length) {
-    played = applyPlay(s, s.players[0], playerCardIds);
-  }
-  // bots act (P2..P4) — deterministic
-  for (const p of s.players) if (p.id !== 'P1') botAct(s, p);
-  // physics
+/** Physics for one tick: advance distance, cross checkpoints (draw cards),
+ *  record finish time. No RNG — pure function of current state. Shared by the
+ *  single-human `stepTick` and the multiplayer `stepTickMP`. */
+function physics(s: MatchState): void {
   for (const p of s.players) {
     if (p.fin) continue;
     const prev = p.dist;
@@ -269,8 +277,46 @@ export function stepTick(s: MatchState, playerCardIds?: number[]): PlayEval | nu
       p.dist = CFG.TRACK;
     }
   }
+}
+
+/**
+ * Advance one tick. `playerCardIds` (if given) is a play the human is making
+ * THIS tick — applied first, then bots act, then physics. Returns the applied
+ * player eval (for the browser's popup) or null.
+ */
+export function stepTick(s: MatchState, playerCardIds?: number[]): PlayEval | null {
+  let played: PlayEval | null = null;
+  if (playerCardIds && playerCardIds.length) {
+    played = applyPlay(s, s.players[0], playerCardIds);
+  }
+  // bots act (P2..P4) — deterministic
+  for (const p of s.players) if (p.id !== 'P1') botAct(s, p);
+  physics(s);
   s.t += 1;
   return played;
+}
+
+/**
+ * Advance one tick in MULTIPLAYER: each seat's queued play (if any) is applied
+ * in canonical Pid order (P1→P4) for determinism, then any bot-controlled seats
+ * (dropouts / fills) act, then physics. Same-tick plays therefore resolve in a
+ * fixed order, so a re-simulation of the recorded actions is bit-identical.
+ * Returns each applied seat's eval (null = illegal / no play).
+ */
+export function stepTickMP(
+  s: MatchState,
+  actions: Partial<Record<Pid, number[]>>,
+  botSeats?: Set<Pid>,
+): Record<Pid, PlayEval | null> {
+  const out = {} as Record<Pid, PlayEval | null>;
+  for (const pid of PIDS) {
+    const cards = actions[pid];
+    if (cards && cards.length) out[pid] = applyPlay(s, byId(s, pid), cards);
+  }
+  if (botSeats && botSeats.size) for (const pid of PIDS) if (botSeats.has(pid)) botAct(s, byId(s, pid));
+  physics(s);
+  s.t += 1;
+  return out;
 }
 
 /** Is the current round over? */
@@ -330,6 +376,44 @@ export function simulateMatch(seed: string, input: MatchInput): SimResult {
       // the SAME function the browser drives guarantees identical results.
       const played = stepTick(s, play);
       if (play && !played) { valid = false; reason = 'illegal player play'; }
+    }
+    scoreRound(s);
+  }
+
+  const ranking = finalRanking(s);
+  const totals = {} as Record<Pid, number>;
+  for (const p of s.players) totals[p.id] = p.total;
+  return { ranking, totals, valid, reason };
+}
+
+/**
+ * Re-derive a full 4-seat match from (seed, recorded MP input). The multiplayer
+ * server runs the live loop authoritatively; this replays the recorded actions
+ * to the exact same ranking, so any match is independently auditable and a
+ * dispute can be settled by anyone holding the seed + action log.
+ */
+export function simulateMatchMP(seed: string, input: MPInput): SimResult {
+  const s = initMatch(seed);
+  const botSeats = new Set<Pid>(input.botSeats);
+  let valid = true;
+  let reason: string | undefined;
+
+  // group actions by round → tick → pid (reject two plays by one seat on a tick)
+  const byRound: Record<number, Record<number, Partial<Record<Pid, number[]>>>> = {};
+  for (const a of input.actions) {
+    const r = (byRound[a.round] ||= {});
+    const t = (r[a.tick] ||= {});
+    if (t[a.pid]) { valid = false; reason = 'duplicate play (pid,tick)'; }
+    t[a.pid] = a.cardIds;
+  }
+
+  for (let round = 0; round < CFG.ROUNDS; round++) {
+    startRoundMP(s, input.vehicles[round] ?? {});
+    let guard = 0;
+    while (!roundDone(s) && guard++ < CFG.TIMEOUT_TICKS + 5) {
+      const acts = byRound[round]?.[s.t] ?? {};
+      const res = stepTickMP(s, acts, botSeats);
+      for (const pid of PIDS) if (acts[pid] && !res[pid]) { valid = false; reason = `illegal play ${pid}`; }
     }
     scoreRound(s);
   }

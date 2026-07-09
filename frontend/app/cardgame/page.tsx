@@ -6,14 +6,19 @@ import { useAccount, useSwitchChain, useWriteContract, usePublicClient, useSignM
 import { Wallet, LogOut, Coins, Loader2, Trophy } from 'lucide-react';
 import { mountCardGame } from '@/lib/cardgame/mount';
 import { mountStaked } from '@/lib/cardgame/mountStaked';
+import { mountMultiplayer } from '@/lib/cardgame/mountMultiplayer';
+import { createCardgameSocket, queueMessage } from '@/lib/cardgame/mpClient';
 import type { MatchInput } from '@/lib/cardgame/engine';
 import { CARDGAME_ESCROW, CARDGAME_CHAIN_ID, ESCROW_ABI, STATUS } from '@/lib/cardgame/escrow';
 import LiveMatches from '@/components/cardgame/LiveMatches';
+import GameStageBanner from '@/components/GameStageBanner';
 import { formatEther, type Hex } from 'viem';
+import type { Socket } from 'socket.io-client';
 import './cardgame.css';
 
 type Phase = 'idle' | 'creating' | 'joining' | 'waiting' | 'playing' | 'settling' | 'settled';
-type Mode = 'practice' | 'staked' | 'watch';
+type Mode = 'practice' | 'staked' | 'watch' | 'mp';
+type Seat = { pid: 'P1' | 'P2' | 'P3' | 'P4'; address: string };
 
 export default function CardGamePage() {
   const { ready, authenticated, login, logout } = usePrivy();
@@ -27,6 +32,7 @@ export default function CardGamePage() {
   // stake authorization for the current match (signed once, reused for the
   // create/seat-bots/settle routes so a third party can't act on your match)
   const authRef = useRef<{ nonce: number; sig: Hex } | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   const [mode, setMode] = useState<Mode>('practice');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -34,6 +40,10 @@ export default function CardGamePage() {
   const [matchId, setMatchId] = useState<Hex | null>(null);
   const [entryFee, setEntryFee] = useState<bigint | null>(null);
   const [payout, setPayout] = useState<bigint>(0n);
+  // multiplayer lobby
+  const [mpPhase, setMpPhase] = useState<'idle' | 'queuing' | 'paying' | 'waiting' | 'playing' | 'settled'>('idle');
+  const [mpNote, setMpNote] = useState('');
+  const [mpQueue, setMpQueue] = useState<{ have: number; need: number }>({ have: 0, need: 4 });
 
   const shortAddr = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '';
 
@@ -50,6 +60,27 @@ export default function CardGamePage() {
   useEffect(() => {
     if (mode === 'watch') { cleanupRef.current?.(); cleanupRef.current = null; }
   }, [mode]);
+
+  // Tear down the multiplayer session (socket + any mounted renderer). Called
+  // from lobby handlers (cancel / pay error). The entering mode's own effect
+  // clears cleanupRef when switching modes, so this is safe to call any time.
+  const teardownMp = useCallback(() => {
+    cleanupRef.current?.(); cleanupRef.current = null;
+    socketRef.current?.disconnect(); socketRef.current = null;
+    setMpPhase('idle'); setMpNote(''); setMpQueue({ have: 0, need: 4 });
+  }, []);
+  // Only disconnect the socket when actually LEAVING mp mode (a socket exists).
+  // Do NOT touch cleanupRef here — that would unmount the practice/staked game
+  // that another effect owns. The mp renderer is unmounted by the mode we switch
+  // into (its effect calls cleanupRef.current?.() before mounting).
+  useEffect(() => {
+    if (mode !== 'mp' && socketRef.current) {
+      socketRef.current.disconnect(); socketRef.current = null;
+      setMpPhase('idle'); setMpNote(''); setMpQueue({ have: 0, need: 4 });
+    }
+  }, [mode]);
+  // Unmount everything on page unmount.
+  useEffect(() => () => { cleanupRef.current?.(); cleanupRef.current = null; socketRef.current?.disconnect(); }, []);
 
   const ensureFuji = useCallback(async () => {
     if (chainId !== CARDGAME_CHAIN_ID) await switchChainAsync({ chainId: CARDGAME_CHAIN_ID });
@@ -157,6 +188,70 @@ export default function CardGamePage() {
     }
   }, [address, publicClient, ensureFuji, writeContractAsync, signMessageAsync]);
 
+  // ── Real 4-player multiplayer: queue → pay → locked → play → settle ──
+  const startMp = useCallback(async () => {
+    if (!address || !publicClient || !rootRef.current) return;
+    setPayout(0n);
+    try {
+      await ensureFuji();
+      const nonce = Math.floor(Math.random() * 2_000_000_000);
+      setMpPhase('queuing'); setMpNote('Sign to join the multiplayer queue…');
+      const sig = (await signMessageAsync({ message: queueMessage(address, nonce) })) as Hex;
+
+      const socket = createCardgameSocket();
+      socketRef.current = socket;
+
+      socket.on('cardgame:queued', (d: { position: number; needed: number }) => {
+        setMpQueue({ have: d.position, need: d.needed });
+        setMpNote(`In queue — ${d.position}/${d.needed} players. Matches start when four are ready.`);
+      });
+      socket.on('cardgame:error', (d: { error?: string }) => setMpNote(`Error: ${d?.error || 'unknown'}`));
+      socket.on('cardgame:cancelled', (d: { reason?: string }) => {
+        setMpNote(`Match cancelled: ${d?.reason || 'a player left'}. Requeue to try again.`); teardownMp();
+      });
+
+      socket.on('cardgame:match-found', async (d: { matchId: Hex; entryFee: string; seat: Seat['pid']; seats: Seat[] }) => {
+        try {
+          setMpPhase('paying');
+          setMpNote(`Match found — confirm your ${formatEther(BigInt(d.entryFee))} AVAX entry…`);
+          await ensureFuji();
+          const hash = await writeContractAsync({
+            address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'joinMatch',
+            args: [d.matchId], value: BigInt(d.entryFee), chainId: CARDGAME_CHAIN_ID,
+          });
+          await publicClient.waitForTransactionReceipt({ hash });
+          socket.emit('cardgame:paid');
+          setMpPhase('waiting'); setMpNote('Paid — waiting for all four players to lock in…');
+        } catch (e) {
+          const msg = (e as { shortMessage?: string; message?: string }).shortMessage || (e as Error).message;
+          setMpNote(/rejected|denied/i.test(msg) ? 'Entry cancelled.' : `Pay error: ${msg.slice(0, 120)}`);
+          socket.emit('cardgame:leave'); teardownMp();
+        }
+      });
+
+      socket.on('cardgame:locked', (d: { seats: Seat[] }) => {
+        setMpPhase('playing'); setMpNote('');
+        cleanupRef.current?.();
+        if (rootRef.current) {
+          cleanupRef.current = mountMultiplayer(rootRef.current, {
+            socket, myAddress: address, seats: d.seats,
+            onFinished: () => setMpNote('Match over — settling on-chain…'),
+            onSettled: async () => {
+              const p = await readPending(); setPayout(p); setMpPhase('settled');
+              setMpNote(p > 0n ? `You won ◆ ${formatEther(p)} AVAX — withdraw below.` : 'Settled — no payout this time.');
+            },
+          });
+        }
+      });
+
+      socket.emit('cardgame:queue', { address, nonce, sig });
+    } catch (e) {
+      const msg = (e as { shortMessage?: string; message?: string }).shortMessage || (e as Error).message;
+      setMpNote(/rejected|denied/i.test(msg) ? 'Cancelled.' : `Error: ${msg.slice(0, 120)}`);
+      teardownMp();
+    }
+  }, [address, publicClient, ensureFuji, signMessageAsync, writeContractAsync, readPending, teardownMp]);
+
   const withdraw = useCallback(async () => {
     if (!publicClient) return;
     try {
@@ -179,6 +274,10 @@ export default function CardGamePage() {
 
   return (
     <div className="cgroot py-4">
+      <GameStageBanner
+        stage="TESTNET"
+        message="Staked & multiplayer matches run on Avalanche Fuji — test AVAX only, no real funds. Practice mode is free."
+      />
       <div className="cg-wallet">
         {authenticated && address ? (
           <>
@@ -186,6 +285,7 @@ export default function CardGamePage() {
             <div className="cg-modes">
               <button className={`cg-mode ${mode === 'practice' ? 'on' : ''}`} onClick={() => { setMode('practice'); setPhase('idle'); setNote(''); }}>Practice</button>
               <button className={`cg-mode ${mode === 'staked' ? 'on' : ''}`} onClick={() => { setMode('staked'); }}>Staked · Testnet</button>
+              <button className={`cg-mode ${mode === 'mp' ? 'on' : ''}`} onClick={() => { setMode('mp'); }}>Multiplayer · Testnet</button>
               <button className={`cg-mode ${mode === 'watch' ? 'on' : ''}`} onClick={() => { setMode('watch'); }}>Watch · Live</button>
             </div>
             <button className="btn ghost" onClick={logout} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -235,6 +335,37 @@ export default function CardGamePage() {
 
       {mode === 'staked' && !authenticated && (
         <div className="cg-stakebar glass"><div className="cg-stake-sub">Connect your wallet to stake a real Fuji testnet match.</div></div>
+      )}
+
+      {mode === 'mp' && authenticated && address && (
+        <div className="cg-stakebar glass">
+          <div className="cg-stakebar-l">
+            <Coins size={18} className="gold-ic" />
+            <div>
+              <div className="cg-stake-title">Multiplayer Match <span className="tn">FUJI TESTNET</span></div>
+              <div className="cg-stake-sub">Race <b>3 real players</b> · stake <b>0.01 AVAX</b> each · winner takes ◆ 0.02 · server-authoritative, on-chain settle</div>
+            </div>
+          </div>
+          <div className="cg-stakebar-r">
+            {mpPhase === 'settled' && payout > 0n ? (
+              <button className="btn" onClick={withdraw} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                <Trophy size={15} /> WITHDRAW ◆ {formatEther(payout)}
+              </button>
+            ) : mpPhase === 'idle' || mpPhase === 'settled' ? (
+              <button className="btn" onClick={startMp} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>FIND MATCH</button>
+            ) : (
+              <button className="btn ghost" onClick={teardownMp} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                {(mpPhase === 'queuing' || mpPhase === 'waiting') && <Loader2 size={15} className="cg-spin" />}
+                {mpPhase === 'queuing' ? `QUEUED ${mpQueue.have}/${mpQueue.need}` : mpPhase === 'paying' ? 'PAYING…' : mpPhase === 'waiting' ? 'WAITING…' : 'LEAVE'}
+              </button>
+            )}
+          </div>
+          {mpNote && <div className="cg-stake-note">{mpNote}</div>}
+        </div>
+      )}
+
+      {mode === 'mp' && !authenticated && (
+        <div className="cg-stakebar glass"><div className="cg-stake-sub">Connect your wallet to play a real 4-player Fuji testnet match.</div></div>
       )}
 
       <div ref={rootRef} style={{ display: mode === 'watch' ? 'none' : undefined }} />

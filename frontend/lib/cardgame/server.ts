@@ -14,7 +14,7 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { avalancheFuji } from 'viem/chains';
 import { CARDGAME_ESCROW } from './escrow';
-import { simulateMatch, type MatchInput, type Pid } from './engine';
+import { simulateMatch, simulateMatchMP, type MatchInput, type MPInput, type Pid } from './engine';
 
 // Server secret binds the match seed. The client needs the seed to play (returned
 // at seat time) but CANNOT predict it before committing its nonce, so it can't
@@ -99,7 +99,7 @@ export async function openMatch(player: Address, nonce: number): Promise<{ match
 
 /** Seat the 3 bots — ONLY if the player has already paid their entry. This is
  *  the gate that prevents draining bot funds without a real stake. */
-export async function seatBots(matchId: Hex, player: Address): Promise<{ seated: boolean }> {
+export async function seatBots(matchId: Hex, player: Address): Promise<{ seated: boolean; seed: string }> {
   // the player MUST be a listed player AND have paid before we spend bot AVAX
   const [isP, paid] = await Promise.all([
     pub.readContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'isPlayer', args: [matchId, player] }),
@@ -160,7 +160,7 @@ export async function getRecentMatches(lookback = 2000n, limit = 24): Promise<{ 
   for (const l of created) {
     const id = l.args.matchId as Hex;
     byId.set(id, {
-      matchId: id, status: 'Open', players: (l.args.players as Address[]) ?? [],
+      matchId: id, status: 'Open', players: [...(l.args.players ?? [])],
       paidCount: 0, createdBlock: Number(l.blockNumber), block: Number(l.blockNumber),
     });
   }
@@ -174,11 +174,11 @@ export async function getRecentMatches(lookback = 2000n, limit = 24): Promise<{ 
   }
   for (const l of settled) {
     const m = byId.get(l.args.matchId as Hex);
-    if (m) { m.status = 'Settled'; m.ranking = (l.args.ranking as Address[]) ?? []; m.block = Math.max(m.block, Number(l.blockNumber)); }
+    if (m) { m.status = 'Settled'; m.ranking = [...(l.args.ranking ?? [])]; m.block = Math.max(m.block, Number(l.blockNumber)); }
   }
 
   const matches = [...byId.values()].sort((a, b) => b.block - a.block).slice(0, limit);
-  return { matches, entryFee: fee.toString(), rewards: (rewards as bigint[]).map((r) => r.toString()), head: Number(head) };
+  return { matches, entryFee: fee.toString(), rewards: rewards.map((r) => r.toString()), head: Number(head) };
 }
 
 /** Server-authoritative match seed (client can't predict pre-commit, can't grind). */
@@ -201,6 +201,47 @@ export async function settleFromInput(matchId: Hex, input: MatchInput): Promise<
   const pidToAddr: Record<Pid, Address> = { P1: players[0], P2: players[1], P3: players[2], P4: players[3] };
   const ranking = sim.ranking.map((pid) => pidToAddr[pid]);
 
+  const { txHash } = await settleMatch(matchId, ranking);
+  return { txHash, ranking, valid: true };
+}
+
+// ── Real 4-player multiplayer (all seats are humans; no bots) ────────────────
+// The multiplayer server (frostbite-mp) runs the authoritative live loop and
+// calls these server-to-server. createMatch takes the four real addresses in
+// seat order [P1,P2,P3,P4]; each player pays their own entry; settle re-derives
+// the ranking from the recorded action log with the SAME engine the loop ran.
+
+/** Deterministic matchId for a multiplayer room (four players + a room salt). */
+export function matchIdForMP(players: Address[], salt: number | string): Hex {
+  return keccak256(encodeAbiParameters(
+    [{ type: 'string' }, { type: 'address[4]' }, { type: 'string' }],
+    ['cardgame-mp', players.slice(0, 4) as unknown as readonly [Address, Address, Address, Address], String(salt)],
+  ));
+}
+
+/** Open a 4-real-player match (createMatch only; each player joins/pays on their
+ *  own). Returns the matchId, the authoritative seed, and the entry fee. */
+export async function openMatchMP(players: Address[], salt: number | string): Promise<{ matchId: Hex; seed: string; entryFee: string }> {
+  if (players.length !== 4) throw new Error('need exactly 4 players');
+  const four = players as [Address, Address, Address, Address];
+  const matchId = matchIdForMP(players, salt);
+  const fee = await entryFee();
+  const status = await pub.readContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'getStatus', args: [matchId] });
+  if (status === 0) {
+    await waitOk(await opWallet().writeContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'createMatch', args: [matchId, four] }));
+  }
+  return { matchId, seed: matchSeed(matchId), entryFee: fee.toString() };
+}
+
+/** Authoritative multiplayer settle: re-derive the ranking from the recorded MP
+ *  action log (server owns the loop, so this just confirms + signs the result). */
+export async function settleMPFromInput(matchId: Hex, input: MPInput): Promise<{ txHash: Hex; ranking: Address[]; valid: boolean }> {
+  const seed = matchSeed(matchId);
+  const sim = simulateMatchMP(seed, input);
+  if (!sim.valid) throw new Error('invalid MP action log: ' + (sim.reason || 'rejected'));
+  const players = await pub.readContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'getPlayers', args: [matchId] });
+  const pidToAddr: Record<Pid, Address> = { P1: players[0], P2: players[1], P3: players[2], P4: players[3] };
+  const ranking = sim.ranking.map((pid) => pidToAddr[pid]);
   const { txHash } = await settleMatch(matchId, ranking);
   return { txHash, ranking, valid: true };
 }
