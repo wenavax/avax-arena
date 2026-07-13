@@ -13,7 +13,7 @@
  * testable headlessly with no wallets. The tick clock is pumped via `tickAll()`
  * (the socket wiring drives it at 10 Hz; tests pump it synchronously).
  *
- * Lifecycle:  queue → forming → paying → playing(rounds) → settling → done
+ * Lifecycle:  reserve → slot → forming → paying → playing(rounds) → settling → done
  */
 import {
   initMatch, startRoundMP, stepTickMP, roundDone, scoreRound, finalRanking, speed,
@@ -21,6 +21,7 @@ import {
 } from './cardgame-engine.mjs';
 
 export const SEATS = 4;
+export const SLOT_MS = 300_000; // a scheduled race every 5 minutes (wall clock)
 export const PAY_WINDOW_MS = 90_000;      // to pay entry after match found
 export const VSELECT_MS = 15_000;         // to pick a vehicle each round
 export const RECONNECT_GRACE_MS = 12_000; // seat stays human this long after a drop
@@ -31,25 +32,52 @@ const short = (a) => (a ? a.slice(0, 6) + '…' + a.slice(-4) : '?');
  * @param {object} deps
  * @param {(address:string,event:string,data:any)=>void} deps.emitToPlayer
  * @param {(roomId:string,event:string,data:any)=>void} deps.emitToRoom
+ * @param {(event:string,data:any)=>void} [deps.emitToAll]
  * @param {{ createMatch:(players:string[])=>Promise<{matchId:string,seed:string,entryFee:string}>,
- *           settle:(matchId:string,input:object)=>Promise<{ranking:string[],txHash?:string}> }} deps.chain
+ *           settle:(matchId:string,input:object)=>Promise<{ranking:string[],txHash?:string}>,
+ *           cancelMatch?:(matchId:string)=>Promise<any> }} deps.chain
  * @param {()=>number} [deps.now]
  * @param {(...a:any[])=>void} [deps.log]
  */
 export function createCardgameHub(deps) {
   const emitToPlayer = deps.emitToPlayer;
   const emitToRoom = deps.emitToRoom;
+  const emitToAll = deps.emitToAll || (() => {});
   const chain = deps.chain;
   const now = deps.now || (() => Number(process.hrtime.bigint() / 1_000_000n));
   const log = deps.log || (() => {});
 
-  /** @type {Array<{address:string}>} */
-  const queue = [];
   /** @type {Map<string,Room>} address → room */
   const byAddress = new Map();
   /** @type {Map<string,Room>} roomId → room */
   const rooms = new Map();
   let roomSeq = 0;
+
+  /** Ordered reservation list for the next scheduled slot. A reservation dies
+   *  with its socket (disconnect() drops it) — no ghost seats. */
+  const reserved = [];
+  let nextSlotAt = 0;
+
+  function slotAfter(t) { return Math.floor(t / SLOT_MS) * SLOT_MS + SLOT_MS; }
+  function broadcastSlot() {
+    if (!nextSlotAt) nextSlotAt = slotAfter(now());
+    emitToAll('cardgame:slot', { startsAt: nextSlotAt, reserved: reserved.length });
+  }
+
+  // ── scheduled matchmaking: players reserve, the clock opens the race ──
+  function reserve(address) {
+    const key = address.toLowerCase();
+    if (byAddress.has(key)) return { error: 'already in a match' };
+    if (reserved.some((r) => r.address.toLowerCase() === key)) return { error: 'already reserved' };
+    reserved.push({ address });
+    broadcastSlot();
+    return { ok: true, position: reserved.length, startsAt: nextSlotAt };
+  }
+  function unreserve(address) {
+    const key = address.toLowerCase();
+    const i = reserved.findIndex((r) => r.address.toLowerCase() === key);
+    if (i >= 0) { reserved.splice(i, 1); broadcastSlot(); }
+  }
 
   class Room {
     constructor(players) {
@@ -80,25 +108,8 @@ export function createCardgameHub(deps) {
     }
   }
 
-  // ── matchmaking ────────────────────────────────────────────────────
-  function enqueue(address) {
-    const key = address.toLowerCase();
-    if (byAddress.has(key)) return { error: 'already in a match' };
-    if (queue.some((q) => q.address.toLowerCase() === key)) return { error: 'already queued' };
-    queue.push({ address });
-    emitToPlayer(address, 'cardgame:queued', { position: queue.length, needed: SEATS });
-    if (queue.length >= SEATS) void formMatch();
-    return { ok: true, position: queue.length };
-  }
-  function dequeue(address) {
-    const key = address.toLowerCase();
-    const i = queue.findIndex((q) => q.address.toLowerCase() === key);
-    if (i >= 0) queue.splice(i, 1);
-  }
-
-  async function formMatch() {
-    const group = queue.splice(0, SEATS);
-    const room = new Room(group.map((g) => g.address));
+  async function formMatch(addresses) {
+    const room = new Room(addresses);
     for (const p of room.players) byAddress.set(p.address.toLowerCase(), room);
     rooms.set(room.id, room);
     log('[cardgame] forming', room.id, room.players.map((p) => short(p.address)));
@@ -115,8 +126,10 @@ export function createCardgameHub(deps) {
       }
     } catch (e) {
       log('[cardgame] createMatch failed', e?.message);
-      for (const p of room.players) emitToPlayer(p.address, 'cardgame:error', { error: 'matchmaking failed, requeue' });
+      for (const p of room.players) emitToPlayer(p.address, 'cardgame:error', { error: 'match open failed — you stay reserved for the next race' });
       destroyRoom(room);
+      for (const p of [...room.players].reverse()) reserved.unshift({ address: p.address });
+      broadcastSlot();
     }
   }
 
@@ -273,15 +286,16 @@ export function createCardgameHub(deps) {
 
   // ── disconnects / reconnect grace ──────────────────────────────────
   function disconnect(address) {
-    dequeue(address);
+    unreserve(address);
     const room = byAddress.get(address.toLowerCase());
     if (!room) return;
     const st = room.seat(address); if (!st) return;
     st.connected = false; st.droppedAt = now();
     emitToRoom(room.id, 'cardgame:seat-dropped', { pid: st.pid, graceMs: RECONNECT_GRACE_MS });
     if (room.state === 'paying') {
-      // pre-lock drop cancels the match (nobody's funds are trapped that didn't pay)
-      cancelRoom(room, 'a player left before lock');
+      // pre-lock drop cancels the match; whoever already paid gets an instant
+      // on-chain refund credit and stays reserved for the next race
+      cancelPaying(room, 'a player left before lock');
     }
   }
   function reconnect(address) {
@@ -295,6 +309,19 @@ export function createCardgameHub(deps) {
     return { ok: true, roomId: room.id, state: room.state, seat: st.pid, matchId: room.matchId };
   }
 
+  /** Cancel a room still in 'paying': flips the on-chain match to Cancelled so
+   *  payers can withdraw instantly, and puts CONNECTED payers back at the front
+   *  of the reservation list for the next slot. */
+  function cancelPaying(room, reason) {
+    const payers = room.players.filter((p) => p.paid && p.connected).map((p) => p.address);
+    if (room.matchId && chain.cancelMatch) {
+      Promise.resolve(chain.cancelMatch(room.matchId)).catch((e) => log('[cardgame] cancelMatch failed', e?.message));
+    }
+    cancelRoom(room, reason);
+    for (const a of payers.reverse()) reserved.unshift({ address: a });
+    broadcastSlot();
+  }
+
   function cancelRoom(room, reason) {
     if (room.state === 'done' || room.state === 'cancelled') return;
     room.state = 'cancelled';
@@ -306,12 +333,22 @@ export function createCardgameHub(deps) {
     rooms.delete(room.id);
   }
 
-  // ── periodic sweeps (pay window + reconnect grace → bot-fill) ───────
+  // ── periodic sweeps (slot boundary + pay window + reconnect grace) ──
   function sweep() {
     const t = now();
+    // scheduled slots: at each 5-min boundary, the first four reservations race
+    if (!nextSlotAt) nextSlotAt = slotAfter(t);
+    if (t >= nextSlotAt) {
+      if (reserved.length >= SEATS) {
+        const group = reserved.splice(0, SEATS).map((g) => g.address);
+        void formMatch(group);
+      }
+      nextSlotAt = slotAfter(t);
+      broadcastSlot();
+    }
     for (const room of rooms.values()) {
       if (room.state === 'paying' && t >= room.payDeadline) {
-        cancelRoom(room, 'not all players paid in time');
+        cancelPaying(room, 'not all players paid in time');
       } else if (room.state === 'playing') {
         for (const p of room.players) {
           if (!p.connected && !p.bot && p.droppedAt && t - p.droppedAt >= RECONNECT_GRACE_MS) {
@@ -327,9 +364,9 @@ export function createCardgameHub(deps) {
   function tickAll() { for (const room of rooms.values()) stepRoom(room); }
 
   return {
-    enqueue, dequeue, markPaid, chooseVehicle, submitPlay, disconnect, reconnect,
-    tickAll, sweep,
-    _rooms: rooms, _queue: queue, _byAddress: byAddress, Room,
-    stats: () => ({ queued: queue.length, rooms: rooms.size }),
+    reserve, unreserve, markPaid, chooseVehicle, submitPlay, disconnect, reconnect,
+    tickAll, sweep, broadcastSlot,
+    _rooms: rooms, _reserved: reserved, _byAddress: byAddress, Room,
+    stats: () => ({ reserved: reserved.length, rooms: rooms.size }),
   };
 }

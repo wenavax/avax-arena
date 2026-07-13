@@ -36,8 +36,10 @@ async function runMatch(seed) {
       return { ranking: capturedSim.ranking, txHash: '0xSETTLETX' };
     },
   };
+  const slotEvents = [];
+  const emitToAll = (event, data) => { if (event === 'cardgame:slot') slotEvents.push(data); };
   let clock = 0;
-  const hub = createCardgameHub({ emitToPlayer, emitToRoom, chain, now: () => clock, log: () => {} });
+  const hub = createCardgameHub({ emitToPlayer, emitToRoom, emitToAll, chain, now: () => clock, log: () => {} });
 
   for (let i = 0; i < 4; i++) {
     const address = ADDRS[i];
@@ -68,8 +70,9 @@ async function runMatch(seed) {
     clients.set(address.toLowerCase(), c);
   }
 
-  // enqueue all four → forms a match (createMatch is async)
-  for (const a of ADDRS) hub.enqueue(a);
+  // reserve all four, then advance the clock to the next 5-min slot boundary
+  for (const a of ADDRS) hub.reserve(a);
+  clock = 300_000; hub.sweep();
   await flush(); // let createMatch resolve + match-found fire (clients auto-pay + pick)
 
   // pump the authoritative tick until settled (or a safety cap)
@@ -80,7 +83,7 @@ async function runMatch(seed) {
     if (i % 20 === 0) await flush(); // let async settle at match end resolve
   }
   await flush();
-  return { clients: arr(), capturedInput, capturedSim, hub };
+  return { clients: arr(), capturedInput, capturedSim, hub, slotEvents };
 }
 
 console.log('[mp-integration] full 4-player match, live loop == recorded-log settle');
@@ -106,6 +109,65 @@ console.log('\n[mp-integration] determinism — same seed → same result twice'
   const b = await runMatch('mp-headless-seed-2');
   ok(a.capturedSim.ranking.join('>') === b.capturedSim.ranking.join('>'),
     `stable ranking ${a.capturedSim.ranking.join('>')}`);
+}
+
+console.log('\n[mp-scheduled] under-filled slot skips and reservations roll over');
+{
+  let clock = 0;
+  const hub = createCardgameHub({
+    emitToPlayer: () => {}, emitToRoom: () => {}, emitToAll: () => {},
+    chain: { createMatch: async () => { throw new Error('must not create'); }, settle: async () => ({}) },
+    now: () => clock, log: () => {},
+  });
+  hub.reserve(ADDRS[0]); hub.reserve(ADDRS[1]);
+  clock = 300_000; hub.sweep();
+  await flush();
+  ok(hub.stats().rooms === 0, 'no room formed with 2 reservations');
+  ok(hub.stats().reserved === 2, 'both reservations survive to the next slot');
+  clock = 600_000; hub.sweep(); await flush();
+  ok(hub.stats().reserved === 2, 'still reserved after a second empty slot');
+}
+
+console.log('\n[mp-scheduled] overflow — 5 reserved: 4 race, 5th rolls to next slot');
+{
+  const FIFTH = '0xEEee000000000000000000000000000000000005';
+  let clock = 0;
+  const hub = createCardgameHub({
+    emitToPlayer: () => {}, emitToRoom: () => {}, emitToAll: () => {},
+    chain: { createMatch: async () => ({ matchId: '0xM2', seed: 's', entryFee: '1000000000000000000' }), settle: async () => ({}) },
+    now: () => clock, log: () => {},
+  });
+  for (const a of [...ADDRS, FIFTH]) hub.reserve(a);
+  clock = 300_000; hub.sweep(); await flush();
+  ok(hub.stats().rooms === 1, 'one room formed');
+  ok(hub.stats().reserved === 1, 'fifth player still reserved');
+  ok(hub._reserved[0].address === FIFTH, 'fifth player is first for the next slot');
+}
+
+console.log('\n[mp-scheduled] no-payer → on-chain cancel + connected payers re-reserved at front');
+{
+  let clock = 0;
+  const cancelled = [];
+  const hub = createCardgameHub({
+    emitToPlayer: () => {}, emitToRoom: () => {}, emitToAll: () => {},
+    chain: {
+      createMatch: async () => ({ matchId: '0xM3', seed: 's', entryFee: '1000000000000000000' }),
+      settle: async () => ({}),
+      cancelMatch: async (matchId) => { cancelled.push(matchId); },
+    },
+    now: () => clock, log: () => {},
+  });
+  for (const a of ADDRS) hub.reserve(a);
+  clock = 300_000; hub.sweep(); await flush();
+  ok(hub.stats().rooms === 1, 'room formed');
+  // three pay, ADDRS[3] never does
+  hub.markPaid(ADDRS[0]); hub.markPaid(ADDRS[1]); hub.markPaid(ADDRS[2]);
+  clock = 300_000 + 90_001; // past PAY_WINDOW_MS
+  hub.sweep(); await flush();
+  ok(cancelled.length === 1 && cancelled[0] === '0xM3', 'chain.cancelMatch called for the room');
+  ok(hub.stats().rooms === 0, 'room destroyed');
+  ok(hub.stats().reserved === 3, 'three connected payers re-reserved');
+  ok(hub._reserved[0].address === ADDRS[0], 'payers are at the FRONT (order kept)');
 }
 
 console.log(`\n${fail === 0 ? '★' : '✗'} ${pass}/${pass + fail} PASS — real 4-player loop is server-authoritative & settle-faithful.`);
