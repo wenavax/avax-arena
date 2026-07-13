@@ -8,6 +8,7 @@
 import { vehicleSelector, VEH_META, vehAbbr, vehColor } from './vehicles';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
 import { createCgSound, soundLabel } from './sound';
+import { ABILITIES, triggerAbilities, SELF_BUDGET } from './abilities';
 import { attachView3D, type View3D } from './view3d';
 
 export interface CardGameOptions {
@@ -57,6 +58,8 @@ const TEMPLATE = `
       <span>Straight 3 <b>+20</b></span><span>Straight 5 <b>+200</b></span><span>Straight 8 <b>+350</b></span>
     </div>
     <p class="dim">Boost is capped at ×5. The <b>✨ Best</b> button suggests a strong play from your hand.</p>
+    <h4>Card abilities — every value does something</h4>
+    <div class="cg-help-combos cg-help-abs" id="cgHelpAbs"></div>
   </div>
 </div>
 
@@ -265,7 +268,27 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       else players.forEach((q) => { if (q !== p && !q.fin) { q.magics.push({ mult: m.m, endsAt: t + CFG.DUR }); q.debuff = { cls: 'fx-oil', until: t + CFG.DUR }; } });
     });
     const set = new Set(idxs); p.hand = p.hand.filter((_, i) => !set.has(i)); p.cdUntil = t + CFG.COOLDOWN;
-    return { ok: true as const, r };
+    // per-value abilities: each distinct NORMAL value in the set fires once.
+    // Magic cards only ever fire their magic (one card, one ability).
+    const fired = triggerAbilities(
+      cards.filter((c) => c.type === 'NORMAL').map((c) => c.value),
+      {
+        p, players, t, dur: CFG.DUR, cap: CFG.CAP,
+        budget: { selfSpeedLeft: SELF_BUDGET },
+        drawOne: () => {
+          if (p.hand.length >= p.hlim || !deck.length) return false;
+          p.hand.push(...draw(1)); return true;
+        },
+        buff: (tg, mult, seconds) => {
+          const q = tg as Player;
+          q.magics.push({ mult, endsAt: t + seconds });
+          if (mult < 1) q.debuff = { cls: 'fx-hit', until: t + seconds };
+        },
+      },
+    );
+    // DEICE also clears the visual debuff mark
+    if (fired.some((f) => f.includes('DEICE'))) p.debuff = null;
+    return { ok: true as const, r, fired };
   }
 
   // ---- Bots ----
@@ -278,6 +301,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     if (!best) { let hi = 0; p.hand.forEach((c, i) => { if (c.value > p.hand[hi].value) hi = i; }); best = [hi]; }
     const res = applyPlay(p, best);
     if (res.ok && res.r.combo) log(`${nameOf(p.id)} played <b>${res.r.combo}</b> (x${res.r.mult.toFixed(2)})`);
+    if (res.ok) res.fired.forEach((txt) => log(`${nameOf(p.id)}: ${txt}`));
   }
 
   // ---- Tick loop ----
@@ -415,7 +439,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
         el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(i) ? ' sel' : '');
         el.innerHTML = `<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
           <i class="cardart">${c.magic ? MAGIC_ICON[c.magic] : '❄'}</i>
-          <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : ''}`;
+          <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : `<small class="ab">${ABILITIES[c.value].key}</small>`}`;
         el.onpointerdown = (e) => {
           e.preventDefault();
           if (selected.has(i)) selected.delete(i); else if (selected.size < 8) selected.add(i);
@@ -444,7 +468,10 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     const pv = $('playPreview');
     if (!cards.length) { pv.textContent = 'select 1–8 cards'; return; }
     const r = evaluate(cards);
+    const abKeys = [...new Set(cards.filter((c) => c.type === 'NORMAL').map((c) => c.value))]
+      .sort((a, b) => a - b).map((v) => ABILITIES[v].icon + ABILITIES[v].key);
     pv.textContent = `${r.combo || r.kind} → x${r.mult.toFixed(2)}` + (r.magic.length ? ` +${r.magic.map((m) => m.type).join('/')}` : '')
+      + (abKeys.length ? ` · ${abKeys.join(' ')}` : '')
       + (bestNote ? ` · ${bestNote}` : '');
   }
   // Prepend ONE parsed node and cap the list — the old `innerHTML = new + innerHTML`
@@ -466,6 +493,10 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     if (res.ok) {
       log(`You played <b>${res.r.combo || res.r.kind}</b> (x${res.r.mult.toFixed(2)})` + (res.r.magic.length ? ` + ${res.r.magic.map((m) => m.type).join(', ')}` : ''));
       popup(`${res.r.combo || res.r.kind} ×${res.r.mult.toFixed(2)}`, fxClass(res.r));
+      res.fired.forEach((txt, i) => {
+        setTimeout(() => popup(txt, 'pop-ab'), 350 + i * 300);
+        log(txt);
+      });
       selected.clear(); bestNote = ''; updatePreview(); render();
     }
   };
@@ -532,6 +563,8 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   $('seedChip').textContent = `seed ${short(mockHex(64))}`;
   ['P1', 'P2', 'P3', 'P4'].forEach((id) => { usedVeh[id] = {}; });
   $('roundNo').textContent = '1';
+  $('cgHelpAbs').innerHTML = Object.entries(ABILITIES)
+    .map(([v, a]) => `<span><b>${v}</b> ${a.icon} ${a.key} — ${a.desc}</span>`).join('');
   showVehicleSelect(); updatePreview();
 
   // ---- Cleanup ----
