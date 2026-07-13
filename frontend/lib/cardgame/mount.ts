@@ -6,8 +6,9 @@
  * lane tag and settlement rows.
  */
 import { vehicleSelector, VEH_META, vehAbbr, vehColor } from './vehicles';
-import { bestPlay } from './bestPlay';
-import type { Track3D } from './track3d';
+import { bestPlan, bestPlay, planNote } from './bestPlay';
+import { createCgSound, soundLabel } from './sound';
+import { attachView3D, type View3D } from './view3d';
 
 export interface CardGameOptions {
   address?: string | null;
@@ -35,6 +36,28 @@ const TEMPLATE = `
   <span class="chip gold">POOL ◆ 4.00 · SIM</span>
   <span class="chip mono" id="seedChip"></span>
   <button class="chip cg-viewtoggle" id="viewToggle" title="Switch track view">🎥 3D VIEW</button>
+  <button class="chip" id="sndToggle" title="Race music on/off">🎵 MUSIC</button>
+  <button class="chip" id="helpToggle" title="How to play">❔ HOW TO PLAY</button>
+</div>
+
+<div class="cg-help" id="cgHelp" hidden>
+  <div class="cg-help-col">
+    <h4>How it works</h4>
+    <p>Race 3 bots to <b>1000u</b> over <b>3 rounds</b>. Play cards to boost your speed for 3s. Best total score across the rounds wins.</p>
+    <h4>Keyboard</h4>
+    <p><kbd>1</kbd>–<kbd>9</kbd> <kbd>0</kbd> pick a card · <kbd>Space</kbd> play · <kbd>B</kbd> best · <kbd>C</kbd> clear</p>
+    <h4>Magic cards</h4>
+    <p><b>⚡ NITRO</b> +25% to you · <b>✕ NAIL</b> −25% to the leader · <b>● OIL</b> −25% to all rivals</p>
+  </div>
+  <div class="cg-help-col">
+    <h4>Combo bonuses (more cards = bigger boost)</h4>
+    <div class="cg-help-combos">
+      <span>Pair <b>+50</b></span><span>Two pairs <b>+100</b></span><span>Three of a kind <b>+150</b></span>
+      <span>Full house <b>+150</b></span><span>Four of a kind <b>+500</b></span><span>Two trios <b>+400</b></span>
+      <span>Straight 3 <b>+20</b></span><span>Straight 5 <b>+200</b></span><span>Straight 8 <b>+350</b></span>
+    </div>
+    <p class="dim">Boost is capped at ×5. The <b>✨ Best</b> button suggests a strong play from your hand.</p>
+  </div>
 </div>
 
 <div class="cg-vsel-slot" id="vehSelect"></div>
@@ -158,10 +181,13 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   let tickH: ReturnType<typeof setInterval> | null = null;
   let toastT: ReturnType<typeof setTimeout> | null = null;
   let selected = new Set<number>();
+  // ✨ Best: repeated clicks cycle through the plan's plays; note rides the preview
+  let bestNote = '';
+  let bestCycle = { sig: '', i: 0 };
+  // 🎵 quiet race music, shared toggle across modes
+  const sound = createCgSound();
   // 3D view (pure renderer swap — the game logic/tick is identical either way)
-  let track3d: Track3D | null = null;
-  let view3dBusy = false;
-  let unmounted = false; // guards the async 3D load racing a page unmount
+  let view3d: View3D | null = null;
   const usedVeh: Record<string, Record<string, boolean>> = { P1: {}, P2: {}, P3: {}, P4: {} };
   function mkPlayers(): Player[] {
     return ['P1', 'P2', 'P3', 'P4'].map((id) => ({
@@ -187,6 +213,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     });
     buildTrack();
     t = 0; tickH = setInterval(tick, 100);
+    sound.raceOn(true);
     $('roundChip').textContent = `ROUND ${roundIndex + 1}/3`;
     log(`<b>Round ${roundIndex + 1}</b> started`); render();
   }
@@ -255,6 +282,9 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
 
   // ---- Tick loop ----
   function tick() {
+    // Pause the race while the tab is hidden: no wasted CPU/paint, and the player
+    // doesn't silently lose ground while away. Resumes on the next visible tick.
+    if (document.hidden) return;
     players.forEach((p) => { if (p.id !== 'P1') botAct(p); });
     players.forEach((p) => {
       if (p.fin) return; const prev = p.dist; p.dist += speed(p) * 0.1;
@@ -272,7 +302,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       }
     });
     render();
-    if (players.every((p) => p.fin) || t >= CFG.TIMEOUT) { if (tickH) clearInterval(tickH); endRound(); }
+    if (players.every((p) => p.fin) || t >= CFG.TIMEOUT) { if (tickH) clearInterval(tickH); sound.raceOn(false); endRound(); }
     t += 0.1;
   }
   function endRound() {
@@ -293,13 +323,14 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       b.scores.filter((s) => s === 5).length - a.scores.filter((s) => s === 5).length ||
       a.times.reduce((s, x) => s + x, 0) - b.times.reduce((s, x) => s + x, 0));
     const rw = [2.0, 1.0, 0.5, 0.3];
+    if (arr[0].id === 'P1') sound.victory();
     toast(`🏆 ${nameOf(arr[0].id)} wins the match!`);
     log(`<b>MATCH OVER.</b> Final: ` + arr.map((p, i) => `${i + 1}. ${nameOf(p.id)} (${p.total}pts, ${rw[i]} AVAX)`).join(' · '));
     const st = $('settle');
     st.innerHTML = `<div class="settleBox"><div class="settleHead">✓ RESULT SIGNED &amp; SETTLED
         <span class="mono dim">sig ${short(mockHex(130))}</span></div>` +
       arr.map((p, i) => `<div class="settleRow"><span class="dim">#${i + 1}</span>
-        <span class="addr"><i class="av" style="background:${cssv(COLORS[p.id])}"></i>${nameOf(p.id)}</span>
+        <span class="addr"><i class="av" style="background:${colorOf(p.id)}"></i>${nameOf(p.id)}</span>
         <b class="gold">◆ ${rw[i].toFixed(1)}</b>
         <span class="txh">${short(mockHex(64))}</span><span class="ok">✓</span></div>`).join('') +
       `<div class="settleRow"><span class="dim">fee</span><span class="addr">treasury</span>
@@ -311,9 +342,13 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
 
   // ---- Rendering ----
   function cssv(n: string) { return getComputedStyle(root).getPropertyValue(n); }
+  // Lane colours never change — resolve the CSS var ONCE per pid instead of
+  // calling getComputedStyle() (a forced reflow) 4× on every 10Hz render tick.
+  const colorCache: Record<string, string> = {};
+  function colorOf(pid: string) { return (colorCache[pid] ??= (cssv(COLORS[pid]).trim() || '#ed2f39')); }
   function popup(txt: string, cls?: string) {
     // in 3D mode the 2D track is hidden — float combo popups over the 3D scene
-    const tk = track3d ? $('track3d') : $('track');
+    const tk = view3d?.is3D() ? $('track3d') : $('track');
     const el = document.createElement('div');
     el.className = 'popup' + (cls ? ' ' + cls : ''); el.textContent = txt; tk.appendChild(el);
     setTimeout(() => el.remove(), 1400);
@@ -333,7 +368,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       });
       const fin = document.createElement('div'); fin.className = 'finish'; lane.appendChild(fin);
       const car = document.createElement('div'); car.className = 'car run';
-      car.style.setProperty('--c', cssv(COLORS[p.id]).trim());
+      car.style.setProperty('--c', colorOf(p.id));
       car.innerHTML = `<span class="carwrap"><span class="fx"></span>${CAR_SVG}</span>
         <span class="tag"></span><span class="hud"></span>`;
       lane.appendChild(car); tk.appendChild(lane);
@@ -342,7 +377,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   }
   function render(finalOrder?: Player[], rw?: number[]) {
     // 3D view: forward a per-tick snapshot; three.js lerps to 60fps on its own
-    track3d?.update(players.map((p) => ({
+    if (view3d?.is3D()) view3d.forward(players.map((p) => ({
       pid: p.id, dist: p.dist, speed: speed(p),
       boosted: !!(p.nm && t < p.nm.endsAt) && !p.fin,
       fx: p.fx && t < p.fx.until && !p.fin ? p.fx.cls : (p.debuff && t < p.debuff.until && !p.fin ? p.debuff.cls : null),
@@ -355,7 +390,12 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       const dbCls = (p.debuff && t < p.debuff.until && !p.fin) ? ' ' + p.debuff.cls : '';
       ref.car.style.left = (p.dist / CFG.TRACK * 93) + '%';
       ref.car.className = 'car' + (p.fin ? ' fin' : ' run') + (boosted ? ' boost' : '') + fxCls + dbCls;
-      ref.tag.innerHTML = `${nameOf(p.id)}${p.veh ? ` · <b style="color:${vehColor(p.veh)}">${vehAbbr(p.veh)}</b>` : ''}`;
+      // tag only changes when the vehicle changes (name is fixed) — skip the
+      // innerHTML re-parse on every tick.
+      if (ref.tag.dataset.veh !== (p.veh ?? '')) {
+        ref.tag.innerHTML = `${nameOf(p.id)}${p.veh ? ` · <b style="color:${vehColor(p.veh)}">${vehAbbr(p.veh)}</b>` : ''}`;
+        ref.tag.dataset.veh = p.veh ?? '';
+      }
       const cd = Math.max(0, p.cdUntil - t);
       ref.hud.textContent = p.fin ? `✔ ${p.ft}s` : `${Math.round(speed(p))}u/s${cd > 0 ? ' · cd' + cd.toFixed(1) : ''}`;
     });
@@ -364,9 +404,14 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     const h = $('hand');
     const sig = p1.hand.map((c) => c.id).join(',') + '|' + [...selected].sort((a, b) => a - b).join(',');
     if (h.dataset.sig !== sig) {
+      // deal-in animation only when the cards themselves changed, not the selection
+      const handSig = p1.hand.map((c) => c.id).join(',');
+      h.classList.toggle('nodeal', h.dataset.hand === handSig);
+      h.dataset.hand = handSig;
       h.dataset.sig = sig; h.innerHTML = '';
       p1.hand.forEach((c, i) => {
         const el = document.createElement('div');
+        el.style.setProperty('--ci', String(i));
         el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(i) ? ' sel' : '');
         el.innerHTML = `<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
           <i class="cardart">${c.magic ? MAGIC_ICON[c.magic] : '❄'}</i>
@@ -374,6 +419,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
         el.onpointerdown = (e) => {
           e.preventDefault();
           if (selected.has(i)) selected.delete(i); else if (selected.size < 8) selected.add(i);
+          bestNote = '';
           updatePreview(); render();
         };
         h.appendChild(el);
@@ -388,7 +434,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     tb.innerHTML = '<tr><th>#</th><th>Racer</th><th>Dist</th><th>Total</th></tr>';
     order.forEach((p, i) => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td class="dim">${i + 1}</td><td><span class="addr"><i class="av" style="background:${cssv(COLORS[p.id])}"></i>${nameOf(p.id)}</span></td>
+      tr.innerHTML = `<td class="dim">${i + 1}</td><td><span class="addr"><i class="av" style="background:${colorOf(p.id)}"></i>${nameOf(p.id)}</span></td>
         <td class="mono">${Math.round(p.dist)}</td><td>${p.total}${rw ? ` <span class="gold">· ◆${rw[i]}</span>` : ''}</td>`;
       tb.appendChild(tr);
     });
@@ -398,9 +444,17 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     const pv = $('playPreview');
     if (!cards.length) { pv.textContent = 'select 1–8 cards'; return; }
     const r = evaluate(cards);
-    pv.textContent = `${r.combo || r.kind} → x${r.mult.toFixed(2)}` + (r.magic.length ? ` +${r.magic.map((m) => m.type).join('/')}` : '');
+    pv.textContent = `${r.combo || r.kind} → x${r.mult.toFixed(2)}` + (r.magic.length ? ` +${r.magic.map((m) => m.type).join('/')}` : '')
+      + (bestNote ? ` · ${bestNote}` : '');
   }
-  function log(s: string) { const l = $('log'); l.innerHTML = `<div>${s}</div>` + l.innerHTML; }
+  // Prepend ONE parsed node and cap the list — the old `innerHTML = new + innerHTML`
+  // re-serialised the entire (unbounded) log on every event → O(n²) over a match.
+  function log(s: string) {
+    const l = $('log'); if (!l) return;
+    const d = document.createElement('div'); d.innerHTML = s;
+    l.insertBefore(d, l.firstChild);
+    while (l.childElementCount > 60) l.removeChild(l.lastElementChild!);
+  }
   function toast(s: string) {
     const el = $('cgToast'); el.textContent = s; el.style.opacity = '1';
     if (toastT) clearTimeout(toastT); toastT = setTimeout(() => { el.style.opacity = '0'; }, 2200);
@@ -412,93 +466,65 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     if (res.ok) {
       log(`You played <b>${res.r.combo || res.r.kind}</b> (x${res.r.mult.toFixed(2)})` + (res.r.magic.length ? ` + ${res.r.magic.map((m) => m.type).join(', ')}` : ''));
       popup(`${res.r.combo || res.r.kind} ×${res.r.mult.toFixed(2)}`, fxClass(res.r));
-      selected.clear(); updatePreview(); render();
+      selected.clear(); bestNote = ''; updatePreview(); render();
     }
   };
-  ($('clearBtn')).onclick = () => { selected.clear(); updatePreview(); render(); };
+  ($('clearBtn')).onclick = () => { selected.clear(); bestNote = ''; updatePreview(); render(); };
   ($('bestBtn')).onclick = () => {
     const p1 = players[0];
     if (p1.fin || t < p1.cdUntil || !p1.hand.length) return;
-    const pickIds = new Set(bestPlay(p1.hand).map((c) => c.id));
+    const plan = bestPlan(p1.hand, { endgame: roundIndex >= 2 });
+    const sig = p1.hand.map((c) => c.id).join(',');
+    if (bestCycle.sig !== sig) bestCycle = { sig, i: 0 };
+    else if (plan.plays.length) bestCycle.i = (bestCycle.i + 1) % plan.plays.length;
+    const pickCards = plan.plays.length ? plan.plays[bestCycle.i].cards : bestPlay(p1.hand);
+    bestNote = plan.plays.length ? planNote(plan, bestCycle.i) : '✨ low hand — worth saving';
+    const pickIds = new Set(pickCards.map((c) => c.id));
     selected = new Set(p1.hand.map((c, i) => (pickIds.has(c.id) ? i : -1)).filter((i) => i >= 0));
     updatePreview(); render();
   };
+  const sndBtn = $('sndToggle') as HTMLButtonElement;
+  sndBtn.textContent = soundLabel(sound.enabled());
+  sndBtn.onclick = () => { sndBtn.textContent = soundLabel(sound.toggle()); };
 
-  // Fullscreen for the 3D view (Esc exits natively; ResizeObserver re-fits).
-  // iOS Safari has no element requestFullscreen → CSS pseudo-fullscreen fallback.
-  // While fullscreen, the hand panel + vehicle selector + toast are re-parented
-  // INTO the 3D container (only the fullscreened subtree is visible) so you can
-  // keep playing cards at the bottom of the screen. DOM moves keep listeners.
-  const dockMarkers = new Map<HTMLElement, Comment>();
-  function dockIntoFS(on: boolean) {
-    const host = $('track3d');
-    const items: Array<[HTMLElement, string]> = [
-      [$('handPanel'), 'cg-fsdock'],
-      [$('vehSelect'), 'cg-fsveh'],
-      [$('cgToast'), 'cg-fstoast'],
-    ];
-    for (const [el, cls] of items) {
-      if (!el) continue;
-      if (on) {
-        if (dockMarkers.has(el)) continue;
-        const marker = document.createComment('fs-dock');
-        el.parentElement?.insertBefore(marker, el);
-        dockMarkers.set(el, marker);
-        host.appendChild(el);
-        el.classList.add(cls);
-      } else {
-        const marker = dockMarkers.get(el);
-        el.classList.remove(cls);
-        if (marker?.parentNode) { marker.parentNode.insertBefore(el, marker); marker.remove(); }
-        dockMarkers.delete(el);
+  const helpBtn = $('helpToggle') as HTMLButtonElement;
+  helpBtn.onclick = () => { const h = $('cgHelp'); h.hidden = !h.hidden; helpBtn.classList.toggle('on', !h.hidden); };
+
+  // Keyboard: 1–9/0 toggle a card, Space/Enter play, B best, C clear. Lets the
+  // player race hands-on-keys instead of hunting cards with the mouse.
+  function onKey(e: KeyboardEvent) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const p1 = players[0]; if (!p1) return;
+    if (e.key >= '0' && e.key <= '9') {
+      const i = e.key === '0' ? 9 : +e.key - 1; // 1→idx0 … 9→idx8, 0→idx9
+      if (i < p1.hand.length && !p1.fin) {
+        if (selected.has(i)) selected.delete(i); else if (selected.size < 8) selected.add(i);
+        bestNote = ''; updatePreview(); render();
       }
-    }
+      e.preventDefault();
+    } else if (e.key === ' ' || e.key === 'Enter') {
+      if (!($('playBtn') as HTMLButtonElement).disabled) ($('playBtn') as HTMLButtonElement).click();
+      e.preventDefault();
+    } else if (e.key === 'b' || e.key === 'B') { ($('bestBtn') as HTMLButtonElement).click(); e.preventDefault(); }
+    else if (e.key === 'c' || e.key === 'C') { ($('clearBtn') as HTMLButtonElement).click(); e.preventDefault(); }
   }
-  const onFsChange = () => dockIntoFS(document.fullscreenElement === $('track3d'));
-  document.addEventListener('fullscreenchange', onFsChange);
-  ($('fsBtn')).onclick = (e) => {
-    e.stopPropagation();
-    const el = $('track3d');
-    if (typeof el.requestFullscreen === 'function') {
-      if (document.fullscreenElement) void document.exitFullscreen();
-      else void el.requestFullscreen();
-    } else {
-      const on = !el.classList.contains('cg-fs-fake');
-      el.classList.toggle('cg-fs-fake', on);
-      document.body.classList.toggle('cg-noscroll', on);
-      dockIntoFS(on);
-    }
-  };
+  document.addEventListener('keydown', onKey);
 
-  // ---- 2D/3D view toggle (lazy-loads three.js on first use) ----
-  ($('viewToggle')).onclick = async () => {
-    if (view3dBusy) return;
-    const btn = $('viewToggle') as HTMLButtonElement;
-    if (track3d) {
-      track3d.destroy(); track3d = null;
-      $('track3d').style.display = 'none';
-      $('track').style.display = '';
-      btn.textContent = '🎥 3D VIEW';
-      return;
-    }
-    view3dBusy = true;
-    btn.textContent = '… LOADING 3D';
-    try {
-      const { createTrack3D } = await import('./track3d');
-      const seats = players.map((p) => ({ pid: p.id, color: cssv(COLORS[p.id]).trim() || '#ed2f39', name: nameOf(p.id) }));
-      $('track3d').style.display = 'block';
-      const inst = await createTrack3D($('track3d'), seats);
-      if (unmounted) { inst.destroy(); return; } // page left while three.js loaded
-      track3d = inst;
-      $('track').style.display = 'none';
-      btn.textContent = '🗺 2D VIEW';
-      render();
-    } catch (e) {
-      $('track3d').style.display = 'none';
-      btn.textContent = '🎥 3D VIEW';
-      log('3D view unavailable on this device');
-    } finally { view3dBusy = false; }
-  };
+  // 2D/3D view swap + fullscreen (shared with staked/multiplayer). While
+  // fullscreen the hand panel, vehicle selector and toast dock into the 3D
+  // container so you can keep playing cards over the scene.
+  view3d = attachView3D({
+    host: $('track3d'),
+    track2d: $('track'),
+    toggleBtn: $('viewToggle'),
+    fsBtn: $('fsBtn'),
+    buildSeats: () => players.map((p) => ({ pid: p.id, color: colorOf(p.id), name: nameOf(p.id) })),
+    dockItems: () => [[$('handPanel'), 'cg-fsdock'], [$('vehSelect'), 'cg-fsveh'], [$('cgToast'), 'cg-fstoast']],
+    onLog: (m) => log(m),
+    onReady: () => render(),
+  });
 
   // ---- Boot ----
   deck = buildDeck(); players = mkPlayers(); roundIndex = 0;
@@ -510,13 +536,11 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
 
   // ---- Cleanup ----
   return () => {
-    unmounted = true;
     if (tickH) clearInterval(tickH);
     if (toastT) clearTimeout(toastT);
-    track3d?.destroy(); track3d = null;
-    document.removeEventListener('fullscreenchange', onFsChange);
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
-    document.body.classList.remove('cg-noscroll'); // if unmounted mid pseudo-fullscreen
+    sound.destroy();
+    view3d?.destroy(); view3d = null; // tears down three.js + fullscreen listeners
+    document.removeEventListener('keydown', onKey);
     root.innerHTML = '';
   };
 }

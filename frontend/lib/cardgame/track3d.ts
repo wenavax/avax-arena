@@ -30,6 +30,8 @@ const LANE_W = 3.2;           // world units per lane
 const LEN = 90;               // world length of the straight
 const X0 = -LEN / 2;
 const CP = [250, 500, 750];
+// wheel angular velocity per (speed·dt): (world-units-per-engine-unit / wheel radius) · fudge
+const WHEEL_SPIN_K = (LEN / TRACK) / 0.26 * 1.7;
 
 const FX_COLOR: Record<string, number> = {
   'fx-val': 0xececee, 'fx-ice': 0x4dd0e1, 'fx-epic': 0xa78bfa,
@@ -45,8 +47,17 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
   const W = () => container.clientWidth || 800;
   const H = () => container.clientHeight || 380;
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // Device tier: touch / low-core devices skip MSAA and render at a lower DPI.
+  // antialias + 2× pixelRatio + bloom = ~4× overdraw, the main mobile frame-drop
+  // source. Bloom stays (it carries the neon look) but softens the aliased edges.
+  const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+  const lowEnd = coarse || (typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: !lowEnd, alpha: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, lowEnd ? 1.5 : 2));
+
+  // index seats by pid once — the update loop looked one up with .find() per car
+  const seatByPid = new Map(seats.map((s) => [s.pid, s] as const));
   renderer.setSize(W(), H());
   renderer.domElement.style.display = 'block';
   renderer.domElement.style.borderRadius = '14px';
@@ -67,41 +78,79 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     tex.anisotropy = 4;
     return tex;
   }
-  /** Simplified Avalanche mark: white mountain "A" on the AVAX red disc. */
-  const avaxTex = () => canvasTex(128, 128, (ctx) => {
-    ctx.fillStyle = '#e84142';
-    ctx.beginPath(); ctx.arc(64, 64, 60, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.moveTo(64, 26); ctx.lineTo(104, 96); ctx.lineTo(76, 96);
-    ctx.lineTo(58, 64); ctx.lineTo(40, 96); ctx.lineTo(24, 96); ctx.closePath(); ctx.fill();
-  });
+  /** Official Avalanche mark (bundled asset); null → hand-drawn fallback. */
+  const avaxImg = await (async (): Promise<HTMLImageElement | null> => {
+    try {
+      const img = new Image();
+      img.src = '/avalanche/cardgame/avax-logo.png';
+      await img.decode();
+      return img;
+    } catch { return null; }
+  })();
+  const avaxTex = () => avaxImg
+    ? canvasTex(512, 512, (ctx) => ctx.drawImage(avaxImg, 0, 0, 512, 512))
+    : canvasTex(128, 128, (ctx) => {
+      ctx.fillStyle = '#e84142';
+      ctx.beginPath(); ctx.arc(64, 64, 60, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.moveTo(64, 26); ctx.lineTo(104, 96); ctx.lineTo(76, 96);
+      ctx.lineTo(58, 64); ctx.lineTo(40, 96); ctx.lineTo(24, 96); ctx.closePath(); ctx.fill();
+    });
+  /** Shrink-to-fit: largest font size (≤max) whose text fits maxWidth. */
+  function fitFont(ctx: CanvasRenderingContext2D, text: string, max: number, maxWidth: number): number {
+    let fs = max;
+    ctx.font = `900 ${fs}px Impact, "Arial Black", sans-serif`;
+    while (fs > 60 && ctx.measureText(text).width > maxWidth) {
+      fs -= 8;
+      ctx.font = `900 ${fs}px Impact, "Arial Black", sans-serif`;
+    }
+    return fs;
+  }
   /** FROST(white)BITE(red) wordmark on translucent dark. 1024×320 (3.2:1). */
   const frostbiteTex = (sub?: string) => canvasTex(1024, 320, (ctx) => {
     ctx.fillStyle = 'rgba(10,10,16,0.94)';
     ctx.beginPath(); ctx.roundRect(4, 4, 1016, 312, 34); ctx.fill();
     ctx.strokeStyle = 'rgba(237,47,57,0.7)'; ctx.lineWidth = 10; ctx.stroke();
-    ctx.font = '900 150px Impact, "Arial Black", sans-serif';
+    fitFont(ctx, 'FROSTBITE', sub ? 170 : 200, 930);
     ctx.textBaseline = 'middle';
-    const y = sub ? 128 : 160;
+    const y = sub ? 118 : 160;
     const fw = ctx.measureText('FROST').width;
     const bw = ctx.measureText('BITE').width;
     const x0 = (1024 - fw - bw) / 2;
-    ctx.fillStyle = '#ffffff'; ctx.fillText('FROST', x0, y);
+    // frost-white kept under the bloom threshold (0.82) — pure #fff blooms
+    // into an unreadable blob next to the red BITE
+    ctx.fillStyle = '#b9c0ce'; ctx.fillText('FROST', x0, y);
     ctx.fillStyle = '#ed2f39'; ctx.fillText('BITE', x0 + fw, y);
     if (sub) {
-      ctx.font = '700 62px "Arial", sans-serif';
-      ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.textAlign = 'center';
-      ctx.fillText(sub, 512, 250);
+      ctx.font = '800 74px "Arial", sans-serif';
+      ctx.fillStyle = 'rgba(210,216,228,0.8)'; ctx.textAlign = 'center';
+      ctx.fillText(sub, 512, 252);
     }
   });
   const boardTex = (text: string, accent: string) => canvasTex(1024, 320, (ctx) => {
     ctx.fillStyle = 'rgba(12,12,18,0.96)';
     ctx.beginPath(); ctx.roundRect(4, 4, 1016, 312, 28); ctx.fill();
     ctx.strokeStyle = accent; ctx.lineWidth = 12; ctx.stroke();
-    ctx.font = '900 132px Impact, "Arial Black", sans-serif';
+    fitFont(ctx, text, 210, 920);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = accent;
     ctx.fillText(text, 512, 164);
+  });
+  /** Sponsor board with the real Avalanche mark + label. */
+  const avaxBoardTex = (label: string) => !avaxImg ? boardTex(`${label} ▲`, '#e84142') : canvasTex(1024, 320, (ctx) => {
+    ctx.fillStyle = 'rgba(12,12,18,0.96)';
+    ctx.beginPath(); ctx.roundRect(4, 4, 1016, 312, 28); ctx.fill();
+    ctx.strokeStyle = '#e84142'; ctx.lineWidth = 12; ctx.stroke();
+    ctx.drawImage(avaxImg, 48, 36, 248, 248);
+    // dim the logo's pure-white mountain under the bloom threshold (0.82)
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(48, 36, 248, 248);
+    ctx.globalCompositeOperation = 'source-over';
+    fitFont(ctx, label, 180, 640);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#e84142';
+    ctx.fillText(label, 660, 164);
   });
   const tagTex = (text: string, color: string) => canvasTex(128, 64, (ctx) => {
     ctx.font = '900 40px "Arial Black", sans-serif';
@@ -190,24 +239,93 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     label.position.set(x, 4.1, 0);
     scene.add(label);
   });
+  // ── finish line: checkered wall + road strip + FINISH gantry + pulsing neon ──
+  // materials whose opacity breathes in the render loop (base kept in userData)
+  const finishPulseMats: InstanceType<typeof THREE.MeshBasicMaterial>[] = [];
   {
-    // checkered finish
-    const canvas = document.createElement('canvas');
-    canvas.width = 64; canvas.height = 64;
-    const ctx = canvas.getContext('2d')!;
-    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
-      // muted checker — pure white explodes under the bloom pass
-      ctx.fillStyle = (x + y) % 2 ? '#7e7e88' : '#101014';
-      ctx.fillRect(x * 8, y * 8, 8, 8);
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1, 2);
+    const finEdge = (seats.length * LANE_W) / 2 + 2;
+    // muted checker — pure white explodes under the bloom pass
+    const mkChecker = (cells: number, cell: number, a = '#7e7e88', b = '#101014') =>
+      canvasTex(cells * cell, cells * cell, (ctx) => {
+        for (let y = 0; y < cells; y++) for (let x = 0; x < cells; x++) {
+          ctx.fillStyle = (x + y) % 2 ? a : b;
+          ctx.fillRect(x * cell, y * cell, cell, cell);
+        }
+      });
+    // low checkered barrier — tall wall used to merge with the banner overhead
+    const wallTex = mkChecker(8, 8);
+    wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping; wallTex.repeat.set(5, 0.5);
     const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(0.3, 4.4, seats.length * LANE_W + 2),
-      new THREE.MeshBasicMaterial({ map: tex }),
+      new THREE.BoxGeometry(0.3, 1.5, seats.length * LANE_W + 2),
+      new THREE.MeshBasicMaterial({ map: wallTex }),
     );
-    wall.position.set(X0 + LEN + 1.2, 2.2, 0);
+    wall.position.set(X0 + LEN + 1.2, 0.75, 0);
     scene.add(wall);
+
+    // checkered strip painted across the road right at the line
+    const stripTex = mkChecker(8, 16, '#9a9aa4', '#141418');
+    stripTex.wrapS = stripTex.wrapT = THREE.RepeatWrapping;
+    stripTex.repeat.set(1, Math.ceil(seats.length * LANE_W / 2.4));
+    const strip = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.4, seats.length * LANE_W + 2),
+      new THREE.MeshBasicMaterial({ map: stripTex }),
+    );
+    strip.rotation.x = -Math.PI / 2;
+    strip.position.set(X0 + LEN - 0.9, 0.035, 0);
+    scene.add(strip);
+
+    // FINISH gantry: dark legs with pulsing neon edge, checkered banner overhead
+    const finX = X0 + LEN + 0.4;
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x1c1c26, roughness: 0.4, metalness: 0.7 });
+    for (const side of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.5, 6.6, 0.5), legMat);
+      leg.position.set(finX, 3.3, side * (finEdge - 0.1));
+      scene.add(leg);
+      const neon = new THREE.MeshBasicMaterial({ color: 0xf5c542, transparent: true, opacity: 0.9 });
+      neon.userData.base = 0.9;
+      finishPulseMats.push(neon);
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(0.08, 6.4, 0.08), neon);
+      edge.position.set(finX - 0.3, 3.2, side * (finEdge - 0.1));
+      scene.add(edge);
+    }
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, finEdge * 2 + 0.4), legMat);
+    beam.position.set(finX, 6.6, 0);
+    scene.add(beam);
+    // banner: FINISH between checkered bands, frost-white text (bloom-safe)
+    const bannerTex = canvasTex(1024, 256, (ctx) => {
+      ctx.fillStyle = 'rgba(12,12,18,0.97)';
+      ctx.fillRect(0, 0, 1024, 256);
+      for (const yy of [0, 224]) for (let x = 0; x < 32; x++) {
+        ctx.fillStyle = (x + (yy ? 1 : 0)) % 2 ? '#8e8e98' : '#101014';
+        ctx.fillRect(x * 32, yy, 32, 32);
+      }
+      ctx.fillStyle = '#ed2f39';
+      ctx.fillRect(0, 32, 14, 192); ctx.fillRect(1010, 32, 14, 192);
+      ctx.font = '900 150px Impact, "Arial Black", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#b9c0ce';
+      ctx.fillText('FINISH', 512, 130);
+    });
+    const banner = new THREE.Mesh(
+      new THREE.PlaneGeometry(finEdge * 2 - 1, 2.5),
+      new THREE.MeshBasicMaterial({ map: bannerTex, transparent: true, side: THREE.DoubleSide }),
+    );
+    banner.position.set(finX, 5.1, 0);
+    banner.rotation.y = -Math.PI / 2;
+    scene.add(banner);
+    // soft light shafts falling from the beam onto the line
+    for (const side of [-1, 1]) {
+      const shaftMat = new THREE.MeshBasicMaterial({
+        color: 0xf5c542, transparent: true, opacity: 0.07,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      });
+      shaftMat.userData.base = 0.07;
+      finishPulseMats.push(shaftMat);
+      const shaft = new THREE.Mesh(new THREE.ConeGeometry(1.7, 6.2, 16, 1, true), shaftMat);
+      shaft.rotation.x = Math.PI;
+      shaft.position.set(finX, 3.4, side * finEdge * 0.45);
+      scene.add(shaft);
+    }
   }
 
   // ── trackside dressing: barriers, sponsor boards, light poles, gantry ─
@@ -224,29 +342,54 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       stripe.position.set(0, 0.62, side * EDGE);
       scene.add(stripe);
     }
-    // sponsor billboards on the far side (facing the camera side)
+    // sponsor billboards on the far side (facing the camera side) — a dense
+    // near-continuous sponsor wall, race-track style
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2a36, roughness: 0.5, metalness: 0.6 });
     const boards = [
       frostbiteTex('BATTLE ARENA'),
-      boardTex('AVAX ▲', '#e84142'),
+      avaxBoardTex('AVAX'),
       boardTex('CAR(D) GAME', '#f5c542'),
       frostbiteTex(),
+      avaxBoardTex('AVALANCHE'),
       boardTex('FUJI TESTNET', '#f97316'),
+      frostbiteTex('RACING'),
+      boardTex('THE ARCADE', '#4dd0e1'),
     ];
     boards.forEach((tex, i) => {
-      const x = X0 + 8 + i * (LEN - 16) / (boards.length - 1);
-      const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2a36, roughness: 0.5, metalness: 0.6 });
-      for (const dz of [-2.9, 2.9]) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 3.6, 8), poleMat);
-        pole.position.set(x + dz, 1.8, -EDGE - 2.4);
+      const x = X0 + 5 + i * (LEN - 10) / (boards.length - 1);
+      for (const dz of [-3.9, 3.9]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 4.4, 8), poleMat);
+        pole.position.set(x + dz, 2.2, -EDGE - 2.4);
         scene.add(pole);
       }
       // big readable panels, tilted a touch toward the camera side
       const panel = new THREE.Mesh(
-        new THREE.PlaneGeometry(7.8, 2.45),
+        new THREE.PlaneGeometry(10.2, 3.2),
         new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
       );
-      panel.position.set(x, 4.4, -EDGE - 2.4);
+      panel.position.set(x, 5.1, -EDGE - 2.4);
       panel.rotation.x = -0.1;
+      scene.add(panel);
+    });
+    // second, elevated mega-board row further back for skyline depth
+    const megas = [
+      avaxBoardTex('AVALANCHE'),
+      frostbiteTex('POWERED BY AVAX'),
+      avaxBoardTex('AVAX'),
+    ];
+    megas.forEach((tex, i) => {
+      const x = X0 + 10 + i * (LEN - 20) / (megas.length - 1);
+      for (const dz of [-5.6, 5.6]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 7.2, 8), poleMat);
+        pole.position.set(x + dz, 3.6, -EDGE - 10);
+        scene.add(pole);
+      }
+      const panel = new THREE.Mesh(
+        new THREE.PlaneGeometry(15, 4.7),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
+      );
+      panel.position.set(x, 8.4, -EDGE - 10);
+      panel.rotation.x = -0.08;
       scene.add(panel);
     });
     // glowing light poles on the near side
@@ -280,13 +423,13 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     scene.add(banner);
   }
 
-  // ── car factory: GLB drop-in with procedural low-poly fallback ───────
-  async function loadCarTemplate(): Promise<InstanceType<typeof THREE.Object3D> | null> {
+  // ── car factory: per-rarity GLB drop-ins with procedural fallback ────
+  async function loadCarTemplate(url: string): Promise<InstanceType<typeof THREE.Object3D> | null> {
     try {
-      const head = await fetch('/avalanche/cardgame/car.glb', { method: 'HEAD' });
+      const head = await fetch(url, { method: 'HEAD' });
       if (!head.ok) return null;
       const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
-      const gltf = await new GLTFLoader().loadAsync('/avalanche/cardgame/car.glb');
+      const gltf = await new GLTFLoader().loadAsync(url);
       const obj = gltf.scene;
       // Kenney-style kits face +Z; our track runs along +X → rotate the mesh,
       // then normalise: ~2.9 world-units long, centred on X/Z, wheels on y=0.
@@ -345,10 +488,27 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     return g;
   }
 
-  const template = await loadCarTemplate();
+  // Rarity-matched silhouettes (real-car lines): LEGENDARY = open-wheel racer,
+  // EPIC = sports sedan, COMMON = hot hatch. car.glb stays the garage default
+  // (shown before a vehicle is picked) and the fallback if a variant is missing.
+  const [tplDefault, tplLegendary, tplEpic, tplCommon] = await Promise.all([
+    loadCarTemplate('/avalanche/cardgame/car.glb'),
+    loadCarTemplate('/avalanche/cardgame/car-legendary.glb'),
+    loadCarTemplate('/avalanche/cardgame/car-epic.glb'),
+    loadCarTemplate('/avalanche/cardgame/car-common.glb'),
+  ]);
+  const templates: Record<string, InstanceType<typeof THREE.Object3D> | null> = {
+    DEFAULT: tplDefault,
+    LEGENDARY: tplLegendary ?? tplDefault,
+    EPIC: tplEpic ?? tplDefault,
+    COMMON: tplCommon ?? tplDefault,
+  };
 
   interface CarRig {
     root: InstanceType<typeof THREE.Group>;
+    assembly: InstanceType<typeof THREE.Group>;
+    veh: string | null;
+    colorHex: number;
     ring: InstanceType<typeof THREE.Mesh>;
     ringMat: InstanceType<typeof THREE.MeshBasicMaterial>;
     flame: InstanceType<typeof THREE.Mesh>;
@@ -362,6 +522,84 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     targetX: number; curX: number; speed: number; boosted: boolean; fin: boolean;
   }
   const rigs = new Map<string, CarRig>();
+
+  /** Car body + livery for one vehicle type; swapped in place when the seat
+   *  picks a different vehicle for the round. */
+  function buildAssembly(veh: string | null, color: number): {
+    group: InstanceType<typeof THREE.Group>;
+    wheels: InstanceType<typeof THREE.Object3D>[];
+    wheelAxis: 'x' | 'z';
+  } {
+    const template = templates[veh ?? 'DEFAULT'] ?? templates.DEFAULT;
+    const group = new THREE.Group();
+    const mesh = template ? (template.clone(true) as InstanceType<typeof THREE.Object3D>) : buildProceduralCar(color);
+    if (template) {
+      // Team paint: recolour only the BRIGHT body panels toward the saturated
+      // seat colour; dark parts (wheels, glass, vents) keep their factory look.
+      mesh.traverse((o) => {
+        const m = o as InstanceType<typeof THREE.Mesh>;
+        if (m.isMesh && m.material && 'color' in (m.material as object)) {
+          const mat = (m.material as InstanceType<typeof THREE.MeshStandardMaterial>).clone();
+          const lum = mat.color.r * 0.3 + mat.color.g * 0.6 + mat.color.b * 0.1;
+          if (lum > 0.3) mat.color.lerp(new THREE.Color(color), 0.85);
+          m.material = mat;
+        }
+      });
+    } else {
+      // procedural geometry is built per assembly → safe to dispose on swap
+      mesh.traverse((o: InstanceType<typeof THREE.Object3D>) => { o.userData.ownGeo = true; });
+    }
+    group.add(mesh);
+
+    // livery: AVAX badge on the nose + door decals + FROSTBITE banner at the
+    // rear — positions derive from the actual mesh bounds so every silhouette
+    // (racer / sedan / hatch) wears them correctly
+    const bb = new THREE.Box3().setFromObject(mesh);
+    const decal = (map: InstanceType<typeof THREE.CanvasTexture>, w: number, h: number, doubleSided = false) => {
+      const m = new THREE.Mesh(
+        new THREE.PlaneGeometry(w, h),
+        new THREE.MeshBasicMaterial({ map, transparent: true, ...(doubleSided ? { side: THREE.DoubleSide } : {}) }),
+      );
+      m.userData.ownGeo = true; m.userData.ownMap = true;
+      return m;
+    };
+    const hood = decal(avaxTex(), 0.82, 0.82);
+    hood.rotation.x = -Math.PI / 2;
+    hood.position.set(0.55, template ? Math.max(0.4, bb.max.y * 0.62) : 0.58, 0);
+    group.add(hood);
+    const doorZ = template ? bb.max.z + 0.03 : 0.57; // procedural bbox includes wheels → fixed hull offset
+    const doorY = template ? Math.max(0.42, bb.max.y * 0.52) : 0.45;
+    for (const s of [-1, 1]) {
+      const door = decal(avaxTex(), 0.56, 0.56);
+      door.position.set(0.05, doorY, s * doorZ);
+      if (s < 0) door.rotation.y = Math.PI;
+      group.add(door);
+    }
+    const wing = decal(frostbiteTex(), 1.35, 0.42, true);
+    wing.position.set(-1.45, template ? bb.max.y + 0.08 : 0.98, 0);
+    wing.rotation.y = Math.PI / 2;
+    group.add(wing);
+
+    // collect spinnable wheel nodes (GLB kits name them wheel-*; procedural uses wheel-proc)
+    const wheels: InstanceType<typeof THREE.Object3D>[] = [];
+    mesh.traverse((o) => { if (/^wheel/i.test(o.name)) wheels.push(o); });
+    return { group, wheels, wheelAxis: template ? 'x' : 'z' };
+  }
+
+  /** Swap-time cleanup: dispose cloned materials + per-assembly resources, but
+   *  NEVER shared GLB geometry or the shared colormap texture (ownGeo/ownMap
+   *  mark what this assembly created itself). Full teardown happens in destroy(). */
+  function disposeAssembly(g: InstanceType<typeof THREE.Object3D>) {
+    g.traverse((o: InstanceType<typeof THREE.Object3D>) => {
+      const anyO = o as unknown as { geometry?: { dispose(): void }; material?: unknown; userData: Record<string, unknown> };
+      if (anyO.userData.ownGeo) anyO.geometry?.dispose();
+      const mats = Array.isArray(anyO.material) ? anyO.material : anyO.material ? [anyO.material] : [];
+      for (const mat of mats as Array<{ dispose(): void; map?: { dispose(): void } | null }>) {
+        if (anyO.userData.ownMap) mat.map?.dispose();
+        mat.dispose();
+      }
+    });
+  }
 
   function makeLabel(): { sprite: InstanceType<typeof THREE.Sprite>; tex: InstanceType<typeof THREE.CanvasTexture>; canvas: HTMLCanvasElement } {
     const canvas = document.createElement('canvas');
@@ -388,37 +626,8 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
   seats.forEach((seat, i) => {
     const color = new THREE.Color(seat.color).getHex();
     const root = new THREE.Group();
-    const mesh = template ? (template.clone(true) as InstanceType<typeof THREE.Object3D>) : buildProceduralCar(color);
-    if (template) {
-      // Team paint: recolour only the BRIGHT body panels toward the saturated
-      // seat colour; dark parts (wheels, glass, vents) keep their factory look.
-      mesh.traverse((o) => {
-        const m = o as InstanceType<typeof THREE.Mesh>;
-        if (m.isMesh && m.material && 'color' in (m.material as object)) {
-          const mat = (m.material as InstanceType<typeof THREE.MeshStandardMaterial>).clone();
-          const lum = mat.color.r * 0.3 + mat.color.g * 0.6 + mat.color.b * 0.1;
-          if (lum > 0.3) mat.color.lerp(new THREE.Color(color), 0.85);
-          m.material = mat;
-        }
-      });
-    }
-    root.add(mesh);
-
-    // livery: AVAX badge on the nose + FROSTBITE banner on the rear wing
-    const hood = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.52, 0.52),
-      new THREE.MeshBasicMaterial({ map: avaxTex(), transparent: true }),
-    );
-    hood.rotation.x = -Math.PI / 2;
-    hood.position.set(0.55, template ? 0.76 : 0.58, 0);
-    root.add(hood);
-    const wing = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.35, 0.42),
-      new THREE.MeshBasicMaterial({ map: frostbiteTex(), transparent: true, side: THREE.DoubleSide }),
-    );
-    wing.position.set(-1.55, template ? 1.02 : 0.98, 0);
-    wing.rotation.y = Math.PI / 2;
-    root.add(wing);
+    const asm = buildAssembly(null, color);
+    root.add(asm.group);
 
     // under-glow ring (fx indicator)
     const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0 });
@@ -440,12 +649,10 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
 
     root.position.set(X0, 0, laneZ(i));
     scene.add(root);
-    // collect spinnable wheel nodes (GLB kits name them wheel-*; procedural uses wheel-proc)
-    const wheels: InstanceType<typeof THREE.Object3D>[] = [];
-    mesh.traverse((o) => { if (/^wheel/i.test(o.name)) wheels.push(o); });
     const rig: CarRig = {
-      root, ring, ringMat, flame, label: sprite, labelTex: tex, labelCanvas: canvas, lastLabel: '',
-      wheels, wheelAxis: template ? 'x' : 'z', trailAcc: 0,
+      root, assembly: asm.group, veh: null, colorHex: color,
+      ring, ringMat, flame, label: sprite, labelTex: tex, labelCanvas: canvas, lastLabel: '',
+      wheels: asm.wheels, wheelAxis: asm.wheelAxis, trailAcc: 0,
       targetX: X0, curX: X0, speed: 0, boosted: false, fin: false,
     };
     rigs.set(seat.pid, rig);
@@ -574,6 +781,18 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
   function updateInner(cars: CarSnap[]) {
     for (const c of cars) {
       const rig = rigs.get(c.pid); if (!rig) continue;
+      // vehicle changed (round pick) → swap in the rarity-matched silhouette
+      const veh = c.veh ?? null;
+      if (veh !== rig.veh) {
+        rig.veh = veh;
+        const next = buildAssembly(veh, rig.colorHex);
+        rig.root.remove(rig.assembly);
+        disposeAssembly(rig.assembly);
+        rig.assembly = next.group;
+        rig.wheels = next.wheels;
+        rig.wheelAxis = next.wheelAxis;
+        rig.root.add(next.group);
+      }
       rig.targetX = X0 + (Math.min(c.dist, TRACK) / TRACK) * LEN;
       // round reset: dist jumped back to 0 → snap instead of lerping backwards
       if (rig.targetX + 12 < rig.curX) { rig.curX = rig.targetX; roundFinishers = 0; }
@@ -587,7 +806,7 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       if (fxc !== undefined) { rig.ringMat.color.setHex(fxc); rig.ringMat.opacity = 0.85; }
       else rig.ringMat.opacity = Math.max(0, rig.ringMat.opacity - 0.1);
       (rig.flame.material as InstanceType<typeof THREE.MeshBasicMaterial>).opacity = c.boosted && !c.fin ? 0.95 : 0;
-      const seat = seats.find((s) => s.pid === c.pid)!;
+      const seat = seatByPid.get(c.pid)!;
       drawLabel(rig, `${names[c.pid] ?? c.pid}${c.veh ? ' · ' + c.veh[0] : ''}${c.fin ? ' ✔' : ''}`, seat.color);
     }
   }
@@ -610,7 +829,7 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       rig.ring.rotation.z = now * 0.004;
       // wheel spin: angular velocity = ground speed / wheel radius (boost = visibly faster)
       if (moving) {
-        const ang = ((rig.speed * (LEN / TRACK)) / 0.26) * dt * 1.7;
+        const ang = rig.speed * WHEEL_SPIN_K * dt;
         for (const w of rig.wheels) {
           if (rig.wheelAxis === 'x') w.rotation.x += ang; else w.rotation.z += ang;
         }
@@ -628,11 +847,23 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     updateCamera(dt);
     stepConfetti(dt);
     stepMarks(now);
+    // finish-line neon breathes
+    const finPulse = 0.62 + 0.38 * Math.sin(now * 0.005);
+    for (const m of finishPulseMats) m.opacity = (m.userData.base as number) * finPulse;
     stars.rotation.y = now * 0.000012;
     composer.render();
     raf = requestAnimationFrame(clockTick);
   };
   raf = requestAnimationFrame(clockTick);
+
+  // Pause the render loop while the tab is hidden — no GPU work / battery drain
+  // on a background tab. Reset `last` on resume so dt doesn't jump (it's clamped
+  // anyway). Context-loss sets alive=false, so this won't revive a dead context.
+  const onVis = () => {
+    if (document.hidden) { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+    else if (alive && !raf) { last = performance.now(); raf = requestAnimationFrame(clockTick); }
+  };
+  document.addEventListener('visibilitychange', onVis);
 
   function resize() {
     const w = W(), h = H();
@@ -668,6 +899,7 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     destroy() {
       alive = false;
       cancelAnimationFrame(raf);
+      document.removeEventListener('visibilitychange', onVis);
       ro.disconnect();
       renderer.domElement.removeEventListener('webglcontextlost', onCtxLost);
       // in-flight confetti bursts live outside the static scene bookkeeping
@@ -675,8 +907,9 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       bursts.length = 0;
       // meshes, sprites, points, lines — plus their canvas textures
       scene.traverse(disposeObject);
-      // the GLB template (never added to the scene) holds the original materials
-      template?.traverse(disposeObject);
+      // GLB templates (never added to the scene) hold the original materials;
+      // fallback aliases may repeat a template — double dispose is harmless
+      for (const tpl of Object.values(templates)) tpl?.traverse(disposeObject);
       bloom.dispose();
       composer.dispose();
       renderer.dispose();

@@ -102,6 +102,25 @@
 .cgroot .top--slim{margin-bottom:10px}
 .cgroot .top--slim .sub{max-width:560px}
 .cgroot .chip.tick{border-color:rgba(34,197,94,.5);color:var(--cg-green);transition:.3s}
+.cgroot #helpToggle{cursor:pointer;font-family:'Chakra Petch',sans-serif;font-weight:600;letter-spacing:1px}
+.cgroot #helpToggle:hover,.cgroot #helpToggle.on{border-color:var(--cg-gold);color:var(--cg-gold)}
+
+/* how-to-play panel */
+.cgroot .cg-help{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:14px;padding:16px 18px;
+  background:var(--cg-card);border:1px solid var(--cg-line);border-radius:14px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.cgroot .cg-help[hidden]{display:none}
+.cgroot .cg-help h4{margin:0 0 5px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--cg-ice);font-family:'Chakra Petch',sans-serif}
+.cgroot .cg-help h4:not(:first-child){margin-top:12px}
+.cgroot .cg-help p{margin:0;font-size:12.5px;line-height:1.55;color:var(--cg-muted)}
+.cgroot .cg-help p b{color:var(--cg-text)}
+.cgroot .cg-help kbd{display:inline-block;min-width:16px;text-align:center;padding:1px 6px;margin:0 1px;border-radius:5px;
+  background:rgba(255,255,255,.07);border:1px solid var(--cg-line);border-bottom-width:2px;color:var(--cg-text);
+  font-family:'JetBrains Mono',monospace;font-size:11px}
+.cgroot .cg-help-combos{display:flex;flex-wrap:wrap;gap:5px}
+.cgroot .cg-help-combos span{font-size:11.5px;color:var(--cg-muted);background:rgba(255,255,255,.04);border:1px solid var(--cg-line);
+  border-radius:7px;padding:3px 8px}
+.cgroot .cg-help-combos span b{color:var(--cg-gold)}
+@media(max-width:720px){.cgroot .cg-help{grid-template-columns:1fr}}
 
 /* track */
 .cgroot .track{padding:16px;margin-bottom:14px;position:relative;overflow:hidden}
@@ -253,6 +272,62 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .card.oil .cardart{opacity:.4;filter:drop-shadow(0 0 5px rgba(40,44,58,.9))}
 .cgroot .card.sel{border-color:var(--cg-red);transform:translateY(-9px);
   box-shadow:0 0 0 1px rgba(237,47,57,.4),0 10px 24px rgba(237,47,57,.32)}
+
+/* ── iconic card identities: signature animation per type ─────────────── */
+/* deal-in cascade — suppressed (.nodeal) when only the selection changed */
+@keyframes cg-deal{from{opacity:0;transform:translateY(16px) rotate(-5deg) scale(.9)}to{opacity:1;transform:none}}
+.cgroot .hand .card{animation:cg-deal .34s cubic-bezier(.2,.8,.3,1.15) backwards;
+  animation-delay:calc(var(--ci,0)*45ms)}
+.cgroot .hand.nodeal .card{animation:none}
+/* ICE value cards: breathing frost crystal */
+@keyframes cg-ice{0%,100%{opacity:.11;transform:rotate(-14deg) scale(1)}50%{opacity:.22;transform:rotate(-9deg) scale(1.07)}}
+.cgroot .card .cardart{animation:cg-ice 3.4s ease-in-out infinite}
+/* NITRO: electric flicker + charged inner frame */
+@keyframes cg-nitro{0%,84%,90%,100%{opacity:.42;filter:drop-shadow(0 0 6px rgba(245,197,66,.9))}86%,94%{opacity:.95;filter:drop-shadow(0 0 16px rgba(245,197,66,1))}}
+@keyframes cg-charge{0%,100%{box-shadow:inset 0 0 4px rgba(245,197,66,.25)}50%{box-shadow:inset 0 0 14px rgba(245,197,66,.6)}}
+.cgroot .card.magic:not(.nail):not(.oil) .cardart{animation:cg-nitro 1.7s linear infinite}
+.cgroot .card.magic:not(.nail):not(.oil)::before{animation:cg-charge 1.7s ease-in-out infinite}
+/* NAIL: hazard-tape label + spike throb */
+@keyframes cg-throb{0%,100%{transform:rotate(-14deg) scale(1)}12%{transform:rotate(-14deg) scale(1.18)}24%{transform:rotate(-14deg) scale(1)}}
+.cgroot .card.nail .cardart{animation:cg-throb 1.5s ease-in-out infinite}
+.cgroot .card.nail small{background:repeating-linear-gradient(-45deg,#3b0a0a 0 5px,#f0b429 5px 10px);
+  color:#fff;bottom:0;padding:2.5px 0;letter-spacing:2px;text-shadow:0 1px 2px rgba(0,0,0,.85)}
+/* OIL: iridescent slick sweeping across the face */
+@keyframes cg-slick{0%{left:-70%}55%,100%{left:130%}}
+.cgroot .card.oil::after{background:linear-gradient(90deg,transparent,rgba(167,139,250,.4),rgba(77,208,225,.35),transparent);
+  animation:cg-slick 2.8s ease-in-out infinite;transition:none}
+.cgroot .card.oil .cardart{animation:none}
+/* gold 9-10s: slow luxurious shimmer */
+@keyframes cg-shimmer{0%{left:-70%}45%,100%{left:130%}}
+.cgroot .card.hi::after{background:linear-gradient(90deg,transparent,rgba(255,246,214,.85),transparent);
+  animation:cg-shimmer 3.2s ease-in-out infinite;transition:none}
+/* selected: rising red pulse (after .nodeal so it survives selection rebuilds) */
+@keyframes cg-selpulse{0%,100%{box-shadow:0 0 0 1px rgba(237,47,57,.4),0 10px 24px rgba(237,47,57,.32)}50%{box-shadow:0 0 0 2px rgba(237,47,57,.7),0 12px 30px rgba(237,47,57,.5)}}
+.cgroot .hand .card.sel{animation:cg-selpulse 1.3s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){
+  .cgroot .card,.cgroot .card::before,.cgroot .card::after,.cgroot .card .cardart{animation:none!important}
+}
+
+/* ── mobile polish: bigger touch targets, lighter GPU load ─────────────── */
+@media(max-width:640px){
+  /* stacked backdrop-filters are the main mobile scroll-jank source — soften */
+  .cgroot .glass,.cgroot .cg-help{backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  /* 44px touch targets (Apple/Material guidance) */
+  .cgroot .btn{padding:12px 18px;min-height:44px}
+  .cgroot .cg-mode{padding:9px 14px;font-size:13px}
+  .cgroot .chip{padding:7px 12px;font-size:12px}
+  /* roomier, easier-to-tap cards */
+  .cgroot .card{width:62px;height:88px}
+  .cgroot .hand{gap:11px}
+  /* shorter 3D stage → fits the viewport and renders fewer pixels */
+  .cgroot .track3d{height:300px}
+}
+/* touch devices: stop the always-on per-card idle loops (battery/paint). The
+   deal-in, selection lift and boost effects still play. */
+@media(hover:none){
+  .cgroot .card .cardart,.cgroot .card.magic:not(.nail):not(.oil) .cardart,
+  .cgroot .card.magic:not(.nail):not(.oil)::before,.cgroot .card.nail .cardart{animation:none}
+}
 
 .cgroot .btn{background:linear-gradient(135deg,var(--cg-red),var(--cg-red2));color:#fff;border:0;border-radius:10px;
   padding:10px 18px;font-weight:700;cursor:pointer;font-size:13px;letter-spacing:1px;

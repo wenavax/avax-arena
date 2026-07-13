@@ -11,7 +11,9 @@
  */
 import { CFG, COMBO, evaluate, fxClass, type Card, type PlayEval } from './engine';
 import { vehicleSelector, vehAbbr, vehColor } from './vehicles';
-import { bestPlay } from './bestPlay';
+import { bestPlan, bestPlay, planNote } from './bestPlay';
+import { createCgSound, soundLabel } from './sound';
+import { attachView3D, type View3D } from './view3d';
 
 type Pid = 'P1' | 'P2' | 'P3' | 'P4';
 interface Seat { pid: Pid; address: string }
@@ -56,31 +58,41 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   const cssv = (n: string) => getComputedStyle(root).getPropertyValue(n).trim();
 
   const selected = new Set<number>(); // selected card ids
+  // ✨ Best: repeated clicks cycle through the plan's plays; note rides the hint
+  let bestNote = '';
+  let bestCycle = { sig: '', i: 0 };
+  let curRound = 0;
+  // 🎵 quiet race music, shared toggle across modes
+  const sound = createCgSound();
   let hand: HandCard[] = [];
   let hlim = 0, myCd = 0, myFin = false;
   // eval of the play we just sent — lets the popup use the full fxClass (incl.
   // NITRO gold) once the server confirms it in the `applied` map
   let sentEval: PlayEval | null = null;
   let toastT: ReturnType<typeof setTimeout> | null = null;
+  let view3d: View3D | null = null;
   const handlers: Array<[string, (d: any) => void]> = [];
 
   root.innerHTML = `
     <div class="toast eng-toast"></div>
     <div class="cg-eng glass" style="padding:16px;margin-bottom:12px">
       <div class="eng-hd"><span class="eng-round">MULTIPLAYER · WAITING</span>
-        <span class="dim mono" style="font-size:11px">4 players · server-authoritative · on-chain settle</span></div>
+        <span class="dim mono" style="font-size:11px">4 players · server-authoritative · on-chain settle</span>
+        <button class="chip cg-viewtoggle eng-view3d" title="Switch track view">🎥 3D VIEW</button></div>
       <div class="eng-picks dim mono"></div>
       <div class="eng-vsel-slot"></div>
       <div class="eng-track"></div>
+      <div class="track3d glass eng-track3d" style="display:none"><button class="cg-fs eng-fs" title="Fullscreen">⛶</button></div>
       <div class="cg-note dim" style="margin-top:8px;font-size:12px"></div>
     </div>
-    <div class="cg-eng glass" style="padding:16px">
+    <div class="cg-eng glass eng-handcard" style="padding:16px">
       <h3 style="margin:0 0 10px;font-size:12px;letter-spacing:2px;color:var(--cg-muted)">YOUR HAND — <span class="eng-hlim"></span></h3>
       <div class="eng-hand hand"></div>
       <div class="cooldown"><div class="eng-cd"></div></div>
       <div class="row"><button class="btn eng-play">PLAY SELECTED</button>
         <button class="btn ghost eng-best">✨ Best</button>
         <button class="btn ghost eng-clear">Clear</button>
+        <button class="btn ghost eng-snd" title="Race music on/off">🎵 MUSIC</button>
         <span class="pill eng-hint">select 1–8 cards</span></div>
       <table style="width:100%;margin-top:14px;font-size:12px" class="eng-board"><tbody></tbody></table>
       <div class="eng-settle"></div>
@@ -90,7 +102,13 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   const $ = (c: string) => root.querySelector('.' + c) as HTMLElement;
 
   // ── juice helpers (cosmetic only) ───────────────────────────────────
-  function log(html: string) { const l = $('eng-log'); if (l) l.innerHTML = `<div>${html}</div>` + l.innerHTML; }
+  // Prepend ONE parsed node + cap the list (was O(n²): re-serialised the whole log each event).
+  function log(html: string) {
+    const l = $('eng-log'); if (!l) return;
+    const d = document.createElement('div'); d.innerHTML = html;
+    l.insertBefore(d, l.firstChild);
+    while (l.childElementCount > 60) l.removeChild(l.lastElementChild!);
+  }
   function toast(msg: string) {
     const el = $('eng-toast'); if (!el) return;
     el.textContent = msg; el.style.opacity = '1';
@@ -109,6 +127,17 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   // ── track: 4 lanes built once, updated from snapshots ───────────────
   buildTrack();
+  // 2D/3D view swap — same three.js scene as practice/staked, driven by the
+  // server snapshots instead of a local engine.
+  view3d = attachView3D({
+    host: $('eng-track3d'),
+    track2d: $('eng-track'),
+    toggleBtn: $('eng-view3d'),
+    fsBtn: $('eng-fs'),
+    buildSeats: () => opts.seats.map((s) => ({ pid: s.pid, color: cssv(P_VAR[s.pid]) || '#888', name: nameOf(s.pid, s.address) })),
+    dockItems: () => [[$('eng-handcard'), 'cg-fsdock'], [$('eng-vsel-slot'), 'cg-fsveh'], [$('eng-toast'), 'cg-fstoast']],
+    onLog: (m) => log(m),
+  });
   function buildTrack() {
     const tk = $('eng-track'); tk.innerHTML = '';
     for (const seat of opts.seats) {
@@ -143,6 +172,8 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   });
 
   on('cardgame:round-start', (d: { round: number; vehicles: Record<Pid, string> }) => {
+    curRound = d.round;
+    sound.raceOn(true);
     ($('eng-round')).textContent = `ROUND ${d.round + 1}/${CFG.ROUNDS}`;
     ($('eng-vsel-slot')).innerHTML = '';
     ($('eng-picks')).innerHTML = opts.seats.map((s) => `${nameOf(s.pid, s.address)} <b style="color:${vehColor(d.vehicles[s.pid])}">${vehAbbr(d.vehicles[s.pid])}</b>`).join('  ·  ');
@@ -159,7 +190,12 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
       const boosted = p.speed > 0 && p.fx === 'fx-nitro';
       car.style.left = (p.dist / CFG.TRACK * 93) + '%';
       car.className = 'car' + (p.fin ? ' fin' : ' run') + (boosted ? ' boost' : '') + (p.fx && !p.fin ? ' ' + p.fx : '') + (p.bot ? ' cg-bot' : '');
-      (car.querySelector('.tag') as HTMLElement).innerHTML = nameOf(p.pid, p.address) + (p.bot ? ' 🤖' : '') + (p.veh ? ` · <b style="color:${vehColor(p.veh)}">${vehAbbr(p.veh)}</b>` : '');
+      const tagEl = car.querySelector('.tag') as HTMLElement; // only re-parse when veh/bot flag changes
+      const tagKey = (p.veh ?? '') + (p.bot ? 'B' : '');
+      if (tagEl.dataset.k !== tagKey) {
+        tagEl.innerHTML = nameOf(p.pid, p.address) + (p.bot ? ' 🤖' : '') + (p.veh ? ` · <b style="color:${vehColor(p.veh)}">${vehAbbr(p.veh)}</b>` : '');
+        tagEl.dataset.k = tagKey;
+      }
       (car.querySelector('.hud') as HTMLElement).textContent = p.fin ? `✔ ${p.ft}s` : `${Math.round(p.speed)}u/s${p.cd > 0 ? ' · cd' + (p.cd / 10).toFixed(1) : ''}`;
       if (p.pid === myPid) { myCd = p.cd; myFin = p.fin; }
     }
@@ -178,6 +214,12 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     }
     renderBoard(d.players);
     updatePlayBtn();
+    // forward the server snapshot to the 3D scene when it's active
+    if (view3d?.is3D()) view3d.forward(d.players.map((p) => ({
+      pid: p.pid, dist: p.dist, speed: p.speed,
+      boosted: p.speed > 0 && p.fx === 'fx-nitro' && !p.fin,
+      fx: p.fx && !p.fin ? p.fx : null, fin: p.fin, veh: p.veh,
+    })));
   });
 
   on('cardgame:hand', (d: { pid: Pid; hlim: number; hand: HandCard[]; cd: number }) => {
@@ -194,12 +236,15 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   on('cardgame:round-end', (d: { round: number; totals: Record<Pid, number>; order?: Pid[] }) => {
     const winner = d.order?.[0];
+    sound.raceOn(false);
     toast(winner ? `Round ${d.round + 1}: ${nameOf(winner)} wins!` : `Round ${d.round + 1} scored.`);
     log(`<b>Round ${d.round + 1}</b> — totals: ${(Object.keys(d.totals) as Pid[]).map((pid) => `${nameOf(pid)} ${d.totals[pid]}`).join(' · ')}`);
     note(`Round ${d.round + 1} scored.`);
   });
 
   on('cardgame:finished', (d: { ranking: Pid[]; rankingAddresses: string[]; totals: Record<Pid, number> }) => {
+    sound.raceOn(false);
+    if (d.ranking[0] === myPid) sound.victory();
     ($('eng-round')).textContent = 'MATCH OVER';
     renderBoard(d.ranking.map((pid) => ({ pid, address: opts.seats.find((s) => s.pid === pid)?.address || '', veh: null, dist: CFG.TRACK, speed: 0, fin: true, ft: null, total: d.totals[pid], cd: 0, fx: null })));
     toast(`🏆 ${nameOf(d.ranking[0])} wins the match!`);
@@ -246,14 +291,21 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   function renderHand() {
     ($('eng-hlim')).textContent = `${hand.length}/${hlim}`;
-    const h = $('eng-hand'); h.innerHTML = '';
+    const h = $('eng-hand');
+    // deal-in animation only when the cards themselves changed, not the selection
+    const handSig = hand.map((c) => c.id).join(',');
+    h.classList.toggle('nodeal', h.dataset.hand === handSig);
+    h.dataset.hand = handSig;
+    h.innerHTML = '';
+    let ci = 0;
     for (const c of hand) {
       const el = document.createElement('div');
+      el.style.setProperty('--ci', String(ci++));
       el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(c.id) ? ' sel' : '');
       el.innerHTML = `<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
         <i class="cardart">${c.magic ? MAGIC_ICON[c.magic] || '' : '❄'}</i>
         <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : ''}`;
-      el.onpointerdown = (e) => { e.preventDefault(); if (selected.has(c.id)) selected.delete(c.id); else if (selected.size < 8) selected.add(c.id); renderHand(); };
+      el.onpointerdown = (e) => { e.preventDefault(); if (selected.has(c.id)) selected.delete(c.id); else if (selected.size < 8) selected.add(c.id); bestNote = ''; renderHand(); };
       h.appendChild(el);
     }
     updatePlayBtn();
@@ -267,7 +319,8 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     if (selected.size) {
       // live preview via the shared engine — the hand cards are Card-shaped
       const r = evaluate(hand.filter((c) => selected.has(c.id)));
-      hint.textContent = `${r.combo || r.kind} → x${r.mult.toFixed(2)}` + (r.magic.length ? ` +${r.magic.map((m) => m.type).join('/')}` : '');
+      hint.textContent = `${r.combo || r.kind} → x${r.mult.toFixed(2)}` + (r.magic.length ? ` +${r.magic.map((m) => m.type).join('/')}` : '')
+        + (bestNote ? ` · ${bestNote}` : '');
       return;
     }
     hint.textContent = myCd > 0 ? `cooldown ${(myCd / 10).toFixed(1)}s` : 'select 1–8 cards';
@@ -281,23 +334,55 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     // remember what we sent so the confirmed popup can colour by full fxClass
     sentEval = evaluate(hand.filter((c) => selected.has(c.id)));
     opts.socket.emit('cardgame:play', { cardIds });
-    selected.clear(); renderHand();
+    selected.clear(); bestNote = ''; renderHand();
   };
-  ($('eng-clear')).onclick = () => { selected.clear(); renderHand(); };
+  ($('eng-clear')).onclick = () => { selected.clear(); bestNote = ''; renderHand(); };
   ($('eng-best')).onclick = () => {
     if (myFin || myCd > 0 || !hand.length) return;
-    const pick = bestPlay(hand as Card[]);
+    const plan = bestPlan(hand as Card[], { endgame: curRound >= CFG.ROUNDS - 1 });
+    const sig = hand.map((c) => c.id).join(',');
+    if (bestCycle.sig !== sig) bestCycle = { sig, i: 0 };
+    else if (plan.plays.length) bestCycle.i = (bestCycle.i + 1) % plan.plays.length;
+    const pick = plan.plays.length ? plan.plays[bestCycle.i].cards : bestPlay(hand as Card[]);
+    bestNote = plan.plays.length ? planNote(plan, bestCycle.i) : '✨ low hand — worth saving';
     selected.clear();
     for (const c of pick) selected.add(c.id);
     renderHand();
   };
+  const sndBtn = root.querySelector('.eng-snd') as HTMLButtonElement;
+  sndBtn.textContent = soundLabel(sound.enabled());
+  sndBtn.onclick = () => { sndBtn.textContent = soundLabel(sound.toggle()); };
+
+  // Keyboard: 1–9/0 toggle a card, Space/Enter play, B best, C clear.
+  function onKey(e: KeyboardEvent) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.key >= '0' && e.key <= '9') {
+      const i = e.key === '0' ? 9 : +e.key - 1;
+      const c = hand[i];
+      if (c && !myFin) {
+        if (selected.has(c.id)) selected.delete(c.id); else if (selected.size < 8) selected.add(c.id);
+        bestNote = ''; renderHand();
+      }
+      e.preventDefault();
+    } else if (e.key === ' ' || e.key === 'Enter') {
+      if (!($('eng-play') as HTMLButtonElement).disabled) ($('eng-play') as HTMLButtonElement).click();
+      e.preventDefault();
+    } else if (e.key === 'b' || e.key === 'B') { ($('eng-best') as HTMLButtonElement).click(); e.preventDefault(); }
+    else if (e.key === 'c' || e.key === 'C') { ($('eng-clear') as HTMLButtonElement).click(); e.preventDefault(); }
+  }
+  document.addEventListener('keydown', onKey);
 
   renderHand();
 
   // ── cleanup ─────────────────────────────────────────────────────────
   return () => {
     for (const [event, cb] of handlers) opts.socket.off?.(event, cb);
+    document.removeEventListener('keydown', onKey);
+    view3d?.destroy(); view3d = null;
     if (toastT) clearTimeout(toastT);
+    sound.destroy();
     root.innerHTML = '';
   };
 }
