@@ -26,10 +26,10 @@ contract Deploy is Script {
         address deployer = msg.sender;
 
         if (block.chainid == 43113) {
-            entryFee = 0.01 ether; // pool 0.04
-            platformFee = 0.002 ether;
-            rewards = [uint256(0.02 ether), 0.01 ether, 0.005 ether, 0.003 ether]; // Σ 0.038 + 0.002 = 0.04
-            owner_ = deployer; // deployer keeps admin for the rehearsal
+            entryFee = 1 ether; // pool 4 — matches the mainnet economics (scheduled races)
+            platformFee = 0.2 ether;
+            rewards = [uint256(2 ether), 1 ether, 0.5 ether, 0.3 ether]; // Σ 3.8 + 0.2 = 4.0
+            owner_ = deployer; // deployer keeps admin (cancelMatch) on testnet
             signer_ = deployer; // deployer signs results in the rehearsal
         } else if (block.chainid == 43114) {
             entryFee = 1 ether; // pool 4
