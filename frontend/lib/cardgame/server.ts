@@ -48,6 +48,7 @@ const ABI = parseAbi([
   'function getPlayers(bytes32 matchId) view returns (address[4])',
   'function hasPaid(bytes32 matchId, address p) view returns (bool)',
   'function isPlayer(bytes32 matchId, address p) view returns (bool)',
+  'function cancelMatch(bytes32 matchId)',
 ]);
 
 export const pub = createPublicClient({ chain: avalancheFuji, transport: transport() });
@@ -244,6 +245,14 @@ export async function settleMPFromInput(matchId: Hex, input: MPInput): Promise<{
   const ranking = sim.ranking.map((pid) => pidToAddr[pid]);
   const { txHash } = await settleMatch(matchId, ranking);
   return { txHash, ranking, valid: true };
+}
+
+/** Force a not-yet-settled match to Cancelled so payers can refund instantly.
+ *  Owner-gated on-chain; on Fuji the operator key IS the owner. */
+export async function cancelMatchMP(matchId: Hex): Promise<{ cancelled: boolean; txHash: Hex }> {
+  const hash = await opWallet().writeContract({ address: CARDGAME_ESCROW, abi: ABI, functionName: 'cancelMatch', args: [matchId] });
+  await waitOk(hash);
+  return { cancelled: true, txHash: hash };
 }
 
 /** Sign the final ranking and submit settle (operator = trustedSigner). */
