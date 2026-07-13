@@ -208,6 +208,26 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   function selectVeh(p: Player, v: string) { p.veh = v; p.base = CFG.VEH[v].s; p.hlim = CFG.VEH[v].h; usedVeh[p.id][v] = true; }
   function remainingVeh(id: string) { return ['LEGENDARY', 'EPIC', 'COMMON'].filter((v) => !usedVeh[id][v]); }
 
+  // 3·2·1·GO race countdown: shows over the active track view with beeps and
+  // only then starts the tick loop. Purely presentational — no game state runs
+  // until `go()` fires, so determinism and the recorded timeline are untouched.
+  let countT: ReturnType<typeof setTimeout>[] = [];
+  function countdown(go: () => void) {
+    countT.forEach(clearTimeout); countT = [];
+    const host = view3d?.is3D() ? $('track3d') : $('track');
+    const el = document.createElement('div'); el.className = 'cg-count';
+    host.appendChild(el);
+    ['3', '2', '1', 'GO!'].forEach((s, i) => {
+      countT.push(setTimeout(() => {
+        el.textContent = s;
+        el.classList.toggle('go', s === 'GO!');
+        el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; // restart pop
+        sound.count(s === 'GO!' ? 0 : 3 - i);
+        if (s === 'GO!') { go(); countT.push(setTimeout(() => el.remove(), 700)); }
+      }, i * 800));
+    });
+  }
+
   function startRound(choices: Record<string, string>) {
     players.forEach((p) => {
       selectVeh(p, choices[p.id]); autoDiscard(p);
@@ -215,10 +235,14 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       p.dist = 0; p.fin = false; p.ft = null; p.cdUntil = 0; p.nm = null; p.magics = []; p.cp = new Set(); p.fx = null; p.debuff = null;
     });
     buildTrack();
-    t = 0; tickH = setInterval(tick, 100);
-    sound.raceOn(true);
+    t = 0;
     $('roundChip').textContent = `ROUND ${roundIndex + 1}/3`;
-    log(`<b>Round ${roundIndex + 1}</b> started`); render();
+    render();
+    countdown(() => {
+      tickH = setInterval(tick, 100);
+      sound.raceOn(true);
+      log(`<b>Round ${roundIndex + 1}</b> started`);
+    });
   }
 
   /* Vehicle-selection screen (round start). Player picks; bots take first
@@ -571,6 +595,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   return () => {
     if (tickH) clearInterval(tickH);
     if (toastT) clearTimeout(toastT);
+    countT.forEach(clearTimeout);
     sound.destroy();
     view3d?.destroy(); view3d = null; // tears down three.js + fullscreen listeners
     document.removeEventListener('keydown', onKey);

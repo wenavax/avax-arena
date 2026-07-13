@@ -21,6 +21,8 @@ export interface CgSound {
   raceOn(on: boolean): void;
   /** Short victory fanfare — only fired when the PLAYER wins the match. */
   victory(): void;
+  /** Countdown beep: n=3/2/1 short tick, n=0 the higher "GO!" tone. */
+  count(n: number): void;
   enabled(): boolean;
   /** Flip on/off, persist, apply immediately. Returns the new state. */
   toggle(): boolean;
@@ -54,6 +56,25 @@ export function createCgSound(): CgSound {
     if (W) W.__cgSound = { get music() { return !!music && !music.paused; }, on };
   }
 
+  /** Lazily create/resume the shared AudioContext; null when muted/impossible. */
+  function ensureCtx(): AudioContext | null {
+    if (dead || !on || !AC) return null;
+    try {
+      if (!ctx) ctx = new AC();
+      if (ctx.state === 'suspended') ctx.resume().catch(() => { /* pre-gesture */ });
+      return ctx;
+    } catch { return null; }
+  }
+  function note(c: AudioContext, freq: number, at: number, dur: number, type: OscillatorType, vol: number) {
+    const o = c.createOscillator(); o.type = type; o.frequency.value = freq;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(vol, at + 0.02);
+    g.gain.setValueAtTime(vol, at + dur * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    o.connect(g); g.connect(c.destination); o.start(at); o.stop(at + dur + 0.02);
+  }
+
   return {
     raceOn(v: boolean) {
       if (dead || running === v) return;
@@ -61,29 +82,26 @@ export function createCgSound(): CgSound {
       apply();
     },
     victory() {
-      if (dead || !on || !AC) return;
+      const c = ensureCtx(); if (!c) return;
       try {
-        if (!ctx) ctx = new AC();
-        if (ctx.state === 'suspended') ctx.resume().catch(() => { /* pre-gesture */ });
-        const t0 = ctx.currentTime + 0.05;
-        const note = (freq: number, at: number, dur: number, type: OscillatorType, vol: number) => {
-          const o = ctx!.createOscillator(); o.type = type; o.frequency.value = freq;
-          const g = ctx!.createGain();
-          g.gain.setValueAtTime(0.0001, at);
-          g.gain.exponentialRampToValueAtTime(vol, at + 0.02);
-          g.gain.setValueAtTime(vol, at + dur * 0.6);
-          g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-          o.connect(g); g.connect(ctx!.destination); o.start(at); o.stop(at + dur + 0.02);
-        };
+        const t0 = c.currentTime + 0.05;
         // classic win fanfare: C-E-G-C6 run, echo, then held C6 over a C-major chord
         const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5;
         [[C5, 0, 0.14], [E5, 0.12, 0.14], [G5, 0.24, 0.14], [C6, 0.36, 0.32]]
-          .forEach(([f, at, d]) => note(f, t0 + at, d, 'square', 0.14));
-        note(G5, t0 + 0.72, 0.14, 'square', 0.13);
-        note(C6, t0 + 0.88, 0.9, 'square', 0.15);
-        [261.63, 329.63, 392].forEach((f) => note(f, t0 + 0.88, 1.0, 'triangle', 0.09)); // chord bed
-        note(C6 * 2, t0 + 0.88, 0.5, 'triangle', 0.05); // sparkle
+          .forEach(([f, at, d]) => note(c, f, t0 + at, d, 'square', 0.14));
+        note(c, G5, t0 + 0.72, 0.14, 'square', 0.13);
+        note(c, C6, t0 + 0.88, 0.9, 'square', 0.15);
+        [261.63, 329.63, 392].forEach((f) => note(c, f, t0 + 0.88, 1.0, 'triangle', 0.09)); // chord bed
+        note(c, C6 * 2, t0 + 0.88, 0.5, 'triangle', 0.05); // sparkle
       } catch { /* never break the finish flow */ }
+    },
+    count(n: number) {
+      const c = ensureCtx(); if (!c) return;
+      try {
+        const t0 = c.currentTime + 0.02;
+        if (n > 0) note(c, 660, t0, 0.13, 'square', 0.16);           // 3·2·1 tick
+        else { note(c, 880, t0, 0.42, 'square', 0.18); note(c, 1108.73, t0, 0.42, 'triangle', 0.08); } // GO!
+      } catch { /* never break the start flow */ }
     },
     enabled() { return on; },
     toggle() {

@@ -96,10 +96,24 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     const el = document.createElement('div'); el.className = 'popup ' + cls; el.textContent = txt;
     tk.appendChild(el); setTimeout(() => el.remove(), 1400);
   }
-  function banner(txt: string) {
-    const tk = $('eng-track'); if (!tk) return;
-    const el = document.createElement('div'); el.className = 'cg-banner'; el.textContent = txt;
-    tk.appendChild(el); setTimeout(() => el.remove(), 1400);
+  // 3·2·1·GO race countdown over the active track view (2D or 3D), with beeps.
+  // Purely presentational: the engine loop only starts when `go()` fires, so
+  // the recorded (round, tick) timeline the server re-simulates is untouched.
+  let countT: ReturnType<typeof setTimeout>[] = [];
+  function countdown(go: () => void) {
+    countT.forEach(clearTimeout); countT = [];
+    const host = view3d?.is3D() ? $('eng-track3d') : $('eng-track');
+    const el = document.createElement('div'); el.className = 'cg-count';
+    host.appendChild(el);
+    ['3', '2', '1', 'GO!'].forEach((s, i) => {
+      countT.push(setTimeout(() => {
+        el.textContent = s;
+        el.classList.toggle('go', s === 'GO!');
+        el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; // restart pop
+        sound.count(s === 'GO!' ? 0 : 3 - i);
+        if (s === 'GO!') { go(); countT.push(setTimeout(() => el.remove(), 700)); }
+      }, i * 800));
+    });
   }
 
   // Show the vehicle-selection screen for the round; the player's real choice is
@@ -119,11 +133,12 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
         ($('eng-round')).textContent = `ROUND ${s.roundIndex + 1}/3`;
         showPicks();
         buildTrack();
-        banner(`ROUND ${s.roundIndex + 1}`);
         log(`<b>Round ${s.roundIndex + 1}</b> started — ${s.players.map((p) => `${nameOf(p.id)} ${vehAbbr(p.veh)}`).join(' · ')}`);
         renderTrack(); renderHand(); renderBoard();
-        loopH = setInterval(loop, 100);
-        sound.raceOn(true);
+        countdown(() => {
+          loopH = setInterval(loop, 100);
+          sound.raceOn(true);
+        });
       },
     }));
   }
@@ -344,6 +359,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   return () => {
     if (loopH) clearInterval(loopH);
     if (toastT) clearTimeout(toastT);
+    countT.forEach(clearTimeout);
     document.removeEventListener('keydown', onKey);
     view3d?.destroy(); view3d = null;
     sound.destroy();
