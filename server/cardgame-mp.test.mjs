@@ -170,5 +170,27 @@ console.log('\n[mp-scheduled] no-payer → on-chain cancel + connected payers re
   ok(hub._reserved[0].address === ADDRS[0], 'payers are at the FRONT (order kept)');
 }
 
+console.log('\n[mp-scheduled] mid-forming drop → no dead-seat room, no ghost reservation');
+{
+  let clock = 0;
+  const perPlayer = []; // capture what each address receives
+  const hub = createCardgameHub({
+    emitToPlayer: (addr, event, data) => perPlayer.push({ addr, event, data }),
+    emitToRoom: () => {}, emitToAll: () => {},
+    chain: { createMatch: async () => ({ matchId: '0xM4', seed: 's', entryFee: '1000000000000000000' }), settle: async () => ({}) },
+    now: () => clock, log: () => {},
+  });
+  for (const a of ADDRS) hub.reserve(a);
+  clock = 300_000; hub.sweep();          // formMatch starts, createMatch in flight
+  hub.disconnect(ADDRS[1]);              // drops BEFORE createMatch resolves
+  await flush();
+  ok(hub.stats().rooms === 0, 'no room proceeds to paying with a dead seat');
+  ok(hub.stats().reserved === 3, 'the three connected players are re-reserved');
+  ok(hub._reserved[0].address === ADDRS[0], 'connected players re-reserved at the FRONT (order kept)');
+  ok(!hub._reserved.some((r) => r.address === ADDRS[1]), 'disconnected player is NOT a ghost reservation');
+  ok(!perPlayer.some((m) => m.event === 'cardgame:match-found'), 'match-found never sent');
+  ok(!perPlayer.some((m) => m.event === 'cardgame:error' && m.addr === ADDRS[1]), 'no error emitted to the dead socket');
+}
+
 console.log(`\n${fail === 0 ? '★' : '✗'} ${pass}/${pass + fail} PASS — real 4-player loop is server-authoritative & settle-faithful.`);
 process.exit(fail === 0 ? 0 : 1);

@@ -116,6 +116,17 @@ export function createCardgameHub(deps) {
     try {
       const { matchId, seed, entryFee } = await chain.createMatch(room.players.map((p) => p.address));
       room.matchId = matchId; room.seed = seed; room.entryFee = entryFee;
+      // a seat that dropped while createMatch was in flight must not enter
+      // 'paying' — that would strand the live players for the full pay window.
+      // Treat it like a formation failure: only CONNECTED players re-reserve.
+      if (room.players.some((p) => !p.connected)) {
+        log('[cardgame] player left during match open', room.id, room.players.filter((p) => !p.connected).map((p) => short(p.address)));
+        for (const p of room.players) if (p.connected) emitToPlayer(p.address, 'cardgame:error', { error: 'a player left during match open — you stay reserved for the next race' });
+        destroyRoom(room);
+        for (const p of [...room.players].filter((q) => q.connected).reverse()) reserved.unshift({ address: p.address });
+        broadcastSlot();
+        return;
+      }
       room.state = 'paying';
       room.payDeadline = now() + PAY_WINDOW_MS;
       for (const p of room.players) {
@@ -126,9 +137,9 @@ export function createCardgameHub(deps) {
       }
     } catch (e) {
       log('[cardgame] createMatch failed', e?.message);
-      for (const p of room.players) emitToPlayer(p.address, 'cardgame:error', { error: 'match open failed — you stay reserved for the next race' });
+      for (const p of room.players) if (p.connected) emitToPlayer(p.address, 'cardgame:error', { error: 'match open failed — you stay reserved for the next race' });
       destroyRoom(room);
-      for (const p of [...room.players].reverse()) reserved.unshift({ address: p.address });
+      for (const p of [...room.players].filter((q) => q.connected).reverse()) reserved.unshift({ address: p.address });
       broadcastSlot();
     }
   }
