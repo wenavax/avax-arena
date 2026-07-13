@@ -11,6 +11,13 @@ export const dynamic = 'force-dynamic';
  * SERVER-TO-SERVER (frostbite-mp → Next). POST { matchId } → cancelMatch so
  * payers of a failed scheduled race can withdraw their entry instantly.
  * Gated by CARDGAME_MP_SECRET — never callable from a browser.
+ *
+ * Deliberately NOT restricted to Open-status matches: a player can pay on-chain
+ * (4th payment → Locked) yet die before telling the hub, so the pay-timeout
+ * cancel must work on Locked too — otherwise all four entries sit stuck until
+ * the contract's settleWindow refund. The hub only calls this pre-race
+ * (cancelPaying / mid-forming abort); the secret is the trust boundary, same
+ * envelope as mp/create + mp/settle.
  */
 export async function POST(req: Request) {
   if (!operatorConfigured()) return NextResponse.json({ error: 'unavailable' }, { status: 503 });
@@ -24,7 +31,9 @@ export async function POST(req: Request) {
   }
   try {
     return NextResponse.json(await cancelMatchMP(body.matchId as Hex));
-  } catch {
+  } catch (e) {
+    // surface the revert reason in logs (e.g. NotRefundable when cancel races a settle)
+    console.error('[cardgame] mp/cancel failed', body.matchId, (e as Error).message);
     return NextResponse.json({ error: 'cancel failed' }, { status: 500 });
   }
 }
