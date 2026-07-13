@@ -73,10 +73,10 @@ export function registerCardgame(io) {
       if (!Number.isInteger(nonce) || !sig || !verifyReserveSig(address, nonce, sig)) {
         return socket.emit('cardgame:error', { error: 'sign to reserve (wallet ownership)' });
       }
-      bind(address);
       const res = hub.reserve(address);
-      if (res?.error) socket.emit('cardgame:error', { error: res.error });
-      else socket.emit('cardgame:reserved', { position: res.position, startsAt: res.startsAt });
+      if (res?.error) return socket.emit('cardgame:error', { error: res.error });
+      bind(address);
+      socket.emit('cardgame:reserved', { position: res.position, startsAt: res.startsAt });
     });
     socket.on('cardgame:unreserve', () => { const a = me(); if (a) hub.unreserve(a); });
 
