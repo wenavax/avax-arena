@@ -177,6 +177,27 @@ export function badgeFor(score: number) {
   return BADGES.find((b) => score >= b.min) ?? BADGES[BADGES.length - 1];
 }
 
+/* ------------------------------- achievements ----------------------------- */
+
+export interface Achievement { icon: string; label: string; desc: string }
+
+/** Derived achievements — computed purely from a WalletScore, no extra fetches.
+ *  Ordered roughly by prestige; mutually-exclusive size tiers pick the highest. */
+export function deriveAchievements(ws: WalletScore): Achievement[] {
+  const out: Achievement[] = [];
+  const b = ws.breakdown;
+  if (ws.frostBonus) out.push({ icon: '❄', label: 'Frost Family', desc: 'Holds a Frostbite collection' });
+  if (b.some((c) => c.tier === 'S')) out.push({ icon: '🏛', label: 'Blue Chip', desc: 'Holds an S-tier collection' });
+  if (b.some((c) => (c.avgAgeDays ?? 0) >= 365)) out.push({ icon: '💎', label: 'Diamond Hands', desc: 'Held a collection for over a year' });
+  if (b.some((c) => (c.minterRatio ?? 0) >= 0.99)) out.push({ icon: '⛏', label: 'OG Minter', desc: 'Original minter of an entire holding' });
+  if (b.some((c) => (c.avgRarity ?? 0) >= 3)) out.push({ icon: '✦', label: 'Rare Air', desc: 'Epic+ average hero rarity' });
+  if (b.length >= 10) out.push({ icon: '🧭', label: 'Explorer', desc: '10+ scored collections' });
+  else if (b.length >= 5) out.push({ icon: '🗺', label: 'Wanderer', desc: '5+ scored collections' });
+  if (ws.totalNfts >= 100) out.push({ icon: '🐋', label: 'Whale', desc: '100+ scored NFTs' });
+  else if (ws.totalNfts >= 25) out.push({ icon: '🦈', label: 'Shark', desc: '25+ scored NFTs' });
+  return out;
+}
+
 /** holdings: lowercase kontrat adresi → adet (number) veya {count, avgAgeDays, minterRatio}.
  *  Puan = λ × W_tier × floorMult × ageMult × mintMult × min(adet,20)^0.7 */
 export function computeWalletScore(

@@ -96,8 +96,39 @@ function ensureTables() {
       ts         INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_nft_scores_score ON nft_scores(score DESC);
+    CREATE TABLE IF NOT EXISTS nft_score_history (
+      id     INTEGER PRIMARY KEY AUTOINCREMENT,
+      wallet TEXT NOT NULL,
+      score  INTEGER NOT NULL,
+      ts     INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_nft_hist_wallet ON nft_score_history(wallet, ts);
   `);
   return db;
+}
+
+type Db = ReturnType<typeof getDb>;
+
+/** Position of a score among all cached wallets (1-based) + pool size. */
+function rankInfo(db: Db, score: number): { rank: number; totalScored: number } {
+  const higher = (db.prepare(`SELECT COUNT(*) AS c FROM nft_scores WHERE score > ?`).get(score) as { c: number }).c;
+  const total = (db.prepare(`SELECT COUNT(*) AS c FROM nft_scores`).get() as { c: number }).c;
+  return { rank: higher + 1, totalScored: Math.max(total, 1) };
+}
+
+/** Last 20 score snapshots, oldest → newest (sparkline order). */
+function historyFor(db: Db, wallet: string): { score: number; ts: number }[] {
+  return (db.prepare(`SELECT score, ts FROM nft_score_history WHERE wallet = ? ORDER BY ts DESC LIMIT 20`)
+    .all(wallet) as { score: number; ts: number }[]).reverse();
+}
+
+/** Record a fresh score; skip when the last snapshot is identical and recent
+ *  (keeps the history meaningful instead of a wall of repeats). */
+function recordHistory(db: Db, wallet: string, score: number) {
+  const last = db.prepare(`SELECT score, ts FROM nft_score_history WHERE wallet = ? ORDER BY ts DESC LIMIT 1`)
+    .get(wallet) as { score: number; ts: number } | undefined;
+  if (last && last.score === score && Date.now() - last.ts < 60 * 60 * 1000) return;
+  db.prepare(`INSERT INTO nft_score_history (wallet, score, ts) VALUES (?, ?, ?)`).run(wallet, score, Date.now());
 }
 
 async function fetchHoldings(wallet: string, kind: 'erc721-holdings' | 'erc1155-holdings'): Promise<Record<string, number>> {
@@ -144,7 +175,8 @@ export async function GET(req: NextRequest) {
     | { payload: string; ts: number }
     | undefined;
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-    return NextResponse.json({ ...(JSON.parse(cached.payload) as WalletScore), cached: true });
+    const payload = JSON.parse(cached.payload) as WalletScore;
+    return NextResponse.json({ ...payload, ...rankInfo(db, payload.score), history: historyFor(db, wallet), cached: true });
   }
 
   try {
@@ -188,11 +220,15 @@ export async function GET(req: NextRequest) {
        ON CONFLICT(wallet) DO UPDATE SET score = excluded.score, badge = excluded.badge,
          total_nfts = excluded.total_nfts, payload = excluded.payload, ts = excluded.ts`
     ).run(wallet, result.score, result.badge, result.totalNfts, JSON.stringify(result), Date.now());
+    recordHistory(db, wallet, result.score);
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, ...rankInfo(db, result.score), history: historyFor(db, wallet) });
   } catch (err) {
     // Routescan geçici hata verirse bayat cache'i servis et
-    if (cached) return NextResponse.json({ ...(JSON.parse(cached.payload) as WalletScore), cached: true, stale: true });
+    if (cached) {
+      const payload = JSON.parse(cached.payload) as WalletScore;
+      return NextResponse.json({ ...payload, ...rankInfo(db, payload.score), history: historyFor(db, wallet), cached: true, stale: true });
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message.slice(0, 120) : 'failed to compute score' },
       { status: 502 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Award, Search, Loader2, AlertTriangle, Snowflake, Sparkles, Trophy, Share2, ImageIcon, Check, Link2 } from 'lucide-react';
+import { Award, Search, Loader2, AlertTriangle, Snowflake, Sparkles, Trophy, Share2, ImageIcon, Check, Link2, Swords } from 'lucide-react';
 import { useAccount, useSwitchChain, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { parseAbi } from 'viem';
 import { cn } from '@/lib/utils';
@@ -10,9 +10,34 @@ import { cn } from '@/lib/utils';
 const ATTEST_ADDRESS = '0xEFB0409A5698bB04EB11262D8915CfD2c68B68d5' as `0x${string}`;
 const ATTEST_ABI = parseAbi(['function attest(uint256 score, bytes32 ref) external']);
 const ZERO_REF = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`;
-import { badgeFor, BADGES, type WalletScore, type NftTier } from '@/lib/nftScore';
+import { badgeFor, deriveAchievements, BADGES, type WalletScore, type NftTier } from '@/lib/nftScore';
 import { shortAddr } from '@/lib/launchpad';
 import GameStageBanner from '@/components/GameStageBanner';
+
+/** API response = score + community rank + score history (added server-side). */
+type ScoreResp = WalletScore & {
+  rank?: number;
+  totalScored?: number;
+  history?: { score: number; ts: number }[];
+  cached?: boolean;
+};
+
+/** Tiny score-history sparkline (SVG, no deps). */
+function Sparkline({ points }: { points: { score: number; ts: number }[] }) {
+  if (points.length < 2) return null;
+  const w = 168, h = 36, pad = 4;
+  const scores = points.map((p) => p.score);
+  const min = Math.min(...scores), max = Math.max(...scores);
+  const span = Math.max(1, max - min);
+  const xy = points
+    .map((p, i) => `${pad + (i * (w - 2 * pad)) / (points.length - 1)},${(h - pad - ((p.score - min) / span) * (h - 2 * pad)).toFixed(1)}`)
+    .join(' ');
+  return (
+    <svg width={w} height={h} className="mx-auto mt-1" aria-label="score history">
+      <polyline points={xy} fill="none" stroke="#4dd0e1" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" opacity="0.85" />
+    </svg>
+  );
+}
 
 const TIER_COLORS: Record<NftTier, string> = {
   FROST: 'text-frost-primary border-frost-primary/30 bg-frost-primary/10',
@@ -37,10 +62,16 @@ export default function NftScorePage() {
   const [attesting, setAttesting] = useState(false);
   const { isSuccess: attestConfirmed } = useWaitForTransactionReceipt({ hash: attestTx });
   const [input, setInput] = useState('');
-  const [result, setResult] = useState<WalletScore | null>(null);
+  const [result, setResult] = useState<ScoreResp | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [leaders, setLeaders] = useState<LeaderRow[]>([]);
+  // compare mode: a second wallet scored side-by-side
+  const [cmpOpen, setCmpOpen] = useState(false);
+  const [cmpInput, setCmpInput] = useState('');
+  const [cmp, setCmp] = useState<ScoreResp | null>(null);
+  const [cmpLoading, setCmpLoading] = useState(false);
+  const [cmpError, setCmpError] = useState('');
 
   const loadLeaderboard = useCallback(() => {
     fetch('/avalanche/api/nft-score?leaderboard=1')
@@ -60,11 +91,12 @@ export default function NftScorePage() {
       setError('');
       setIsLoading(true);
       setResult(null);
+      setCmp(null); setCmpOpen(false); setCmpError('');
       try {
         const res = await fetch(`/avalanche/api/nft-score?wallet=${w}`);
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || 'failed to fetch score');
-        setResult(d as WalletScore);
+        setResult(d as ScoreResp);
         loadLeaderboard();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to fetch score — try again');
@@ -74,6 +106,24 @@ export default function NftScorePage() {
     },
     [loadLeaderboard]
   );
+
+  const compare = useCallback(async (wallet: string) => {
+    const w = wallet.trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(w)) { setCmpError('Enter a valid address'); return; }
+    setCmpError('');
+    setCmpLoading(true);
+    setCmp(null);
+    try {
+      const res = await fetch(`/avalanche/api/nft-score?wallet=${w}`);
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'failed to fetch score');
+      setCmp(d as ScoreResp);
+    } catch (e) {
+      setCmpError(e instanceof Error ? e.message : 'Failed — try again');
+    } finally {
+      setCmpLoading(false);
+    }
+  }, []);
 
   async function attestOnChain() {
     if (!result) return;
@@ -176,6 +226,30 @@ export default function NftScorePage() {
                 <div className="font-display text-lg text-white/60">{badge.label}</div>
                 <div className="font-mono text-6xl font-bold gradient-text my-2">{result.score}</div>
                 <div className="text-xs text-white/40 font-mono">{shortAddr(result.wallet)} · {result.totalNfts} scored NFTs</div>
+
+                {/* community rank + score trend */}
+                {result.rank !== undefined && result.totalScored !== undefined && (
+                  <div className="mt-2 flex items-center justify-center gap-2 text-[11px] flex-wrap">
+                    <span className="px-2 py-0.5 rounded-md bg-frost-gold/10 border border-frost-gold/25 text-frost-gold">
+                      Rank #{result.rank} of {result.totalScored}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08] text-white/50">
+                      top {Math.max(1, Math.ceil((result.rank / result.totalScored) * 100))}%
+                    </span>
+                    {(() => {
+                      const h = result.history ?? [];
+                      if (h.length < 2) return null;
+                      const delta = h[h.length - 1].score - h[h.length - 2].score;
+                      if (delta === 0) return <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08] text-white/40">= unchanged</span>;
+                      return (
+                        <span className={cn('px-2 py-0.5 rounded-md border', delta > 0 ? 'bg-frost-green/10 border-frost-green/25 text-frost-green' : 'bg-red-500/10 border-red-500/25 text-red-400')}>
+                          {delta > 0 ? '▲ +' : '▼ '}{delta} since last check
+                        </span>
+                      );
+                    })()}
+                  </div>
+                )}
+                {result.history && result.history.length >= 2 && <Sparkline points={result.history} />}
                 <div className="mt-3 flex items-center justify-center gap-2 text-[11px] text-white/40 flex-wrap">
                   {result.frostBonus && (
                     <span className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-frost-primary/10 text-frost-primary border border-frost-primary/25">
@@ -189,6 +263,25 @@ export default function NftScorePage() {
                     base {result.basePoints}p
                   </span>
                 </div>
+
+                {/* achievements — derived from the portfolio itself */}
+                {(() => {
+                  const ach = deriveAchievements(result);
+                  if (!ach.length) return null;
+                  return (
+                    <div className="mt-3 flex items-center justify-center gap-1.5 flex-wrap">
+                      {ach.map((a) => (
+                        <span
+                          key={a.label}
+                          title={a.desc}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gradient-to-b from-white/[0.07] to-white/[0.02] border border-white/[0.1] text-[10px] text-white/70 cursor-help"
+                        >
+                          <span className="text-[12px]">{a.icon}</span> {a.label}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {/* Share */}
                 {(() => {
@@ -281,6 +374,73 @@ export default function NftScorePage() {
                   <p className="mt-5 text-xs text-white/40">
                     No scored collections in this wallet — mint a Frostbite Hero to get started ❄
                   </p>
+                )}
+              </div>
+
+              {/* Compare: score a second wallet side-by-side */}
+              <div className="glass-card rounded-2xl p-4 mt-3">
+                {!cmpOpen ? (
+                  <button
+                    onClick={() => setCmpOpen(true)}
+                    className="w-full flex items-center justify-center gap-2 text-xs text-white/50 hover:text-white/80 transition-colors py-1"
+                  >
+                    <Swords className="w-3.5 h-3.5" /> Compare with another wallet
+                  </button>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="0x… rival wallet"
+                        value={cmpInput}
+                        onChange={(e) => setCmpInput(e.target.value.trim())}
+                        onKeyDown={(e) => e.key === 'Enter' && compare(cmpInput)}
+                        className="flex-1 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.06] text-xs text-white/80 placeholder-white/20 outline-none focus:border-frost-primary/30 transition-colors font-mono"
+                      />
+                      <button
+                        onClick={() => compare(cmpInput)}
+                        disabled={cmpLoading}
+                        className={cn('px-4 rounded-xl bg-frost-primary/15 border border-frost-primary/30 text-frost-primary text-xs hover:bg-frost-primary/25 transition-all inline-flex items-center gap-1.5', cmpLoading && 'opacity-50')}
+                      >
+                        {cmpLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Swords className="w-3.5 h-3.5" />} VS
+                      </button>
+                    </div>
+                    {cmpError && <div className="mt-2 text-[11px] text-red-400">{cmpError}</div>}
+                    {cmp && (() => {
+                      const rows: { label: string; a: string | number; b: string | number; win: 0 | 1 | 2 }[] = [
+                        { label: 'Score', a: result.score, b: cmp.score, win: result.score === cmp.score ? 0 : result.score > cmp.score ? 1 : 2 },
+                        { label: 'Badge', a: `${badgeFor(result.score).icon} ${result.badge}`, b: `${badgeFor(cmp.score).icon} ${cmp.badge}`, win: 0 },
+                        { label: 'Scored NFTs', a: result.totalNfts, b: cmp.totalNfts, win: result.totalNfts === cmp.totalNfts ? 0 : result.totalNfts > cmp.totalNfts ? 1 : 2 },
+                        { label: 'Collections', a: result.breakdown.length, b: cmp.breakdown.length, win: result.breakdown.length === cmp.breakdown.length ? 0 : result.breakdown.length > cmp.breakdown.length ? 1 : 2 },
+                        { label: 'Top holding', a: result.breakdown[0]?.name ?? '—', b: cmp.breakdown[0]?.name ?? '—', win: 0 },
+                      ];
+                      return (
+                        <div className="mt-3">
+                          <div className="grid grid-cols-[1fr_auto_1fr] gap-x-2 items-center text-[11px]">
+                            <div className="font-mono text-white/70 text-right truncate">{shortAddr(result.wallet)}</div>
+                            <div className="text-white/25 text-[9px] font-bold px-1">VS</div>
+                            <div className="font-mono text-white/70 truncate">{shortAddr(cmp.wallet)}</div>
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            {rows.map((r) => (
+                              <div key={r.label} className="grid grid-cols-[1fr_auto_1fr] gap-x-2 items-center p-1.5 rounded-lg bg-white/[0.02] text-[11px]">
+                                <div className={cn('text-right truncate', r.win === 1 ? 'text-frost-green font-semibold' : 'text-white/60')}>{r.a}</div>
+                                <div className="text-white/25 text-[9px] w-20 text-center uppercase tracking-wider">{r.label}</div>
+                                <div className={cn('truncate', r.win === 2 ? 'text-frost-green font-semibold' : 'text-white/60')}>{r.b}</div>
+                              </div>
+                            ))}
+                          </div>
+                          {result.score !== cmp.score && (
+                            <div className="mt-2 text-center text-[11px] text-white/50">
+                              {result.score > cmp.score
+                                ? <>🏆 <span className="font-mono">{shortAddr(result.wallet)}</span> leads by <b className="text-frost-green">{result.score - cmp.score}</b></>
+                                : <>🏆 <span className="font-mono">{shortAddr(cmp.wallet)}</span> leads by <b className="text-frost-green">{cmp.score - result.score}</b></>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </>
                 )}
               </div>
             </motion.div>
