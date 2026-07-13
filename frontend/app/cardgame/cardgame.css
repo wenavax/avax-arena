@@ -224,9 +224,25 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .panel{padding:16px}
 .cgroot .panel h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:var(--cg-muted)}
 
-/* playing cards — layered face: inner frame, gloss sweep, watermark art */
-.cgroot .hand{display:flex;flex-wrap:wrap;gap:9px}
-.cgroot .card{width:58px;height:82px;border-radius:10px;position:relative;cursor:pointer;user-select:none;
+/* ── hand header: title + live card counter ─────────────────────────── */
+.cgroot .hand-hd{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.cgroot .hand-hd-t{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:2px;
+  text-transform:uppercase;font-size:13px;color:var(--cg-text);display:inline-flex;align-items:center;gap:7px}
+.cgroot .hand-hd-t::before{content:'';width:9px;height:9px;border-radius:2px;transform:rotate(45deg);
+  background:linear-gradient(135deg,var(--cg-ice),var(--cg-gold));box-shadow:0 0 10px rgba(77,208,225,.6)}
+.cgroot .hand-count{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;
+  color:var(--cg-gold);background:rgba(245,197,66,.1);border:1px solid rgba(245,197,66,.32);
+  border-radius:20px;padding:2px 11px;letter-spacing:.5px;white-space:nowrap}
+
+/* playing cards — laid on a frosted tray; layered face: frame, gloss, art */
+.cgroot .hand{display:flex;flex-wrap:wrap;gap:11px;padding:16px 15px;border-radius:16px;
+  background:
+    radial-gradient(130% 120% at 50% -8%,rgba(77,208,225,.09),transparent 58%),
+    linear-gradient(180deg,rgba(8,11,18,.62),rgba(8,11,18,.30));
+  border:1px solid rgba(255,255,255,.06);
+  box-shadow:inset 0 2px 22px rgba(0,0,0,.5),inset 0 0 0 1px rgba(255,255,255,.02),0 1px 0 rgba(255,255,255,.03);
+  min-height:104px;align-content:center}
+.cgroot .card{width:62px;height:88px;border-radius:11px;position:relative;cursor:pointer;user-select:none;
   overflow:hidden;
   background:
     radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.85),transparent 60%),
@@ -337,9 +353,15 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .btn:disabled{opacity:.35;cursor:not-allowed}
 .cgroot .btn.ghost{background:rgba(255,255,255,.05);border:1px solid var(--cg-line);color:var(--cg-text);box-shadow:none;letter-spacing:.4px}
 .cgroot .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
-.cgroot .cooldown{height:5px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden;margin-top:10px}
-.cgroot .cooldown>div{height:100%;background:linear-gradient(90deg,var(--cg-red),var(--cg-gold));width:0%}
+.cgroot .cooldown{height:7px;background:rgba(255,255,255,.05);border-radius:4px;overflow:hidden;margin-top:12px;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.4)}
+.cgroot .cooldown>div{height:100%;width:0%;border-radius:4px;
+  background:linear-gradient(90deg,var(--cg-red),var(--cg-gold));box-shadow:0 0 10px rgba(245,197,66,.5);transition:width .1s linear}
 .cgroot .pill{font-size:11px;padding:3px 10px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid var(--cg-line);color:var(--cg-muted)}
+/* play-preview readout: prominent multiplier/combo feedback next to the buttons */
+.cgroot #playPreview,.cgroot .eng-note,.cgroot .eng-hint{font-family:'JetBrains Mono',monospace;font-weight:700;
+  font-size:12px;color:var(--cg-ice);background:rgba(77,208,225,.08);border-color:rgba(77,208,225,.28);
+  padding:5px 12px;letter-spacing:.3px}
 .cgroot .veh{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
 
 /* vehicle-selection screen (shared by practice + staked renderers) */

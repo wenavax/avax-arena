@@ -66,7 +66,7 @@ const TEMPLATE = `
 
 <div class="grid">
   <div class="panel glass" id="handPanel">
-    <h3>Your hand — <span id="handLimit"></span></h3>
+    <div class="hand-hd"><span class="hand-hd-t">Your Hand</span><span class="hand-count" id="handLimit"></span></div>
     <div class="hand" id="hand"></div>
     <div class="cooldown"><div id="cdbar"></div></div>
     <div class="row">

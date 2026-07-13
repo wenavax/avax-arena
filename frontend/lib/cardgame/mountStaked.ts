@@ -63,7 +63,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
       <div class="track3d glass eng-track3d" style="display:none"><button class="cg-fs eng-fs" title="Fullscreen">⛶</button></div>
     </div>
     <div class="cg-eng glass eng-handcard" style="padding:16px">
-      <h3 style="margin:0 0 10px;font-size:12px;letter-spacing:2px;color:var(--cg-muted)">YOUR HAND — <span class="eng-hlim"></span></h3>
+      <div class="hand-hd"><span class="hand-hd-t">Your Hand</span><span class="hand-count eng-hlim"></span></div>
       <div class="eng-hand hand"></div>
       <div class="cooldown"><div class="eng-cd"></div></div>
       <div class="row"><button class="btn eng-play">PLAY SELECTED</button>
