@@ -266,6 +266,12 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .card .ix{position:absolute;top:4px;left:6px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:700;opacity:.8;z-index:2}
 .cgroot .card .ix2{position:absolute;bottom:4px;right:6px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:700;opacity:.8;transform:rotate(180deg);z-index:2}
 .cgroot .card small{font-size:7.5px;font-weight:800;position:absolute;bottom:5px;left:0;right:0;text-align:center;letter-spacing:1.5px;z-index:2}
+/* per-value ability ribbon on normal card faces */
+.cgroot .card small.ab{font-size:6.5px;letter-spacing:1px;color:rgba(20,26,38,.55)}
+.cgroot .card.hi small.ab{color:rgba(90,63,5,.6)}
+/* ability trigger popup: smaller companion to the combo popup */
+.cgroot .popup.pop-ab{font-size:16px;letter-spacing:2px;color:var(--cg-ice);
+  filter:drop-shadow(0 0 10px rgba(77,208,225,.5));animation:cg-rise 1.4s ease-out forwards}
 /* high cards (9-10): gold-trimmed premium face */
 .cgroot .card.hi{border-color:rgba(245,197,66,.8);
   background:
