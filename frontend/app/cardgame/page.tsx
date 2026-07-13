@@ -373,6 +373,7 @@ export default function CardGamePage() {
                   ))} {slot.reserved}/4 reserved</span>
                 </div>
               )}
+              <div className="cg-icm">🔗 Cross-chain race entries from Avalanche L1s — powered by <b>Avalanche ICM</b> · <span className="cg-icm-soon">COMING SOON</span></div>
             </div>
           </div>
           <div className="cg-stakebar-r">
