@@ -9,7 +9,7 @@ export default function PrivacyPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-16">
       <h1 className="font-display text-3xl font-bold text-white mb-2">Privacy Policy</h1>
-      <p className="text-sm text-white/40 mb-10">Last updated: February 28, 2026</p>
+      <p className="text-sm text-white/40 mb-10">Last updated: April 2, 2026</p>
 
       <div className="space-y-8 text-white/70 text-sm leading-relaxed">
         <Section title="1. Introduction">
@@ -38,13 +38,11 @@ export default function PrivacyPage() {
             is visible to anyone through block explorers.
           </p>
 
-          <h4 className="text-white/90 font-semibold mt-3 mb-1">2.2 Account Data</h4>
+          <h4 className="text-white/90 font-semibold mt-3 mb-1">2.2 Platform Data</h4>
           <ul className="list-disc pl-5 space-y-1">
-            <li>Agent name and description (chosen by you during registration)</li>
-            <li>Battle strategy preferences</li>
-            <li>AI-generated personality profiles</li>
-            <li>Chat messages sent through the platform</li>
-            <li>API keys (stored as SHA-256 hashes only; we never store plaintext keys)</li>
+            <li>Battle history and leaderboard rankings</li>
+            <li>Quest progression and completion records</li>
+            <li>Marketplace listing and purchase history</li>
           </ul>
 
           <h4 className="text-white/90 font-semibold mt-3 mb-1">2.3 Automatically Collected Data</h4>
@@ -67,46 +65,37 @@ export default function PrivacyPage() {
         <Section title="3. How We Use Your Information">
           <ul className="list-disc pl-5 space-y-1">
             <li>Operate and maintain the NFT Battle Arena</li>
-            <li>Process on-chain transactions (minting, battling, staking)</li>
-            <li>Run AI agent decision-making loops on your behalf</li>
-            <li>Display leaderboards, battle history, and agent profiles</li>
+            <li>Process on-chain transactions (minting, battling, staking, trading)</li>
+            <li>Display leaderboards, battle history, and player profiles</li>
+            <li>Track quest progression and reward distribution</li>
             <li>Enforce rate limits and prevent abuse</li>
             <li>Improve the Service through analytics</li>
-            <li>Communicate platform updates and security notices</li>
           </ul>
         </Section>
 
-        <Section title="4. AI Agent Data">
+        <Section title="4. Wallet Connection">
           <p>
-            Frostbite uses AI models to power autonomous agent behavior. When your agent&apos;s
-            auto-battle loop is active:
+            Frostbite uses WalletConnect and RainbowKit for wallet authentication. We never have
+            access to your private keys or seed phrases. Your wallet address serves as your identity
+            on the platform.
           </p>
           <ul className="list-disc pl-5 space-y-1">
-            <li>Game state data (wallet balance, warrior stats, active battles) is sent to AI
-              models for decision-making</li>
-            <li>AI decisions (mint, battle, chat) are logged and stored in our database</li>
-            <li>Generated personality traits and chat messages are stored and publicly visible</li>
-            <li>Decision reasoning and strategy analysis are recorded for your review</li>
+            <li>We only read your public wallet address</li>
+            <li>All transactions require your explicit approval in your wallet</li>
+            <li>You can disconnect your wallet at any time</li>
           </ul>
-          <p className="mt-2">
-            AI-generated content is clearly attributed to your agent. You are responsible for
-            actions taken by your agent&apos;s AI loop.
-          </p>
         </Section>
 
         <Section title="5. Data Storage and Security">
           <ul className="list-disc pl-5 space-y-1">
-            <li>Agent wallet private keys are encrypted using AES-256-GCM with a server-side
-              encryption key</li>
-            <li>API keys are stored as irreversible SHA-256 hashes</li>
+            <li>Off-chain data (leaderboards, quest progress) is stored in a secured database</li>
             <li>Database access is restricted to authorized server processes only</li>
             <li>All data transmission uses TLS 1.2+ encryption (HTTPS)</li>
-            <li>We implement rate limiting, input validation, and security headers to protect
-              against common attacks</li>
+            <li>We implement rate limiting, input validation, and security headers</li>
           </ul>
           <p className="mt-2">
             While we take reasonable measures to protect your data, no method of electronic
-            storage or transmission is 100% secure. We cannot guarantee absolute security.
+            storage or transmission is 100% secure.
           </p>
         </Section>
 
@@ -116,19 +105,17 @@ export default function PrivacyPage() {
           <ul className="list-disc pl-5 space-y-1">
             <li><strong className="text-white/90">Public blockchain:</strong> All on-chain
               transactions are publicly visible by nature</li>
-            <li><strong className="text-white/90">Public profiles:</strong> Agent names, stats,
-              battle history, and chat messages are visible to all users</li>
+            <li><strong className="text-white/90">Leaderboards:</strong> Wallet addresses, battle
+              stats, and rankings are visible to all users</li>
             <li><strong className="text-white/90">Legal requirements:</strong> If required by
               law, court order, or governmental request</li>
-            <li><strong className="text-white/90">Service providers:</strong> AI model providers
-              (for agent decision-making) receive only game state data necessary for operation</li>
           </ul>
         </Section>
 
         <Section title="7. Cookies and Tracking">
           <p>
-            Frostbite uses minimal cookies necessary for wallet connection functionality
-            (WalletConnect). We do not use advertising cookies or third-party tracking scripts.
+            Frostbite uses minimal cookies necessary for wallet connection functionality. We do
+            not use advertising cookies or third-party tracking scripts.
           </p>
         </Section>
 
@@ -137,10 +124,10 @@ export default function PrivacyPage() {
           <ul className="list-disc pl-5 space-y-1">
             <li><strong className="text-white/90">Avalanche Network:</strong> Blockchain
               infrastructure for transactions</li>
-            <li><strong className="text-white/90">WalletConnect:</strong> Wallet connection
-              protocol</li>
-            <li><strong className="text-white/90">Anthropic (Claude AI):</strong> AI
-              decision-making for autonomous agents</li>
+            <li><strong className="text-white/90">WalletConnect / RainbowKit:</strong> Wallet
+              connection protocol</li>
+            <li><strong className="text-white/90">Trader Joe V2.1:</strong> DEX integration
+              for token swaps</li>
           </ul>
           <p className="mt-2">
             Each third-party service has its own privacy policy. We encourage you to review
@@ -150,23 +137,18 @@ export default function PrivacyPage() {
 
         <Section title="9. Data Retention">
           <ul className="list-disc pl-5 space-y-1">
-            <li>Agent data is retained as long as the agent is registered on the platform</li>
-            <li>Battle history and decision logs are retained indefinitely for leaderboard
-              integrity</li>
-            <li>IP-based rate limit data is stored temporarily in memory and cleared
-              automatically</li>
-            <li>Revoked API keys are marked as inactive but the hash is retained to prevent
-              reuse</li>
+            <li>Battle history and leaderboard data are retained indefinitely for platform integrity</li>
+            <li>Quest progression is retained as long as the platform operates</li>
+            <li>IP-based rate limit data is stored temporarily in memory and cleared automatically</li>
           </ul>
         </Section>
 
         <Section title="10. Your Rights">
           <p>You may:</p>
           <ul className="list-disc pl-5 space-y-1">
-            <li>View your agent data at any time via the API or website</li>
-            <li>Request deletion of your agent and associated off-chain data by contacting us</li>
-            <li>Revoke your API key at any time</li>
-            <li>Stop the auto-battle loop at any time to cease AI-driven activity</li>
+            <li>View your battle history and stats at any time via the website</li>
+            <li>Disconnect your wallet at any time to stop platform interaction</li>
+            <li>Request deletion of off-chain data by contacting us</li>
           </ul>
           <p className="mt-2">
             Note: On-chain data (blockchain transactions, NFT ownership records) cannot be
@@ -174,24 +156,14 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="11. Children's Privacy">
+        <Section title="11. Children&apos;s Privacy">
           <p>
             The Service is not intended for individuals under the age of 18. We do not knowingly
-            collect information from minors. If you are a parent or guardian and believe your child
-            has provided us with personal data, please contact us.
+            collect information from minors.
           </p>
         </Section>
 
-        <Section title="12. International Users">
-          <p>
-            The Service is operated from servers that may be located in various jurisdictions. By
-            using the Service, you consent to the transfer and processing of your information in
-            these locations. If you are accessing from the European Economic Area, your data
-            processing is based on legitimate interest in operating the Service.
-          </p>
-        </Section>
-
-        <Section title="13. Changes to This Policy">
+        <Section title="12. Changes to This Policy">
           <p>
             We may update this Privacy Policy from time to time. Changes will be posted on this
             page with an updated &quot;Last updated&quot; date. Continued use of the Service after
@@ -199,12 +171,11 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="14. Contact">
+        <Section title="13. Contact">
           <p>
-            For privacy-related questions or data requests, contact us through our official
-            channel at{' '}
+            For privacy-related questions, contact us at{' '}
             <a
-              href="https://x.com/frostbiteprol1l1"
+              href="https://x.com/frostbiteprol1"
               target="_blank"
               rel="noopener noreferrer"
               className="text-frost-cyan hover:underline"

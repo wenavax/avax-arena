@@ -78,10 +78,7 @@ export function Footer() {
         {/* Copyright */}
         <div className="mt-6 pt-4 border-t border-white/[0.04] flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className="text-[10px] text-white/20">
-            &copy; {new Date().getFullYear()} Frostbite. All rights reserved. All music, artwork, and content are the intellectual property of Frostbite.
-          </p>
-          <p className="text-[10px] text-white/15">
-            Unauthorized reproduction or distribution is prohibited.
+            &copy; {new Date().getFullYear()} Frostbite. Built by <span className="text-white/40 font-medium">hts</span>
           </p>
         </div>
       </div>

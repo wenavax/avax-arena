@@ -5,10 +5,12 @@ import { Volume2, VolumeX, SkipForward, SkipBack, Play, Pause } from 'lucide-rea
 import { motion, AnimatePresence } from 'framer-motion';
 
 const TRACKS = [
-  { src: '/music/track1.mp3', title: 'Track 1' },
-  { src: '/music/track2.mp3', title: 'Track 2' },
-  { src: '/music/track3.mp3', title: 'Track 3' },
-  { src: '/music/track4.mp3', title: 'Track 4' },
+  { src: '/avalanche/music/track1.mp3', title: 'Track 1' },
+  { src: '/avalanche/music/track2.mp3', title: 'Track 2' },
+  { src: '/avalanche/music/track3.mp3', title: 'Track 3' },
+  { src: '/avalanche/music/track4.mp3', title: 'Track 4' },
+  { src: '/avalanche/music/track5.mp3', title: 'Track 5' },
+  { src: '/avalanche/music/track6.mp3', title: 'Track 6' },
 ];
 
 export function MusicPlayer() {
@@ -19,15 +21,16 @@ export function MusicPlayer() {
   const [isMuted, setIsMuted] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
 
-  // Initialize audio
-  useEffect(() => {
+  // Initialize audio on first user interaction
+  const initAudio = useCallback(() => {
+    if (audioRef.current) return;
     const audio = new Audio(TRACKS[0].src);
     audio.volume = 0.3;
     audio.loop = false;
+    audio.preload = 'auto';
     audioRef.current = audio;
 
     audio.addEventListener('ended', () => {
-      // Auto play next track
       setCurrentTrack(prev => {
         const next = (prev + 1) % TRACKS.length;
         audio.src = TRACKS[next].src;
@@ -36,13 +39,13 @@ export function MusicPlayer() {
       });
     });
 
-    return () => {
-      audio.pause();
-      audio.src = '';
-    };
+    audio.addEventListener('error', (e) => {
+      console.warn('[Music] Audio error:', audio.src, e);
+    });
   }, []);
 
   const togglePlay = useCallback(() => {
+    initAudio();
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -50,9 +53,9 @@ export function MusicPlayer() {
       audio.pause();
       setIsPlaying(false);
     } else {
-      audio.play().then(() => setIsPlaying(true)).catch(() => {});
+      audio.play().then(() => setIsPlaying(true)).catch((e) => console.warn('[Music] Play failed:', e.message));
     }
-  }, [isPlaying]);
+  }, [isPlaying, initAudio]);
 
   const toggleMute = useCallback(() => {
     const audio = audioRef.current;
@@ -71,6 +74,7 @@ export function MusicPlayer() {
   }, []);
 
   const nextTrack = useCallback(() => {
+    initAudio();
     const audio = audioRef.current;
     if (!audio) return;
     const next = (currentTrack + 1) % TRACKS.length;
@@ -80,6 +84,7 @@ export function MusicPlayer() {
   }, [currentTrack, isPlaying]);
 
   const prevTrack = useCallback(() => {
+    initAudio();
     const audio = audioRef.current;
     if (!audio) return;
     const prev = (currentTrack - 1 + TRACKS.length) % TRACKS.length;
