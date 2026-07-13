@@ -16,9 +16,9 @@ import { createCardgameHub } from './cardgame-mp.mjs';
 
 const NEXT_BASE = process.env.CARDGAME_NEXT_BASE || 'http://127.0.0.1:3000/avalanche';
 
-function verifyQueueSig(address, nonce, sig) {
+function verifyReserveSig(address, nonce, sig) {
   try {
-    const msg = `Frostbite CAR(D) GAME — queue\naddress: ${String(address).toLowerCase()}\nnonce: ${nonce}`;
+    const msg = `Frostbite CAR(D) GAME — join scheduled race\naddress: ${String(address).toLowerCase()}\nnonce: ${nonce}`;
     return ethers.verifyMessage(msg, sig).toLowerCase() === String(address).toLowerCase();
   } catch { return false; }
 }
@@ -40,6 +40,11 @@ export function registerCardgame(io) {
       if (!r.ok) throw new Error(`mp/settle ${r.status}`);
       return r.json(); // { ranking, txHash }
     },
+    async cancelMatch(matchId) {
+      const r = await fetch(`${NEXT_BASE}/api/cardgame/mp/cancel`, { method: 'POST', headers, body: JSON.stringify({ matchId }) });
+      if (!r.ok) throw new Error(`mp/cancel ${r.status}`);
+      return r.json(); // { cancelled: true, txHash }
+    },
   };
 
   const addr2sock = new Map(); // addressLower → socket
@@ -52,6 +57,7 @@ export function registerCardgame(io) {
       sock.emit(event, data);
     },
     emitToRoom: (roomId, event, data) => io.to(roomId).emit(event, data),
+    emitToAll: (event, data) => io.emit(event, data),
     chain,
     now: () => Date.now(),
     log: (...a) => console.log(...a),
@@ -61,25 +67,27 @@ export function registerCardgame(io) {
     const bind = (address) => { socket.data.cgAddr = address; addr2sock.set(address.toLowerCase(), socket); };
     const me = () => socket.data.cgAddr;
 
-    socket.on('cardgame:queue', (d = {}) => {
+    socket.on('cardgame:reserve', (d = {}) => {
       const { address, nonce, sig } = d;
       if (!address || !ethers.isAddress(address)) return socket.emit('cardgame:error', { error: 'valid address required' });
-      if (!Number.isInteger(nonce) || !sig || !verifyQueueSig(address, nonce, sig)) {
-        return socket.emit('cardgame:error', { error: 'sign to queue (wallet ownership)' });
+      if (!Number.isInteger(nonce) || !sig || !verifyReserveSig(address, nonce, sig)) {
+        return socket.emit('cardgame:error', { error: 'sign to reserve (wallet ownership)' });
       }
       bind(address);
-      const res = hub.enqueue(address);
+      const res = hub.reserve(address);
       if (res?.error) socket.emit('cardgame:error', { error: res.error });
+      else socket.emit('cardgame:reserved', { position: res.position, startsAt: res.startsAt });
     });
+    socket.on('cardgame:unreserve', () => { const a = me(); if (a) hub.unreserve(a); });
 
-    socket.on('cardgame:leave', () => { const a = me(); if (a) { hub.dequeue(a); hub.disconnect(a); } });
+    socket.on('cardgame:leave', () => { const a = me(); if (a) { hub.unreserve(a); hub.disconnect(a); } });
     socket.on('cardgame:paid', () => { const a = me(); if (a) { const r = hub.markPaid(a); if (r?.error) socket.emit('cardgame:error', r); } });
     socket.on('cardgame:vehicle', (d = {}) => { const a = me(); if (a && d.veh) { const r = hub.chooseVehicle(a, d.veh); if (r?.error) socket.emit('cardgame:error', r); } });
     socket.on('cardgame:play', (d = {}) => { const a = me(); if (a && Array.isArray(d.cardIds)) { const r = hub.submitPlay(a, d.cardIds); if (r?.error) socket.emit('cardgame:rejected', r); } });
 
     socket.on('cardgame:reconnect', (d = {}) => {
       const { address, nonce, sig } = d;
-      if (!address || !ethers.isAddress(address) || !Number.isInteger(nonce) || !sig || !verifyQueueSig(address, nonce, sig)) {
+      if (!address || !ethers.isAddress(address) || !Number.isInteger(nonce) || !sig || !verifyReserveSig(address, nonce, sig)) {
         return socket.emit('cardgame:error', { error: 'sign to reconnect' });
       }
       const res = hub.reconnect(address);
@@ -93,6 +101,9 @@ export function registerCardgame(io) {
       if (addr2sock.get(a.toLowerCase()) === socket) addr2sock.delete(a.toLowerCase());
       hub.disconnect(a);
     });
+
+    // every new socket immediately learns the next race time
+    hub.broadcastSlot();
   });
 
   const tickTimer = setInterval(() => hub.tickAll(), 100);

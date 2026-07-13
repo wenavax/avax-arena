@@ -18,8 +18,8 @@ export function createCardgameSocket(): Socket {
   });
 }
 
-/** Message the player signs to queue / reconnect (proves wallet ownership so
- *  nobody can queue as someone else). Mirrors the mp server's verifyQueueSig. */
-export function queueMessage(address: string, nonce: number): string {
-  return `Frostbite CAR(D) GAME — queue\naddress: ${address.toLowerCase()}\nnonce: ${nonce}`;
+/** Message the player signs to reserve a seat / reconnect (proves wallet
+ *  ownership). Mirrors the mp server's verifyReserveSig. */
+export function reserveMessage(address: string, nonce: number): string {
+  return `Frostbite CAR(D) GAME — join scheduled race\naddress: ${address.toLowerCase()}\nnonce: ${nonce}`;
 }

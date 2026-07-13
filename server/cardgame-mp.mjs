@@ -122,6 +122,9 @@ export function createCardgameHub(deps) {
       if (room.players.some((p) => !p.connected)) {
         log('[cardgame] player left during match open', room.id, room.players.filter((p) => !p.connected).map((p) => short(p.address)));
         for (const p of room.players) if (p.connected) emitToPlayer(p.address, 'cardgame:error', { error: 'a player left during match open — you stay reserved for the next race' });
+        if (room.matchId && chain.cancelMatch) {
+          Promise.resolve(chain.cancelMatch(room.matchId)).catch((e) => log('[cardgame] cancelMatch failed', e?.message));
+        }
         destroyRoom(room);
         for (const p of [...room.players].filter((q) => q.connected).reverse()) reserved.unshift({ address: p.address });
         broadcastSlot();
