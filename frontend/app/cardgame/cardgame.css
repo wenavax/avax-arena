@@ -443,3 +443,10 @@ body.cg-noscroll{overflow:hidden}
   padding:9px 20px;border-radius:22px;font-weight:700;opacity:0;transition:opacity .3s;font-size:13px;
   font-family:'Chakra Petch',sans-serif;backdrop-filter:blur(10px)}
 .cgroot .foot{margin-top:14px;font-size:11px;line-height:1.6;text-align:center}
+
+/* scheduled-race lobby */
+.cgroot .cg-slot{display:flex;align-items:center;gap:14px;margin-top:8px}
+.cgroot .cg-slot-count{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:26px;letter-spacing:2px;color:var(--cg-ice);text-shadow:0 0 14px rgba(77,208,225,.45)}
+.cgroot .cg-slot-seats{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--cg-muted);font-family:'JetBrains Mono',monospace}
+.cgroot .cg-slot-seats i{width:14px;height:8px;border-radius:3px;background:rgba(255,255,255,.08);border:1px solid var(--cg-line)}
+.cgroot .cg-slot-seats i.on{background:linear-gradient(90deg,var(--cg-ice),var(--cg-gold));border-color:transparent;box-shadow:0 0 8px rgba(77,208,225,.5)}

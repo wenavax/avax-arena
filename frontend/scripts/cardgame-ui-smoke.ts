@@ -50,6 +50,7 @@ async function main() {
     seed: 'smoke-seed-1',
     player: '0xAAAA000000000000000000000000000000000001',
     bots: ['0xBBBB000000000000000000000000000000000002', '0xCCCC000000000000000000000000000000000003', '0xDDDD000000000000000000000000000000000004'],
+    entryFee: '10000000000000000',
     onFinish: (input) => { captured = input; },
   });
   const sSel = r2.querySelector('.cg-vsel');

@@ -31,6 +31,7 @@ export interface MpRenderOpts {
   socket: MpSocketLike;
   myAddress: string;
   seats: Seat[]; // 4 seats from the `cardgame:locked` event
+  entryFee: string; // wei, decimal string — from the escrow's entryFee()
   onFinished?: (r: { ranking: Pid[]; rankingAddresses: string[] }) => void;
   onSettled?: (r: { ranking: string[]; txHash?: string }) => void;
 }
@@ -38,10 +39,8 @@ export interface MpRenderOpts {
 const P_VAR: Record<Pid, string> = { P1: '--p1', P2: '--p2', P3: '--p3', P4: '--p4' };
 const short = (a: string) => (a ? a.slice(0, 6) + '…' + a.slice(-4) : '?');
 const MAGIC_ICON: Record<string, string> = { NITRO: '⚡', NAIL: '✕', OIL: '●' };
-// Fuji escrow economics: entry 0.01 AVAX × 4 → payouts entry × [2, 1, 0.5, 0.3]
-const ENTRY = 0.01;
+// Fuji escrow economics: entry × 4 → payouts entry × [2, 1, 0.5, 0.3]
 const PAYOUT_X = [2, 1, 0.5, 0.3];
-const payoutStr = (rank: number) => String(+(ENTRY * (PAYOUT_X[rank] ?? 0)).toFixed(4));
 
 /** Popup colour tier when we only know (combo, mult) — mirrors engine.fxClass
  *  minus the NITRO case (the server's applied map carries no magic info). */
@@ -53,6 +52,8 @@ function tierFx(combo: string | null, mult: number): string {
 }
 
 export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => void {
+  const entryAvax = Number(opts.entryFee) / 1e18;
+  const payoutStr = (rank: number) => String(+(entryAvax * (PAYOUT_X[rank] ?? 0)).toFixed(4));
   const myPid = opts.seats.find((s) => s.address.toLowerCase() === opts.myAddress.toLowerCase())?.pid ?? 'P1';
   const nameOf = (pid: Pid, addr?: string) => (pid === myPid ? 'YOU' : short(addr || opts.seats.find((s) => s.pid === pid)?.address || ''));
   const cssv = (n: string) => getComputedStyle(root).getPropertyValue(n).trim();
@@ -279,7 +280,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   function renderSettle(addresses: string[], txHash?: string) {
     const link = txHash ? ` <a class="txh" href="https://testnet.snowtrace.io/tx/${txHash}" target="_blank" rel="noopener noreferrer">${short(txHash)}</a>` : '';
     ($('eng-settle')).innerHTML = `<div class="settleBox"><div class="settleHead">${txHash ? '✓ SETTLED ON-CHAIN' : '🏁 FINAL RESULT — settling on-chain…'}
-        <span class="mono dim">entry ${ENTRY} AVAX × 4</span>${link}</div>` +
+        <span class="mono dim">entry ${entryAvax} AVAX × 4</span>${link}</div>` +
       addresses.map((a, i) => {
         const pid = opts.seats.find((st) => st.address.toLowerCase() === a.toLowerCase())?.pid;
         const me = a.toLowerCase() === opts.myAddress.toLowerCase();

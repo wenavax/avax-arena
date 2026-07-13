@@ -45,7 +45,7 @@ async function main() {
   w.document.body.appendChild(root);
   let finished = false, settled = false;
   const cleanup = mountMultiplayer(root as unknown as HTMLElement, {
-    socket, myAddress: me, seats,
+    socket, myAddress: me, seats, entryFee: '10000000000000000',
     onFinished: () => { finished = true; }, onSettled: () => { settled = true; },
   });
 

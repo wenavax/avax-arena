@@ -21,18 +21,19 @@ export interface StakedOpts {
   seed: string;
   player: string;
   bots: string[]; // 3
+  entryFee: string; // wei, decimal string — from the escrow's entryFee()
   onFinish: (input: MatchInput, previewRanking: string[]) => void;
 }
 
 const short = (a: string) => a.slice(0, 6) + '…' + a.slice(-4);
 const P_VAR: Record<Pid, string> = { P1: '--p1', P2: '--p2', P3: '--p3', P4: '--p4' };
 const MAGIC_ICON: Record<string, string> = { NITRO: '⚡', NAIL: '✕', OIL: '●' };
-// Fuji escrow economics: entry 0.01 AVAX × 4 → payouts entry × [2, 1, 0.5, 0.3]
-const ENTRY = 0.01;
+// Fuji escrow economics: entry × 4 → payouts entry × [2, 1, 0.5, 0.3]
 const PAYOUT_X = [2, 1, 0.5, 0.3];
-const payoutStr = (rank: number) => String(+(ENTRY * PAYOUT_X[rank]).toFixed(4));
 
 export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
+  const entryAvax = Number(opts.entryFee) / 1e18;
+  const payoutStr = (rank: number) => String(+(entryAvax * (PAYOUT_X[rank] ?? 0)).toFixed(4));
   const addr: Record<Pid, string> = { P1: opts.player, P2: opts.bots[0], P3: opts.bots[1], P4: opts.bots[2] };
   const nameOf = (id: Pid) => (id === 'P1' ? 'YOU' : short(addr[id]));
   const cssv = (n: string) => getComputedStyle(root).getPropertyValue(n).trim();
@@ -243,7 +244,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
 
   function renderSettle(ranking: Pid[]) {
     ($('eng-settle')).innerHTML = `<div class="settleBox"><div class="settleHead">🏁 FINAL RESULT — server re-derives &amp; settles on-chain
-        <span class="mono dim">entry ${ENTRY} AVAX × 4</span></div>` +
+        <span class="mono dim">entry ${entryAvax} AVAX × 4</span></div>` +
       ranking.map((id, i) => `<div class="settleRow"><span class="dim">#${i + 1}</span>
         <span class="addr"><i class="av" style="background:${cssv(P_VAR[id])}"></i>${nameOf(id)}</span>
         <b class="gold">◆ ${payoutStr(i)}</b></div>`).join('') + '</div>';

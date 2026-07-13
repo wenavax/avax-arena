@@ -7,7 +7,7 @@ import { Wallet, LogOut, Coins, Loader2, Trophy } from 'lucide-react';
 import { mountCardGame } from '@/lib/cardgame/mount';
 import { mountStaked } from '@/lib/cardgame/mountStaked';
 import { mountMultiplayer } from '@/lib/cardgame/mountMultiplayer';
-import { createCardgameSocket, queueMessage } from '@/lib/cardgame/mpClient';
+import { createCardgameSocket, reserveMessage } from '@/lib/cardgame/mpClient';
 import type { MatchInput } from '@/lib/cardgame/engine';
 import { CARDGAME_ESCROW, CARDGAME_CHAIN_ID, ESCROW_ABI, STATUS } from '@/lib/cardgame/escrow';
 import LiveMatches from '@/components/cardgame/LiveMatches';
@@ -41,9 +41,12 @@ export default function CardGamePage() {
   const [entryFee, setEntryFee] = useState<bigint | null>(null);
   const [payout, setPayout] = useState<bigint>(0n);
   // multiplayer lobby
-  const [mpPhase, setMpPhase] = useState<'idle' | 'queuing' | 'paying' | 'waiting' | 'playing' | 'settled'>('idle');
+  const [mpPhase, setMpPhase] = useState<'idle' | 'reserved' | 'paying' | 'waiting' | 'playing' | 'settled'>('idle');
   const [mpNote, setMpNote] = useState('');
-  const [mpQueue, setMpQueue] = useState<{ have: number; need: number }>({ have: 0, need: 4 });
+  const [slot, setSlot] = useState<{ startsAt: number; reserved: number } | null>(null);
+  const [slotLeft, setSlotLeft] = useState('');
+  const [feeWei, setFeeWei] = useState<bigint | null>(null);
+  const feeRef = useRef<string>('0');
 
   const shortAddr = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '';
 
@@ -61,24 +64,16 @@ export default function CardGamePage() {
     if (mode === 'watch') { cleanupRef.current?.(); cleanupRef.current = null; }
   }, [mode]);
 
-  // Tear down the multiplayer session (socket + any mounted renderer). Called
-  // from lobby handlers (cancel / pay error). The entering mode's own effect
-  // clears cleanupRef when switching modes, so this is safe to call any time.
+  // Bail out of an in-progress entry (LEAVE button during paying/waiting, or a
+  // pay error). Tells the server to release the seat and unmounts any renderer,
+  // but does NOT disconnect the socket — the connection effect owns the socket
+  // lifecycle (it reconnects/cleans up on mode + auth changes), so we stay wired
+  // for the next scheduled race while in mp mode.
   const teardownMp = useCallback(() => {
+    socketRef.current?.emit('cardgame:leave');
     cleanupRef.current?.(); cleanupRef.current = null;
-    socketRef.current?.disconnect(); socketRef.current = null;
-    setMpPhase('idle'); setMpNote(''); setMpQueue({ have: 0, need: 4 });
+    setMpPhase('idle'); setMpNote('');
   }, []);
-  // Only disconnect the socket when actually LEAVING mp mode (a socket exists).
-  // Do NOT touch cleanupRef here — that would unmount the practice/staked game
-  // that another effect owns. The mp renderer is unmounted by the mode we switch
-  // into (its effect calls cleanupRef.current?.() before mounting).
-  useEffect(() => {
-    if (mode !== 'mp' && socketRef.current) {
-      socketRef.current.disconnect(); socketRef.current = null;
-      setMpPhase('idle'); setMpNote(''); setMpQueue({ have: 0, need: 4 });
-    }
-  }, [mode]);
   // Unmount everything on page unmount.
   useEffect(() => () => { cleanupRef.current?.(); cleanupRef.current = null; socketRef.current?.disconnect(); }, []);
 
@@ -90,6 +85,24 @@ export default function CardGamePage() {
     if (!address || !publicClient) return 0n;
     return publicClient.readContract({ address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'pendingPayouts', args: [address] });
   }, [address, publicClient]);
+
+  // read the entry fee straight from the escrow (single source of truth)
+  useEffect(() => {
+    if (!publicClient) return;
+    publicClient.readContract({ address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'entryFee' })
+      .then((f) => { setFeeWei(f); feeRef.current = String(f); }).catch(() => {});
+  }, [publicClient]);
+
+  // scheduled-race countdown ticker (ticks while a slot is known)
+  useEffect(() => {
+    if (!slot) return;
+    const id = setInterval(() => {
+      const ms = Math.max(0, slot.startsAt - Date.now());
+      const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
+      setSlotLeft(`${m}:${String(s).padStart(2, '0')}`);
+    }, 500);
+    return () => clearInterval(id);
+  }, [slot]);
 
   // Settle callback: fired by the game engine when the staked match ends
   const onFinish = useCallback(async (input: MatchInput) => {
@@ -173,11 +186,11 @@ export default function CardGamePage() {
       // 4) play the shared deterministic engine seeded by the server; capture the
       //    play log and send it to settle (server re-derives the ranking)
       setPhase('playing');
-      setNote('Match locked — race! The server verifies your plays. Winner takes ◆ 0.02.');
+      setNote(`Match locked — race! The server verifies your plays. Winner takes ◆ ${formatEther(fee * 2n)}.`);
       cleanupRef.current?.();
       if (rootRef.current) {
         cleanupRef.current = mountStaked(rootRef.current, {
-          seed, player: address, bots, onFinish: (inp) => onFinishRef.current(inp),
+          seed, player: address, bots, entryFee: String(fee), onFinish: (inp) => onFinishRef.current(inp),
         });
       }
     } catch (e) {
@@ -188,69 +201,65 @@ export default function CardGamePage() {
     }
   }, [address, publicClient, ensureFuji, writeContractAsync, signMessageAsync]);
 
-  // ── Real 4-player multiplayer: queue → pay → locked → play → settle ──
-  const startMp = useCallback(async () => {
-    if (!address || !publicClient || !rootRef.current) return;
-    setPayout(0n);
+  // ── Real 4-player multiplayer: SCHEDULED races (reserve → pay → locked → play → settle) ──
+  // A single owner of the socket lifecycle: the socket opens when we enter mp
+  // mode (authenticated + client ready) and disconnects on cleanup. All server
+  // handlers live here so they survive across reserve/pay/play without a click.
+  useEffect(() => {
+    if (mode !== 'mp' || !authenticated || !address || !publicClient) return;
+    const socket = createCardgameSocket();
+    socketRef.current = socket;
+    socket.on('cardgame:slot', (d: { startsAt: number; reserved: number }) => setSlot(d));
+    socket.on('cardgame:reserved', () => { setMpPhase('reserved'); setMpNote('Seat reserved — the race locks in the first four when the countdown hits zero.'); });
+    socket.on('cardgame:error', (d: { error?: string }) => setMpNote(`Error: ${d?.error || 'unknown'}`));
+    socket.on('cardgame:cancelled', (d: { reason?: string }) => {
+      setMpNote(`Race cancelled: ${d?.reason || 'a player left'}. Paid entries are instantly refundable — you're still reserved for the next race.`);
+      setMpPhase('reserved');
+    });
+    socket.on('cardgame:match-found', async (d: { matchId: Hex; entryFee: string; seat: Seat['pid']; seats: Seat[] }) => {
+      try {
+        setMpPhase('paying');
+        setMpNote(`Race starting — confirm your ${formatEther(BigInt(d.entryFee))} AVAX entry…`);
+        await ensureFuji();
+        const hash = await writeContractAsync({
+          address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'joinMatch',
+          args: [d.matchId], value: BigInt(d.entryFee), chainId: CARDGAME_CHAIN_ID,
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+        socket.emit('cardgame:paid');
+        setMpPhase('waiting'); setMpNote('Paid — waiting for all four to lock in…');
+      } catch (e) {
+        const msg = (e as { shortMessage?: string; message?: string }).shortMessage || (e as Error).message;
+        setMpNote(/rejected|denied/i.test(msg) ? 'Entry declined — your seat was released.' : `Pay error: ${msg.slice(0, 120)}`);
+        socket.emit('cardgame:leave'); setMpPhase('idle');
+      }
+    });
+    socket.on('cardgame:locked', (d: { seats: Seat[] }) => {
+      setMpPhase('playing'); setMpNote('');
+      cleanupRef.current?.();
+      if (rootRef.current) {
+        cleanupRef.current = mountMultiplayer(rootRef.current, {
+          socket, myAddress: address, seats: d.seats, entryFee: feeRef.current,
+          onFinished: () => setMpNote('Match over — settling on-chain…'),
+          onSettled: async () => {
+            const p = await readPending(); setPayout(p); setMpPhase('settled');
+            setMpNote(p > 0n ? `You won ◆ ${formatEther(p)} AVAX — withdraw below.` : 'Settled — no payout this time.');
+          },
+        });
+      }
+    });
+    return () => { socket.disconnect(); socketRef.current = null; setSlot(null); setMpPhase('idle'); setMpNote(''); };
+  }, [mode, authenticated, address, publicClient, ensureFuji, writeContractAsync, readPending]);
+
+  const joinRace = useCallback(async () => {
+    if (!address || !socketRef.current) return;
     try {
-      await ensureFuji();
       const nonce = Math.floor(Math.random() * 2_000_000_000);
-      setMpPhase('queuing'); setMpNote('Sign to join the multiplayer queue…');
-      const sig = (await signMessageAsync({ message: queueMessage(address, nonce) })) as Hex;
-
-      const socket = createCardgameSocket();
-      socketRef.current = socket;
-
-      socket.on('cardgame:queued', (d: { position: number; needed: number }) => {
-        setMpQueue({ have: d.position, need: d.needed });
-        setMpNote(`In queue — ${d.position}/${d.needed} players. Matches start when four are ready.`);
-      });
-      socket.on('cardgame:error', (d: { error?: string }) => setMpNote(`Error: ${d?.error || 'unknown'}`));
-      socket.on('cardgame:cancelled', (d: { reason?: string }) => {
-        setMpNote(`Match cancelled: ${d?.reason || 'a player left'}. Requeue to try again.`); teardownMp();
-      });
-
-      socket.on('cardgame:match-found', async (d: { matchId: Hex; entryFee: string; seat: Seat['pid']; seats: Seat[] }) => {
-        try {
-          setMpPhase('paying');
-          setMpNote(`Match found — confirm your ${formatEther(BigInt(d.entryFee))} AVAX entry…`);
-          await ensureFuji();
-          const hash = await writeContractAsync({
-            address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'joinMatch',
-            args: [d.matchId], value: BigInt(d.entryFee), chainId: CARDGAME_CHAIN_ID,
-          });
-          await publicClient.waitForTransactionReceipt({ hash });
-          socket.emit('cardgame:paid');
-          setMpPhase('waiting'); setMpNote('Paid — waiting for all four players to lock in…');
-        } catch (e) {
-          const msg = (e as { shortMessage?: string; message?: string }).shortMessage || (e as Error).message;
-          setMpNote(/rejected|denied/i.test(msg) ? 'Entry cancelled.' : `Pay error: ${msg.slice(0, 120)}`);
-          socket.emit('cardgame:leave'); teardownMp();
-        }
-      });
-
-      socket.on('cardgame:locked', (d: { seats: Seat[] }) => {
-        setMpPhase('playing'); setMpNote('');
-        cleanupRef.current?.();
-        if (rootRef.current) {
-          cleanupRef.current = mountMultiplayer(rootRef.current, {
-            socket, myAddress: address, seats: d.seats,
-            onFinished: () => setMpNote('Match over — settling on-chain…'),
-            onSettled: async () => {
-              const p = await readPending(); setPayout(p); setMpPhase('settled');
-              setMpNote(p > 0n ? `You won ◆ ${formatEther(p)} AVAX — withdraw below.` : 'Settled — no payout this time.');
-            },
-          });
-        }
-      });
-
-      socket.emit('cardgame:queue', { address, nonce, sig });
-    } catch (e) {
-      const msg = (e as { shortMessage?: string; message?: string }).shortMessage || (e as Error).message;
-      setMpNote(/rejected|denied/i.test(msg) ? 'Cancelled.' : `Error: ${msg.slice(0, 120)}`);
-      teardownMp();
-    }
-  }, [address, publicClient, ensureFuji, signMessageAsync, writeContractAsync, readPending, teardownMp]);
+      const sig = (await signMessageAsync({ message: reserveMessage(address, nonce) })) as Hex;
+      socketRef.current.emit('cardgame:reserve', { address, nonce, sig });
+    } catch { /* user declined the signature */ }
+  }, [address, signMessageAsync]);
+  const leaveRace = useCallback(() => { socketRef.current?.emit('cardgame:unreserve'); setMpPhase('idle'); setMpNote(''); }, []);
 
   const withdraw = useCallback(async () => {
     if (!publicClient) return;
@@ -314,7 +323,7 @@ export default function CardGamePage() {
             <Coins size={18} className="gold-ic" />
             <div>
               <div className="cg-stake-title">Staked Match <span className="tn">FUJI TESTNET</span></div>
-              <div className="cg-stake-sub">Stake <b>0.01 AVAX</b> vs 3 house bots · winner takes ◆ 0.02 · real on-chain escrow</div>
+              <div className="cg-stake-sub">Stake <b>{feeWei !== null ? formatEther(feeWei) : '…'} AVAX</b> vs 3 house bots · winner takes ◆ {feeWei !== null ? formatEther(feeWei * 2n) : '…'} · real on-chain escrow</div>
             </div>
           </div>
           <div className="cg-stakebar-r">
@@ -342,8 +351,19 @@ export default function CardGamePage() {
           <div className="cg-stakebar-l">
             <Coins size={18} className="gold-ic" />
             <div>
-              <div className="cg-stake-title">Multiplayer Match <span className="tn">FUJI TESTNET</span></div>
-              <div className="cg-stake-sub">Race <b>3 real players</b> · stake <b>0.01 AVAX</b> each · winner takes ◆ 0.02 · server-authoritative, on-chain settle</div>
+              <div className="cg-stake-title">Scheduled Race <span className="tn">FUJI TESTNET</span></div>
+              <div className="cg-stake-sub">
+                A race starts <b>every 5 minutes</b> · first four reserved seats play ·
+                entry <b>{feeWei !== null ? formatEther(feeWei) : '…'} AVAX</b> · winner takes <b>◆ {feeWei !== null ? formatEther(feeWei * 2n) : '…'}</b>
+              </div>
+              {slot && (
+                <div className="cg-slot">
+                  <span className="cg-slot-count">{slotLeft || '…'}</span>
+                  <span className="cg-slot-seats">{Array.from({ length: 4 }, (_, i) => (
+                    <i key={i} className={i < slot.reserved ? 'on' : ''} />
+                  ))} {slot.reserved}/4 reserved</span>
+                </div>
+              )}
             </div>
           </div>
           <div className="cg-stakebar-r">
@@ -352,11 +372,13 @@ export default function CardGamePage() {
                 <Trophy size={15} /> WITHDRAW ◆ {formatEther(payout)}
               </button>
             ) : mpPhase === 'idle' || mpPhase === 'settled' ? (
-              <button className="btn" onClick={startMp} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>FIND MATCH</button>
+              <button className="btn" onClick={joinRace}>JOIN RACE</button>
+            ) : mpPhase === 'reserved' ? (
+              <button className="btn ghost" onClick={leaveRace}>RESERVED ✓ · LEAVE</button>
             ) : (
               <button className="btn ghost" onClick={teardownMp} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                {(mpPhase === 'queuing' || mpPhase === 'waiting') && <Loader2 size={15} className="cg-spin" />}
-                {mpPhase === 'queuing' ? `QUEUED ${mpQueue.have}/${mpQueue.need}` : mpPhase === 'paying' ? 'PAYING…' : mpPhase === 'waiting' ? 'WAITING…' : 'LEAVE'}
+                {mpPhase === 'waiting' && <Loader2 size={15} className="cg-spin" />}
+                {mpPhase === 'paying' ? 'PAYING…' : mpPhase === 'waiting' ? 'WAITING…' : 'LEAVE'}
               </button>
             )}
           </div>
