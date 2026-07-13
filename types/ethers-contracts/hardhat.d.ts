@@ -10,15 +10,13 @@ import * as Contracts from "./index.js";
 
 declare module "@nomicfoundation/hardhat-ethers/types" {
   interface HardhatEthersHelpers extends HardhatEthersHelpersBase {
-  getContractFactory(name: 'AgentChat', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.AgentChat__factory>
-getContractFactory(name: 'IAgentRegistry', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IAgentRegistry__factory>
-getContractFactory(name: 'AgentRegistry', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.AgentRegistry__factory>
-getContractFactory(name: 'FrostbiteToken', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteToken__factory>
+  getContractFactory(name: 'FrostbiteToken', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteToken__factory>
 getContractFactory(name: 'ArenaWarrior', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.ArenaWarrior__factory>
 getContractFactory(name: 'BatchMinter', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.BatchMinter__factory>
 getContractFactory(name: 'BattleEngine', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.BattleEngine__factory>
 getContractFactory(name: 'IArenaWarrior', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IArenaWarrior__factory>
 getContractFactory(name: 'BattleEngineProxy', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.BattleEngineProxy__factory>
+getContractFactory(name: 'FrostbiteBattleRoyale', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteBattleRoyale__factory>
 getContractFactory(name: 'FrostbiteAccount', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteAccount__factory>
 getContractFactory(name: 'IERC6551Account', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IERC6551Account__factory>
 getContractFactory(name: 'IERC6551Executable', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IERC6551Executable__factory>
@@ -28,15 +26,19 @@ getContractFactory(name: 'IERC6551Executable', signerOrOptions?: ethers.Signer |
 getContractFactory(name: 'FrostbiteAccountV3', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteAccountV3__factory>
 getContractFactory(name: 'IERC6551Account', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IERC6551Account__factory>
 getContractFactory(name: 'IERC6551Executable', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IERC6551Executable__factory>
+getContractFactory(name: 'FrostbiteHeroes', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteHeroes__factory>
 getContractFactory(name: 'FrostbiteIdentityRegistry', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteIdentityRegistry__factory>
 getContractFactory(name: 'IERC6551Registry', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IERC6551Registry__factory>
 getContractFactory(name: 'IERC721Minimal', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IERC721Minimal__factory>
+getContractFactory(name: 'FrostbiteItems', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteItems__factory>
 getContractFactory(name: 'FrostbiteMarketplace', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteMarketplace__factory>
 getContractFactory(name: 'FrostbiteReputationRegistry', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteReputationRegistry__factory>
 getContractFactory(name: 'FrostbiteSwapRouter', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbiteSwapRouter__factory>
 getContractFactory(name: 'GameEngine', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.GameEngine__factory>
 getContractFactory(name: 'ILeaderboard', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.ILeaderboard__factory>
 getContractFactory(name: 'Leaderboard', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.Leaderboard__factory>
+getContractFactory(name: 'PlayerProgress', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.PlayerProgress__factory>
+getContractFactory(name: 'FrostbitePotionShop', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.FrostbitePotionShop__factory>
 getContractFactory(name: 'IArenaWarrior', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.IArenaWarrior__factory>
 getContractFactory(name: 'QuestEngine', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.QuestEngine__factory>
 getContractFactory(name: 'RewardVault', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.RewardVault__factory>
@@ -44,16 +46,15 @@ getContractFactory(name: 'IArenaWarriorTeam', signerOrOptions?: ethers.Signer | 
 getContractFactory(name: 'TeamBattleEngine', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.TeamBattleEngine__factory>
 getContractFactory(name: 'TeamBattleEngineProxy', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.TeamBattleEngineProxy__factory>
 getContractFactory(name: 'Tournament', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.Tournament__factory>
+getContractFactory(name: 'WorldMarketplace', signerOrOptions?: ethers.Signer | FactoryOptions): Promise<Contracts.WorldMarketplace__factory>
 
-  getContractAt(name: 'AgentChat', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.AgentChat>
-getContractAt(name: 'IAgentRegistry', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IAgentRegistry>
-getContractAt(name: 'AgentRegistry', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.AgentRegistry>
-getContractAt(name: 'FrostbiteToken', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteToken>
+  getContractAt(name: 'FrostbiteToken', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteToken>
 getContractAt(name: 'ArenaWarrior', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.ArenaWarrior>
 getContractAt(name: 'BatchMinter', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.BatchMinter>
 getContractAt(name: 'BattleEngine', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.BattleEngine>
 getContractAt(name: 'IArenaWarrior', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IArenaWarrior>
 getContractAt(name: 'BattleEngineProxy', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.BattleEngineProxy>
+getContractAt(name: 'FrostbiteBattleRoyale', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteBattleRoyale>
 getContractAt(name: 'FrostbiteAccount', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteAccount>
 getContractAt(name: 'IERC6551Account', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IERC6551Account>
 getContractAt(name: 'IERC6551Executable', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IERC6551Executable>
@@ -63,15 +64,19 @@ getContractAt(name: 'IERC6551Executable', address: string | ethers.Addressable, 
 getContractAt(name: 'FrostbiteAccountV3', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteAccountV3>
 getContractAt(name: 'IERC6551Account', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IERC6551Account>
 getContractAt(name: 'IERC6551Executable', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IERC6551Executable>
+getContractAt(name: 'FrostbiteHeroes', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteHeroes>
 getContractAt(name: 'FrostbiteIdentityRegistry', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteIdentityRegistry>
 getContractAt(name: 'IERC6551Registry', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IERC6551Registry>
 getContractAt(name: 'IERC721Minimal', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IERC721Minimal>
+getContractAt(name: 'FrostbiteItems', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteItems>
 getContractAt(name: 'FrostbiteMarketplace', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteMarketplace>
 getContractAt(name: 'FrostbiteReputationRegistry', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteReputationRegistry>
 getContractAt(name: 'FrostbiteSwapRouter', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbiteSwapRouter>
 getContractAt(name: 'GameEngine', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.GameEngine>
 getContractAt(name: 'ILeaderboard', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.ILeaderboard>
 getContractAt(name: 'Leaderboard', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.Leaderboard>
+getContractAt(name: 'PlayerProgress', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.PlayerProgress>
+getContractAt(name: 'FrostbitePotionShop', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.FrostbitePotionShop>
 getContractAt(name: 'IArenaWarrior', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.IArenaWarrior>
 getContractAt(name: 'QuestEngine', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.QuestEngine>
 getContractAt(name: 'RewardVault', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.RewardVault>
@@ -79,16 +84,15 @@ getContractAt(name: 'IArenaWarriorTeam', address: string | ethers.Addressable, s
 getContractAt(name: 'TeamBattleEngine', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.TeamBattleEngine>
 getContractAt(name: 'TeamBattleEngineProxy', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.TeamBattleEngineProxy>
 getContractAt(name: 'Tournament', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.Tournament>
+getContractAt(name: 'WorldMarketplace', address: string | ethers.Addressable, signer?: ethers.Signer): Promise<Contracts.WorldMarketplace>
 
-  deployContract(name: 'AgentChat', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.AgentChat>
-deployContract(name: 'IAgentRegistry', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IAgentRegistry>
-deployContract(name: 'AgentRegistry', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.AgentRegistry>
-deployContract(name: 'FrostbiteToken', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteToken>
+  deployContract(name: 'FrostbiteToken', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteToken>
 deployContract(name: 'ArenaWarrior', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.ArenaWarrior>
 deployContract(name: 'BatchMinter', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.BatchMinter>
 deployContract(name: 'BattleEngine', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.BattleEngine>
 deployContract(name: 'IArenaWarrior', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IArenaWarrior>
 deployContract(name: 'BattleEngineProxy', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.BattleEngineProxy>
+deployContract(name: 'FrostbiteBattleRoyale', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteBattleRoyale>
 deployContract(name: 'FrostbiteAccount', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteAccount>
 deployContract(name: 'IERC6551Account', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC6551Account>
 deployContract(name: 'IERC6551Executable', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC6551Executable>
@@ -98,15 +102,19 @@ deployContract(name: 'IERC6551Executable', signerOrOptions?: ethers.Signer | Dep
 deployContract(name: 'FrostbiteAccountV3', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteAccountV3>
 deployContract(name: 'IERC6551Account', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC6551Account>
 deployContract(name: 'IERC6551Executable', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC6551Executable>
+deployContract(name: 'FrostbiteHeroes', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteHeroes>
 deployContract(name: 'FrostbiteIdentityRegistry', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteIdentityRegistry>
 deployContract(name: 'IERC6551Registry', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC6551Registry>
 deployContract(name: 'IERC721Minimal', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC721Minimal>
+deployContract(name: 'FrostbiteItems', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteItems>
 deployContract(name: 'FrostbiteMarketplace', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteMarketplace>
 deployContract(name: 'FrostbiteReputationRegistry', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteReputationRegistry>
 deployContract(name: 'FrostbiteSwapRouter', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteSwapRouter>
 deployContract(name: 'GameEngine', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.GameEngine>
 deployContract(name: 'ILeaderboard', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.ILeaderboard>
 deployContract(name: 'Leaderboard', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.Leaderboard>
+deployContract(name: 'PlayerProgress', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.PlayerProgress>
+deployContract(name: 'FrostbitePotionShop', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbitePotionShop>
 deployContract(name: 'IArenaWarrior', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IArenaWarrior>
 deployContract(name: 'QuestEngine', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.QuestEngine>
 deployContract(name: 'RewardVault', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.RewardVault>
@@ -114,16 +122,15 @@ deployContract(name: 'IArenaWarriorTeam', signerOrOptions?: ethers.Signer | Depl
 deployContract(name: 'TeamBattleEngine', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.TeamBattleEngine>
 deployContract(name: 'TeamBattleEngineProxy', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.TeamBattleEngineProxy>
 deployContract(name: 'Tournament', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.Tournament>
+deployContract(name: 'WorldMarketplace', signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.WorldMarketplace>
 
-  deployContract(name: 'AgentChat', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.AgentChat>
-deployContract(name: 'IAgentRegistry', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IAgentRegistry>
-deployContract(name: 'AgentRegistry', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.AgentRegistry>
-deployContract(name: 'FrostbiteToken', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteToken>
+  deployContract(name: 'FrostbiteToken', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteToken>
 deployContract(name: 'ArenaWarrior', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.ArenaWarrior>
 deployContract(name: 'BatchMinter', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.BatchMinter>
 deployContract(name: 'BattleEngine', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.BattleEngine>
 deployContract(name: 'IArenaWarrior', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IArenaWarrior>
 deployContract(name: 'BattleEngineProxy', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.BattleEngineProxy>
+deployContract(name: 'FrostbiteBattleRoyale', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteBattleRoyale>
 deployContract(name: 'FrostbiteAccount', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteAccount>
 deployContract(name: 'IERC6551Account', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC6551Account>
 deployContract(name: 'IERC6551Executable', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC6551Executable>
@@ -133,15 +140,19 @@ deployContract(name: 'IERC6551Executable', args: any[], signerOrOptions?: ethers
 deployContract(name: 'FrostbiteAccountV3', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteAccountV3>
 deployContract(name: 'IERC6551Account', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC6551Account>
 deployContract(name: 'IERC6551Executable', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC6551Executable>
+deployContract(name: 'FrostbiteHeroes', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteHeroes>
 deployContract(name: 'FrostbiteIdentityRegistry', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteIdentityRegistry>
 deployContract(name: 'IERC6551Registry', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC6551Registry>
 deployContract(name: 'IERC721Minimal', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IERC721Minimal>
+deployContract(name: 'FrostbiteItems', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteItems>
 deployContract(name: 'FrostbiteMarketplace', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteMarketplace>
 deployContract(name: 'FrostbiteReputationRegistry', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteReputationRegistry>
 deployContract(name: 'FrostbiteSwapRouter', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbiteSwapRouter>
 deployContract(name: 'GameEngine', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.GameEngine>
 deployContract(name: 'ILeaderboard', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.ILeaderboard>
 deployContract(name: 'Leaderboard', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.Leaderboard>
+deployContract(name: 'PlayerProgress', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.PlayerProgress>
+deployContract(name: 'FrostbitePotionShop', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.FrostbitePotionShop>
 deployContract(name: 'IArenaWarrior', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.IArenaWarrior>
 deployContract(name: 'QuestEngine', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.QuestEngine>
 deployContract(name: 'RewardVault', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.RewardVault>
@@ -149,6 +160,7 @@ deployContract(name: 'IArenaWarriorTeam', args: any[], signerOrOptions?: ethers.
 deployContract(name: 'TeamBattleEngine', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.TeamBattleEngine>
 deployContract(name: 'TeamBattleEngineProxy', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.TeamBattleEngineProxy>
 deployContract(name: 'Tournament', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.Tournament>
+deployContract(name: 'WorldMarketplace', args: any[], signerOrOptions?: ethers.Signer | DeployContractOptions): Promise<Contracts.WorldMarketplace>
 
     // default types
     getContractFactory(
