@@ -223,6 +223,11 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
         el.classList.toggle('go', s === 'GO!');
         el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; // restart pop
         sound.count(s === 'GO!' ? 0 : 3 - i);
+        // soft screen pulse per beep — subtle by design (low opacity, auto-removes)
+        const pulse = document.createElement('div');
+        pulse.className = 'cg-flash' + (s === 'GO!' ? ' go' : '');
+        host.appendChild(pulse);
+        countT.push(setTimeout(() => pulse.remove(), 750));
         if (s === 'GO!') { go(); countT.push(setTimeout(() => el.remove(), 700)); }
       }, i * 800));
     });

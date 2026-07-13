@@ -278,6 +278,18 @@ body.cg-noscroll{overflow:hidden}
   text-shadow:0 0 30px rgba(77,208,225,.75);animation:cg-countpop .8s ease-out}
 .cgroot .cg-count.go{color:var(--cg-green);text-shadow:0 0 40px rgba(34,197,94,.85)}
 @keyframes cg-countpop{0%{transform:scale(1.5);opacity:0}20%{opacity:1}100%{transform:scale(.94);opacity:.92}}
+/* per-beep screen pulse: soft radial glow + expanding ring — deliberately low
+   opacity so it reads as a heartbeat, not a strobe */
+.cgroot .cg-flash{position:absolute;inset:0;z-index:8;pointer-events:none;border-radius:inherit;
+  background:radial-gradient(60% 60% at 50% 50%,rgba(77,208,225,.18),transparent 70%);
+  animation:cg-flashfade .7s ease-out forwards}
+.cgroot .cg-flash.go{background:radial-gradient(65% 65% at 50% 50%,rgba(34,197,94,.24),transparent 72%)}
+.cgroot .cg-flash::after{content:'';position:absolute;left:50%;top:50%;width:70px;height:70px;
+  border:2px solid rgba(77,208,225,.32);border-radius:50%;
+  animation:cg-flashring .7s ease-out forwards}
+.cgroot .cg-flash.go::after{border-color:rgba(34,197,94,.38)}
+@keyframes cg-flashfade{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
+@keyframes cg-flashring{from{transform:translate(-50%,-50%) scale(.4);opacity:.9}to{transform:translate(-50%,-50%) scale(6);opacity:0}}
 /* high cards (9-10): gold-trimmed premium face */
 .cgroot .card.hi{border-color:rgba(245,197,66,.8);
   background:
@@ -334,6 +346,7 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .hand .card.sel{animation:cg-selpulse 1.3s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){
   .cgroot .card,.cgroot .card::before,.cgroot .card::after,.cgroot .card .cardart{animation:none!important}
+  .cgroot .cg-flash,.cgroot .cg-flash::after{animation:none!important;opacity:0!important}
 }
 
 /* ── mobile polish: bigger touch targets, lighter GPU load ─────────────── */
