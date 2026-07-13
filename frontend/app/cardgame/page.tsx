@@ -37,8 +37,6 @@ export default function CardGamePage() {
   const [mode, setMode] = useState<Mode>('practice');
   const [phase, setPhase] = useState<Phase>('idle');
   const [note, setNote] = useState('');
-  const [matchId, setMatchId] = useState<Hex | null>(null);
-  const [entryFee, setEntryFee] = useState<bigint | null>(null);
   const [payout, setPayout] = useState<bigint>(0n);
   // multiplayer lobby
   const [mpPhase, setMpPhase] = useState<'idle' | 'reserved' | 'paying' | 'waiting' | 'playing' | 'settled'>('idle');
@@ -85,6 +83,16 @@ export default function CardGamePage() {
     if (!address || !publicClient) return 0n;
     return publicClient.readContract({ address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'pendingPayouts', args: [address] });
   }, [address, publicClient]);
+
+  // Refs kept current every render (same pattern as onFinishRef below) so the
+  // mp socket effect can use the LATEST callbacks without listing them as deps.
+  // Crucially, ensureFuji's identity changes with chainId — and the match-found
+  // handler itself switches the chain — so depending on it would disconnect the
+  // live socket mid-pay/mid-race. The socket must only reconnect when
+  // mode/auth/wallet/client change.
+  const ensureFujiRef = useRef(ensureFuji); ensureFujiRef.current = ensureFuji;
+  const readPendingRef = useRef(readPending); readPendingRef.current = readPending;
+  const writeContractAsyncRef = useRef(writeContractAsync); writeContractAsyncRef.current = writeContractAsync;
 
   // read the entry fee straight from the escrow (single source of truth)
   useEffect(() => {
@@ -155,8 +163,6 @@ export default function CardGamePage() {
       const mId = created.matchId as Hex;
       const bots = created.bots as string[];
       const fee = BigInt(created.entryFee);
-      setMatchId(mId);
-      setEntryFee(fee);
 
       // 2) player joins with real AVAX
       setPhase('joining');
@@ -217,11 +223,14 @@ export default function CardGamePage() {
       setMpPhase('reserved');
     });
     socket.on('cardgame:match-found', async (d: { matchId: Hex; entryFee: string; seat: Seat['pid']; seats: Seat[] }) => {
+      // the server's fee is authoritative — never let a slow/failed contract
+      // read leave feeRef at '0' (mountMultiplayer would render ◆ 0 payouts)
+      feeRef.current = d.entryFee; setFeeWei(BigInt(d.entryFee));
       try {
         setMpPhase('paying');
         setMpNote(`Race starting — confirm your ${formatEther(BigInt(d.entryFee))} AVAX entry…`);
-        await ensureFuji();
-        const hash = await writeContractAsync({
+        await ensureFujiRef.current();
+        const hash = await writeContractAsyncRef.current({
           address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'joinMatch',
           args: [d.matchId], value: BigInt(d.entryFee), chainId: CARDGAME_CHAIN_ID,
         });
@@ -242,14 +251,14 @@ export default function CardGamePage() {
           socket, myAddress: address, seats: d.seats, entryFee: feeRef.current,
           onFinished: () => setMpNote('Match over — settling on-chain…'),
           onSettled: async () => {
-            const p = await readPending(); setPayout(p); setMpPhase('settled');
+            const p = await readPendingRef.current(); setPayout(p); setMpPhase('settled');
             setMpNote(p > 0n ? `You won ◆ ${formatEther(p)} AVAX — withdraw below.` : 'Settled — no payout this time.');
           },
         });
       }
     });
     return () => { socket.disconnect(); socketRef.current = null; setSlot(null); setMpPhase('idle'); setMpNote(''); };
-  }, [mode, authenticated, address, publicClient, ensureFuji, writeContractAsync, readPending]);
+  }, [mode, authenticated, address, publicClient]);
 
   const joinRace = useCallback(async () => {
     if (!address || !socketRef.current) return;
