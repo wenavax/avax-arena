@@ -455,3 +455,13 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .cg-icm b{color:var(--cg-ice)}
 .cgroot .cg-icm-soon{font-size:9.5px;font-weight:800;letter-spacing:1.5px;color:var(--cg-gold);
   border:1px solid rgba(245,197,66,.4);border-radius:8px;padding:1.5px 7px;margin-left:2px;white-space:nowrap}
+/* ICM Lab live panel */
+.cgroot .cg-icmlab{margin-top:10px;padding:10px 12px;border:1px solid rgba(77,208,225,.22);border-radius:11px;background:rgba(77,208,225,.05)}
+.cgroot .cg-icmlab-hd{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:12px;letter-spacing:1.5px;color:var(--cg-ice);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cgroot .cg-icmlab-sub{font-family:inherit;font-weight:400;font-size:11px;letter-spacing:0;color:var(--cg-muted)}
+.cgroot .cg-icmlab-sub b{color:var(--cg-text)}
+.cgroot .cg-icmlab-empty{font-size:11.5px;color:var(--cg-muted);margin-top:6px}
+.cgroot .cg-icmlab-list{list-style:none;margin:6px 0 0;padding:0;font-size:11.5px;color:var(--cg-muted);display:flex;flex-direction:column;gap:3px}
+.cgroot .cg-icmlab-res{margin-top:7px;font-size:11.5px;color:var(--cg-gold)}
+.cgroot .cg-icmlab-links{margin-top:7px;display:flex;gap:12px;font-size:10.5px}
+.cgroot .cg-icmlab-links a{color:var(--cg-ice);text-decoration:none}

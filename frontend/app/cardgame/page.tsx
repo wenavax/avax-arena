@@ -11,6 +11,7 @@ import { createCardgameSocket, reserveMessage } from '@/lib/cardgame/mpClient';
 import type { MatchInput } from '@/lib/cardgame/engine';
 import { CARDGAME_ESCROW, CARDGAME_CHAIN_ID, ESCROW_ABI, STATUS } from '@/lib/cardgame/escrow';
 import LiveMatches from '@/components/cardgame/LiveMatches';
+import IcmLab from '@/components/cardgame/IcmLab';
 import GameStageBanner from '@/components/GameStageBanner';
 import { formatEther, type Hex } from 'viem';
 import type { Socket } from 'socket.io-client';
@@ -373,7 +374,7 @@ export default function CardGamePage() {
                   ))} {slot.reserved}/4 reserved</span>
                 </div>
               )}
-              <div className="cg-icm">🔗 Cross-chain race entries from Avalanche L1s — powered by <b>Avalanche ICM</b> · <span className="cg-icm-soon">COMING SOON</span></div>
+              <IcmLab />
             </div>
           </div>
           <div className="cg-stakebar-r">
