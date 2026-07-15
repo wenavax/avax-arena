@@ -61,8 +61,8 @@ async function main() {
   ok(r2.querySelectorAll('.lane').length === 4, 'staked track built after pick');
   ok(/YOU/.test((r2.querySelector('.eng-picks') as HTMLElement)?.textContent ?? ''), 'pick announcement line populated');
   ok(!!(r2.querySelector('.eng-track .tag') as HTMLElement)?.innerHTML.match(/LEG|EPI|COM/), 'staked track tag shows abbr');
-  // juice parity with practice mode
-  ok(!!r2.querySelector('.cg-banner'), 'ROUND banner shown at round start');
+  // juice parity with practice mode (the old ROUND banner became the 3·2·1·GO countdown)
+  ok(!!r2.querySelector('.cg-count'), '3·2·1·GO countdown shown at round start');
   ok(/Round 1/.test((r2.querySelector('.eng-log') as HTMLElement)?.textContent ?? ''), 'event log records round start');
   ok(!!r2.querySelector('.eng-settle') && !!r2.querySelector('.eng-toast'), 'settle + toast slots present');
   const sCard0 = r2.querySelector('.eng-hand .card') as unknown as { onpointerdown: (e: { preventDefault: () => void }) => void };

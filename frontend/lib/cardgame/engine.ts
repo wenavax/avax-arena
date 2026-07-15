@@ -11,7 +11,12 @@
  * shuffle, magic values, and all bot decisions. Time is an INTEGER tick counter
  * (1 tick = 0.1s) to avoid float accumulation drift; both runtimes are V8 so the
  * IEEE-754 float ops in the physics are bit-identical for the same op order.
+ *
+ * Per-value card abilities (abilities.ts) fire inside applyPlay for EVERY seat
+ * (human and bot). They are RNG-free and run in tick space (sec → ×10), so the
+ * capture→replay contract is unchanged: same seed + same inputs → same ranking.
  */
+import { triggerAbilities, SELF_BUDGET } from './abilities';
 
 export const CFG = {
   TRACK: 1000,
@@ -120,7 +125,7 @@ export function bestCombo(cards: Card[]): { name: string; bonus: number } | null
   const s = longestStraight(vals); if (s >= 3) add('STRAIGHT_' + Math.min(s, 8));
   if (!cand.length) return null; cand.sort((a, b) => b.bonus - a.bonus); return cand[0];
 }
-export interface PlayEval { kind: string; combo: string | null; mult: number; raw: number; magic: { type: string; m: number; t: string }[]; sum: number }
+export interface PlayEval { kind: string; combo: string | null; mult: number; raw: number; magic: { type: string; m: number; t: string }[]; sum: number; abilities?: string[] }
 export function evaluate(cards: Card[]): PlayEval {
   const sum = cards.reduce((s, c) => s + c.value, 0);
   let mult: number, kind: string, combo: { name: string; bonus: number } | null = null;
@@ -241,6 +246,30 @@ export function applyPlay(s: MatchState, p: PlayerState, cardIds: number[]): Pla
   const rm = new Set(idxs);
   p.hand = p.hand.filter((_, i) => !rm.has(i));
   p.cdUntil = s.t + CFG.COOLDOWN_TICKS;
+  // per-value abilities: each distinct NORMAL value fires once (after the hand
+  // shrink + cooldown set, so TUNE/SCAVENGE see the post-play state — same
+  // order as practice mode). Deterministic: no RNG, tick-space durations.
+  const fired = triggerAbilities(
+    cards.filter((c) => c.type === 'NORMAL').map((c) => c.value),
+    {
+      p, players: s.players, t: s.t, dur: CFG.DUR_TICKS, cap: CFG.CAP,
+      budget: { selfSpeedLeft: SELF_BUDGET },
+      sec: (n) => Math.round(n * 10),
+      drawOne: () => {
+        if (p.hand.length >= p.hlim || !s.deck.length) return false;
+        p.hand.push(...s.deck.splice(0, 1)); return true;
+      },
+      buff: (tg, mult, seconds) => {
+        const q = tg as PlayerState;
+        const endsAt = s.t + Math.round(seconds * 10);
+        q.magics.push({ mult, endsAt });
+        if (mult < 1) { q.debuff = 'fx-hit'; q.debuffUntil = endsAt; }
+      },
+    },
+  );
+  // DEICE also clears the visual debuff mark
+  if (fired.some((f) => f.includes('DEICE'))) { p.debuff = null; p.debuffUntil = 0; }
+  r.abilities = fired;
   return r;
 }
 

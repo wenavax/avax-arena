@@ -18,6 +18,7 @@ function mkCtx(p: AbilityPlayer, players: AbilityPlayer[], opts: { t?: number; c
   const ctx: AbilityCtx = {
     p, players, t: opts.t ?? 10, dur: 3, cap: 5,
     budget: { selfSpeedLeft: SELF_BUDGET },
+    sec: (n) => n, // seconds host (practice); the engine passes n*10 (ticks)
     drawOne: () => { if (opts.canDraw === false) return false; drew++; return true; },
     buff: (target, mult, seconds) => { buffs.push({ target, mult, seconds }); },
   };

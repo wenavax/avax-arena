@@ -6,10 +6,11 @@
  * triggers once. Magic cards keep their magic effect and never trigger their
  * printed value's ability (one card, one ability).
  *
- * PURE module: no DOM, no engine import, no randomness. The host (practice
- * mount today, possibly engine.ts later) adapts its state into `AbilityCtx`.
- * Determinism is a hard requirement — a future engine promotion must not be
- * able to fork client/server results.
+ * PURE module: no DOM, no engine import, no randomness. Each host (the practice
+ * mount in seconds, engine.ts in ticks) adapts its state into `AbilityCtx`;
+ * `sec()` converts the ability constants' seconds into the host's time unit.
+ * Determinism is a hard requirement — the engine fires these identically on the
+ * client and at server re-simulation, so results can never fork.
  *
  * Spec: docs/superpowers/specs/2026-07-13-cardgame-card-abilities-design.md
  */
@@ -39,6 +40,8 @@ export interface AbilityCtx {
   cap: number;
   /** per-play multiplicative budget for self speed buffs (init SELF_BUDGET) */
   budget: { selfSpeedLeft: number };
+  /** convert seconds → the host's time unit (practice: n, engine ticks: n*10) */
+  sec(n: number): number;
   /** host draws 1 card for p (respecting hand limit); false if impossible */
   drawOne(): boolean;
   /** host applies a timed speed effect (and its cosmetic mark if mult < 1) */
@@ -108,7 +111,7 @@ export const ABILITIES: Record<number, Ability> = {
     key: 'DRAFT', icon: '💨', desc: 'Extend your running boost by 1.5s',
     apply(ctx) {
       if (!ctx.p.nm || ctx.t >= ctx.p.nm.endsAt) return null;
-      ctx.p.nm.endsAt += DRAFT_EXT;
+      ctx.p.nm.endsAt += ctx.sec(DRAFT_EXT);
       return `💨 DRAFT +${DRAFT_EXT}s`;
     },
   },
@@ -119,7 +122,7 @@ export const ABILITIES: Record<number, Ability> = {
   4: {
     key: 'TUNE', icon: '🔧', desc: 'This play cools down 1s faster',
     apply(ctx) {
-      const cut = Math.min(TUNE_CUT, ctx.p.cdUntil - ctx.t);
+      const cut = Math.min(ctx.sec(TUNE_CUT), ctx.p.cdUntil - ctx.t);
       if (cut <= 0) return null;
       ctx.p.cdUntil -= cut;
       return `🔧 TUNE −${TUNE_CUT}s cd`;

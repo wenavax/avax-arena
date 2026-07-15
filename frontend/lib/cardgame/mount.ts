@@ -306,6 +306,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       {
         p, players, t, dur: CFG.DUR, cap: CFG.CAP,
         budget: { selfSpeedLeft: SELF_BUDGET },
+        sec: (n) => n, // practice time unit is seconds
         drawOne: () => {
           if (p.hand.length >= p.hlim || !deck.length) return false;
           p.hand.push(...draw(1)); return true;

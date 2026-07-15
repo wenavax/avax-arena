@@ -12,6 +12,7 @@ import {
   initMatch, startRound, stepTick, roundDone, scoreRound, finalRanking, speed, evaluate, fxClass,
   CFG, type MatchState, type MatchInput, type PlayEvent, type Pid,
 } from './engine';
+import { ABILITIES } from './abilities';
 import { vehicleSelector, vehAbbr, vehColor } from './vehicles';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
 import { showRaceResults, closeRaceResults } from './resultsOverlay';
@@ -217,7 +218,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
       el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(i) ? ' sel' : '');
       el.innerHTML = `<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
         <i class="cardart">${c.magic ? MAGIC_ICON[c.magic] || '' : '❄'}</i>
-        <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : ''}`;
+        <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : `<small class="ab">${ABILITIES[c.value].key}</small>`}`;
       el.onpointerdown = (e) => { e.preventDefault(); if (selected.has(i)) selected.delete(i); else if (selected.size < 8) selected.add(i); bestNote = ''; renderHand(); };
       h.appendChild(el);
     });
@@ -233,7 +234,10 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     const cards = [...selected].map((i) => p1.hand[i]);
     if (!cards.length) { pv.textContent = 'select 1–8 cards'; return; }
     const r = evaluate(cards);
+    const abKeys = [...new Set(cards.filter((c) => c.type === 'NORMAL').map((c) => c.value))]
+      .sort((a, b) => a - b).map((v) => ABILITIES[v].icon + ABILITIES[v].key);
     pv.textContent = `${r.combo || r.kind} → x${r.mult.toFixed(2)}` + (r.magic.length ? ` +${r.magic.map((m) => m.type).join('/')}` : '')
+      + (abKeys.length ? ` · ${abKeys.join(' ')}` : '')
       + (bestNote ? ` · ${bestNote}` : '');
   }
 
@@ -331,6 +335,10 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
       const label = played.combo || played.kind;
       popup(`${label} ×${played.mult.toFixed(2)}`, fxClass(played));
       log(`You played <b>${label}</b> (×${played.mult.toFixed(2)})${played.magic.length ? ' + ' + played.magic.map((m) => m.type).join(', ') : ''}`);
+      (played.abilities ?? []).forEach((txt, i) => {
+        setTimeout(() => popup(txt, 'pop-ab'), 350 + i * 300);
+        log(txt);
+      });
     }
     for (const p of s.players) {
       if (p.id !== 'P1' && p.nm && p.nm !== nmBefore.get(p.id)) log(`${nameOf(p.id)} boosts <b>×${p.nm.mult.toFixed(2)}</b>`);

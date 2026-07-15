@@ -1,5 +1,161 @@
 // AUTO-GENERATED from frontend/lib/cardgame/engine.ts — do not edit. Run scripts/build-cardgame-engine.mjs.
 
+// lib/cardgame/abilities.ts
+var SELF_BUDGET = 1.6;
+var MIN_GRANT = 1.02;
+var SLIP_MAX = 15;
+var SLIP_PCT = 0.12;
+var SLIP_WALL = 999;
+var DRAFT_EXT = 1.5;
+var TUNE_CUT = 1;
+var BUMP_MULT = 0.85;
+var BUMP_DUR = 2;
+var SYNERGY_ADD = 0.25;
+var GRIP_MULT = 1.18;
+var GRIP_DUR = 3;
+var OVER_MULT = 1.22;
+var OVER_DUR = 2.5;
+var REDLINE_MULT = 1.3;
+var REDLINE_DUR = 4;
+function leaderOf(ctx) {
+  let best = null;
+  for (const q of ctx.players) if (!q.fin && q !== ctx.p && (!best || q.dist > best.dist)) best = q;
+  return best;
+}
+function aheadOf(ctx) {
+  let best = null;
+  for (const q of ctx.players) {
+    if (q.fin || q === ctx.p || q.dist <= ctx.p.dist) continue;
+    if (!best || q.dist < best.dist) best = q;
+  }
+  return best;
+}
+function selfBuff(ctx, want, seconds) {
+  const granted = Math.min(want, ctx.budget.selfSpeedLeft);
+  if (granted < MIN_GRANT) return null;
+  ctx.budget.selfSpeedLeft /= granted;
+  ctx.buff(ctx.p, granted, seconds);
+  return granted;
+}
+var pct = (m) => `${Math.round((m - 1) * 100)}%`;
+var ABILITIES = {
+  1: {
+    key: "SLIPSTREAM",
+    icon: "\u{1F300}",
+    desc: "Jump forward 12% of your gap to the leader (max 15u)",
+    apply(ctx) {
+      const lead = leaderOf(ctx);
+      if (!lead || lead.dist <= ctx.p.dist) return null;
+      const jump = Math.min(SLIP_MAX, (lead.dist - ctx.p.dist) * SLIP_PCT, SLIP_WALL - ctx.p.dist);
+      if (jump <= 0) return null;
+      ctx.p.dist += jump;
+      return `\u{1F300} SLIPSTREAM +${Math.round(jump)}u`;
+    }
+  },
+  2: {
+    key: "DRAFT",
+    icon: "\u{1F4A8}",
+    desc: "Extend your running boost by 1.5s",
+    apply(ctx) {
+      if (!ctx.p.nm || ctx.t >= ctx.p.nm.endsAt) return null;
+      ctx.p.nm.endsAt += ctx.sec(DRAFT_EXT);
+      return `\u{1F4A8} DRAFT +${DRAFT_EXT}s`;
+    }
+  },
+  3: {
+    key: "SCAVENGE",
+    icon: "\u{1F3B4}",
+    desc: "Draw 1 card (up to your hand limit)",
+    apply(ctx) {
+      return ctx.drawOne() ? "\u{1F3B4} SCAVENGE +1 card" : null;
+    }
+  },
+  4: {
+    key: "TUNE",
+    icon: "\u{1F527}",
+    desc: "This play cools down 1s faster",
+    apply(ctx) {
+      const cut = Math.min(ctx.sec(TUNE_CUT), ctx.p.cdUntil - ctx.t);
+      if (cut <= 0) return null;
+      ctx.p.cdUntil -= cut;
+      return `\u{1F527} TUNE \u2212${TUNE_CUT}s cd`;
+    }
+  },
+  5: {
+    key: "DEICE",
+    icon: "\u{1F9FC}",
+    desc: "Remove all slow effects on you",
+    apply(ctx) {
+      const before = ctx.p.magics.length;
+      ctx.p.magics = ctx.p.magics.filter((e) => e.mult >= 1);
+      return ctx.p.magics.length < before ? "\u{1F9FC} DEICE cleared" : null;
+    }
+  },
+  6: {
+    key: "BUMP",
+    icon: "\u{1F4A5}",
+    desc: "Slow the racer just ahead of you \u221215% for 2s",
+    apply(ctx) {
+      const tg = aheadOf(ctx);
+      if (!tg) return null;
+      ctx.buff(tg, BUMP_MULT, BUMP_DUR);
+      return "\u{1F4A5} BUMP \u221215% ahead";
+    }
+  },
+  7: {
+    key: "SYNERGY",
+    icon: "\u271A",
+    desc: "+0.25 to this play's multiplier",
+    apply(ctx) {
+      if (!ctx.p.nm) return null;
+      const next = Math.min(ctx.cap, ctx.p.nm.mult + SYNERGY_ADD);
+      if (next <= ctx.p.nm.mult) return null;
+      ctx.p.nm.mult = next;
+      return `\u271A SYNERGY \xD7${next.toFixed(2)}`;
+    }
+  },
+  8: {
+    key: "GRIP",
+    icon: "\u{1F6DE}",
+    desc: "You get +18% speed for 3s",
+    apply(ctx) {
+      const g = selfBuff(ctx, GRIP_MULT, GRIP_DUR);
+      return g ? `\u{1F6DE} GRIP +${pct(g)}` : null;
+    }
+  },
+  9: {
+    key: "OVERTAKE",
+    icon: "\u23E9",
+    desc: "+22% for 2.5s, and the racer ahead \u221215% for 2s",
+    apply(ctx) {
+      const g = selfBuff(ctx, OVER_MULT, OVER_DUR);
+      const tg = aheadOf(ctx);
+      if (tg) ctx.buff(tg, BUMP_MULT, BUMP_DUR);
+      if (!g && !tg) return null;
+      return `\u23E9 OVERTAKE${g ? ` +${pct(g)}` : ""}${tg ? " / \u221215% ahead" : ""}`;
+    }
+  },
+  10: {
+    key: "REDLINE",
+    icon: "\u{1F525}",
+    desc: "You get +30% speed for 4s",
+    apply(ctx) {
+      const g = selfBuff(ctx, REDLINE_MULT, REDLINE_DUR);
+      return g ? `\u{1F525} REDLINE +${pct(g)}` : null;
+    }
+  }
+};
+function triggerAbilities(values, ctx) {
+  const out = [];
+  for (const v of [...new Set(values)].sort((a, b) => a - b)) {
+    const ab = ABILITIES[v];
+    if (!ab) continue;
+    const txt = ab.apply(ctx);
+    if (txt) out.push(txt);
+  }
+  return out;
+}
+
 // lib/cardgame/engine.ts
 var CFG = {
   TRACK: 1e3,
@@ -252,6 +408,37 @@ function applyPlay(s, p, cardIds) {
   const rm = new Set(idxs);
   p.hand = p.hand.filter((_, i) => !rm.has(i));
   p.cdUntil = s.t + CFG.COOLDOWN_TICKS;
+  const fired = triggerAbilities(
+    cards.filter((c) => c.type === "NORMAL").map((c) => c.value),
+    {
+      p,
+      players: s.players,
+      t: s.t,
+      dur: CFG.DUR_TICKS,
+      cap: CFG.CAP,
+      budget: { selfSpeedLeft: SELF_BUDGET },
+      sec: (n) => Math.round(n * 10),
+      drawOne: () => {
+        if (p.hand.length >= p.hlim || !s.deck.length) return false;
+        p.hand.push(...s.deck.splice(0, 1));
+        return true;
+      },
+      buff: (tg, mult, seconds) => {
+        const q = tg;
+        const endsAt = s.t + Math.round(seconds * 10);
+        q.magics.push({ mult, endsAt });
+        if (mult < 1) {
+          q.debuff = "fx-hit";
+          q.debuffUntil = endsAt;
+        }
+      }
+    }
+  );
+  if (fired.some((f) => f.includes("DEICE"))) {
+    p.debuff = null;
+    p.debuffUntil = 0;
+  }
+  r.abilities = fired;
   return r;
 }
 function botAct(s, p) {

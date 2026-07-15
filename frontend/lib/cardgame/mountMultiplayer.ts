@@ -10,6 +10,7 @@
  * server are unchanged.
  */
 import { CFG, COMBO, evaluate, fxClass, type Card, type PlayEval } from './engine';
+import { ABILITIES } from './abilities';
 import { vehicleSelector, vehAbbr, vehColor } from './vehicles';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
 import { createCgSound, soundLabel } from './sound';
@@ -21,7 +22,7 @@ interface Seat { pid: Pid; address: string }
 interface StatePlayer { pid: Pid; address: string; veh: string | null; dist: number; speed: number; fin: boolean; ft: number | null; total: number; cd: number; fx: string | null; bot?: boolean }
 interface HandCard { id: number; value: number; type: 'NORMAL' | 'MAGIC'; magic: string | null }
 /** Per-seat play the server accepted this tick (from `cardgame:state`). */
-interface AppliedPlay { combo: string | null; mult: number; fx?: string | null }
+interface AppliedPlay { combo: string | null; mult: number; fx?: string | null; abilities?: string[] }
 
 export interface MpSocketLike {
   on: (event: string, cb: (data: any) => void) => void;
@@ -211,8 +212,10 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
         if (mine) {
           popup(`${label} ×${a.mult.toFixed(2)}`, sentEval ? fxClass(sentEval) : tierFx(a.combo, a.mult));
           sentEval = null;
+          (a.abilities ?? []).forEach((txt, i) => setTimeout(() => popup(txt, 'pop-ab'), 350 + i * 300));
         }
         log(`${mine ? 'You' : nameOf(pid)} played <b>${label}</b> (×${a.mult.toFixed(2)})`);
+        (a.abilities ?? []).forEach((txt) => log(mine ? txt : `${nameOf(pid)}: ${txt}`));
       }
     }
     renderBoard(d.players);
@@ -314,7 +317,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
       el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(c.id) ? ' sel' : '');
       el.innerHTML = `<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
         <i class="cardart">${c.magic ? MAGIC_ICON[c.magic] || '' : '❄'}</i>
-        <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : ''}`;
+        <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : `<small class="ab">${ABILITIES[c.value].key}</small>`}`;
       el.onpointerdown = (e) => { e.preventDefault(); if (selected.has(c.id)) selected.delete(c.id); else if (selected.size < 8) selected.add(c.id); bestNote = ''; renderHand(); };
       h.appendChild(el);
     }
@@ -328,8 +331,12 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     if (myFin) { hint.textContent = 'finished this round'; return; }
     if (selected.size) {
       // live preview via the shared engine — the hand cards are Card-shaped
-      const r = evaluate(hand.filter((c) => selected.has(c.id)));
+      const cards = hand.filter((c) => selected.has(c.id));
+      const r = evaluate(cards);
+      const abKeys = [...new Set(cards.filter((c) => c.type === 'NORMAL').map((c) => c.value))]
+        .sort((a, b) => a - b).map((v) => ABILITIES[v].icon + ABILITIES[v].key);
       hint.textContent = `${r.combo || r.kind} → x${r.mult.toFixed(2)}` + (r.magic.length ? ` +${r.magic.map((m) => m.type).join('/')}` : '')
+        + (abKeys.length ? ` · ${abKeys.join(' ')}` : '')
         + (bestNote ? ` · ${bestNote}` : '');
       return;
     }

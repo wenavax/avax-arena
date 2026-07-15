@@ -243,7 +243,7 @@ export function createCardgameHub(deps) {
     if (roundDone(s)) {
       const order = scoreRound(s);
       emitToRoom(room.id, 'cardgame:round-end', {
-        round: room.round, order, totals: Object.fromEntries(s.players.map((p) => [p.pid, p.total])),
+        round: room.round, order, totals: Object.fromEntries(s.players.map((p) => [p.id, p.total])),
       });
       room.round += 1;
       if (s.finished) return void finishRoom(room);
@@ -262,7 +262,7 @@ export function createCardgameHub(deps) {
         cd: Math.max(0, p.cdUntil - s.t), fx: p.fx && s.t < p.fxUntil ? p.fx : null,
         bot: room.players.find((q) => q.pid === p.id)?.bot || false,
       })),
-      applied: Object.fromEntries(Object.entries(applied || {}).filter(([, v]) => v).map(([pid, v]) => [pid, { combo: v.combo, mult: +v.mult.toFixed(2), fx: null }])),
+      applied: Object.fromEntries(Object.entries(applied || {}).filter(([, v]) => v).map(([pid, v]) => [pid, { combo: v.combo, mult: +v.mult.toFixed(2), fx: null, abilities: v.abilities || [] }])),
     });
   }
 
@@ -285,14 +285,24 @@ export function createCardgameHub(deps) {
     const input = { vehicles: room.log.vehicles, actions: room.log.actions, botSeats: [...room.botSet()] };
     emitToRoom(room.id, 'cardgame:finished', {
       ranking, rankingAddresses: ranking.map((pid) => room.addrOf(pid)),
-      totals: Object.fromEntries(room.s.players.map((p) => [p.pid, p.total])),
+      totals: Object.fromEntries(room.s.players.map((p) => [p.id, p.total])),
     });
     try {
       const settled = await chain.settle(room.matchId, input);
       emitToRoom(room.id, 'cardgame:settled', { ranking: settled.ranking, txHash: settled.txHash, matchId: room.matchId });
     } catch (e) {
       log('[cardgame] settle failed', e?.message);
-      emitToRoom(room.id, 'cardgame:error', { error: 'settlement failed — funds recoverable via on-chain refund window' });
+      // Don't strand entries until the refund window: force-cancel so payers can
+      // withdraw instantly. If the settle tx actually landed (only the response
+      // was lost) the cancel reverts harmlessly on the Settled match.
+      try {
+        await chain.cancelMatch(room.matchId);
+        log('[cardgame] settle-failure cancel — instant refunds enabled', room.matchId?.slice(0, 12));
+        emitToRoom(room.id, 'cardgame:cancelled', { reason: 'settlement failed — match cancelled, withdraw your refunded entry below' });
+      } catch (e2) {
+        log('[cardgame] settle-failure cancel also failed', e2?.message);
+        emitToRoom(room.id, 'cardgame:error', { error: 'settlement failed — funds recoverable via on-chain refund window' });
+      }
     }
     room.state = 'done';
     setTimeout(() => destroyRoom(room), 5_000);

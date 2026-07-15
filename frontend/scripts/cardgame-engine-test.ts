@@ -9,7 +9,7 @@
  */
 import {
   initMatch, startRound, stepTick, roundDone, scoreRound, finalRanking,
-  simulateMatch, CFG, VEHICLES, type MatchInput, type PlayEvent, type Pid,
+  simulateMatch, applyPlay, CFG, VEHICLES, type MatchInput, type PlayEvent, type Pid,
 } from '../lib/cardgame/engine';
 
 let pass = 0;
@@ -101,6 +101,46 @@ function main() {
     ok('empty-play input still produces a deterministic valid ranking', empty.valid && empty.ranking.length === 4, empty.ranking.join('>'));
   }
 
-  console.log(`\n★ ${pass}/${pass} PASS — engine deterministic & capture-replay faithful.`);
+  console.log('\n[4] per-value abilities fire inside the engine (tick space)');
+  {
+    const mk = (value: number, id: number) => ({ id, type: 'NORMAL' as const, value, magic: null });
+    const fresh = () => { const s = initMatch('ability-seed'); startRound(s, 'LEGENDARY'); return s; };
+    {
+      const s = fresh(); const p1 = s.players[0];
+      p1.hand = [mk(3, 9001)];
+      const deckBefore = s.deck.length;
+      const r = applyPlay(s, p1, [9001])!;
+      ok('SCAVENGE (3) draws 1 card', r.abilities!.some((a) => a.includes('SCAVENGE')) && p1.hand.length === 1 && s.deck.length === deckBefore - 1);
+    }
+    {
+      const s = fresh(); const p1 = s.players[0];
+      p1.hand = [mk(10, 9002)];
+      const r = applyPlay(s, p1, [9002])!;
+      const m = p1.magics.find((e) => e.mult === 1.3);
+      ok('REDLINE (10) buffs +30% for 40 ticks', !!m && m!.endsAt === s.t + 40 && r.abilities!.some((a) => a.includes('REDLINE')));
+    }
+    {
+      const s = fresh(); const p1 = s.players[0];
+      p1.hand = [mk(4, 9003)];
+      applyPlay(s, p1, [9003]);
+      ok('TUNE (4) cuts cooldown by 10 ticks', p1.cdUntil === s.t + CFG.COOLDOWN_TICKS - 10, `cd ${p1.cdUntil}`);
+    }
+    {
+      const s = fresh(); const p1 = s.players[0];
+      p1.hand = [mk(2, 9004), mk(2, 9005)];
+      applyPlay(s, p1, [9004, 9005]);
+      ok('DRAFT (2) extends this play\'s boost +15 ticks', p1.nm!.endsAt === s.t + CFG.DUR_TICKS + 15, `endsAt ${p1.nm!.endsAt}`);
+    }
+    {
+      const s = fresh(); const p1 = s.players[0]; const p2 = s.players[1];
+      p2.dist = 50;
+      p1.hand = [mk(6, 9006)];
+      const r = applyPlay(s, p1, [9006])!;
+      const slow = p2.magics.find((e) => e.mult === 0.85);
+      ok('BUMP (6) slows the racer ahead for 20 ticks', !!slow && slow!.endsAt === s.t + 20 && p2.debuff === 'fx-hit' && r.abilities!.some((a) => a.includes('BUMP')));
+    }
+  }
+
+  console.log(`\n★ ${pass}/${pass} PASS — engine deterministic & capture-replay faithful (abilities included).`);
 }
 main();

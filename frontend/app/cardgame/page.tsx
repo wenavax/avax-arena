@@ -168,11 +168,14 @@ export default function CardGamePage() {
       // 2) player joins with real AVAX
       setPhase('joining');
       setNote(`Confirm your ${formatEther(fee)} AVAX entry…`);
+      // explicit gas: the 4th join also runs the lock path (~+25k) — with four
+      // concurrent payers a pre-join estimate is stale and under-budgets it
       const hash = await writeContractAsync({
         address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'joinMatch',
-        args: [mId], value: fee, chainId: CARDGAME_CHAIN_ID,
+        args: [mId], value: fee, chainId: CARDGAME_CHAIN_ID, gas: 160_000n,
       });
-      await publicClient.waitForTransactionReceipt({ hash });
+      const rcpt = await publicClient.waitForTransactionReceipt({ hash });
+      if (rcpt.status !== 'success') throw new Error('entry transaction reverted — you were not charged beyond gas');
 
       // 3) now that you've paid, ask the server to seat the 3 bots → lock
       setPhase('waiting');
@@ -231,11 +234,14 @@ export default function CardGamePage() {
         setMpPhase('paying');
         setMpNote(`Race starting — confirm your ${formatEther(BigInt(d.entryFee))} AVAX entry…`);
         await ensureFujiRef.current();
+        // explicit gas: all four pay at once, so the 4th join (which also locks
+        // the match, ~+25k gas) would revert on a stale pre-join estimate
         const hash = await writeContractAsyncRef.current({
           address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'joinMatch',
-          args: [d.matchId], value: BigInt(d.entryFee), chainId: CARDGAME_CHAIN_ID,
+          args: [d.matchId], value: BigInt(d.entryFee), chainId: CARDGAME_CHAIN_ID, gas: 160_000n,
         });
-        await publicClient.waitForTransactionReceipt({ hash });
+        const rcpt = await publicClient.waitForTransactionReceipt({ hash });
+        if (rcpt.status !== 'success') throw new Error('entry transaction reverted — you were not charged beyond gas');
         socket.emit('cardgame:paid');
         setMpPhase('waiting'); setMpNote('Paid — waiting for all four to lock in…');
       } catch (e) {
