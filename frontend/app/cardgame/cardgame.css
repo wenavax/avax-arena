@@ -320,6 +320,12 @@ body.cg-noscroll{overflow:hidden}
 /* selected: rising red pulse (after .nodeal so it survives selection rebuilds) */
 @keyframes cg-selpulse{0%,100%{box-shadow:0 0 0 1px rgba(237,47,57,.4),0 10px 24px rgba(237,47,57,.32)}50%{box-shadow:0 0 0 2px rgba(237,47,57,.7),0 12px 30px rgba(237,47,57,.5)}}
 .cgroot .hand .card.sel{animation:cg-selpulse 1.3s ease-in-out infinite}
+/* non-fullscreen hand tray runs more compact so the card section takes less of
+   the page — the docked (.cg-fsdock) fullscreen version keeps the larger cards */
+.cgroot .panel:not(.cg-fsdock) .hand{gap:8px;padding:11px 12px;min-height:84px}
+.cgroot .panel:not(.cg-fsdock) .card{width:50px;height:71px}
+.cgroot .panel:not(.cg-fsdock) .card .cv{font-size:21px}
+.cgroot .panel:not(.cg-fsdock) .card .cardart{font-size:32px}
 @media (prefers-reduced-motion:reduce){
   .cgroot .card,.cgroot .card::before,.cgroot .card::after,.cgroot .card .cardart{animation:none!important}
   .cgroot .cg-flash,.cgroot .cg-flash::after{animation:none!important;opacity:0!important}
