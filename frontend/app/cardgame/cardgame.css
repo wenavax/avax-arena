@@ -333,11 +333,18 @@ body.cg-noscroll{overflow:hidden}
   .cgroot .btn{padding:12px 18px;min-height:44px}
   .cgroot .cg-mode{padding:9px 14px;font-size:13px}
   .cgroot .chip{padding:7px 12px;font-size:12px}
-  /* roomier, easier-to-tap cards */
-  .cgroot .card{width:62px;height:88px}
-  .cgroot .hand{gap:11px}
+  /* compact cards so the docked hand panel covers less of the stage — the 3D
+     scene (and every camera angle) stays visible above it on the short viewport */
+  .cgroot .card{width:50px;height:70px}
+  .cgroot .hand{gap:7px;padding:10px 11px;min-height:80px}
   /* shorter 3D stage → fits the viewport and renders fewer pixels */
   .cgroot .track3d{height:calc(100dvh - 250px);min-height:340px}
+  /* smaller, lower dock → more of the race shows through */
+  .cgroot .track3d .cg-fsdock{max-height:38vh;bottom:8px;width:98%;padding:10px}
+  .cgroot .cg-fsdock .hand-hd{margin:0 0 6px}
+  .cgroot .cg-fsdock .row{gap:6px}
+  .cgroot .cg-hud-rank{top:44px;font-size:9.5px;min-width:150px;padding:6px 8px}
+  .cgroot .cg-hud-log{top:150px;width:52%;font-size:9.5px}
 }
 /* touch devices: stop the always-on per-card idle loops (battery/paint). The
    deal-in, selection lift and boost effects still play. */
