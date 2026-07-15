@@ -137,7 +137,7 @@ body.cg-noscroll{overflow:hidden}
   background:rgba(10,10,16,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   border:1px solid rgba(255,255,255,.14);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
 .cgroot .track3d .cg-fsveh{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  width:min(880px,94%);max-height:92%;overflow:auto;z-index:9;margin:0}
+  width:min(560px,88%);max-height:86%;overflow:auto;z-index:9;margin:0}
 .cgroot .track3d .cg-fsveh:empty{display:none}
 @keyframes cg-hueshift{to{filter:hue-rotate(360deg)}}
 
@@ -376,14 +376,16 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .cg-vsel-slot{margin-bottom:14px}
 .cgroot .cg-vsel-slot:empty,.cgroot .eng-vsel-slot:empty{display:none}
 .cgroot .eng-vsel-slot{margin-bottom:12px}
-.cgroot .cg-vsel{padding:16px}
-.cgroot .cg-vsel-hd{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-.cgroot .cg-vsel-ttl{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:2px;font-size:13px}
-.cgroot .cg-vsel-opp{font-size:11px;color:var(--cg-muted)}
-.cgroot .cg-vsel-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-@media(max-width:560px){.cgroot .cg-vsel-cards{grid-template-columns:1fr}}
-.cgroot .cg-vcard{--vc:#8ea0b5;text-align:left;display:flex;flex-direction:column;gap:7px;
-  padding:13px;border-radius:12px;cursor:pointer;color:var(--cg-text);font-family:inherit;
+.cgroot .cg-vsel{padding:13px}
+.cgroot .cg-vsel-hd{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:9px}
+.cgroot .cg-vsel-ttl{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:2px;font-size:11.5px}
+.cgroot .cg-vsel-opp{font-size:10.5px;color:var(--cg-muted)}
+/* cap card width + centre so the row never balloons across the wide stage;
+   compact cards keep the selector small in fullscreen too */
+.cgroot .cg-vsel-cards{display:grid;grid-template-columns:repeat(3,minmax(0,168px));gap:8px;justify-content:center}
+@media(max-width:560px){.cgroot .cg-vsel-cards{grid-template-columns:1fr;max-width:320px;margin:0 auto}}
+.cgroot .cg-vcard{--vc:#8ea0b5;text-align:left;display:flex;flex-direction:column;gap:4px;
+  padding:9px 10px;border-radius:10px;cursor:pointer;color:var(--cg-text);font-family:inherit;
   background:rgba(255,255,255,.03);border:1px solid var(--cg-line);
   transition:transform .12s ease,box-shadow .18s ease,border-color .18s ease}
 .cgroot .cg-vcard:hover:not(:disabled){transform:translateY(-3px);border-color:var(--vc);
@@ -393,14 +395,14 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .cg-vcard.vr-legendary{--vc:#f5c542}
 .cgroot .cg-vcard.vr-epic{--vc:#a78bfa}
 .cgroot .cg-vcard.vr-common{--vc:#8ea0b5}
-.cgroot .cg-vrar{font-size:9px;letter-spacing:2px;font-family:'JetBrains Mono',monospace;color:var(--vc)}
-.cgroot .cg-vname{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:17px;letter-spacing:1px}
-.cgroot .cg-vstat{display:flex;align-items:center;gap:7px;font-size:10px}
-.cgroot .cg-vlab{width:44px;color:var(--cg-muted);font-family:'JetBrains Mono',monospace;letter-spacing:.5px}
-.cgroot .cg-vbar{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+.cgroot .cg-vrar{font-size:8px;letter-spacing:1.5px;font-family:'JetBrains Mono',monospace;color:var(--vc)}
+.cgroot .cg-vname{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:14px;letter-spacing:1px;line-height:1}
+.cgroot .cg-vstat{display:flex;align-items:center;gap:6px;font-size:9px}
+.cgroot .cg-vlab{width:34px;color:var(--cg-muted);font-family:'JetBrains Mono',monospace;letter-spacing:.5px}
+.cgroot .cg-vbar{flex:1;height:4px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
 .cgroot .cg-vbar>i{display:block;height:100%;background:var(--vc);border-radius:3px}
-.cgroot .cg-vstat b{width:16px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px}
-.cgroot .cg-vblurb{font-size:10.5px;color:var(--cg-muted);margin-top:2px}
+.cgroot .cg-vstat b{width:13px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:9.5px}
+.cgroot .cg-vblurb{font-size:9.5px;color:var(--cg-muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cgroot .eng-picks{font-size:11px;margin-bottom:8px}
 .cgroot .eng-picks:empty{display:none}
 
