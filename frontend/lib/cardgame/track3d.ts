@@ -630,10 +630,10 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     ];
     boards.forEach((tex, i) => {
       const x = X0 + 5 + i * (LEN - 10) / (boards.length - 1);
-      // short posts near the asphalt — panels ride low, not up on tall poles
+      // tiny support legs — the panels rest right on the ground, not on poles
       for (const dz of [-3.9, 3.9]) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 2.4, 8), poleMat);
-        pole.position.set(x + dz, 1.2, -EDGE - 2.4);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.8, 8), poleMat);
+        pole.position.set(x + dz, 0.4, -EDGE - 2.4);
         scene.add(pole);
       }
       // big readable panels, tilted a touch toward the camera side
@@ -641,7 +641,7 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
         new THREE.PlaneGeometry(10.2, 3.2),
         new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
       );
-      panel.position.set(x, 3.1, -EDGE - 2.4);
+      panel.position.set(x, 1.6, -EDGE - 2.4); // bottom ~ground level
       panel.rotation.x = -0.1;
       scene.add(panel);
     });
@@ -654,15 +654,15 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     megas.forEach((tex, i) => {
       const x = X0 + 10 + i * (LEN - 20) / (megas.length - 1);
       for (const dz of [-5.6, 5.6]) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 4.6, 8), poleMat);
-        pole.position.set(x + dz, 2.3, -EDGE - 10);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.4, 8), poleMat);
+        pole.position.set(x + dz, 0.7, -EDGE - 10);
         scene.add(pole);
       }
       const panel = new THREE.Mesh(
         new THREE.PlaneGeometry(15, 4.7),
         new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
       );
-      panel.position.set(x, 5.9, -EDGE - 10);
+      panel.position.set(x, 2.7, -EDGE - 10); // bottom ~ground level (skyline depth kept by distance)
       panel.rotation.x = -0.08;
       scene.add(panel);
     });
