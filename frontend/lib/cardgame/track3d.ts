@@ -713,6 +713,26 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       panel.rotation.x = -0.1;
       scene.add(panel);
     }
+    // mirror the sponsor wall onto the NEAR (camera) side too — panels face the
+    // far side, so they enrich FAR SIDE / AERIAL / ORBIT without cluttering the
+    // default CHASE view (their single-sided backs cull toward the near camera).
+    for (let i = 0; i < BOARD_COUNT; i++) {
+      const tex = boardSet[(i + 4) % boardSet.length]; // offset so the two walls differ
+      const x = X0 + 2 + i * bStep;
+      for (const dz of [-2.2, 2.2]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.7, 8), poleMat);
+        pole.position.set(x + dz, 0.35, EDGE + 2.4);
+        scene.add(pole);
+      }
+      const panel = new THREE.Mesh(
+        new THREE.PlaneGeometry(BW, BH),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
+      );
+      panel.position.set(x, BH / 2 + 0.1, EDGE + 2.4);
+      panel.rotation.y = Math.PI;   // face -z (toward the track / far side)
+      panel.rotation.x = 0.1;       // tilt the top toward the track
+      scene.add(panel);
+    }
     // second, slightly-elevated mega-board row further back for skyline depth
     const megas = [
       avaxBoardTex('AVALANCHE'),
@@ -775,32 +795,36 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     heads: InstanceType<typeof THREE.InstancedMesh>;
     x: Float32Array; baseY: Float32Array; z: Float32Array; phase: Float32Array;
   }
-  let crowd: CrowdAnim | null = null;
-  {
+  const crowds: CrowdAnim[] = [];
+  // Build a grandstand on one side (-1 = far, +1 = near/camera side). The near
+  // stand sits behind the CHASE camera (z > camera) so it never blocks the
+  // default view, but fills out FAR SIDE / AERIAL / ORBIT with a full stadium.
+  function buildGrandstand(side: number) {
     const standMat = new THREE.MeshStandardMaterial({ color: 0x232330, roughness: 0.8, metalness: 0.2 });
     const standX = 0, standW = LEN + 8;
     const TIERS = 6;
+    const tierZ = (t: number) => side * (EDGE + 14 + t * 1.35);
     for (let t = 0; t < TIERS; t++) {
       const step = new THREE.Mesh(new THREE.BoxGeometry(standW, 1.0, 1.5), standMat);
-      step.position.set(standX, 1.6 + t * 1.15, -EDGE - 14 - t * 1.35);
+      step.position.set(standX, 1.6 + t * 1.15, tierZ(t));
       scene.add(step);
     }
     // back wall + roof canopy with a bloom-safe neon lip
     const wall = new THREE.Mesh(new THREE.BoxGeometry(standW, 8.4, 0.4), standMat);
-    wall.position.set(standX, 4.6, -EDGE - 14 - TIERS * 1.35 - 0.6);
+    wall.position.set(standX, 4.6, side * (EDGE + 14 + TIERS * 1.35 + 0.6));
     scene.add(wall);
     const roof = new THREE.Mesh(new THREE.BoxGeometry(standW, 0.22, TIERS * 1.35 + 2.4),
       new THREE.MeshStandardMaterial({ color: 0x1a1a24, roughness: 0.6, metalness: 0.5 }));
-    roof.position.set(standX, 1.6 + TIERS * 1.15 + 1.7, -EDGE - 14 - (TIERS * 1.35) / 2);
+    roof.position.set(standX, 1.6 + TIERS * 1.15 + 1.7, side * (EDGE + 14 + (TIERS * 1.35) / 2));
     scene.add(roof);
     const lip = new THREE.Mesh(new THREE.BoxGeometry(standW, 0.12, 0.14),
       new THREE.MeshBasicMaterial({ color: 0x4dd0e1 }));
-    lip.position.set(standX, roof.position.y - 0.05, -EDGE - 13.9);
+    lip.position.set(standX, roof.position.y - 0.05, side * (EDGE + 13.9));
     scene.add(lip);
     const colMat = new THREE.MeshStandardMaterial({ color: 0x2a2a36, roughness: 0.5, metalness: 0.6 });
     for (let i = 0; i <= 8; i++) {
       const col = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, roof.position.y, 8), colMat);
-      col.position.set(X0 - 4 + (i * standW) / 8, roof.position.y / 2, -EDGE - 14 - TIERS * 1.35 - 0.2);
+      col.position.set(X0 - 4 + (i * standW) / 8, roof.position.y / 2, side * (EDGE + 14 + TIERS * 1.35 + 0.2));
       scene.add(col);
     }
 
@@ -818,18 +842,20 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     const m4 = new THREE.Matrix4();
     const col = new THREE.Color();
     const cx = new Float32Array(count), cy = new Float32Array(count), cz = new Float32Array(count), ph = new Float32Array(count);
+    // side-dependent salt so the two stands aren't identical fan-for-fan
+    const salt = side > 0 ? 4 : 0;
     let idx = 0;
     for (let t = 0; t < TIERS; t++) {
       for (let i = 0; i < perTier; i++, idx++) {
         const x = -standW / 2 + (i + 0.5) * seatStep + (((i * 7 + t * 13) % 5) - 2) * 0.05;
         const y = 1.6 + t * 1.15 + 0.5 + 0.26;
-        const z = -EDGE - 14 - t * 1.35 + (((i * 3 + t) % 3) - 1) * 0.12;
-        cx[idx] = x; cy[idx] = y; cz[idx] = z; ph[idx] = (x * 0.18 + t * 0.7) % (Math.PI * 2);
+        const z = tierZ(t) + (((i * 3 + t) % 3) - 1) * 0.12;
+        cx[idx] = x; cy[idx] = y; cz[idx] = z; ph[idx] = (x * 0.18 + t * 0.7 + salt) % (Math.PI * 2);
         m4.setPosition(x, y, z);
         bodies.setMatrixAt(idx, m4);
         m4.setPosition(x, y + 0.38, z);
         heads.setMatrixAt(idx, m4);
-        bodies.setColorAt(idx, col.setHex(palette[(i * 31 + t * 17) % palette.length]));
+        bodies.setColorAt(idx, col.setHex(palette[(i * 31 + t * 17 + salt) % palette.length]));
         heads.setColorAt(idx, col.setHex(skins[(i * 13 + t * 7) % skins.length]));
       }
     }
@@ -838,33 +864,36 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true;
     if (heads.instanceColor) heads.instanceColor.needsUpdate = true;
     scene.add(bodies); scene.add(heads);
-    if (!lowEnd) crowd = { bodies, heads, x: cx, baseY: cy, z: cz, phase: ph };
+    if (!lowEnd) crowds.push({ bodies, heads, x: cx, baseY: cy, z: cz, phase: ph });
   }
+  buildGrandstand(-1); // far side (behind the sponsor wall)
+  buildGrandstand(1);  // near side (behind the CHASE camera)
 
   let crowdT = 0;
   let cheerAmt = 0; // 0 = idle wave, 1 = full finish-line frenzy (smoothly blended)
   function updateCrowd(dt: number) {
-    if (!crowd) return; // low-end: static crowd
+    if (!crowds.length) return; // low-end: static crowd
     crowdT += dt;
     // cheer while this round has finishers; roundFinishers resets on the next
     // round's snap-back, and never resets after the final round — so the crowd
     // keeps jumping through the end-of-match orbit camera.
     cheerAmt += ((roundFinishers > 0 ? 1 : 0) - cheerAmt) * Math.min(1, dt * 3);
     const m4 = new THREE.Matrix4();
-    const { bodies, heads, x, baseY, z, phase } = crowd;
-    for (let i = 0; i < x.length; i++) {
-      // idle: slow wave rolling along the stand (fans sit between pulses)
-      const wave = Math.max(0, Math.sin(crowdT * 2.0 + phase[i])) * 0.22;
-      // frenzy: everyone bounces on their own fast rhythm
-      const jump = Math.abs(Math.sin(crowdT * 5.5 + phase[i] * 7.3)) * 0.55;
-      const lift = wave * (1 - cheerAmt) + jump * cheerAmt;
-      m4.setPosition(x[i], baseY[i] + lift, z[i]);
-      bodies.setMatrixAt(i, m4);
-      m4.setPosition(x[i], baseY[i] + lift + 0.38, z[i]);
-      heads.setMatrixAt(i, m4);
+    for (const { bodies, heads, x, baseY, z, phase } of crowds) {
+      for (let i = 0; i < x.length; i++) {
+        // idle: slow wave rolling along the stand (fans sit between pulses)
+        const wave = Math.max(0, Math.sin(crowdT * 2.0 + phase[i])) * 0.22;
+        // frenzy: everyone bounces on their own fast rhythm
+        const jump = Math.abs(Math.sin(crowdT * 5.5 + phase[i] * 7.3)) * 0.55;
+        const lift = wave * (1 - cheerAmt) + jump * cheerAmt;
+        m4.setPosition(x[i], baseY[i] + lift, z[i]);
+        bodies.setMatrixAt(i, m4);
+        m4.setPosition(x[i], baseY[i] + lift + 0.38, z[i]);
+        heads.setMatrixAt(i, m4);
+      }
+      bodies.instanceMatrix.needsUpdate = true;
+      heads.instanceMatrix.needsUpdate = true;
     }
-    bodies.instanceMatrix.needsUpdate = true;
-    heads.instanceMatrix.needsUpdate = true;
   }
 
   // ── car factory: per-rarity GLB drop-ins with procedural fallback ────
