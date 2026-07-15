@@ -218,33 +218,39 @@ body.cg-noscroll{overflow:hidden}
   border:1px solid rgba(255,255,255,.06);
   box-shadow:inset 0 2px 22px rgba(0,0,0,.5),inset 0 0 0 1px rgba(255,255,255,.02),0 1px 0 rgba(255,255,255,.03);
   min-height:104px;align-content:center}
-.cgroot .card{width:62px;height:88px;border-radius:11px;position:relative;cursor:pointer;user-select:none;
+.cgroot .card{width:62px;height:88px;border-radius:9px;position:relative;cursor:pointer;user-select:none;
   overflow:hidden;
   background:
-    radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.85),transparent 60%),
-    linear-gradient(165deg,#f4f8ff 0%,#dde6f4 45%,#b9c8de 100%);
-  color:#141a26;
-  border:2px solid rgba(255,255,255,.65);box-shadow:0 3px 10px rgba(0,0,0,.4),inset 0 0 0 1px rgba(20,26,38,.12);
+    linear-gradient(180deg,rgba(255,255,255,.5),transparent 32%),
+    linear-gradient(158deg,#fdfeff 0%,#eef4fc 52%,#d7e2f1 100%);
+  color:#1a2436;
+  border:1px solid rgba(255,255,255,.9);
+  box-shadow:0 2px 8px rgba(9,15,28,.42),inset 0 0 0 1px rgba(31,44,68,.10),inset 0 1px 0 rgba(255,255,255,.7);
   transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease;
   display:flex;align-items:center;justify-content:center;font-weight:700;
   font-family:'Chakra Petch',sans-serif}
-.cgroot .card::before{content:'';position:absolute;inset:4px;border-radius:6px;
-  border:1px solid rgba(20,26,38,.18);pointer-events:none}
+/* crisp double-keyline frame for a premium printed-card edge */
+.cgroot .card::before{content:'';position:absolute;inset:3px;border-radius:5px;
+  border:1px solid rgba(31,44,68,.16);box-shadow:inset 0 0 0 1px rgba(255,255,255,.5);pointer-events:none}
 .cgroot .card::after{content:'';position:absolute;top:-40%;left:-70%;width:55%;height:180%;
   transform:skewX(-22deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);
   pointer-events:none;transition:left .5s ease;opacity:.7}
 .cgroot .card:hover::after{left:130%}
 .cgroot .card:hover{transform:translateY(-4px)}
-.cgroot .card .cv{position:relative;z-index:2;font-size:26px;line-height:1;
-  text-shadow:0 1px 0 rgba(255,255,255,.8),0 2px 4px rgba(20,26,38,.25)}
-.cgroot .card .cardart{position:absolute;bottom:-6px;right:-4px;font-size:40px;font-style:normal;
-  opacity:.13;pointer-events:none;transform:rotate(-14deg);z-index:1}
-.cgroot .card .ix{position:absolute;top:4px;left:6px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:700;opacity:.8;z-index:2}
-.cgroot .card .ix2{position:absolute;bottom:4px;right:6px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:700;opacity:.8;transform:rotate(180deg);z-index:2}
-.cgroot .card small{font-size:7.5px;font-weight:800;position:absolute;bottom:5px;left:0;right:0;text-align:center;letter-spacing:1.5px;z-index:2}
+.cgroot .card .cv{position:relative;z-index:2;font-size:23px;line-height:1;font-weight:800;color:#223049;
+  text-shadow:0 1px 0 rgba(255,255,255,.8)}
+.cgroot .card .cardart{position:absolute;bottom:-5px;right:-3px;font-size:38px;font-style:normal;
+  opacity:.10;pointer-events:none;transform:rotate(-14deg);z-index:1}
+/* single top-left rank block with a tiny suit pip (classic corner index) */
+.cgroot .card .ix{position:absolute;top:3px;left:5px;font-size:10px;font-family:'Chakra Petch',sans-serif;font-weight:800;opacity:1;z-index:2;line-height:.85;text-align:center;color:#2a3752}
+.cgroot .card .ix2{display:none}
+.cgroot .card:not(.magic) .ix::after{content:'❄';display:block;font-size:6px;margin-top:1px;opacity:.5}
+/* ability nameplate footer */
+.cgroot .card small{font-size:6.5px;font-weight:800;position:absolute;bottom:0;left:0;right:0;text-align:center;letter-spacing:1px;z-index:2;
+  padding:2px 0;color:rgba(26,36,54,.6);background:linear-gradient(180deg,transparent,rgba(26,36,54,.06));border-top:1px solid rgba(26,36,54,.1)}
 /* per-value ability ribbon on normal card faces */
-.cgroot .card small.ab{font-size:6.5px;letter-spacing:1px;color:rgba(20,26,38,.55)}
-.cgroot .card.hi small.ab{color:rgba(90,63,5,.6)}
+.cgroot .card small.ab{font-size:6px;letter-spacing:.8px;color:rgba(26,36,54,.58)}
+.cgroot .card.hi small.ab{color:rgba(90,63,5,.62)}
 /* ability trigger popup: smaller companion to the combo popup */
 .cgroot .popup.pop-ab{font-size:16px;letter-spacing:2px;color:var(--cg-ice);
   filter:drop-shadow(0 0 10px rgba(77,208,225,.5));animation:cg-rise 1.4s ease-out forwards}
@@ -267,27 +273,31 @@ body.cg-noscroll{overflow:hidden}
 @keyframes cg-flashfade{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
 @keyframes cg-flashring{from{transform:translate(-50%,-50%) scale(.4);opacity:.9}to{transform:translate(-50%,-50%) scale(6);opacity:0}}
 /* high cards (9-10): gold-trimmed premium face */
-.cgroot .card.hi{border-color:rgba(245,197,66,.8);
+.cgroot .card.hi{border-color:rgba(214,175,74,.85);
   background:
-    radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.9),transparent 60%),
-    linear-gradient(165deg,#fff7e0 0%,#f7e7b5 45%,#e3c56e 100%)}
-.cgroot .card.hi::before{border-color:rgba(163,116,16,.35)}
-.cgroot .card.hi .cv{color:#5a3f05}
+    linear-gradient(180deg,rgba(255,255,255,.5),transparent 32%),
+    linear-gradient(158deg,#fffdf3 0%,#f6ead0 52%,#e6cd8a 100%)}
+.cgroot .card.hi::before{border-color:rgba(163,116,16,.38)}
+.cgroot .card.hi .cv,.cgroot .card.hi .ix{color:#6f4e0d}
+.cgroot .card.hi small{background:linear-gradient(180deg,transparent,rgba(120,84,10,.08));border-top-color:rgba(120,84,10,.18)}
 /* magic cards: saturated faces + glowing icon art */
 .cgroot .card.magic{background:
-    radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.7),transparent 60%),
-    linear-gradient(165deg,#ffe9a8,#f5c542);color:#4a3500;border-color:rgba(245,197,66,.9)}
-.cgroot .card.magic .cardart{opacity:.4;filter:drop-shadow(0 0 6px rgba(245,197,66,.9))}
+    linear-gradient(180deg,rgba(255,255,255,.45),transparent 32%),
+    linear-gradient(158deg,#ffe9a8,#f5c542);color:#4a3500;border-color:rgba(245,197,66,.9)}
+.cgroot .card.magic .cv,.cgroot .card.magic .ix{color:#5a4200}
+.cgroot .card.magic .cardart{opacity:.42;filter:drop-shadow(0 0 6px rgba(245,197,66,.9))}
 .cgroot .card.nail{background:
-    radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.6),transparent 60%),
-    linear-gradient(165deg,#ffb8b8,#ed6b6b);color:#4a0d0d;border-color:rgba(237,47,57,.75)}
-.cgroot .card.nail .cardart{opacity:.4;filter:drop-shadow(0 0 6px rgba(237,47,57,.8))}
+    linear-gradient(180deg,rgba(255,255,255,.4),transparent 32%),
+    linear-gradient(158deg,#ffb8b8,#ed6b6b);color:#4a0d0d;border-color:rgba(237,47,57,.75)}
+.cgroot .card.nail .cv,.cgroot .card.nail .ix{color:#5a1414}
+.cgroot .card.nail .cardart{opacity:.42;filter:drop-shadow(0 0 6px rgba(237,47,57,.8))}
 .cgroot .card.oil{background:
-    radial-gradient(90px 60px at 30% -10%,rgba(255,255,255,.35),transparent 60%),
-    linear-gradient(165deg,#b9bfd1,#7c8299);color:#14161f;border-color:rgba(124,130,153,.8)}
-.cgroot .card.oil .cardart{opacity:.4;filter:drop-shadow(0 0 5px rgba(40,44,58,.9))}
+    linear-gradient(180deg,rgba(255,255,255,.3),transparent 32%),
+    linear-gradient(158deg,#b9bfd1,#7c8299);color:#14161f;border-color:rgba(124,130,153,.8)}
+.cgroot .card.oil .cv,.cgroot .card.oil .ix{color:#20222e}
+.cgroot .card.oil .cardart{opacity:.42;filter:drop-shadow(0 0 5px rgba(40,44,58,.9))}
 .cgroot .card.sel{border-color:var(--cg-red);transform:translateY(-9px);
-  box-shadow:0 0 0 1px rgba(237,47,57,.4),0 10px 24px rgba(237,47,57,.32)}
+  box-shadow:0 0 0 1px rgba(237,47,57,.5),0 10px 24px rgba(237,47,57,.34)}
 
 /* ── iconic card identities: signature animation per type ─────────────── */
 /* deal-in cascade — suppressed (.nodeal) when only the selection changed */
@@ -307,7 +317,7 @@ body.cg-noscroll{overflow:hidden}
 @keyframes cg-throb{0%,100%{transform:rotate(-14deg) scale(1)}12%{transform:rotate(-14deg) scale(1.18)}24%{transform:rotate(-14deg) scale(1)}}
 .cgroot .card.nail .cardart{animation:cg-throb 1.5s ease-in-out infinite}
 .cgroot .card.nail small{background:repeating-linear-gradient(-45deg,#3b0a0a 0 5px,#f0b429 5px 10px);
-  color:#fff;bottom:0;padding:2.5px 0;letter-spacing:2px;text-shadow:0 1px 2px rgba(0,0,0,.85)}
+  color:#fff;bottom:0;padding:2.5px 0;letter-spacing:2px;text-shadow:0 1px 2px rgba(0,0,0,.85);border-top:0}
 /* OIL: iridescent slick sweeping across the face */
 @keyframes cg-slick{0%{left:-70%}55%,100%{left:130%}}
 .cgroot .card.oil::after{background:linear-gradient(90deg,transparent,rgba(167,139,250,.4),rgba(77,208,225,.35),transparent);
@@ -322,10 +332,10 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .hand .card.sel{animation:cg-selpulse 1.3s ease-in-out infinite}
 /* non-fullscreen hand tray runs more compact so the card section takes less of
    the page — the docked (.cg-fsdock) fullscreen version keeps the larger cards */
-.cgroot .panel:not(.cg-fsdock) .hand{gap:8px;padding:11px 12px;min-height:84px}
-.cgroot .panel:not(.cg-fsdock) .card{width:50px;height:71px}
-.cgroot .panel:not(.cg-fsdock) .card .cv{font-size:21px}
-.cgroot .panel:not(.cg-fsdock) .card .cardart{font-size:32px}
+.cgroot .panel:not(.cg-fsdock) .hand{gap:7px;padding:10px 11px;min-height:76px}
+.cgroot .panel:not(.cg-fsdock) .card{width:44px;height:62px;border-radius:8px}
+.cgroot .panel:not(.cg-fsdock) .card .cv{font-size:18px}
+.cgroot .panel:not(.cg-fsdock) .card .cardart{font-size:30px}
 @media (prefers-reduced-motion:reduce){
   .cgroot .card,.cgroot .card::before,.cgroot .card::after,.cgroot .card .cardart{animation:none!important}
   .cgroot .cg-flash,.cgroot .cg-flash::after{animation:none!important;opacity:0!important}
