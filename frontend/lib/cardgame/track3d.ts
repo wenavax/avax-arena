@@ -153,6 +153,20 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     ctx.fillStyle = accent;
     ctx.fillText(text, 512, 164);
   });
+  // TEAM1 sponsor board — red / white / black livery (user request)
+  const WHITE = '#d2d5db'; // kept just under the daytime bloom threshold
+  const team1Tex = () => canvasTex(1024, 320, (ctx) => {
+    ctx.fillStyle = '#0a0a0c';
+    ctx.beginPath(); ctx.roundRect(4, 4, 1016, 312, 28); ctx.fill();
+    ctx.strokeStyle = WHITE; ctx.lineWidth = 14; ctx.stroke();          // white border
+    ctx.fillStyle = '#d21f2b'; ctx.fillRect(24, 250, 976, 42);          // red base bar
+    ctx.font = '900 190px "Arial Black","Arial",sans-serif';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const tw = ctx.measureText('TEAM').width, ow = ctx.measureText('1').width;
+    const x0 = (1024 - tw - ow - 26) / 2;
+    ctx.fillStyle = WHITE; ctx.fillText('TEAM', x0, 148);               // white "TEAM"
+    ctx.fillStyle = '#e01f2b'; ctx.fillText('1', x0 + tw + 26, 148);    // red "1"
+  });
   /** Sponsor board with the real Avalanche mark + label. */
   const avaxBoardTex = (label: string) => !avaxImg ? boardTex(`${label} ▲`, '#e84142') : canvasTex(1024, 320, (ctx) => {
     ctx.fillStyle = 'rgba(12,12,18,0.96)';
@@ -359,12 +373,44 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
   scene.add(deck);
 
   const laneZ = (i: number) => (i - (seats.length - 1) / 2) * LANE_W;
-  const lineMat = new THREE.MeshBasicMaterial({ color: 0x2b2b38 });
-  for (let i = 0; i <= seats.length; i++) {
-    const z = laneZ(i - 0.5) + LANE_W / 2;
-    const line = new THREE.Mesh(new THREE.BoxGeometry(LEN + 8, 0.02, 0.07), lineMat);
-    line.position.set(0, 0.02, z - LANE_W / 2);
-    scene.add(line);
+  const trackHalf = (seats.length * LANE_W) / 2;
+
+  // ── F1-standard road markings: ONE non-repeating overlay drawn to scale ──
+  // (solid white edge lines + dashed white lane separators). One draw call.
+  {
+    const lanes = seats.length;
+    const CW = 2048, CH = 256, laneH = CH / lanes;
+    const markTex = canvasTex(CW, CH, (ctx) => {
+      ctx.clearRect(0, 0, CW, CH);
+      ctx.fillStyle = '#d2d5db';
+      // solid white edge lines (top & bottom = the two track edges)
+      ctx.fillRect(0, 5, CW, 8);
+      ctx.fillRect(0, CH - 13, CW, 8);
+      // dashed white lane separators (F1-style long dash + gap)
+      for (let i = 1; i < lanes; i++) {
+        const y = Math.round(i * laneH - 3);
+        for (let x = 30; x < CW - 30; x += 170) ctx.fillRect(x, y, 95, 6);
+      }
+    });
+    const markMat = new THREE.MeshBasicMaterial({ map: markTex, transparent: true, depthWrite: false });
+    const markPlane = new THREE.Mesh(new THREE.PlaneGeometry(LEN + 8, lanes * LANE_W), markMat);
+    markPlane.rotation.x = -Math.PI / 2;
+    markPlane.position.set(0, 0.014, 0);
+    scene.add(markPlane);
+
+    // red/white F1 kerbs just outside each edge line
+    const kerbTex = canvasTex(256, 32, (ctx) => {
+      for (let i = 0; i < 8; i++) { ctx.fillStyle = i % 2 ? '#d21f2b' : '#dcdce0'; ctx.fillRect(i * 32, 0, 32, 32); }
+    });
+    kerbTex.wrapS = kerbTex.wrapT = THREE.RepeatWrapping;
+    kerbTex.repeat.set(64, 1);
+    const kerbMat = new THREE.MeshBasicMaterial({ map: kerbTex });
+    for (const s of [-1, 1]) {
+      const kerb = new THREE.Mesh(new THREE.PlaneGeometry(LEN + 8, 0.62), kerbMat);
+      kerb.rotation.x = -Math.PI / 2;
+      kerb.position.set(0, 0.013, s * (trackHalf + 0.4));
+      scene.add(kerb);
+    }
   }
 
   // ── greenery: grass field + low-poly trees & bushes ──────────────────
@@ -637,13 +683,13 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       frostbiteTex('BATTLE ARENA'),
       avaxBoardTex('AVAX'),
       boardTex('CAR(D) GAME', '#f5c542'),
-      boardTex('TEAM1', '#6ee7a0'),
+      team1Tex(),
       frostbiteTex(),
       avaxBoardTex('AVALANCHE'),
       boardTex('FUJI TESTNET', '#f97316'),
       frostbiteTex('RACING'),
       boardTex('THE ARCADE', '#4dd0e1'),
-      boardTex('TEAM1', '#6ee7a0'),
+      team1Tex(),
     ];
     const BW = 6.0, BH = 1.9;           // smaller panels (texture aspect ≈ 3.15)
     // dense wall along the whole straight, but panels sit edge-to-edge with a
@@ -945,6 +991,7 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
   }
   const glowTexture = radialTex('rgba(255,255,255,0.95)', 'rgba(255,255,255,0)');
   const smokeTexture = radialTex('rgba(150,155,165,0.5)', 'rgba(150,155,165,0)');
+  const shadowTexture = radialTex('rgba(0,0,0,0.5)', 'rgba(0,0,0,0)'); // soft contact shadow
 
   // exhaust / slip smoke: pooled sprites, skipped entirely on low-end devices
   const SMOKE_POOL = lowEnd ? 0 : 110;
@@ -1118,6 +1165,14 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     const asm = buildAssembly(null, color);
     root.add(asm.group);
 
+    // soft contact shadow — grounds the car on the asphalt (realism)
+    const shadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.7, 1.8),
+      new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, opacity: 0.5, depthWrite: false }),
+    );
+    shadow.rotation.x = -Math.PI / 2; shadow.position.set(-0.15, 0.011, 0);
+    root.add(shadow);
+
     // under-glow ring (fx indicator)
     const ringMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0 });
     const ring = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.07, 8, 40), ringMat);
@@ -1261,6 +1316,47 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       if (age > 1.15) m.mesh.visible = false;
       else m.mat.opacity = 0.8 * (1 - age / 1.15);
     }
+  }
+
+  // ── boost floor sparks (F1 skid-block style): one pooled Points buffer ──
+  // Emitted from the diffuser under hard boost; skitter along the ground and
+  // fade — a single draw call, skipped on low-end devices.
+  const SPARK_N = lowEnd ? 0 : 140;
+  const sparkPos = new Float32Array(Math.max(1, SPARK_N) * 3).fill(-999);
+  const sparkVel = new Float32Array(Math.max(1, SPARK_N) * 3);
+  const sparkLife = new Float32Array(Math.max(1, SPARK_N));
+  let sparkCursor = 0;
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
+  const sparkPts = new THREE.Points(sparkGeo, new THREE.PointsMaterial({
+    color: 0xffb14a, size: 0.1, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  if (SPARK_N) scene.add(sparkPts);
+  function emitSpark(x: number, z: number) {
+    if (!SPARK_N) return;
+    const i = sparkCursor; sparkCursor = (sparkCursor + 1) % SPARK_N;
+    sparkPos[i * 3] = x; sparkPos[i * 3 + 1] = 0.09; sparkPos[i * 3 + 2] = z + (Math.random() - 0.5) * 0.4;
+    sparkVel[i * 3] = -(2.5 + Math.random() * 3.5);       // shoot backward
+    sparkVel[i * 3 + 1] = 0.5 + Math.random() * 1.4;      // small hop
+    sparkVel[i * 3 + 2] = (Math.random() - 0.5) * 1.8;    // fan out
+    sparkLife[i] = 0.3 + Math.random() * 0.28;
+  }
+  function stepSparks(dt: number) {
+    if (!SPARK_N) return;
+    for (let i = 0; i < SPARK_N; i++) {
+      if (sparkLife[i] <= 0) continue;
+      sparkLife[i] -= dt;
+      sparkVel[i * 3 + 1] -= 15 * dt;                     // gravity
+      sparkPos[i * 3] += sparkVel[i * 3] * dt;
+      sparkPos[i * 3 + 1] += sparkVel[i * 3 + 1] * dt;
+      sparkPos[i * 3 + 2] += sparkVel[i * 3 + 2] * dt;
+      if (sparkPos[i * 3 + 1] < 0.04) {                   // skitter along the deck
+        sparkPos[i * 3 + 1] = 0.04; sparkVel[i * 3 + 1] = -sparkVel[i * 3 + 1] * 0.4; sparkVel[i * 3] *= 0.6;
+      }
+      if (sparkLife[i] <= 0) sparkPos[i * 3 + 1] = -999;  // park off-screen
+    }
+    (sparkGeo.getAttribute('position') as InstanceType<typeof THREE.BufferAttribute>).needsUpdate = true;
   }
 
   // ── camera: cinematic side-chase; slow orbit once everyone finished ──
@@ -1417,7 +1513,7 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
           if (rig.wheelAxis === 'x') w.rotation.x += ang; else w.rotation.z += ang;
         }
       }
-      // boost: lay glowing tyre trails behind the rear wheels
+      // boost: lay glowing tyre trails behind the rear wheels + floor sparks
       if (rig.boosted && moving) {
         rig.trailAcc += dt;
         while (rig.trailAcc > 0.05) {
@@ -1425,12 +1521,16 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
           spawnMark(rig.curX - 0.95, rig.root.position.z - 0.5);
           spawnMark(rig.curX - 0.95, rig.root.position.z + 0.5);
         }
+        // F1 diffuser sparks — a couple per frame while boosting hard
+        if (Math.random() < 0.7) emitSpark(rig.curX - 1.75, rig.root.position.z);
+        if (Math.random() < 0.4) emitSpark(rig.curX - 1.75, rig.root.position.z);
       } else rig.trailAcc = 0;
     }
     updateCamera(dt);
     updateCrowd(dt);
     updateGates(dt, now);
     stepConfetti(dt);
+    stepSparks(dt);
     stepPuffs(now, dt);
     stepPrecip(dt, now);
     stepMarks(now);
