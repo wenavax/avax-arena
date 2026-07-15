@@ -354,15 +354,15 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
 
   // ── greenery: grass field + low-poly trees & bushes ──────────────────
   const grassTex = canvasTex(256, 256, (ctx) => {
-    ctx.fillStyle = '#5d9c4a'; ctx.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 2600; i++) {
+    ctx.fillStyle = '#3f9c30'; ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 3400; i++) {
       const shade = Math.random();
-      ctx.fillStyle = shade < 0.5 ? '#548f42' : shade < 0.8 ? '#69aa54' : '#4c8039';
+      ctx.fillStyle = shade < 0.5 ? '#379027' : shade < 0.8 ? '#57bd41' : '#2c7a1f';
       ctx.fillRect(Math.random() * 256, Math.random() * 256, 1.6, 2.6);
     }
-    ctx.globalAlpha = 0.07;
-    for (let i = 0; i < 6; i++) {
-      ctx.fillStyle = i % 2 ? '#3f7331' : '#79b662';
+    ctx.globalAlpha = 0.09;
+    for (let i = 0; i < 7; i++) {
+      ctx.fillStyle = i % 2 ? '#26721a' : '#72d257';
       ctx.beginPath();
       ctx.ellipse(Math.random() * 256, Math.random() * 256, 40 + Math.random() * 60, 24 + Math.random() * 40, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -630,9 +630,10 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     ];
     boards.forEach((tex, i) => {
       const x = X0 + 5 + i * (LEN - 10) / (boards.length - 1);
+      // short posts near the asphalt — panels ride low, not up on tall poles
       for (const dz of [-3.9, 3.9]) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 4.4, 8), poleMat);
-        pole.position.set(x + dz, 2.2, -EDGE - 2.4);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 2.4, 8), poleMat);
+        pole.position.set(x + dz, 1.2, -EDGE - 2.4);
         scene.add(pole);
       }
       // big readable panels, tilted a touch toward the camera side
@@ -640,11 +641,11 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
         new THREE.PlaneGeometry(10.2, 3.2),
         new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
       );
-      panel.position.set(x, 5.1, -EDGE - 2.4);
+      panel.position.set(x, 3.1, -EDGE - 2.4);
       panel.rotation.x = -0.1;
       scene.add(panel);
     });
-    // second, elevated mega-board row further back for skyline depth
+    // second, slightly-elevated mega-board row further back for skyline depth
     const megas = [
       avaxBoardTex('AVALANCHE'),
       frostbiteTex('POWERED BY AVAX'),
@@ -653,15 +654,15 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     megas.forEach((tex, i) => {
       const x = X0 + 10 + i * (LEN - 20) / (megas.length - 1);
       for (const dz of [-5.6, 5.6]) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 7.2, 8), poleMat);
-        pole.position.set(x + dz, 3.6, -EDGE - 10);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 4.6, 8), poleMat);
+        pole.position.set(x + dz, 2.3, -EDGE - 10);
         scene.add(pole);
       }
       const panel = new THREE.Mesh(
         new THREE.PlaneGeometry(15, 4.7),
         new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
       );
-      panel.position.set(x, 8.4, -EDGE - 10);
+      panel.position.set(x, 5.9, -EDGE - 10);
       panel.rotation.x = -0.08;
       scene.add(panel);
     });
