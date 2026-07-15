@@ -49,7 +49,10 @@ async function main() {
     onFinished: () => { finished = true; }, onSettled: () => { settled = true; },
   });
 
-  ok(root.querySelectorAll('.lane').length === 4, 'four lanes built at mount');
+  const stage = root.querySelector('.eng-track3d') as HTMLElement;
+  ok(!!stage && !root.querySelector('.eng-track'), '3D stage present at mount, 2D track gone');
+  ok(stage.contains(root.querySelector('.eng-handcard')), 'hand panel docked inside the stage');
+  ok(stage.querySelectorAll('.cg-hud-chips, .cg-hud-rank, .cg-hud-log').length === 3, 'HUD overlays attached to the stage');
 
   // vehicle selection → pick relays over socket
   socket.inject('cardgame:vehicle-select', { round: 0, remaining: ['LEGENDARY', 'EPIC', 'COMMON'] });
@@ -59,11 +62,10 @@ async function main() {
   ok(socket.sent('cardgame:vehicle').some((d) => d.veh === 'LEGENDARY'), 'vehicle pick relayed to server');
   ok(!root.querySelector('.cg-vsel'), 'selector cleared after pick');
 
-  // round start → picks line + banner + log
+  // round start → banner + HUD log
   socket.inject('cardgame:round-start', { round: 0, vehicles: { P1: 'LEGENDARY', P2: 'EPIC', P3: 'COMMON', P4: 'LEGENDARY' } });
-  ok(/LEG/.test((root.querySelector('.eng-picks') as HTMLElement).innerHTML), 'round-start populates picks line');
   ok(!!root.querySelector('.cg-banner'), 'ROUND banner shown at round start');
-  ok(/Round 1/.test((root.querySelector('.eng-log') as HTMLElement).textContent ?? ''), 'event log records round start');
+  ok(/Round 1.*LEG/.test((stage.querySelector('.cg-hud-log') as HTMLElement).textContent ?? ''), 'HUD log records round start with picks');
 
   // hand → renders my cards
   socket.inject('cardgame:hand', { pid: 'P1', hlim: 8, cd: 0, hand: [
@@ -72,13 +74,13 @@ async function main() {
   ] });
   ok(root.querySelectorAll('.eng-hand .card').length === 3, 'hand renders my cards');
 
-  // state → positions the cars
+  // state → mini standings overlay updates
   socket.inject('cardgame:state', { round: 0, t: 12, players: seats.map((s, i) => ({
     pid: s.pid, address: s.address, veh: 'LEGENDARY', dist: 100 + i * 30, speed: 10, fin: false, ft: null, total: 0, cd: 0, fx: null,
   })) });
-  const myCar = root.querySelector('.eng-track [data-pid="P1"]') as HTMLElement;
-  ok(!!myCar && myCar.style.left !== '', 'state positions cars');
-  ok(/YOU/.test((myCar.querySelector('.tag') as HTMLElement).innerHTML), 'my lane tagged YOU');
+  ok(stage.querySelectorAll('.cg-hud-row').length === 4, 'state renders 4 standings rows');
+  ok(/190u/.test((stage.querySelector('.cg-hud-rank') as HTMLElement).textContent ?? ''), 'standings show live distances');
+  ok(/YOU/.test((stage.querySelector('.cg-hud-row.you') as HTMLElement)?.textContent ?? ''), 'my row highlighted as YOU');
 
   // select a card (hand cards use onpointerdown) → live preview, then PLAY → relays cardgame:play
   (root.querySelector('.eng-hand .card') as any).onpointerdown({ preventDefault() {} });
@@ -91,25 +93,32 @@ async function main() {
   socket.inject('cardgame:state', { round: 0, t: 13, players: seats.map((s, i) => ({
     pid: s.pid, address: s.address, veh: 'LEGENDARY', dist: 110 + i * 30, speed: 10, fin: false, ft: null, total: 0, cd: 30, fx: 'fx-val',
   })), applied: { P1: { combo: null, mult: 1.18, fx: null }, P2: { combo: 'PAIR', mult: 1.54, fx: null } } });
-  ok(!!root.querySelector('.eng-track .popup'), 'combo popup rendered over the track for my applied play');
-  ok(/PAIR/.test((root.querySelector('.eng-log') as HTMLElement).textContent ?? ''), 'opponent applied play logged');
+  ok(!!stage.querySelector('.popup'), 'combo popup rendered over the stage for my applied play');
+  ok(/PAIR/.test((stage.querySelector('.cg-hud-log') as HTMLElement).textContent ?? ''), 'opponent applied play logged');
+
+  // transport drop + resume: the server kept racing; the renderer just notes it
+  socket.inject('cardgame:resumed', { state: 'playing' });
+  ok(/Reconnected/.test((stage.querySelector('.cg-hud-log') as HTMLElement).textContent ?? ''), 'resume after a drop is surfaced');
 
   // round end → toast
   socket.inject('cardgame:round-end', { round: 0, totals: { P1: 5, P2: 3, P3: 2, P4: 1 }, order: ['P1', 'P2', 'P3', 'P4'] });
   ok(/Round 1/.test((root.querySelector('.eng-toast') as HTMLElement).textContent ?? ''), 'round-end toast fired');
 
-  // finish + settle callbacks (+ settlement panel with payouts / tx link)
+  // finish + settle callbacks (+ results overlay with payouts / tx link in log)
   socket.inject('cardgame:finished', { ranking: ['P1', 'P2', 'P3', 'P4'], rankingAddresses: seats.map((s) => s.address), totals: { P1: 10, P2: 8, P3: 6, P4: 4 } });
   ok(finished, 'onFinished fired');
-  ok(!!root.querySelector('.settleBox'), 'settlement panel rendered at match end');
-  ok(/0\.02/.test(root.querySelector('.settleBox')!.textContent ?? ''), 'settlement panel shows escrow payouts');
+  await new Promise((r) => setTimeout(r, 2_000)); // the results overlay shows after a 1.8s beat
+  const results = w.document.body.querySelector('.cg-results');
+  ok(!!results, 'race results overlay rendered at match end');
+  ok(/0\.02/.test(results?.textContent ?? ''), 'results overlay shows escrow payouts');
   socket.inject('cardgame:settled', { ranking: seats.map((s) => s.address), txHash: '0xTX' });
   ok(settled, 'onSettled fired');
-  ok(!!root.querySelector('.settleBox a.txh'), 'settled panel shows tx link');
+  ok(!!stage.querySelector('.cg-hud-log a.txh'), 'settle tx link lands in the HUD log');
 
   // cleanup detaches + clears
   cleanup();
   ok(root.innerHTML === '', 'cleanup clears the root');
+  ok(!w.document.body.querySelector('.cg-results'), 'cleanup removes the results overlay');
   ok(socket.handlers.size === 0 || [...socket.handlers.values()].every((s) => s.size === 0), 'cleanup detaches socket handlers');
 
   console.log(`\n${fail === 0 ? '★' : '✗'} ${pass}/${pass + fail} PASS — multiplayer renderer drives from server events & relays inputs.`);

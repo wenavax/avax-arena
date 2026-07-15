@@ -192,5 +192,50 @@ console.log('\n[mp-scheduled] mid-forming drop → no dead-seat room, no ghost r
   ok(!perPlayer.some((m) => m.event === 'cardgame:error' && m.addr === ADDRS[1]), 'no error emitted to the dead socket');
 }
 
+console.log('\n[mp-resilience] mid-match drop + reconnect → seat stays human, hand+state re-pushed');
+{
+  const clients = new Map();
+  const inbox = []; // every per-player emit, in order
+  const emitToPlayer = (addr, event, data) => { inbox.push({ addr: addr.toLowerCase(), event }); clients.get(addr.toLowerCase())?.recv(event, data); };
+  const emitToRoom = (roomId, event, data) => { for (const c of clients.values()) if (c.roomId === roomId) c.recv(event, data); };
+  let clock = 0;
+  const hub = createCardgameHub({
+    emitToPlayer, emitToRoom, emitToAll: () => {},
+    chain: { createMatch: async () => ({ matchId: '0xM5', seed: 'resume-seed', entryFee: '1000000000000000000' }), settle: async () => ({ ranking: [], txHash: '0x' }) },
+    now: () => clock, log: () => {},
+  });
+  for (let i = 0; i < 4; i++) {
+    const address = ADDRS[i];
+    const c = { address, roomId: null, pid: null };
+    c.recv = (event, data) => {
+      if (event === 'cardgame:match-found') { c.roomId = data.roomId; c.pid = data.seat; hub.markPaid(address); }
+      if (event === 'cardgame:vehicle-select') hub.chooseVehicle(address, data.remaining[0]);
+    };
+    clients.set(address.toLowerCase(), c);
+  }
+  for (const a of ADDRS) hub.reserve(a);
+  clock = 300_000; hub.sweep(); await flush();
+  // roll into racing (vselect resolves on chooseVehicle from all four)
+  for (let i = 0; i < 50; i++) { clock += 100; hub.tickAll(); }
+  const room = [...hub._rooms.values()][0];
+  ok(room && room.state === 'playing', 'match is live');
+
+  hub.disconnect(ADDRS[1]);
+  clock += 10_000; hub.sweep(); // 10s < 30s grace
+  const seat = room.players.find((p) => p.address === ADDRS[1]);
+  ok(seat.bot === false, 'seat is NOT botted inside the 30s grace window');
+
+  const before = inbox.length;
+  const res = hub.reconnect(ADDRS[1]);
+  ok(res.ok === true && res.state === 'playing', 'reconnect resumes the live room');
+  const mine = inbox.slice(before).filter((m) => m.addr === ADDRS[1].toLowerCase());
+  ok(mine.some((m) => m.event === 'cardgame:hand'), 'fresh hand pushed immediately on reconnect');
+
+  // grace expiry after a SECOND drop → seat bots over and the match continues
+  hub.disconnect(ADDRS[1]);
+  clock += 30_001; hub.sweep();
+  ok(seat.bot === true, 'seat bots over after the grace window (match never stalls)');
+}
+
 console.log(`\n${fail === 0 ? '★' : '✗'} ${pass}/${pass + fail} PASS — real 4-player loop is server-authoritative & settle-faithful.`);
 process.exit(fail === 0 ? 0 : 1);

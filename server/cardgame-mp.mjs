@@ -24,7 +24,7 @@ export const SEATS = 4;
 export const SLOT_MS = 300_000; // a scheduled race every 5 minutes (wall clock)
 export const PAY_WINDOW_MS = 90_000;      // to pay entry after match found
 export const VSELECT_MS = 15_000;         // to pick a vehicle each round
-export const RECONNECT_GRACE_MS = 12_000; // seat stays human this long after a drop
+export const RECONNECT_GRACE_MS = 30_000; // seat stays human this long after a drop (typical wifi/mobile blip)
 
 const short = (a) => (a ? a.slice(0, 6) + '…' + a.slice(-4) : '?');
 
@@ -330,6 +330,10 @@ export function createCardgameHub(deps) {
     // a bot-converted seat cannot be reclaimed mid-round (determinism), but a
     // still-human dropped seat resumes cleanly.
     emitToRoom(room.id, 'cardgame:seat-rejoined', { pid: st.pid, bot: st.bot });
+    // the match kept running while they were gone — hand them the live picture
+    // right away (fresh hand + a state snapshot) instead of waiting for the
+    // next play-triggered push.
+    if (room.state === 'playing' && room.s) { pushHands(room); broadcastState(room, {}); }
     return { ok: true, roomId: room.id, state: room.state, seat: st.pid, matchId: room.matchId };
   }
 

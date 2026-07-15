@@ -41,6 +41,10 @@ export default function CardGamePage() {
   const [payout, setPayout] = useState<bigint>(0n);
   // multiplayer lobby
   const [mpPhase, setMpPhase] = useState<'idle' | 'reserved' | 'paying' | 'waiting' | 'playing' | 'settled'>('idle');
+  // latest mp phase + the reserve signature, for the socket reconnect handler
+  // (kept in refs so the handler never closes over stale state)
+  const mpPhaseRef = useRef<typeof mpPhase>('idle');
+  const reserveSigRef = useRef<{ nonce: number; sig: Hex } | null>(null);
   const [mpNote, setMpNote] = useState('');
   const [slot, setSlot] = useState<{ startsAt: number; reserved: number } | null>(null);
   const [slotLeft, setSlotLeft] = useState('');
@@ -94,6 +98,7 @@ export default function CardGamePage() {
   const ensureFujiRef = useRef(ensureFuji); ensureFujiRef.current = ensureFuji;
   const readPendingRef = useRef(readPending); readPendingRef.current = readPending;
   const writeContractAsyncRef = useRef(writeContractAsync); writeContractAsyncRef.current = writeContractAsync;
+  mpPhaseRef.current = mpPhase;
 
   // read the entry fee straight from the escrow (single source of truth)
   useEffect(() => {
@@ -113,25 +118,36 @@ export default function CardGamePage() {
     return () => clearInterval(id);
   }, [slot]);
 
-  // Settle callback: fired by the game engine when the staked match ends
+  // Settle callback: fired by the game engine when the staked match ends.
+  // Retried with backoff — a connection blip at the finish line must not lose
+  // the settle (the play log only lives in this tab until the server has it).
   const onFinish = useCallback(async (input: MatchInput) => {
     if (!address || !authRef.current) return;
     setPhase('settling');
     setNote('Submitting play log — server re-derives the result…');
-    try {
-      const res = await fetch('/avalanche/api/cardgame/settle', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player: address, nonce: authRef.current.nonce, sig: authRef.current.sig, input }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'settle failed');
-      const p = await readPending();
-      setPayout(p);
-      setPhase('settled');
-      setNote(p > 0n ? `You won ◆ ${formatEther(p)} AVAX — withdraw below.` : 'Match settled — no payout this time.');
-    } catch (e) {
-      setPhase('settled');
-      setNote(`Settle error: ${(e as Error).message}`);
+    const waits = [2_000, 5_000, 10_000, 20_000, 30_000];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await fetch('/avalanche/api/cardgame/settle', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ player: address, nonce: authRef.current.nonce, sig: authRef.current.sig, input }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'settle failed');
+        const p = await readPending();
+        setPayout(p);
+        setPhase('settled');
+        setNote(p > 0n ? `You won ◆ ${formatEther(p)} AVAX — withdraw below.` : 'Match settled — no payout this time.');
+        return;
+      } catch (e) {
+        if (attempt >= waits.length) {
+          setPhase('settled');
+          setNote(`Settle error: ${(e as Error).message} — your entry stays refundable on-chain after the settle window.`);
+          return;
+        }
+        setNote(`Settle attempt ${attempt + 1} failed — retrying in ${waits[attempt] / 1000}s (keep this tab open)…`);
+        await new Promise((r) => setTimeout(r, waits[attempt]));
+      }
     }
   }, [address, readPending]);
 
@@ -219,6 +235,23 @@ export default function CardGamePage() {
     if (mode !== 'mp' || !authenticated || !address || !publicClient) return;
     const socket = createCardgameSocket();
     socketRef.current = socket;
+    // Transport resilience: socket.io auto-reconnects, but the hub binds the
+    // address per CONNECTION — after a drop we must re-authenticate. Mid-match
+    // we rejoin the live room (the server kept the race running the whole
+    // time); merely-reserved seats re-reserve. Reuses the reserve signature so
+    // no wallet popup interrupts the race.
+    let hadConnect = false;
+    socket.on('connect', () => {
+      if (!hadConnect) { hadConnect = true; return; }
+      const cred = reserveSigRef.current;
+      if (!cred) return;
+      const ph = mpPhaseRef.current;
+      if (ph === 'playing' || ph === 'waiting') {
+        socket.emit('cardgame:reconnect', { address, nonce: cred.nonce, sig: cred.sig });
+      } else if (ph === 'reserved') {
+        socket.emit('cardgame:reserve', { address, nonce: cred.nonce, sig: cred.sig });
+      }
+    });
     socket.on('cardgame:slot', (d: { startsAt: number; reserved: number }) => setSlot(d));
     socket.on('cardgame:reserved', () => { setMpPhase('reserved'); setMpNote('Seat reserved — the race locks in the first four when the countdown hits zero.'); });
     socket.on('cardgame:error', (d: { error?: string }) => setMpNote(`Error: ${d?.error || 'unknown'}`));
@@ -272,6 +305,7 @@ export default function CardGamePage() {
     try {
       const nonce = Math.floor(Math.random() * 2_000_000_000);
       const sig = (await signMessageAsync({ message: reserveMessage(address, nonce) })) as Hex;
+      reserveSigRef.current = { nonce, sig }; // reused for silent re-auth after a drop
       socketRef.current.emit('cardgame:reserve', { address, nonce, sig });
     } catch { /* user declined the signature */ }
   }, [address, signMessageAsync]);
@@ -298,7 +332,7 @@ export default function CardGamePage() {
   const busy = phase === 'creating' || phase === 'joining' || phase === 'waiting' || phase === 'settling';
 
   return (
-    <div className="cgroot py-4">
+    <div className="cgroot cgroot--stage py-4">
       <GameStageBanner
         stage="TESTNET"
         message="Staked & multiplayer matches run on Avalanche Fuji — test AVAX only, no real funds. Practice mode is free."

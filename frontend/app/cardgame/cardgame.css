@@ -62,10 +62,7 @@
 .cgroot .lm-foot.ok{color:var(--cg-green)}
 
 /* engine-driven staked view */
-.cgroot .eng-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .cgroot .eng-round{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:2px;font-size:13px}
-.cgroot .eng-track{display:flex;flex-direction:column;gap:6px;position:relative} /* positions .popup / .cg-banner */
-.cgroot .eng-board td,.cgroot .eng-board th{text-align:left;padding:5px 4px;border-bottom:1px solid var(--cg-line)}
 
 /* shared juice for the engine views (staked + multiplayer) */
 .cgroot .cg-banner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:6;pointer-events:none;
@@ -78,14 +75,6 @@
 .cgroot .settleHead a.txh:hover{text-decoration:underline}
 
 /* header */
-.cgroot .top{display:flex;justify-content:space-between;gap:16px;align-items:stretch;margin-bottom:12px;flex-wrap:wrap}
-.cgroot .eyebrow{font-size:11px;letter-spacing:3px;color:var(--cg-muted);margin-bottom:4px}
-.cgroot h1{font-size:30px;margin:0;letter-spacing:1px} .cgroot h1 .red{color:var(--cg-red)}
-.cgroot .tnet{font-size:10px;vertical-align:middle;margin-left:10px;padding:3px 10px;border-radius:12px;
-  border:1px solid rgba(249,115,22,.6);color:#f97316;letter-spacing:2px;
-  font-family:'JetBrains Mono',monospace;background:rgba(249,115,22,.08);animation:cg-pulse 2.4s infinite}
-.cgroot .sub{color:var(--cg-muted);font-size:13px;margin-top:6px;max-width:420px;line-height:1.5}
-.cgroot .sub b{color:var(--cg-text)}
 .cgroot .escrow{padding:14px 18px;min-width:300px;display:flex;flex-direction:column;gap:8px}
 .cgroot .esc-top{font-size:10px;letter-spacing:1.5px;color:var(--cg-muted);display:flex;align-items:center;gap:7px}
 .cgroot .dot{width:7px;height:7px;border-radius:50%;background:var(--cg-green);box-shadow:0 0 8px var(--cg-green);animation:cg-pulse 2s infinite}
@@ -97,10 +86,6 @@
 .cgroot .chips{display:flex;gap:6px;flex-wrap:wrap}
 .cgroot .chip{font-size:11px;padding:3px 10px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid var(--cg-line);color:var(--cg-muted)}
 .cgroot .chip.gold{border-color:rgba(245,197,66,.4);color:var(--cg-gold)}
-.cgroot .metaRow{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
-.cgroot .metaRow .cg-viewtoggle{margin-left:auto}
-.cgroot .top--slim{margin-bottom:10px}
-.cgroot .top--slim .sub{max-width:560px}
 .cgroot .chip.tick{border-color:rgba(34,197,94,.5);color:var(--cg-green);transition:.3s}
 .cgroot #helpToggle{cursor:pointer;font-family:'Chakra Petch',sans-serif;font-weight:600;letter-spacing:1px}
 .cgroot #helpToggle:hover,.cgroot #helpToggle.on{border-color:var(--cg-gold);color:var(--cg-gold)}
@@ -122,11 +107,8 @@
 .cgroot .cg-help-combos span b{color:var(--cg-gold)}
 @media(max-width:720px){.cgroot .cg-help{grid-template-columns:1fr}}
 
-/* track */
-.cgroot .track{padding:16px;margin-bottom:14px;position:relative;overflow:hidden}
-
-/* 3D track view (three.js canvas host) + view toggle */
-.cgroot .track3d{margin-bottom:14px;height:390px;position:relative;overflow:hidden;padding:4px}
+/* 3D stage — the whole game screen (fills the viewport under the top bars) */
+.cgroot .track3d{margin-bottom:14px;height:calc(100dvh - 235px);min-height:430px;position:relative;overflow:hidden;padding:4px}
 .cgroot .cg-fs{position:absolute;top:10px;right:10px;z-index:6;cursor:pointer;
   width:34px;height:34px;border-radius:9px;font-size:16px;line-height:1;
   background:rgba(10,10,16,.65);border:1px solid rgba(255,255,255,.18);color:#ececee;
@@ -142,67 +124,52 @@ body.cg-noscroll{overflow:hidden}
 /* fullscreen HUD: the hand panel docks to the bottom of the 3D view so you keep
    playing; the vehicle selector floats centre between rounds */
 .cgroot .track3d .cg-fsdock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
-  width:min(780px,95vw);max-height:46vh;overflow:auto;z-index:8;
+  width:min(780px,96%);max-height:46vh;overflow:auto;z-index:8;
   background:rgba(10,10,16,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   border:1px solid rgba(255,255,255,.14);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
 .cgroot .track3d .cg-fsveh{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  width:min(880px,93vw);z-index:9;margin:0}
+  width:min(880px,94%);max-height:92%;overflow:auto;z-index:9;margin:0}
 .cgroot .track3d .cg-fsveh:empty{display:none}
-.cgroot .cg-viewtoggle{cursor:pointer;font-family:'Chakra Petch',sans-serif;font-weight:600;letter-spacing:1px;
-  border-color:rgba(77,208,225,.45);color:var(--cg-ice);background:rgba(77,208,225,.07);transition:box-shadow .25s,border-color .25s}
-.cgroot .cg-viewtoggle:hover{border-color:var(--cg-ice);box-shadow:0 0 14px rgba(77,208,225,.3)}
-.cgroot .lane{position:relative;height:50px;margin:9px 0;border-radius:10px;overflow:hidden;
-  background:linear-gradient(90deg,rgba(255,255,255,.035),rgba(255,255,255,.012) 60%,rgba(77,208,225,.03));
-  border:1px solid rgba(255,255,255,.04)}
-.cgroot .lane:after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 46px,rgba(255,255,255,.025) 46px 48px)}
-.cgroot .cp{position:absolute;top:0;bottom:0;width:2px;background:rgba(77,208,225,.5);box-shadow:0 0 10px rgba(77,208,225,.5);z-index:1}
-.cgroot .cpflag{position:absolute;top:3px;font-size:8px;color:rgba(77,208,225,.7);transform:translateX(-50%);z-index:1;font-family:'JetBrains Mono',monospace}
-.cgroot .finish{position:absolute;top:0;bottom:0;right:0;width:7px;z-index:1;
-  background:repeating-linear-gradient(45deg,#fff 0 4px,#111 4px 8px);opacity:.8}
-
-/* neon cars (spinning wheels = run cycle) */
-.cgroot .car{position:absolute;top:8px;height:34px;display:flex;align-items:center;gap:6px;
-  transition:left .1s linear;white-space:nowrap;z-index:2;--cycle:.5s}
-.cgroot .carwrap{position:relative;width:56px;height:32px;flex:0 0 auto}
-.cgroot .carsvg{width:56px;height:32px;overflow:visible;filter:drop-shadow(0 0 6px var(--c))}
-.cgroot .carsvg .body{fill:color-mix(in srgb,var(--c) 20%,transparent);stroke:var(--c);stroke-width:2;stroke-linejoin:round}
-.cgroot .carsvg .glass{fill:none;stroke:var(--c);stroke-width:1.5;opacity:.65;background:none;border:none;backdrop-filter:none}
-.cgroot .carsvg .light{fill:#fff;filter:drop-shadow(0 0 5px #fff)}
-.cgroot .carsvg .wheel circle{fill:#0d0d10;stroke:var(--c);stroke-width:2}
-.cgroot .carsvg .wheel line{stroke:var(--c);stroke-width:1.6;stroke-linecap:round;opacity:.9}
-.cgroot .w1{transform-origin:16px 24px}
-.cgroot .w2{transform-origin:42px 24px}
-.cgroot .run .w1,.cgroot .run .w2{animation:cg-wheelspin var(--cycle) linear infinite}
-@keyframes cg-wheelspin{to{transform:rotate(360deg)}}
-.cgroot .run .carsvg{animation:cg-carbob .34s ease-in-out infinite}
-@keyframes cg-carbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.3px)}}
-.cgroot .flame{opacity:0;transform-origin:9px 18px}
-.cgroot .boost .flame{opacity:1;animation:cg-flame .13s steps(2) infinite}
-@keyframes cg-flame{50%{transform:scaleX(1.55) scaleY(.85)}}
-.cgroot .car.boost{--cycle:.16s}
-.cgroot .car.boost .carsvg{filter:drop-shadow(0 0 9px var(--c)) drop-shadow(0 0 22px var(--c))}
-.cgroot .car.fin .carsvg,.cgroot .car.fin .w1,.cgroot .car.fin .w2,.cgroot .car.fin .flame{animation:none}
-.cgroot .car.fin .carsvg{filter:drop-shadow(0 0 6px var(--c))}
-
-/* card-coloured neon auras */
-.cgroot .fx{position:absolute;width:50px;height:50px;left:3px;top:-9px;border-radius:50%;opacity:0;pointer-events:none;transition:opacity .15s}
-@keyframes cg-spin{to{transform:rotate(360deg)}}
 @keyframes cg-hueshift{to{filter:hue-rotate(360deg)}}
-@keyframes cg-flicker{50%{opacity:.3}}
-.cgroot .car.fx-val .fx{opacity:1;border:2px dotted rgba(236,236,238,.55);box-shadow:0 0 10px 2px rgba(236,236,238,.25);animation:cg-spin 1.8s linear infinite}
-.cgroot .car.fx-ice .fx{opacity:1;border:2px dashed rgba(77,208,225,.85);box-shadow:0 0 16px 3px rgba(77,208,225,.5);animation:cg-spin 1.3s linear infinite}
-.cgroot .car.fx-epic .fx{opacity:1;border:2px dashed rgba(167,139,250,.9);box-shadow:0 0 18px 4px rgba(167,139,250,.55);animation:cg-spin .9s linear infinite}
-.cgroot .car.fx-nitro .fx{opacity:1;border:2px dashed rgba(245,197,66,.9);box-shadow:0 0 20px 5px rgba(245,197,66,.6);animation:cg-spin .7s linear infinite}
-.cgroot .car.fx-max .fx{opacity:1;border:3px solid transparent;border-radius:50%;
-  background:conic-gradient(from 0deg,#ed2f39,#f5c542,#4dd0e1,#a78bfa,#6ee7a0,#ed2f39) border-box;
-  -webkit-mask:linear-gradient(#fff 0 0) padding-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;
-  mask:linear-gradient(#fff 0 0) padding-box,linear-gradient(#fff 0 0);mask-composite:exclude;
-  animation:cg-spin .7s linear infinite,cg-hueshift 2.2s linear infinite;box-shadow:0 0 26px 7px rgba(255,255,255,.28)}
-.cgroot .car.fx-hit .fx{opacity:1;background:none;border:2px solid rgba(237,47,57,.95);box-shadow:0 0 18px 5px rgba(237,47,57,.6);animation:cg-flicker .28s steps(2) infinite;mask:none;-webkit-mask:none}
-.cgroot .car.fx-oil .fx{opacity:1;background:none;border:2px dotted rgba(124,130,153,.95);box-shadow:0 0 14px 5px rgba(40,44,58,.9);animation:cg-spin 2.4s linear infinite reverse;mask:none;-webkit-mask:none}
 
-.cgroot .tag{font-size:10px;font-weight:600;background:rgba(0,0,0,.55);padding:2px 8px;border-radius:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.3px}
-.cgroot .hud{display:flex;gap:6px;font-size:10px;color:var(--cg-muted);font-family:'JetBrains Mono',monospace}
+/* ── in-stage HUD overlays (chips / mini standings / compact log) ────── */
+.cgroot .cg-hud-chips{position:absolute;top:10px;left:12px;z-index:7;display:flex;gap:6px;flex-wrap:wrap;align-items:center;max-width:70%}
+.cgroot .cg-hud-chips .chip{background:rgba(10,10,16,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.cgroot .cg-hud-chips button.chip{cursor:pointer}
+.cgroot .cg-hud-chips button.chip:hover{border-color:var(--cg-ice);color:var(--cg-ice)}
+.cgroot .cg-hud-rank{position:absolute;top:52px;right:12px;z-index:7;display:flex;flex-direction:column;gap:3px;
+  min-width:172px;padding:8px 10px;border-radius:12px;background:rgba(10,10,16,.55);
+  border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;pointer-events:none}
+.cgroot .cg-hud-rank:empty{display:none}
+.cgroot .cg-hud-row{display:flex;align-items:center;gap:6px;color:var(--cg-muted)}
+.cgroot .cg-hud-row b{width:12px;color:var(--cg-text);font-weight:700}
+.cgroot .cg-hud-row i{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.cgroot .cg-hud-row span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cgroot .cg-hud-row em{font-style:normal;color:var(--cg-text);white-space:nowrap}
+.cgroot .cg-hud-row.you span{color:var(--cg-gold);font-weight:700}
+.cgroot .cg-hud-row.fin em{color:var(--cg-green)}
+/* event log sits under the standings in the right column — the bottom-centre
+   is owned by the docked hand panel */
+.cgroot .cg-hud-log{position:absolute;right:12px;top:172px;z-index:7;width:min(280px,40%);
+  max-height:96px;overflow:hidden;padding:7px 10px;border-radius:11px;cursor:pointer;
+  background:rgba(10,10,16,.5);border:1px solid rgba(255,255,255,.08);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  font-size:10.5px;line-height:1.6;color:var(--cg-muted);
+  mask-image:linear-gradient(#000 55%,transparent);-webkit-mask-image:linear-gradient(#000 55%,transparent)}
+.cgroot .cg-hud-log.open{max-height:44vh;overflow:auto;mask-image:none;-webkit-mask-image:none;background:rgba(10,10,16,.85)}
+.cgroot .cg-hud-log:empty{display:none}
+.cgroot .cg-hud-log b{color:var(--cg-text)}
+.cgroot .cg-hud-log a.txh{color:var(--cg-ice);text-decoration:none}
+
+/* docked how-to-play sheet (over the stage, toggled by the ❔ chip) */
+.cgroot .track3d .cg-hud-help{position:absolute;left:50%;top:54px;transform:translateX(-50%);z-index:10;
+  width:min(880px,94%);max-height:calc(100% - 70px);overflow:auto;margin:0}
+
+/* WebGL unavailable → short note instead of the scene (game still playable) */
+.cgroot .track3d.cg-no3d:before{content:'3D view unavailable on this device';
+  position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);color:var(--cg-muted);
+  font-family:'Chakra Petch',sans-serif;letter-spacing:2px;font-size:13px}
 
 /* combo popup */
 .cgroot .popup{position:absolute;left:50%;top:36%;transform:translateX(-50%);z-index:5;
@@ -219,8 +186,8 @@ body.cg-noscroll{overflow:hidden}
   filter:drop-shadow(0 0 18px rgba(245,197,66,.5));animation:cg-rise 1.4s ease-out forwards,cg-hueshift 1.2s linear infinite}
 
 /* panels */
-.cgroot .grid{display:grid;grid-template-columns:1fr 340px;gap:14px}
-@media(max-width:840px){.cgroot .grid{grid-template-columns:1fr}.cgroot .top{flex-direction:column}}
+/* the stage variant widens the page — the 3D scene wants the room */
+.cgroot--stage{max-width:1500px}
 .cgroot .panel{padding:16px}
 .cgroot .panel h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:2px;color:var(--cg-muted)}
 
@@ -361,7 +328,7 @@ body.cg-noscroll{overflow:hidden}
   .cgroot .card{width:62px;height:88px}
   .cgroot .hand{gap:11px}
   /* shorter 3D stage → fits the viewport and renders fewer pixels */
-  .cgroot .track3d{height:300px}
+  .cgroot .track3d{height:calc(100dvh - 250px);min-height:340px}
 }
 /* touch devices: stop the always-on per-card idle loops (battery/paint). The
    deal-in, selection lift and boost effects still play. */

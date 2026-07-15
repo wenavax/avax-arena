@@ -4,17 +4,18 @@
  * loop and streams snapshots. This renderer just draws what the server sends and
  * relays the player's inputs (vehicle pick, card play) back over the socket.
  *
- * UI parity with practice mode: combo popups (from the server's `applied` map),
- * a live play preview via the shared engine's `evaluate()`, an event log, round
- * banners, toasts and a settlement panel. All cosmetic — inputs relayed to the
- * server are unchanged.
+ * The 3D stage is the whole game screen (hand panel / vehicle selector / toast
+ * dock into it; standings + event log are HUD overlays). Because the server owns
+ * the match, a hidden tab or a dropped connection never stops the race — this
+ * view simply resumes drawing from the next snapshot (see `cardgame:resumed`).
  */
 import { CFG, COMBO, evaluate, fxClass, type Card, type PlayEval } from './engine';
 import { ABILITIES } from './abilities';
-import { vehicleSelector, vehAbbr, vehColor } from './vehicles';
+import { vehicleSelector, vehAbbr } from './vehicles';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
 import { createCgSound, soundLabel } from './sound';
 import { attachView3D, type View3D } from './view3d';
+import { attachStageHud, type StageHud } from './stageHud';
 import { showRaceResults, closeRaceResults } from './resultsOverlay';
 
 type Pid = 'P1' | 'P2' | 'P3' | 'P4';
@@ -78,81 +79,58 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   root.innerHTML = `
     <div class="toast eng-toast"></div>
-    <div class="cg-eng glass" style="padding:16px;margin-bottom:12px">
-      <div class="eng-hd"><span class="eng-round">MULTIPLAYER · WAITING</span>
-        <span class="dim mono" style="font-size:11px">4 players · server-authoritative · on-chain settle</span>
-        <button class="chip cg-viewtoggle eng-view3d" title="Switch track view">🎥 3D VIEW</button></div>
-      <div class="eng-picks dim mono"></div>
-      <div class="eng-vsel-slot"></div>
-      <div class="eng-track"></div>
-      <div class="track3d glass eng-track3d" style="display:none"><button class="cg-fs eng-fs" title="Fullscreen">⛶</button></div>
-      <div class="cg-note dim" style="margin-top:8px;font-size:12px"></div>
-    </div>
-    <div class="cg-eng glass eng-handcard" style="padding:16px">
+    <div class="eng-vsel-slot"></div>
+    <div class="track3d glass eng-track3d"><button class="cg-fs eng-fs" title="Fullscreen">⛶</button></div>
+    <div class="panel glass eng-handcard">
       <div class="hand-hd"><span class="hand-hd-t">Your Hand</span><span class="hand-count eng-hlim"></span></div>
       <div class="eng-hand hand"></div>
       <div class="cooldown"><div class="eng-cd"></div></div>
       <div class="row"><button class="btn eng-play">PLAY SELECTED</button>
         <button class="btn ghost eng-best">✨ Best</button>
         <button class="btn ghost eng-clear">Clear</button>
-        <button class="btn ghost eng-snd" title="Race music on/off">🎵 MUSIC</button>
         <span class="pill eng-hint">select 1–8 cards</span></div>
-      <table style="width:100%;margin-top:14px;font-size:12px" class="eng-board"><tbody></tbody></table>
-      <div class="eng-settle"></div>
-      <div class="cg-elog-hd">Event log</div>
-      <div class="log eng-log"></div>
     </div>`;
   const $ = (c: string) => root.querySelector('.' + c) as HTMLElement;
 
+  // in-stage HUD (chips / mini standings / compact log)
+  const hud: StageHud = attachStageHud($('eng-track3d'));
+  hud.chips.innerHTML = `
+    <span class="chip eng-round">MULTIPLAYER · WAITING</span>
+    <span class="chip mono">4 players · server-authoritative</span>
+    <button class="chip eng-snd" title="Race music on/off">🎵 MUSIC</button>
+    <span class="chip mono eng-note-chip" style="display:none"></span>`;
+
   // ── juice helpers (cosmetic only) ───────────────────────────────────
-  // Prepend ONE parsed node + cap the list (was O(n²): re-serialised the whole log each event).
-  function log(html: string) {
-    const l = $('eng-log'); if (!l) return;
-    const d = document.createElement('div'); d.innerHTML = html;
-    l.insertBefore(d, l.firstChild);
-    while (l.childElementCount > 60) l.removeChild(l.lastElementChild!);
-  }
+  function log(html: string) { hud.log(html); }
   function toast(msg: string) {
     const el = $('eng-toast'); if (!el) return;
     el.textContent = msg; el.style.opacity = '1';
     if (toastT) clearTimeout(toastT); toastT = setTimeout(() => { el.style.opacity = '0'; }, 2200);
   }
   function popup(txt: string, cls: string) {
-    const tk = $('eng-track'); if (!tk) return;
+    const tk = $('eng-track3d'); if (!tk) return;
     const el = document.createElement('div'); el.className = 'popup ' + cls; el.textContent = txt;
     tk.appendChild(el); setTimeout(() => el.remove(), 1400);
   }
   function banner(txt: string) {
-    const tk = $('eng-track'); if (!tk) return;
+    const tk = $('eng-track3d'); if (!tk) return;
     const el = document.createElement('div'); el.className = 'cg-banner'; el.textContent = txt;
     tk.appendChild(el); setTimeout(() => el.remove(), 1400);
   }
+  function note(s: string) {
+    const el = $('eng-note-chip'); if (!el) return;
+    el.textContent = s; el.style.display = s ? '' : 'none';
+  }
 
-  // ── track: 4 lanes built once, updated from snapshots ───────────────
-  buildTrack();
-  // 2D/3D view swap — same three.js scene as practice/staked, driven by the
-  // server snapshots instead of a local engine.
+  // The 3D stage starts immediately, driven by the server snapshots; the hand
+  // panel / vehicle selector / toast live inside it as permanent overlays.
   view3d = attachView3D({
     host: $('eng-track3d'),
-    track2d: $('eng-track'),
-    toggleBtn: $('eng-view3d'),
     fsBtn: $('eng-fs'),
     buildSeats: () => opts.seats.map((s) => ({ pid: s.pid, color: cssv(P_VAR[s.pid]) || '#888', name: nameOf(s.pid, s.address) })),
     dockItems: () => [[$('eng-handcard'), 'cg-fsdock'], [$('eng-vsel-slot'), 'cg-fsveh'], [$('eng-toast'), 'cg-fstoast']],
     onLog: (m) => log(m),
   });
-  function buildTrack() {
-    const tk = $('eng-track'); tk.innerHTML = '';
-    for (const seat of opts.seats) {
-      const lane = document.createElement('div'); lane.className = 'lane';
-      CFG.CP.forEach((cp) => { const d = document.createElement('div'); d.className = 'cp'; d.style.left = cp / 10 + '%'; lane.appendChild(d); });
-      const fin = document.createElement('div'); fin.className = 'finish'; lane.appendChild(fin);
-      const car = document.createElement('div'); car.className = 'car run'; car.dataset.pid = seat.pid;
-      car.style.setProperty('--c', cssv(P_VAR[seat.pid]) || '#888');
-      car.innerHTML = `<span class="carwrap"><span class="fx"></span><svg class="carsvg" viewBox="0 0 56 32"><g class="flame"><path d="M9 15.5 L-3 13 L3 16.5 L-5 19.5 L9 20.5 Z" fill="#f5c542"></path></g><path class="body" d="M6 22 L8 16 Q13 9 22 8 L32 8 Q41 9 47 15 L52 18 Q54 19 54 21 L53 22 Z"></path><g class="wheel w1"><circle cx="16" cy="24" r="5.5"></circle><line x1="16" y1="20" x2="16" y2="28"></line></g><g class="wheel w2"><circle cx="42" cy="24" r="5.5"></circle><line x1="42" y1="20" x2="42" y2="28"></line></g></svg></span><span class="tag"></span><span class="hud"></span>`;
-      lane.appendChild(car); tk.appendChild(lane);
-    }
-  }
 
   function on(event: string, cb: (d: any) => void) { handlers.push([event, cb]); opts.socket.on(event, cb); }
 
@@ -180,7 +158,6 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     sound.raceOn(true);
     ($('eng-round')).textContent = `ROUND ${d.round + 1}/${CFG.ROUNDS}`;
     ($('eng-vsel-slot')).innerHTML = '';
-    ($('eng-picks')).innerHTML = opts.seats.map((s) => `${nameOf(s.pid, s.address)} <b style="color:${vehColor(d.vehicles[s.pid])}">${vehAbbr(d.vehicles[s.pid])}</b>`).join('  ·  ');
     banner(`ROUND ${d.round + 1}`);
     log(`<b>Round ${d.round + 1}</b> started — ${opts.seats.map((s) => `${nameOf(s.pid, s.address)} ${vehAbbr(d.vehicles[s.pid])}`).join(' · ')}`);
     note('Race! Play card combos for speed.');
@@ -188,21 +165,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   // ── live snapshots ──────────────────────────────────────────────────
   on('cardgame:state', (d: { round: number; t: number; players: StatePlayer[]; applied?: Partial<Record<Pid, AppliedPlay>> }) => {
-    for (const p of d.players) {
-      const car = $('eng-track').querySelector(`[data-pid="${p.pid}"]`) as HTMLElement | null;
-      if (!car) continue;
-      const boosted = p.speed > 0 && p.fx === 'fx-nitro';
-      car.style.left = (p.dist / CFG.TRACK * 93) + '%';
-      car.className = 'car' + (p.fin ? ' fin' : ' run') + (boosted ? ' boost' : '') + (p.fx && !p.fin ? ' ' + p.fx : '') + (p.bot ? ' cg-bot' : '');
-      const tagEl = car.querySelector('.tag') as HTMLElement; // only re-parse when veh/bot flag changes
-      const tagKey = (p.veh ?? '') + (p.bot ? 'B' : '');
-      if (tagEl.dataset.k !== tagKey) {
-        tagEl.innerHTML = nameOf(p.pid, p.address) + (p.bot ? ' 🤖' : '') + (p.veh ? ` · <b style="color:${vehColor(p.veh)}">${vehAbbr(p.veh)}</b>` : '');
-        tagEl.dataset.k = tagKey;
-      }
-      (car.querySelector('.hud') as HTMLElement).textContent = p.fin ? `✔ ${p.ft}s` : `${Math.round(p.speed)}u/s${p.cd > 0 ? ' · cd' + (p.cd / 10).toFixed(1) : ''}`;
-      if (p.pid === myPid) { myCd = p.cd; myFin = p.fin; }
-    }
+    for (const p of d.players) if (p.pid === myPid) { myCd = p.cd; myFin = p.fin; }
     // server-accepted plays this tick → combo popup (mine) + event log (all)
     if (d.applied) {
       for (const pid of Object.keys(d.applied) as Pid[]) {
@@ -220,8 +183,8 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     }
     renderBoard(d.players);
     updatePlayBtn();
-    // forward the server snapshot to the 3D scene when it's active
-    if (view3d?.is3D()) view3d.forward(d.players.map((p) => ({
+    // forward the server snapshot to the 3D stage
+    view3d?.forward(d.players.map((p) => ({
       pid: p.pid, dist: p.dist, speed: p.speed,
       boosted: p.speed > 0 && p.fx === 'fx-nitro' && !p.fin,
       fx: p.fx && !p.fin ? p.fx : null, fin: p.fin, veh: p.veh,
@@ -238,7 +201,11 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   on('cardgame:rejected', () => { note('Illegal play — ignored.'); log('Play rejected by the server — ignored'); sentEval = null; });
   on('cardgame:seat-dropped', (d: { pid: Pid }) => { note(`${nameOf(d.pid)} dropped — bot takes over if they don’t return.`); log(`${nameOf(d.pid)} <b>dropped</b>`); });
+  on('cardgame:seat-rejoined', (d: { pid: Pid; bot?: boolean }) => { note(`${nameOf(d.pid)} is back.`); log(`${nameOf(d.pid)} <b>reconnected</b>`); });
   on('cardgame:seat-botted', (d: { pid: Pid }) => { note(`${nameOf(d.pid)} is now bot-controlled.`); log(`${nameOf(d.pid)} is now <b>bot-controlled</b> 🤖`); });
+  // we came back from a connection drop: the server kept the match running the
+  // whole time — fresh hand + state land right after this event
+  on('cardgame:resumed', () => { note('Reconnected — match resumed.'); log('<b>Reconnected</b> — the race never stopped'); });
 
   on('cardgame:round-end', (d: { round: number; totals: Record<Pid, number>; order?: Pid[] }) => {
     const winner = d.order?.[0];
@@ -252,10 +219,12 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     sound.raceOn(false);
     if (d.ranking[0] === myPid) sound.victory();
     ($('eng-round')).textContent = 'MATCH OVER';
-    renderBoard(d.ranking.map((pid) => ({ pid, address: opts.seats.find((s) => s.pid === pid)?.address || '', veh: null, dist: CFG.TRACK, speed: 0, fin: true, ft: null, total: d.totals[pid], cd: 0, fx: null })));
+    hud.rank(d.ranking.map((pid, i) => ({
+      name: nameOf(pid), color: cssv(P_VAR[pid]) || '#ed2f39', you: pid === myPid, fin: true,
+      value: `◆ ${payoutStr(i)}`,
+    })));
     toast(`🏆 ${nameOf(d.ranking[0])} wins the match!`);
     log(`<b>MATCH OVER.</b> ${d.ranking.map((pid, i) => `${i + 1}. ${nameOf(pid)}`).join(' · ')}`);
-    renderSettle(d.rankingAddresses);
     note('Settling on-chain…');
     showRaceResults({
       rows: d.ranking.map((pid, i) => ({
@@ -271,8 +240,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     const won = d.ranking[0]?.toLowerCase() === opts.myAddress.toLowerCase();
     note(won ? 'You won! Withdraw your payout below.' : 'Settled on-chain — better luck next race.');
     toast(won ? '✓ Settled — withdraw your payout!' : '✓ Settled on-chain.');
-    renderSettle(d.ranking, d.txHash);
-    log(`Result settled on-chain${d.txHash ? ` — tx <span class="mono">${short(d.txHash)}</span>` : ''} ✓`);
+    log(`Result settled on-chain${d.txHash ? ` — tx <a class="txh" href="https://testnet.snowtrace.io/tx/${d.txHash}" target="_blank" rel="noopener noreferrer">${short(d.txHash)}</a>` : ''} ✓`);
     opts.onSettled?.(d);
   });
 
@@ -282,24 +250,11 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   // ── rendering ───────────────────────────────────────────────────────
   function renderBoard(players: StatePlayer[]) {
     const ranked = [...players].sort((a, b) => b.total - a.total || b.dist - a.dist);
-    const tb = root.querySelector('.eng-board tbody') as HTMLElement;
-    tb.innerHTML = '<tr><th>#</th><th>Racer</th><th>Dist</th><th>Pts</th></tr>' +
-      ranked.map((p, i) => `<tr><td class="dim">${i + 1}</td><td class="addr"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(${P_VAR[p.pid]});margin-right:6px"></i>${nameOf(p.pid, p.address)}</td><td class="mono">${Math.round(p.dist)}</td><td>${p.total}</td></tr>`).join('');
-  }
-
-  /** Final ranking + escrow payouts. Rendered provisionally at `finished`
-   *  (settling…), then again at `settled` with the tx link + checkmarks. */
-  function renderSettle(addresses: string[], txHash?: string) {
-    const link = txHash ? ` <a class="txh" href="https://testnet.snowtrace.io/tx/${txHash}" target="_blank" rel="noopener noreferrer">${short(txHash)}</a>` : '';
-    ($('eng-settle')).innerHTML = `<div class="settleBox"><div class="settleHead">${txHash ? '✓ SETTLED ON-CHAIN' : '🏁 FINAL RESULT — settling on-chain…'}
-        <span class="mono dim">entry ${entryAvax} AVAX × 4</span>${link}</div>` +
-      addresses.map((a, i) => {
-        const pid = opts.seats.find((st) => st.address.toLowerCase() === a.toLowerCase())?.pid;
-        const me = a.toLowerCase() === opts.myAddress.toLowerCase();
-        return `<div class="settleRow"><span class="dim">#${i + 1}</span>
-          <span class="addr">${pid ? `<i class="av" style="background:${cssv(P_VAR[pid])}"></i>` : ''}${me ? 'YOU' : short(a)}</span>
-          <b class="gold">◆ ${payoutStr(i)}</b>${txHash ? '<span class="ok">✓</span>' : ''}</div>`;
-      }).join('') + '</div>';
+    hud.rank(ranked.map((p) => ({
+      name: nameOf(p.pid, p.address) + (p.bot ? ' 🤖' : ''), color: cssv(P_VAR[p.pid]) || '#888',
+      you: p.pid === myPid, fin: p.fin,
+      value: p.fin ? `✔ ${p.ft}s · ${p.total}p` : `${Math.round(p.dist)}u · ${p.total}p`,
+    })));
   }
 
   function renderHand() {
@@ -342,8 +297,6 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     }
     hint.textContent = myCd > 0 ? `cooldown ${(myCd / 10).toFixed(1)}s` : 'select 1–8 cards';
   }
-
-  function note(s: string) { ($('cg-note')).textContent = s; }
 
   ($('eng-play')).onclick = () => {
     if (myCd > 0 || selected.size === 0 || myFin) return;
@@ -399,6 +352,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     for (const [event, cb] of handlers) opts.socket.off?.(event, cb);
     document.removeEventListener('keydown', onKey);
     view3d?.destroy(); view3d = null;
+    hud.destroy();
     if (toastT) clearTimeout(toastT);
     sound.destroy();
     root.innerHTML = '';

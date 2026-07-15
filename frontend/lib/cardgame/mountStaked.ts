@@ -4,20 +4,23 @@
  * play is captured as (round, tick, cardIds) that the server re-simulates to the
  * exact same result. The player genuinely plays; the server just re-derives.
  *
- * UI parity with practice mode: combo popups, play preview, event log, round
- * banners, toasts and a settlement panel — all cosmetic; the captured input
- * (vehicles + plays) and the engine stepping are untouched.
+ * The 3D stage is the whole game screen: the hand panel, vehicle selector and
+ * toast dock into it as overlays, and the standings/event log are translucent
+ * HUD widgets over the scene (stageHud). The race never pauses on a hidden tab:
+ * elapsed wall-clock ticks are stepped in a catch-up batch (rendering only is
+ * skipped while hidden) — the captured (round, tick) timeline is unaffected.
  */
 import {
   initMatch, startRound, stepTick, roundDone, scoreRound, finalRanking, speed, evaluate, fxClass,
   CFG, type MatchState, type MatchInput, type PlayEvent, type Pid,
 } from './engine';
 import { ABILITIES } from './abilities';
-import { vehicleSelector, vehAbbr, vehColor } from './vehicles';
+import { vehicleSelector, vehAbbr } from './vehicles';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
 import { showRaceResults, closeRaceResults } from './resultsOverlay';
 import { createCgSound, soundLabel } from './sound';
 import { attachView3D, type View3D } from './view3d';
+import { attachStageHud, type StageHud } from './stageHud';
 
 export interface StakedOpts {
   seed: string;
@@ -56,56 +59,45 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
 
   root.innerHTML = `
     <div class="toast eng-toast"></div>
-    <div class="cg-eng glass" style="padding:16px;margin-bottom:12px">
-      <div class="eng-hd"><span class="eng-round">ROUND 1/3</span>
-        <span class="dim mono" style="font-size:11px">seed ${short(opts.seed)} · deterministic · server-verified</span>
-        <button class="chip cg-viewtoggle eng-view3d" title="Switch track view">🎥 3D VIEW</button></div>
-      <div class="eng-picks dim mono"></div>
-      <div class="eng-vsel-slot"></div>
-      <div class="eng-track"></div>
-      <div class="track3d glass eng-track3d" style="display:none"><button class="cg-fs eng-fs" title="Fullscreen">⛶</button></div>
-    </div>
-    <div class="cg-eng glass eng-handcard" style="padding:16px">
+    <div class="eng-vsel-slot"></div>
+    <div class="track3d glass eng-track3d"><button class="cg-fs eng-fs" title="Fullscreen">⛶</button></div>
+    <div class="panel glass eng-handcard">
       <div class="hand-hd"><span class="hand-hd-t">Your Hand</span><span class="hand-count eng-hlim"></span></div>
       <div class="eng-hand hand"></div>
       <div class="cooldown"><div class="eng-cd"></div></div>
       <div class="row"><button class="btn eng-play">PLAY SELECTED</button>
         <button class="btn ghost eng-best">✨ Best</button>
         <button class="btn ghost eng-clear">Clear</button>
-        <button class="btn ghost eng-snd" title="Race music on/off">🎵 MUSIC</button>
         <span class="pill eng-note">select 1–8 cards</span></div>
-      <table style="width:100%;margin-top:14px;font-size:12px" class="eng-board"><tbody></tbody></table>
-      <div class="eng-settle"></div>
-      <div class="cg-elog-hd">Event log</div>
-      <div class="log eng-log"></div>
     </div>`;
   const $ = (c: string) => root.querySelector('.' + c) as HTMLElement;
 
+  // in-stage HUD (chips / mini standings / compact log)
+  const hud: StageHud = attachStageHud($('eng-track3d'));
+  hud.chips.innerHTML = `
+    <span class="chip eng-round">ROUND 1/3</span>
+    <span class="chip mono">seed ${short(opts.seed)} · server-verified</span>
+    <button class="chip eng-snd" title="Race music on/off">🎵 MUSIC</button>`;
+
   // ── juice helpers (cosmetic only) ────────────────────────────────────
-  // Prepend ONE parsed node + cap the list (was O(n²): re-serialised the whole log each event).
-  function log(html: string) {
-    const l = $('eng-log'); if (!l) return;
-    const d = document.createElement('div'); d.innerHTML = html;
-    l.insertBefore(d, l.firstChild);
-    while (l.childElementCount > 60) l.removeChild(l.lastElementChild!);
-  }
+  function log(html: string) { hud.log(html); }
   function toast(msg: string) {
     const el = $('eng-toast'); if (!el) return;
     el.textContent = msg; el.style.opacity = '1';
     if (toastT) clearTimeout(toastT); toastT = setTimeout(() => { el.style.opacity = '0'; }, 2200);
   }
   function popup(txt: string, cls: string) {
-    const tk = $('eng-track'); if (!tk) return;
+    const tk = $('eng-track3d'); if (!tk) return;
     const el = document.createElement('div'); el.className = 'popup ' + cls; el.textContent = txt;
     tk.appendChild(el); setTimeout(() => el.remove(), 1400);
   }
-  // 3·2·1·GO race countdown over the active track view (2D or 3D), with beeps.
-  // Purely presentational: the engine loop only starts when `go()` fires, so
-  // the recorded (round, tick) timeline the server re-simulates is untouched.
+  // 3·2·1·GO race countdown over the stage, with beeps. Purely presentational:
+  // the engine loop only starts when `go()` fires, so the recorded (round, tick)
+  // timeline the server re-simulates is untouched.
   let countT: ReturnType<typeof setTimeout>[] = [];
   function countdown(go: () => void) {
     countT.forEach(clearTimeout); countT = [];
-    const host = view3d?.is3D() ? $('eng-track3d') : $('eng-track');
+    const host = $('eng-track3d');
     const el = document.createElement('div'); el.className = 'cg-count';
     host.appendChild(el);
     ['3', '2', '1', 'GO!'].forEach((s, i) => {
@@ -140,11 +132,10 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
         slot.innerHTML = '';
         ($('eng-round')).textContent = `ROUND ${s.roundIndex + 1}/3`;
         view3d?.setRound(s.roundIndex); // per-round weather
-        showPicks();
-        buildTrack();
         log(`<b>Round ${s.roundIndex + 1}</b> started — ${s.players.map((p) => `${nameOf(p.id)} ${vehAbbr(p.veh)}`).join(' · ')}`);
         renderTrack(); renderHand(); renderBoard();
         countdown(() => {
+          lastWall = performance.now();
           loopH = setInterval(loop, 100);
           sound.raceOn(true);
         });
@@ -152,44 +143,9 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     }));
   }
 
-  // After vehicles lock, announce every racer's pick (bots are deterministic).
-  function showPicks() {
-    ($('eng-picks')).innerHTML = s.players.map((p) => {
-      const label = p.id === 'P1' ? 'YOU' : short(addr[p.id]);
-      return `${label} <b style="color:${vehColor(p.veh)}">${vehAbbr(p.veh)}</b>`;
-    }).join('  ·  ');
-  }
-
-  function buildTrack() {
-    const tk = $('eng-track'); tk.innerHTML = '';
-    for (const p of s.players) {
-      const lane = document.createElement('div'); lane.className = 'lane';
-      CFG.CP.forEach((cp) => { const d = document.createElement('div'); d.className = 'cp'; d.style.left = cp / 10 + '%'; lane.appendChild(d); });
-      const fin = document.createElement('div'); fin.className = 'finish'; lane.appendChild(fin);
-      const car = document.createElement('div'); car.className = 'car run'; car.dataset.pid = p.id;
-      car.style.setProperty('--c', cssv(P_VAR[p.id]));
-      car.innerHTML = `<span class="carwrap"><span class="fx"></span><svg class="carsvg" viewBox="0 0 56 32"><g class="flame"><path d="M9 15.5 L-3 13 L3 16.5 L-5 19.5 L9 20.5 Z" fill="#f5c542"></path></g><path class="body" d="M6 22 L8 16 Q13 9 22 8 L32 8 Q41 9 47 15 L52 18 Q54 19 54 21 L53 22 Z"></path><g class="wheel w1"><circle cx="16" cy="24" r="5.5"></circle><line x1="16" y1="20" x2="16" y2="28"></line></g><g class="wheel w2"><circle cx="42" cy="24" r="5.5"></circle><line x1="42" y1="20" x2="42" y2="28"></line></g></svg></span><span class="tag"></span><span class="hud"></span>`;
-      lane.appendChild(car); tk.appendChild(lane);
-    }
-  }
-
   function renderTrack() {
-    for (const p of s.players) {
-      const car = $('eng-track').querySelector(`[data-pid="${p.id}"]`) as HTMLElement | null;
-      if (!car) continue;
-      const boosted = !!(p.nm && s.t < p.nm.endsAt) && !p.fin;
-      car.style.left = (p.dist / CFG.TRACK * 93) + '%';
-      car.className = 'car' + (p.fin ? ' fin' : ' run') + (boosted ? ' boost' : '') + (p.fx && s.t < p.fxUntil && !p.fin ? ' ' + p.fx : '') + (p.debuff && s.t < p.debuffUntil && !p.fin ? ' ' + p.debuff : '');
-      const tagEl = car.querySelector('.tag') as HTMLElement; // only re-parse when the vehicle changes
-      if (tagEl.dataset.veh !== (p.veh ?? '')) {
-        tagEl.innerHTML = nameOf(p.id) + (p.veh ? ` · <b style="color:${vehColor(p.veh)}">${vehAbbr(p.veh)}</b>` : '');
-        tagEl.dataset.veh = p.veh ?? '';
-      }
-      const cd = Math.max(0, p.cdUntil - s.t);
-      (car.querySelector('.hud') as HTMLElement).textContent = p.fin ? `✔ ${p.ft}s` : `${Math.round(speed(s, p))}u/s${cd > 0 ? ' · cd' + (cd / 10).toFixed(1) : ''}`;
-    }
-    // forward a per-tick snapshot to the 3D scene when it's active
-    if (view3d?.is3D()) view3d.forward(s.players.map((p) => ({
+    // forward a per-tick snapshot to the 3D stage (lerped to 60fps there)
+    view3d?.forward(s.players.map((p) => ({
       pid: p.id, dist: p.dist, speed: speed(s, p),
       boosted: !!(p.nm && s.t < p.nm.endsAt) && !p.fin,
       fx: p.fx && s.t < p.fxUntil && !p.fin ? p.fx : (p.debuff && s.t < p.debuffUntil && !p.fin ? p.debuff : null),
@@ -241,19 +197,12 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
       + (bestNote ? ` · ${bestNote}` : '');
   }
 
-  function renderBoard(order?: Pid[]) {
-    const ranked = order ? order.map((id) => s.players.find((p) => p.id === id)!) : [...s.players].sort((a, b) => b.dist - a.dist);
-    const tb = root.querySelector('.eng-board tbody') as HTMLElement;
-    tb.innerHTML = '<tr><th>#</th><th>Racer</th><th>Dist</th><th>Pts</th></tr>' +
-      ranked.map((p, i) => `<tr><td class="dim">${i + 1}</td><td class="addr"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(${P_VAR[p.id]});margin-right:6px"></i>${nameOf(p.id)}</td><td class="mono">${Math.round(p.dist)}</td><td>${p.total}</td></tr>`).join('');
-  }
-
-  function renderSettle(ranking: Pid[]) {
-    ($('eng-settle')).innerHTML = `<div class="settleBox"><div class="settleHead">🏁 FINAL RESULT — server re-derives &amp; settles on-chain
-        <span class="mono dim">entry ${entryAvax} AVAX × 4</span></div>` +
-      ranking.map((id, i) => `<div class="settleRow"><span class="dim">#${i + 1}</span>
-        <span class="addr"><i class="av" style="background:${cssv(P_VAR[id])}"></i>${nameOf(id)}</span>
-        <b class="gold">◆ ${payoutStr(i)}</b></div>`).join('') + '</div>';
+  function renderBoard(order?: Pid[], final = false) {
+    const ranked = order ? order.map((id) => s.players.find((p) => p.id === id)!) : [...s.players].sort((a, b) => b.total - a.total || b.dist - a.dist);
+    hud.rank(ranked.map((p, i) => ({
+      name: nameOf(p.id), color: cssv(P_VAR[p.id]) || '#ed2f39', you: p.id === 'P1', fin: p.fin,
+      value: final ? `◆ ${payoutStr(i)}` : (p.fin ? `✔ ${p.ft}s · ${p.total}p` : `${Math.round(p.dist)}u · ${p.total}p`),
+    })));
   }
 
   // pending player play captured for the CURRENT tick
@@ -305,11 +254,10 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   }
   document.addEventListener('keydown', onKey);
 
-  // 2D/3D view swap (same three.js scene as practice mode)
+  // The 3D stage starts immediately and hosts the hand panel + vehicle selector
+  // + toast as permanent overlays (same three.js scene as practice/MP).
   view3d = attachView3D({
     host: $('eng-track3d'),
-    track2d: $('eng-track'),
-    toggleBtn: $('eng-view3d'),
     fsBtn: $('eng-fs'),
     buildSeats: () => s.players.map((p) => ({ pid: p.id, color: cssv(P_VAR[p.id]) || '#ed2f39', name: nameOf(p.id) })),
     dockItems: () => [[$('eng-handcard'), 'cg-fsdock'], [$('eng-vsel-slot'), 'cg-fsveh'], [$('eng-toast'), 'cg-fstoast']],
@@ -317,11 +265,12 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     onReady: () => renderTrack(),
   });
 
-  function loop() {
-    // Pause while the tab is hidden — the match is client-driven (server only
-    // re-derives from the captured (round,tick) log at settle), so freezing the
-    // loop just delays wall-clock time without changing the deterministic result.
-    if (document.hidden) return;
+  // The race never pauses: step as many 100ms ticks as wall-clock time elapsed
+  // (background tabs throttle timers to ≥1s → each fire catches up in a batch,
+  // capped so a long absence drains in fast chunks). Rendering is skipped while
+  // hidden — the engine ticks are what the server re-simulates, not the DOM.
+  let lastWall = 0;
+  function stepOnce(): boolean { // one engine tick; true = round ended
     const play = pendingPlay ?? undefined;
     if (play) plays.push({ round: s.roundIndex, tick: s.t, cardIds: play });
     pendingPlay = null;
@@ -345,7 +294,6 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
       if (!finBefore.get(p.id) && p.fin) log(`${nameOf(p.id)} <b>finished</b> @ ${p.ft}s`);
     }
     if (s.players[0].cp.size > cpBefore) log(`Passed CP-${s.players[0].cp.size} — hand refilled`);
-    renderTrack(); renderHand(); renderBoard();
     if (roundDone(s)) {
       if (loopH) clearInterval(loopH); loopH = null;
       sound.raceOn(false);
@@ -354,19 +302,28 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
       toast(`Round ${ended + 1}: ${nameOf(order[0])} wins!`);
       log(`<b>Round ${ended + 1}</b> — ${order.map((id, i) => `${i + 1}. ${nameOf(id)}`).join(' · ')}`);
       renderBoard();
-      if (s.finished) return finish();
+      if (s.finished) { finish(); return true; }
       setTimeout(beginRound, 900);
+      return true;
     }
+    return false;
+  }
+  function loop() {
+    const now = performance.now();
+    if (!lastWall) lastWall = now;
+    const n = Math.max(1, Math.min(300, Math.round((now - lastWall) / 100)));
+    lastWall += n * 100;
+    for (let i = 0; i < n; i++) if (stepOnce()) return;
+    if (!document.hidden) { renderTrack(); renderHand(); renderBoard(); }
   }
 
   function finish() {
     done = true;
     const ranking = finalRanking(s);
-    renderBoard(ranking);
+    renderBoard(ranking, true);
     if (ranking[0] === 'P1') sound.victory();
     toast(`🏆 ${nameOf(ranking[0])} wins the match!`);
     log(`<b>MATCH OVER.</b> ${ranking.map((id, i) => `${i + 1}. ${nameOf(id)} (◆ ${payoutStr(i)})`).join(' · ')}`);
-    renderSettle(ranking);
     ($('eng-note')).textContent = 'Match over — settling on-chain…';
     showRaceResults({
       rows: ranking.map((id, i) => {
@@ -389,6 +346,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     countT.forEach(clearTimeout);
     document.removeEventListener('keydown', onKey);
     view3d?.destroy(); view3d = null;
+    hud.destroy();
     sound.destroy();
     if (!done) root.innerHTML = '';
   };
