@@ -645,13 +645,16 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       boardTex('THE ARCADE', '#4dd0e1'),
       boardTex('TEAM1', '#6ee7a0'),
     ];
-    const BW = 7.4, BH = 2.35;          // smaller panels than before (10.2×3.2)
-    const BOARD_COUNT = 18;             // dense wall (panels overlap slightly)
+    const BW = 6.0, BH = 1.9;           // smaller panels (texture aspect ≈ 3.15)
+    // dense wall along the whole straight, but panels sit edge-to-edge with a
+    // small gap (spacing > BW) so they never intersect / z-fight
+    const BOARD_COUNT = 13;
+    const bSpan = LEN - 4, bStep = bSpan / (BOARD_COUNT - 1);
     for (let i = 0; i < BOARD_COUNT; i++) {
       const tex = boardSet[i % boardSet.length];
-      const x = X0 + 2 + i * (LEN - 4) / (BOARD_COUNT - 1);
+      const x = X0 + 2 + i * bStep;
       // tiny support legs — the panels rest right on the ground, not on poles
-      for (const dz of [-2.7, 2.7]) {
+      for (const dz of [-2.2, 2.2]) {
         const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.7, 8), poleMat);
         pole.position.set(x + dz, 0.35, -EDGE - 2.4);
         scene.add(pole);
