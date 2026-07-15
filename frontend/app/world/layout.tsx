@@ -6,7 +6,10 @@ export default function WorldLayout({ children }: { children: React.ReactNode })
   return (
     <>
       <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-      <style>{`
+      {/* dangerouslySetInnerHTML: plain <style>{text}</style> hydration-diffs the CSS
+          text (server HTML-escapes quotes → React #425 → whole root re-renders client-side
+          on EVERY world route). innerHTML is not diffed. */}
+      <style dangerouslySetInnerHTML={{ __html: `
         /* ═══ WORLD PAGE: Full viewport takeover ═══ */
 
         /* Kill EVERYTHING in parent layout */
@@ -92,7 +95,7 @@ export default function WorldLayout({ children }: { children: React.ReactNode })
         [class*="PrivyOverlay"] {
           z-index: 9999998 !important;
         }
-      `}</style>
+      ` }} />
       <div style={{
         position: 'fixed',
         top: 0,

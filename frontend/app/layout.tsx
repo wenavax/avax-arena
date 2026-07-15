@@ -83,6 +83,9 @@ export const metadata: Metadata = {
     ],
     apple: '/avalanche/apple-touch-icon.png',
   },
+  // Aynı basePath tuzağı: app/manifest.ts konvansiyonu link'i prefix'siz basıyordu
+  // (/manifest.webmanifest → 404). Statik dosya + elle prefix'li link kullanıyoruz.
+  manifest: '/avalanche/site.webmanifest',
   openGraph: {
     title: 'Frostbite | On-Chain Game Arcade on Avalanche',
     description:
