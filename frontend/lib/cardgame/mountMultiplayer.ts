@@ -14,6 +14,7 @@ import { vehicleSelector, vehAbbr, vehColor } from './vehicles';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
 import { createCgSound, soundLabel } from './sound';
 import { attachView3D, type View3D } from './view3d';
+import { showRaceResults, closeRaceResults } from './resultsOverlay';
 
 type Pid = 'P1' | 'P2' | 'P3' | 'P4';
 interface Seat { pid: Pid; address: string }
@@ -174,6 +175,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   on('cardgame:round-start', (d: { round: number; vehicles: Record<Pid, string> }) => {
     curRound = d.round;
+    view3d?.setRound(d.round); // per-round weather
     sound.raceOn(true);
     ($('eng-round')).textContent = `ROUND ${d.round + 1}/${CFG.ROUNDS}`;
     ($('eng-vsel-slot')).innerHTML = '';
@@ -252,6 +254,13 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     log(`<b>MATCH OVER.</b> ${d.ranking.map((pid, i) => `${i + 1}. ${nameOf(pid)}`).join(' · ')}`);
     renderSettle(d.rankingAddresses);
     note('Settling on-chain…');
+    showRaceResults({
+      rows: d.ranking.map((pid, i) => ({
+        name: nameOf(pid), color: cssv(P_VAR[pid]) || '#ed2f39', you: pid === myPid,
+        total: d.totals[pid] ?? 0, prize: `◆ ${payoutStr(i)}`,
+      })),
+      note: 'Settling on-chain — withdraw your payout from the panel below',
+    });
     opts.onFinished?.({ ranking: d.ranking, rankingAddresses: d.rankingAddresses });
   });
 
@@ -379,6 +388,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   // ── cleanup ─────────────────────────────────────────────────────────
   return () => {
+    closeRaceResults();
     for (const [event, cb] of handlers) opts.socket.off?.(event, cb);
     document.removeEventListener('keydown', onKey);
     view3d?.destroy(); view3d = null;

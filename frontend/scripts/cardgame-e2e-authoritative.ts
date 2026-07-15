@@ -8,7 +8,9 @@ import { initMatch, startRound, stepTick, roundDone, scoreRound, finalRanking, C
 
 const BASE = 'https://frostbite.pro/avalanche/api/cardgame';
 const RPC = 'https://api.avax-test.network/ext/bc/C/rpc';
-const ESCROW = '0xb25Eec9D2C2b4FA5AB099677233A86BD9Aa6EE50' as Hex;
+// Default = the live 1 AVAX escrow (2026-07-13 rollout); override via env for
+// the retired 0.01 contract 0xb25Eec9D2C2b4FA5AB099677233A86BD9Aa6EE50.
+const ESCROW = (process.env.CARDGAME_ESCROW || '0x3872DAb4eB43170b4b5Be08a9796f75f3802efe9') as Hex;
 const pk = process.env.PRIVATE_KEY!;
 const acct = privateKeyToAccount((pk.startsWith('0x') ? pk : '0x' + pk) as Hex);
 const pub = createPublicClient({ chain: avalancheFuji, transport: http(RPC) });
@@ -38,7 +40,7 @@ async function main() {
   let r = await (await fetch(`${BASE}/create-match`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player: acct.address, nonce, sig }) })).json();
   if (r.error) throw new Error('create: ' + r.error);
   const mId = r.matchId as Hex; console.log('   matchId', mId.slice(0, 12));
-  console.log('2) join 0.01…');
+  console.log(`2) join ${Number(r.entryFee) / 1e18} AVAX…`);
   await pub.waitForTransactionReceipt({ hash: await wal.writeContract({ address: ESCROW, abi, functionName: 'joinMatch', args: [mId], value: BigInt(r.entryFee) }) });
   console.log('3) seat-bots → seed…');
   const sb = await (await fetch(`${BASE}/seat-bots`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ player: acct.address, nonce, sig }) })).json();

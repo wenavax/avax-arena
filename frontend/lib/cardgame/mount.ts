@@ -10,6 +10,7 @@ import { bestPlan, bestPlay, planNote } from './bestPlay';
 import { createCgSound, soundLabel } from './sound';
 import { ABILITIES, triggerAbilities, SELF_BUDGET } from './abilities';
 import { attachView3D, type View3D } from './view3d';
+import { showRaceResults, closeRaceResults } from './resultsOverlay';
 
 export interface CardGameOptions {
   address?: string | null;
@@ -242,6 +243,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     buildTrack();
     t = 0;
     $('roundChip').textContent = `ROUND ${roundIndex + 1}/3`;
+    view3d?.setRound(roundIndex); // per-round weather: day → rain → snowy night
     render();
     countdown(() => {
       tickH = setInterval(tick, 100);
@@ -389,6 +391,14 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       `<div class="settleRow"><span class="dim">fee</span><span class="addr">treasury</span>
         <b class="dim">◆ 0.2</b><span class="txh">${short(mockHex(64))}</span><span class="ok">✓</span></div></div>`;
     render(arr, rw);
+    showRaceResults({
+      rows: arr.map((p, i) => ({
+        name: nameOf(p.id), color: colorOf(p.id), you: p.id === 'P1',
+        rounds: p.scores, total: p.total, prize: `◆ ${rw[i].toFixed(1)}`,
+      })),
+      sim: !opts.staked,
+      note: opts.staked ? 'Settling on-chain — payouts claimable after settlement' : 'Practice mode — simulated pool, nothing at stake',
+    });
     // staked mode: hand the final ranking (winner first) back as on-chain addresses
     if (opts.staked) opts.staked.onFinish(arr.map((p) => ADDR[p.id]));
   }
@@ -598,6 +608,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
 
   // ---- Cleanup ----
   return () => {
+    closeRaceResults();
     if (tickH) clearInterval(tickH);
     if (toastT) clearTimeout(toastT);
     countT.forEach(clearTimeout);

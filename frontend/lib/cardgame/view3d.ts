@@ -32,6 +32,9 @@ export interface View3DConfig {
 export interface View3D {
   is3D: () => boolean;
   forward: (cars: CarSnap[]) => void;
+  /** Round index (0-based) → per-round weather in the 3D scene. Cached, so it
+   *  also applies when 3D is toggled on mid-match. */
+  setRound: (round: number) => void;
   destroy: () => void;
 }
 
@@ -39,6 +42,7 @@ export function attachView3D(cfg: View3DConfig): View3D {
   let track3d: Track3D | null = null;
   let busy = false;
   let unmounted = false; // guards the async three.js load racing an unmount
+  let lastRound = 0;     // remembered so late 3D toggles get the right weather
 
   // ── fullscreen docking ──────────────────────────────────────────────
   const dockMarkers = new Map<HTMLElement, Comment>();
@@ -99,6 +103,7 @@ export function attachView3D(cfg: View3DConfig): View3D {
       const inst = await createTrack3D(cfg.host, seats);
       if (unmounted) { inst.destroy(); return; } // left while three.js loaded
       track3d = inst;
+      inst.setWeather(lastRound);
       cfg.track2d.style.display = 'none';
       cfg.toggleBtn.textContent = '🗺 2D VIEW';
       cfg.onReady?.();
@@ -112,6 +117,7 @@ export function attachView3D(cfg: View3DConfig): View3D {
   return {
     is3D: () => !!track3d,
     forward: (cars) => track3d?.update(cars),
+    setRound: (round) => { lastRound = round; track3d?.setWeather(round); },
     destroy: () => {
       unmounted = true;
       track3d?.destroy(); track3d = null;

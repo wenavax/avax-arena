@@ -14,6 +14,7 @@ import {
 } from './engine';
 import { vehicleSelector, vehAbbr, vehColor } from './vehicles';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
+import { showRaceResults, closeRaceResults } from './resultsOverlay';
 import { createCgSound, soundLabel } from './sound';
 import { attachView3D, type View3D } from './view3d';
 
@@ -137,6 +138,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
         startRound(s, veh);
         slot.innerHTML = '';
         ($('eng-round')).textContent = `ROUND ${s.roundIndex + 1}/3`;
+        view3d?.setRound(s.roundIndex); // per-round weather
         showPicks();
         buildTrack();
         log(`<b>Round ${s.roundIndex + 1}</b> started — ${s.players.map((p) => `${nameOf(p.id)} ${vehAbbr(p.veh)}`).join(' · ')}`);
@@ -358,11 +360,22 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     log(`<b>MATCH OVER.</b> ${ranking.map((id, i) => `${i + 1}. ${nameOf(id)} (◆ ${payoutStr(i)})`).join(' · ')}`);
     renderSettle(ranking);
     ($('eng-note')).textContent = 'Match over — settling on-chain…';
+    showRaceResults({
+      rows: ranking.map((id, i) => {
+        const p = s.players.find((x) => x.id === id)!;
+        return {
+          name: nameOf(id), color: cssv(P_VAR[id]) || '#ed2f39', you: id === 'P1',
+          rounds: p.scores, total: p.total, prize: `◆ ${payoutStr(i)}`,
+        };
+      }),
+      note: 'Settling on-chain — the payout lands in your wallet panel below',
+    });
     opts.onFinish({ vehicles, plays }, ranking.map((id) => addr[id]));
   }
 
   beginRound();
   return () => {
+    closeRaceResults();
     if (loopH) clearInterval(loopH);
     if (toastT) clearTimeout(toastT);
     countT.forEach(clearTimeout);
