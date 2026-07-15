@@ -1021,6 +1021,23 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       // procedural geometry is built per assembly → safe to dispose on swap
       mesh.traverse((o: InstanceType<typeof THREE.Object3D>) => { o.userData.ownGeo = true; });
     }
+
+    // ── pronounced contour lines ──────────────────────────────────────
+    // Overlay crisp ink edges on every body panel so the low-poly silhouette
+    // reads with sharp, defined lines (cel-shaded / technical look). Wheels are
+    // skipped (their facets would read as noise). Works for GLB + procedural.
+    const inkMat = new THREE.LineBasicMaterial({ color: 0x07070c, transparent: true, opacity: 0.9 });
+    const edgeTargets: InstanceType<typeof THREE.Mesh>[] = [];
+    mesh.traverse((o) => {
+      const m = o as InstanceType<typeof THREE.Mesh>;
+      if (m.isMesh && m.geometry && !/wheel/i.test(m.name)) edgeTargets.push(m);
+    });
+    for (const m of edgeTargets) {
+      const edges = new THREE.EdgesGeometry(m.geometry as InstanceType<typeof THREE.BufferGeometry>, 24);
+      const line = new THREE.LineSegments(edges, inkMat);
+      line.userData.ownGeo = true; // disposed on assembly swap (ownGeo) + material below
+      m.add(line);                 // inherits the panel's transform
+    }
     group.add(mesh);
 
     // livery: AVAX badge on the nose + door decals + FROSTBITE banner at the
