@@ -114,6 +114,15 @@
   background:rgba(10,10,16,.65);border:1px solid rgba(255,255,255,.18);color:#ececee;
   backdrop-filter:blur(6px);transition:border-color .2s,box-shadow .2s}
 .cgroot .cg-fs:hover{border-color:var(--cg-ice);box-shadow:0 0 12px rgba(77,208,225,.35)}
+/* camera-angle cycler (created by track3d, sits left of the fullscreen button) */
+.cgroot .track3d .cg-cambtn{position:absolute;top:10px;right:52px;z-index:6;cursor:pointer;
+  height:34px;padding:0 11px;border-radius:9px;font-size:11px;font-weight:600;letter-spacing:.5px;
+  font-family:'Chakra Petch',sans-serif;line-height:1;
+  background:rgba(10,10,16,.65);border:1px solid rgba(255,255,255,.18);color:#ececee;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:border-color .2s,box-shadow .2s}
+.cgroot .track3d .cg-cambtn:hover{border-color:var(--cg-ice);box-shadow:0 0 12px rgba(77,208,225,.35)}
+@media(max-width:560px){.cgroot .track3d .cg-cambtn{font-size:0;padding:0 9px}
+  .cgroot .track3d .cg-cambtn:before{content:'🎥';font-size:15px}}
 .cgroot .track3d:fullscreen{height:100vh;width:100vw;border-radius:0;padding:0;margin:0;background:#0a0a10}
 .cgroot .track3d:fullscreen canvas{border-radius:0!important}
 /* iOS fallback: no element-fullscreen API → pin the container over the viewport */

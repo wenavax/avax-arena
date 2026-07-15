@@ -65,6 +65,21 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
   renderer.domElement.style.borderRadius = '14px';
   container.appendChild(renderer.domElement);
 
+  // ── user-cyclable camera views (self-contained button on the stage) ──
+  const CAM_MODES = ['CHASE', 'AERIAL', 'TRACKSIDE', 'FAR SIDE', 'ORBIT'];
+  let camMode = 0;
+  let userOrbitA = 0;
+  const camBtn = document.createElement('button');
+  camBtn.className = 'cg-cambtn';
+  camBtn.title = 'Change camera angle';
+  camBtn.textContent = '🎥 ' + CAM_MODES[camMode];
+  camBtn.onclick = (e) => {
+    e.stopPropagation();
+    camMode = (camMode + 1) % CAM_MODES.length;
+    camBtn.textContent = '🎥 ' + CAM_MODES[camMode];
+  };
+  container.appendChild(camBtn);
+
   const scene = new THREE.Scene();
   // daytime atmosphere: haze fades distant geometry into the sky horizon tint
   scene.fog = new THREE.Fog(0xcfe4f5, 90, 300);
@@ -615,36 +630,40 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       stripe.position.set(0, 0.62, side * EDGE);
       scene.add(stripe);
     }
-    // sponsor billboards on the far side (facing the camera side) — a dense
-    // near-continuous sponsor wall, race-track style
+    // sponsor billboards on the far side (facing the camera side) — a dense,
+    // near-continuous sponsor wall running the WHOLE straight, race-track style
     const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2a36, roughness: 0.5, metalness: 0.6 });
-    const boards = [
+    const boardSet = [
       frostbiteTex('BATTLE ARENA'),
       avaxBoardTex('AVAX'),
       boardTex('CAR(D) GAME', '#f5c542'),
+      boardTex('TEAM1', '#6ee7a0'),
       frostbiteTex(),
       avaxBoardTex('AVALANCHE'),
       boardTex('FUJI TESTNET', '#f97316'),
       frostbiteTex('RACING'),
       boardTex('THE ARCADE', '#4dd0e1'),
+      boardTex('TEAM1', '#6ee7a0'),
     ];
-    boards.forEach((tex, i) => {
-      const x = X0 + 5 + i * (LEN - 10) / (boards.length - 1);
+    const BW = 7.4, BH = 2.35;          // smaller panels than before (10.2×3.2)
+    const BOARD_COUNT = 18;             // dense wall (panels overlap slightly)
+    for (let i = 0; i < BOARD_COUNT; i++) {
+      const tex = boardSet[i % boardSet.length];
+      const x = X0 + 2 + i * (LEN - 4) / (BOARD_COUNT - 1);
       // tiny support legs — the panels rest right on the ground, not on poles
-      for (const dz of [-3.9, 3.9]) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.8, 8), poleMat);
-        pole.position.set(x + dz, 0.4, -EDGE - 2.4);
+      for (const dz of [-2.7, 2.7]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.7, 8), poleMat);
+        pole.position.set(x + dz, 0.35, -EDGE - 2.4);
         scene.add(pole);
       }
-      // big readable panels, tilted a touch toward the camera side
       const panel = new THREE.Mesh(
-        new THREE.PlaneGeometry(10.2, 3.2),
+        new THREE.PlaneGeometry(BW, BH),
         new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
       );
-      panel.position.set(x, 1.6, -EDGE - 2.4); // bottom ~ground level
+      panel.position.set(x, BH / 2 + 0.1, -EDGE - 2.4); // bottom ~ground level
       panel.rotation.x = -0.1;
       scene.add(panel);
-    });
+    }
     // second, slightly-elevated mega-board row further back for skyline depth
     const megas = [
       avaxBoardTex('AVALANCHE'),
@@ -1243,8 +1262,22 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       orbitA = -1;
       const target = Math.min(Math.max(lead, X0 + 6), X0 + LEN - 8);
       camX += (target - camX) * Math.min(1, dt * 2.2);
-      desiredPos.set(camX - 10, 10, (seats.length * LANE_W) / 2 + 12);
-      lookAtV.set(camX + 7, 0.1, -1);
+      const cx = camX, halfW = (seats.length * LANE_W) / 2;
+      // camera.position.lerp below smooths the switch between any two modes
+      switch (camMode) {
+        case 1: // AERIAL — high, looking down the straight
+          desiredPos.set(cx - 2, 26, 8); lookAtV.set(cx + 8, 0, 0); break;
+        case 2: // TRACKSIDE — low & dramatic on the near rail
+          desiredPos.set(cx + 3, 2.4, halfW + 8); lookAtV.set(cx + 1, 1.2, 0); break;
+        case 3: // FAR SIDE — reverse angle from the billboard side
+          desiredPos.set(cx + 5, 7.5, -(halfW + 14)); lookAtV.set(cx - 1, 1, 0); break;
+        case 4: // ORBIT — continuous rotation around the leader
+          userOrbitA += dt * 0.4;
+          desiredPos.set(cx + Math.cos(userOrbitA) * 15, 8, Math.sin(userOrbitA) * 15);
+          lookAtV.set(cx, 1, 0); break;
+        default: // 0 CHASE — original cinematic side-chase
+          desiredPos.set(cx - 10, 10, halfW + 12); lookAtV.set(cx + 7, 0.1, -1);
+      }
     }
     camera.position.lerp(desiredPos, Math.min(1, dt * 2.5));
     camera.lookAt(lookAtV);
@@ -1451,6 +1484,7 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       renderer.dispose();
       renderer.forceContextLoss(); // release the GL context (browsers cap ~16)
       renderer.domElement.remove();
+      camBtn.remove();
     },
   };
 }
