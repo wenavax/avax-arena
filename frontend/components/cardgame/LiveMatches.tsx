@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatEther } from 'viem';
 import { Radio, Trophy } from 'lucide-react';
+import { getPrediction, setPrediction, resolvePredictions, getPredStats, HIT_POINTS } from '@/lib/cardgame/predictions';
 
 interface LiveMatch {
   matchId: string;
@@ -38,6 +39,9 @@ export default function LiveMatches({ myAddress }: { myAddress?: string }) {
   const [live, setLive] = useState(false);
   const seen = useRef<Set<string>>(new Set());
   const [fresh, setFresh] = useState<Set<string>>(new Set());
+  // prediction game: bump to re-read picks/stats after a pick or a resolution
+  const [predV, setPredV] = useState(0);
+  const [justHit, setJustHit] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let alive = true;
@@ -54,6 +58,15 @@ export default function LiveMatches({ myAddress }: { myAddress?: string }) {
           if (!seen.current.has(key)) { next.add(m.matchId); seen.current.add(key); }
         }
         if (next.size) { setFresh(next); setTimeout(() => alive && setFresh(new Set()), 1500); }
+        // score any pending winner-calls against freshly settled matches
+        const resolved = resolvePredictions(d.matches
+          .filter((m) => m.status === 'Settled' && m.ranking?.[0])
+          .map((m) => ({ matchId: m.matchId, winner: m.ranking![0] })));
+        if (resolved.length) {
+          setPredV((v) => v + 1);
+          const hits = new Set(resolved.filter((p) => p.resolved === 'hit').map((p) => p.matchId));
+          if (hits.size) { setJustHit(hits); setTimeout(() => alive && setJustHit(new Set()), 4000); }
+        }
         setFeed(d);
       } catch {
         if (alive) setLive(false);
@@ -69,6 +82,8 @@ export default function LiveMatches({ myAddress }: { myAddress?: string }) {
   const pool = feed ? BigInt(feed.entryFee) * 4n : 0n;
   const rewards = feed?.rewards.map((r) => BigInt(r)) ?? [];
   const mine = myAddress?.toLowerCase();
+  void predV; // picks/stats live in localStorage — this state only forces re-reads
+  const pstats = getPredStats();
 
   return (
     <div className="lm-wrap">
@@ -79,6 +94,12 @@ export default function LiveMatches({ myAddress }: { myAddress?: string }) {
           <span className="lm-sub">Avalanche Fuji · MatchEscrow</span>
         </div>
         <div className="lm-head-r mono">
+          {pstats.total + (feed?.matches.some((m) => m.status !== 'Settled') ? 1 : 0) > 0 && (
+            <span className="lm-predpts" title="Prediction game — call winners, earn bragging points">
+              🔮 {pstats.points.toLocaleString('en-US')} pts · {pstats.correct}/{pstats.total}
+              {pstats.streak >= 2 ? ` · 🔥${pstats.streak}` : ''}
+            </span>
+          )}
           {feed && <>block #{feed.head.toLocaleString('en-US')} · pool ◆ {formatEther(pool)}</>}
         </div>
       </div>
@@ -89,21 +110,36 @@ export default function LiveMatches({ myAddress }: { myAddress?: string }) {
       )}
 
       <div className="lm-list">
-        {feed?.matches.map((m) => (
-          <div key={m.matchId} className={`lm-card glass ${fresh.has(m.matchId) ? 'lm-pulse' : ''}`}>
+        {feed?.matches.map((m) => {
+          const pred = getPrediction(m.matchId);
+          const open = m.status !== 'Settled';
+          return (
+          <div key={m.matchId} className={`lm-card glass ${fresh.has(m.matchId) ? 'lm-pulse' : ''} ${justHit.has(m.matchId) ? 'lm-hitpulse' : ''}`}>
             <div className="lm-card-top">
               <span className="mono lm-id">{short(m.matchId)}</span>
-              <StatusBadge s={m.status} />
+              <span className="lm-badges">
+                {pred?.resolved === 'hit' && <span className="lm-pred-res hit">🔮 CALLED IT +{HIT_POINTS}</span>}
+                {pred?.resolved === 'miss' && <span className="lm-pred-res miss">🔮 MISSED</span>}
+                <StatusBadge s={m.status} />
+              </span>
             </div>
             <div className="lm-seats">
               {m.players.map((p, i) => {
                 const rank = m.status === 'Settled' && m.ranking ? m.ranking.findIndex((r) => r.toLowerCase() === p.toLowerCase()) : -1;
                 const isMe = mine && p.toLowerCase() === mine;
                 const paid = m.status !== 'Open' || i < m.paidCount;
+                const picked = pred && pred.pick.toLowerCase() === p.toLowerCase();
                 return (
-                  <div key={p + i} className={`lm-seat ${rank === 0 ? 'lm-winner' : ''} ${isMe ? 'lm-me' : ''} ${paid ? '' : 'lm-unpaid'}`}>
+                  <div
+                    key={p + i}
+                    className={`lm-seat ${rank === 0 ? 'lm-winner' : ''} ${isMe ? 'lm-me' : ''} ${paid ? '' : 'lm-unpaid'} ${open ? 'lm-pickable' : ''} ${picked ? 'lm-picked' : ''}`}
+                    role={open ? 'button' : undefined}
+                    title={open ? 'Call this racer as the winner (bragging points only)' : undefined}
+                    onClick={open ? () => { setPrediction(m.matchId, p); setPredV((v) => v + 1); } : undefined}
+                  >
                     <i className="lm-av" style={{ background: `var(${P_COLORS[i]})` }} />
                     <span className="mono">{isMe ? 'YOU' : short(p)}</span>
+                    {picked && <span className="lm-pick-tag">🔮 YOUR CALL</span>}
                     {rank === 0 && <Trophy size={11} className="lm-trophy" />}
                     {m.status === 'Settled' && rank >= 0 && <span className="lm-reward gold">◆{formatEther(rewards[rank] ?? 0n)}</span>}
                   </div>
@@ -113,11 +149,12 @@ export default function LiveMatches({ myAddress }: { myAddress?: string }) {
             {m.status === 'Open' && (
               <div className="lm-progress"><div style={{ width: `${(m.paidCount / 4) * 100}%` }} /></div>
             )}
-            {m.status === 'Open' && <div className="lm-foot">{m.paidCount}/4 seated · waiting for players</div>}
-            {m.status === 'Locked' && <div className="lm-foot">race in progress — settlement pending</div>}
+            {m.status === 'Open' && <div className="lm-foot">{m.paidCount}/4 seated · waiting for players{pred ? '' : ' · 🔮 tap a racer to call the winner'}</div>}
+            {m.status === 'Locked' && <div className="lm-foot">race in progress — settlement pending{pred ? '' : ' · 🔮 tap a racer to call the winner'}</div>}
             {m.status === 'Settled' && <div className="lm-foot ok">✓ signed &amp; paid out</div>}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

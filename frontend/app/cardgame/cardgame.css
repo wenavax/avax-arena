@@ -115,6 +115,22 @@
 .cgroot .lm-progress>div{height:100%;background:linear-gradient(90deg,var(--cg-ice),var(--cg-gold));transition:width .5s}
 .cgroot .lm-foot{font-size:10px;color:var(--cg-muted);margin-top:8px;font-family:'JetBrains Mono',monospace}
 .cgroot .lm-foot.ok{color:var(--cg-green)}
+/* ── watch-mode prediction game (bet-free winner calls) ─────────────── */
+.cgroot .lm-predpts{margin-right:12px;padding:3px 10px;border-radius:12px;color:#c9b3f5;
+  background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.3);white-space:nowrap}
+.cgroot .lm-badges{display:inline-flex;align-items:center;gap:6px}
+.cgroot .lm-pred-res{font-size:8.5px;font-family:'JetBrains Mono',monospace;letter-spacing:.8px;
+  padding:3px 8px;border-radius:10px;border:1px solid;white-space:nowrap}
+.cgroot .lm-pred-res.hit{color:var(--cg-gold);border-color:rgba(245,197,66,.55);background:rgba(245,197,66,.1)}
+.cgroot .lm-pred-res.miss{color:var(--cg-muted);border-color:var(--cg-line)}
+.cgroot .lm-seat.lm-pickable{cursor:pointer;transition:background .15s,outline-color .15s;outline:1px solid transparent}
+.cgroot .lm-seat.lm-pickable:hover{background:rgba(167,139,250,.08);outline-color:rgba(167,139,250,.35)}
+.cgroot .lm-seat.lm-picked{background:rgba(167,139,250,.1);outline:1px solid rgba(167,139,250,.5)}
+.cgroot .lm-pick-tag{font-size:8px;font-family:'JetBrains Mono',monospace;letter-spacing:.8px;color:#c9b3f5;
+  border:1px solid rgba(167,139,250,.45);border-radius:8px;padding:1.5px 6px;white-space:nowrap}
+@keyframes lm-hitglow{0%,100%{box-shadow:none}50%{box-shadow:0 0 0 1px rgba(245,197,66,.6),0 0 30px rgba(245,197,66,.3)}}
+.cgroot .lm-card.lm-hitpulse{animation:lm-hitglow 1.2s ease-in-out 3}
+@media (prefers-reduced-motion:reduce){.cgroot .lm-card.lm-hitpulse{animation:none}}
 
 /* engine-driven staked view */
 .cgroot .eng-round{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:2px;font-size:13px}
