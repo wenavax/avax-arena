@@ -17,13 +17,19 @@
 const KEY = 'cg_engine'; // '1' on (default) | '0' off
 const LOOP_URL = (n: number) => `/avalanche/cardgame/audio/loop${n}.m4a`;
 const ANCHOR_LOOPS = [0, 2, 4, 5]; // which of the six files we actually play
-const GEARS = 6;
+// F1 character (ear-test round 2: "make it sound like an F1 car"):
+// road-car loops pitched into the F1 register + an rpm-tracking scream layer
+const GEARS = 8;             // F1 gearbox — faster, denser shift ladder
+const F1_PITCH = 1.8;        // global playbackRate multiplier into the F1 register
+const WHINE_BASE = 340;      // scream-layer fundamental at idle (Hz)
+const WHINE_SPAN = 860;      // …rising to ~1.2kHz at redline (≈ V10 firing freq)
+const WHINE_VOL = 0.3;       // relative within the engine master (masked by loops)
 const MASTER_VOL = 0.2;      // engine bed sits just UNDER the music (0.22) —
                              // ear-test feedback: 0.5 buried everything
 const TICK_TC = 0.09;        // setTargetAtTime time constant (~60-120ms) — no zipper
-const LP_STEADY = 5000;      // slightly closed at cruise (anti-fatigue)
-const LP_OPEN = 8000;        // accel / boost opens it
-const LP_DECEL = 2500;       // hard decel closes it
+const LP_STEADY = 7500;      // F1 register is bright — keep more top end
+const LP_OPEN = 12000;       // accel / boost opens to full scream
+const LP_DECEL = 3800;       // hard decel closes it (still brighter than a road car)
 const DECEL_HARD = -0.35;    // d(speed01)/dt below this = hard decel
 const DECEL_GAIN = 0.63;     // ~-4 dB dip while decelerating hard
 const WOBBLE = 0.02;         // ±2% playbackRate anti-fatigue wobble
@@ -128,6 +134,8 @@ export function createEngineAudio(): EngineAudio {
   let master: GainNode | null = null;
   let comp: DynamicsCompressorNode | null = null;
   let lfo: OscillatorNode | null = null;
+  let whine: OscillatorNode[] = [];      // F1 scream layer (2 detuned saws)
+  let whineGain: GainNode | null = null;
   let noiseBuf: AudioBuffer | null = null; // shared white noise for one-shots
 
   // per-tick state
@@ -217,6 +225,18 @@ export function createEngineAudio(): EngineAudio {
       const lfoGain = c.createGain();
       lfoGain.gain.value = WOBBLE;
       lfo.connect(lfoGain);
+      // F1 scream layer: two detuned saws tracking the virtual firing frequency,
+      // tucked UNDER the sample bed (the loops mask the synthetic timbre — a thin
+      // masked layer works where full synthesis failed)
+      whineGain = c.createGain();
+      whineGain.gain.value = 0.0001;
+      const whineHp = c.createBiquadFilter();
+      whineHp.type = 'highpass'; whineHp.frequency.value = 500; whineHp.Q.value = 0.6;
+      whineGain.connect(whineHp); whineHp.connect(master);
+      whine = [c.createOscillator(), c.createOscillator()];
+      whine[0].type = 'sawtooth'; whine[1].type = 'sawtooth';
+      whine[0].detune.value = -7; whine[1].detune.value = 8; // shimmer
+      for (const o of whine) { o.frequency.value = WHINE_BASE; o.connect(whineGain); o.start(); }
       for (let i = 0; i < buffers.length; i++) {
         const b = buffers[i];
         if (!b) { sources.push(null as unknown as AudioBufferSourceNode); loopGains.push(null as unknown as GainNode); continue; }
@@ -238,10 +258,12 @@ export function createEngineAudio(): EngineAudio {
     try { sources.forEach((s) => { try { s?.stop(); s?.disconnect(); } catch { /* ignore */ } }); } catch { /* ignore */ }
     try { loopGains.forEach((g) => { try { g?.disconnect(); } catch { /* ignore */ } }); } catch { /* ignore */ }
     try { lfo?.stop(); lfo?.disconnect(); } catch { /* ignore */ }
+    try { whine.forEach((o) => { try { o.stop(); o.disconnect(); } catch { /* ignore */ } }); } catch { /* ignore */ }
+    try { whineGain?.disconnect(); } catch { /* ignore */ }
     try { lowpass?.disconnect(); } catch { /* ignore */ }
     try { master?.disconnect(); } catch { /* ignore */ }
     try { comp?.disconnect(); } catch { /* ignore */ }
-    sources = []; loopGains = []; lfo = null; lowpass = null; master = null; comp = null;
+    sources = []; loopGains = []; lfo = null; whine = []; whineGain = null; lowpass = null; master = null; comp = null;
   }
 
   /** Shared white-noise buffer for the synthesized transients. */
@@ -297,7 +319,8 @@ export function createEngineAudio(): EngineAudio {
   // vols compensated for the master (0.2) they now route through — effective
   // loudness lands slightly under the old direct-to-comp levels, matching the
   // overall quieter mix the ear test asked for
-  const shiftClick = () => { burst(3000, 1.2, 0.005, 0.1, 0.8); thump(); };
+  // F1 shifts are near-instant — shorter, brighter bark than a road-car shift
+  const shiftClick = () => { burst(3800, 1.5, 0.004, 0.06, 0.8); thump(); };
   const blowOff = () => burst(1200, 0.9, 0.012, 0.28, 0.85);
   const crackle = () => burst(1000 + Math.random() * 2000, 2.5, 0.004, 0.03 + Math.random() * 0.03, 0.45 + Math.random() * 0.2);
 
@@ -312,7 +335,15 @@ export function createEngineAudio(): EngineAudio {
         const src = sources[i], g = loopGains[i];
         if (!src || !g) continue;
         g.gain.setTargetAtTime(Math.max(0.0001, w[i]), t, TICK_TC);
-        src.playbackRate.setTargetAtTime(rateFor(rpm, i, N_ANCHORS), t, TICK_TC);
+        src.playbackRate.setTargetAtTime(rateFor(rpm, i, N_ANCHORS) * F1_PITCH, t, TICK_TC);
+      }
+      // scream layer: pitch tracks the virtual firing freq, level rises with rpm²
+      // (clean at idle, screaming at redline), brighter still under boost
+      if (whine.length && whineGain) {
+        const f = WHINE_BASE + rpm * WHINE_SPAN;
+        for (const o of whine) o.frequency.setTargetAtTime(f, t, TICK_TC);
+        const wv = WHINE_VOL * rpm * rpm * (boosted ? 1.25 : 1);
+        whineGain.gain.setTargetAtTime(Math.max(0.0001, wv), t, TICK_TC);
       }
       const cutoff = boosted || accelHard ? LP_OPEN : decelHard ? LP_DECEL : LP_STEADY;
       lowpass.frequency.setTargetAtTime(cutoff, t, TICK_TC * 1.5);
@@ -355,8 +386,8 @@ export function createEngineAudio(): EngineAudio {
         let target = gearRpm(speed);
         if (s.boosted) target = Math.min(1.05, target + 0.15);
 
-        // smooth rpm toward target; hard decel decays ~2× faster
-        const k = target < rpm && decelHard ? 0.7 : 0.35;
+        // smooth rpm toward target; F1 revs fast — hard decel decays ~2× faster
+        const k = target < rpm && decelHard ? 0.75 : 0.45;
         rpm = rpm + (target - rpm) * k;
         rpm = clamp(rpm, 0.2, 1.05);
 

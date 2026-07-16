@@ -13,7 +13,7 @@ const ok = (c: boolean, m: string) => { if (c) { pass++; console.log('  ✓ ' + 
 console.log('gearOf — monotone gear ladder');
 {
   ok(gearOf(0) === 0, 'gearOf(0) = 0');
-  ok(gearOf(1) === 5, 'gearOf(1) = 5 (top gear)');
+  ok(gearOf(1) === 7, 'gearOf(1) = 7 (top gear — F1 8-speed box)');
   let mono = true, seen = new Set<number>(), prev = -1;
   for (let s = 0; s <= 1.0001; s += 0.001) {
     const g = gearOf(Math.min(s, 1));
@@ -21,8 +21,8 @@ console.log('gearOf — monotone gear ladder');
     prev = g; seen.add(g);
   }
   ok(mono, 'gearOf monotone non-decreasing across speed01 sweep');
-  ok(seen.size === 6 && [...seen].every((g) => g >= 0 && g <= 5), 'gearOf covers exactly gears 0..5');
-  ok(gearOf(-0.5) === 0 && gearOf(2) === 5, 'gearOf clamps out-of-range speed');
+  ok(seen.size === 8 && [...seen].every((g) => g >= 0 && g <= 7), 'gearOf covers exactly gears 0..7');
+  ok(gearOf(-0.5) === 0 && gearOf(2) === 7, 'gearOf clamps out-of-range speed');
 }
 
 console.log('gearRpm — sawtooth within gears');
@@ -35,12 +35,12 @@ console.log('gearRpm — sawtooth within gears');
   ok(inRange, 'gearRpm stays in [0.2, 1.05] over dense sweep');
   // just below vs just above each gear boundary: high → low reset
   let resets = true;
-  for (let g = 1; g < 6; g++) {
-    const b = g / 6;
+  for (let g = 1; g < 8; g++) {
+    const b = g / 8;
     if (!(gearRpm(b - 1e-4) > 0.9 && gearRpm(b + 1e-4) < 0.35)) resets = false;
   }
   ok(resets, 'gearRpm resets high→low at every gear boundary');
-  ok(gearRpm(0.05) < gearRpm(0.1) && gearRpm(0.1) < gearRpm(0.16), 'gearRpm rises within a gear');
+  ok(gearRpm(0.02) < gearRpm(0.06) && gearRpm(0.06) < gearRpm(0.11), 'gearRpm rises within a gear');
   ok(Math.abs(gearRpm(0) - 0.25) < 1e-9, 'gearRpm idles at 0.25');
 }
 
