@@ -4,9 +4,10 @@
  * lerps positions at 60 fps. No game logic lives here — swapping 2D↔3D can never
  * change a result.
  *
- * Car mesh: tries to load a GLB from /avalanche/cardgame/car.glb (AI-generated
- * asset drop-in); if absent, builds a stylised low-poly neon car from primitives
- * so the renderer always works with zero external assets.
+ * Car meshes: realistic hand-built procedural silhouettes (LEGENDARY = formula
+ * car, EPIC = GT coupé, COMMON = hot hatch) with PBR clearcoat paint and IBL
+ * reflections — zero external assets. (The old Kenney GLB kit was retired; the
+ * .glb files remain in public/cardgame/ but are no longer loaded.)
  *
  * Loaded lazily (dynamic import) so the cardgame page only pays for three.js
  * when the player switches to 3D.
@@ -952,90 +953,206 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     }
   }
 
-  // ── car factory: per-rarity GLB drop-ins with procedural fallback ────
-  async function loadCarTemplate(url: string): Promise<InstanceType<typeof THREE.Object3D> | null> {
-    try {
-      const head = await fetch(url, { method: 'HEAD' });
-      if (!head.ok) return null;
-      const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
-      const gltf = await new GLTFLoader().loadAsync(url);
-      const obj = gltf.scene;
-      // Kenney-style kits face +Z; our track runs along +X → rotate the mesh,
-      // then normalise: ~2.9 world-units long, centred on X/Z, wheels on y=0.
-      obj.rotation.y = Math.PI / 2;
-      obj.updateMatrixWorld(true);
-      const box = new THREE.Box3().setFromObject(obj);
-      const size = new THREE.Vector3(); box.getSize(size);
-      const s = 3.3 / Math.max(size.x, size.z, 0.001);
-      const wrap = new THREE.Group();
-      wrap.add(obj);
-      wrap.scale.setScalar(s);
-      const c = new THREE.Vector3(); box.getCenter(c);
-      obj.position.x -= c.x; obj.position.z -= c.z;
-      obj.position.y -= box.min.y; // bottom of wheels sits on the deck
-      return wrap;
-    } catch { return null; }
+  // ── car factory: realistic hand-built silhouettes (GLB kit retired) ──
+  // Fully procedural, real-car proportions: LEGENDARY = open-wheel formula car,
+  // EPIC = GT coupé, COMMON = hot hatch. PBR clearcoat paint + glossy glass +
+  // an IBL environment give convincing reflections with zero external assets.
+  // The effect contract is preserved: spinnable wheels are groups named
+  // `wheel-proc` (spin axis z), decal anchors ride in userData.decor, and the
+  // front/rear overhangs stay at x≈±1.55 so the headlight/taillight sprites,
+  // boost flame, trails and sparks all land on the bodywork unchanged.
+  let carEnv: InstanceType<typeof THREE.Texture> | null = null;
+  try {
+    const { RoomEnvironment } = await import('three/examples/jsm/environments/RoomEnvironment.js');
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    carEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+  } catch { /* reflections are a bonus — cars still render without them */ }
+
+  /** Per-assembly material set (never shared: disposeAssembly disposes them). */
+  function carMats(color: number) {
+    const vivid = new THREE.Color(color);
+    const hsl = { h: 0, s: 0, l: 0 };
+    vivid.getHSL(hsl);
+    vivid.setHSL(hsl.h, Math.max(hsl.s, 0.92), Math.min(Math.max(hsl.l, 0.5), 0.58));
+    return {
+      paint: new THREE.MeshPhysicalMaterial({
+        color: vivid, metalness: 0.35, roughness: 0.3,
+        clearcoat: 1, clearcoatRoughness: 0.12,
+        envMap: carEnv, envMapIntensity: 0.9,
+      }),
+      glass: new THREE.MeshPhysicalMaterial({
+        color: 0x10151f, metalness: 0.2, roughness: 0.06,
+        envMap: carEnv, envMapIntensity: 1.5,
+      }),
+      carbon: new THREE.MeshStandardMaterial({ color: 0x16161c, roughness: 0.55, metalness: 0.4 }),
+      chrome: new THREE.MeshStandardMaterial({ color: 0xcfd6e2, metalness: 1, roughness: 0.22, envMap: carEnv }),
+      tyre: new THREE.MeshStandardMaterial({ color: 0x131318, roughness: 0.95, metalness: 0 }),
+      rim: new THREE.MeshStandardMaterial({ color: 0x394050, metalness: 0.9, roughness: 0.28, envMap: carEnv }),
+      lensW: new THREE.MeshBasicMaterial({ color: 0xf4f8ff }),
+      lensR: new THREE.MeshBasicMaterial({ color: 0xe23a3a }),
+    };
   }
+  type CarM = ReturnType<typeof carMats>;
 
-  function buildProceduralCar(color: number): InstanceType<typeof THREE.Group> {
+  /** Realistic wheel: slick tyre + metal rim + spokes + brake disc. The GROUP
+   *  carries the wheel-proc name (children unnamed → no double spin). */
+  function buildWheel(M: CarM, r: number, w: number): InstanceType<typeof THREE.Group> {
     const g = new THREE.Group();
-    const vividC = new THREE.Color(color);
-    const hsl0 = { h: 0, s: 0, l: 0 };
-    vividC.getHSL(hsl0);
-    vividC.setHSL(hsl0.h, Math.max(hsl0.s, 0.92), Math.min(Math.max(hsl0.l, 0.5), 0.58));
-    const body = new THREE.MeshStandardMaterial({ color: vividC, roughness: 0.28, metalness: 0.4 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x0d0d12, roughness: 0.6, metalness: 0.4 });
-    const glow = new THREE.MeshBasicMaterial({ color });
-
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.34, 1.1), body);
-    hull.position.y = 0.36; g.add(hull);
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.22, 0.9), body);
-    nose.position.set(1.45, 0.3, 0); g.add(nose);
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.34, 0.82), dark);
-    cabin.position.set(-0.1, 0.68, 0); g.add(cabin);
-    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 1.15), body);
-    spoiler.position.set(-1.28, 0.72, 0); g.add(spoiler);
-    for (const s of [-1, 1]) {
-      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.06), body);
-      fin.position.set(-1.28, 0.56, s * 0.52); g.add(fin);
+    g.name = 'wheel-proc';
+    const tyreGeo = new THREE.CylinderGeometry(r, r, w, 22);
+    tyreGeo.rotateX(Math.PI / 2);
+    g.add(new THREE.Mesh(tyreGeo, M.tyre));
+    const rimGeo = new THREE.CylinderGeometry(r * 0.56, r * 0.56, w + 0.015, 16);
+    rimGeo.rotateX(Math.PI / 2);
+    const rim = new THREE.Mesh(rimGeo, M.rim);
+    g.add(rim);
+    if (!lowEnd) {
+      for (let i = 0; i < 5; i++) { // 5-spoke star
+        const sp = new THREE.Mesh(new THREE.BoxGeometry(r * 0.95, r * 0.22, w * 0.5), M.rim);
+        sp.rotation.z = (i / 5) * Math.PI * 2;
+        g.add(sp);
+      }
+      const discGeo = new THREE.CylinderGeometry(r * 0.42, r * 0.42, w * 0.2, 14);
+      discGeo.rotateX(Math.PI / 2);
+      g.add(new THREE.Mesh(discGeo, M.chrome));
     }
-    // glowing strip + headlight (bloom picks these up)
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.05, 0.06), glow);
-    strip.position.set(0.05, 0.55, 0); g.add(strip);
-    const head_ = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.7), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    head_.position.set(1.82, 0.32, 0); g.add(head_);
-    // wheels
-    const wheelGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.22, 14);
-    wheelGeo.rotateX(Math.PI / 2);
-    for (const [wx, wz] of [[0.85, 0.62], [0.85, -0.62], [-0.85, 0.62], [-0.85, -0.62]]) {
-      const wheel = new THREE.Mesh(wheelGeo, dark);
-      wheel.name = 'wheel-proc';
-      wheel.position.set(wx, 0.28, wz);
-      g.add(wheel);
-      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.24, 8), glow);
-      hub.geometry.rotateX(Math.PI / 2);
-      hub.name = 'wheel-proc';
-      hub.position.copy(wheel.position);
-      g.add(hub);
-    }
+    const capGeo = new THREE.CylinderGeometry(r * 0.14, r * 0.14, w + 0.03, 10);
+    capGeo.rotateX(Math.PI / 2);
+    g.add(new THREE.Mesh(capGeo, M.chrome));
     return g;
   }
 
-  // Rarity-matched silhouettes (real-car lines): LEGENDARY = open-wheel racer,
-  // EPIC = sports sedan, COMMON = hot hatch. car.glb stays the garage default
-  // (shown before a vehicle is picked) and the fallback if a variant is missing.
-  const [tplDefault, tplLegendary, tplEpic, tplCommon] = await Promise.all([
-    loadCarTemplate('/avalanche/cardgame/car.glb'),
-    loadCarTemplate('/avalanche/cardgame/car-legendary.glb'),
-    loadCarTemplate('/avalanche/cardgame/car-epic.glb'),
-    loadCarTemplate('/avalanche/cardgame/car-common.glb'),
-  ]);
-  const templates: Record<string, InstanceType<typeof THREE.Object3D> | null> = {
-    DEFAULT: tplDefault,
-    LEGENDARY: tplLegendary ?? tplDefault,
-    EPIC: tplEpic ?? tplDefault,
-    COMMON: tplCommon ?? tplDefault,
-  };
+  /** Tiny builder DSL shared by the three cars. */
+  function carKit(M: CarM) {
+    const g = new THREE.Group();
+    const B = (w: number, h: number, d: number, m: InstanceType<typeof THREE.Material>,
+      x: number, y: number, z: number, rz = 0, small = false) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+      mesh.position.set(x, y, z); mesh.rotation.z = rz;
+      if (small) mesh.userData.noInk = true;
+      g.add(mesh); return mesh;
+    };
+    // cylinder lying along the car's X axis (nose cones, exhausts)
+    const CX = (rt: number, rb: number, len: number, seg: number, m: InstanceType<typeof THREE.Material>,
+      x: number, y: number, z: number) => {
+      const geo = new THREE.CylinderGeometry(rt, rb, len, seg);
+      geo.rotateZ(-Math.PI / 2);
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(x, y, z); mesh.userData.noInk = true;
+      g.add(mesh); return mesh;
+    };
+    const W = (r: number, w: number, x: number, z: number) => {
+      const wheel = buildWheel(M, r, w);
+      wheel.position.set(x, r, z);
+      g.add(wheel); return wheel;
+    };
+    return { g, B, CX, W };
+  }
+
+  /** LEGENDARY — modern open-wheel formula car: nose cone, wings, sidepods,
+   *  halo, shark fin, diffuser, exposed slicks. */
+  function buildF1(M: CarM): InstanceType<typeof THREE.Group> {
+    const { g, B, CX, W } = carKit(M);
+    B(2.5, 0.05, 0.96, M.carbon, -0.05, 0.10, 0);                    // floor
+    B(1.3, 0.28, 0.52, M.paint, 0.25, 0.34, 0);                      // monocoque tub
+    const nose = CX(0.08, 0.20, 1.0, 4, M.paint, 1.20, 0.30, 0);     // tapered square nose
+    nose.rotation.x = Math.PI / 4;
+    B(0.44, 0.035, 1.5, M.carbon, 1.58, 0.10, 0);                    // front wing main
+    B(0.30, 0.03, 1.44, M.paint, 1.47, 0.17, 0, 0.16);               // front flap
+    for (const s of [-1, 1]) {
+      B(0.30, 0.16, 0.04, M.paint, 1.55, 0.15, s * 0.76, 0, true);   // endplates
+      B(1.05, 0.30, 0.34, M.paint, -0.30, 0.33, s * 0.44);           // sidepods
+      B(0.06, 0.24, 0.30, M.carbon, 0.23, 0.35, s * 0.44, 0, true);  // pod intakes
+      B(0.10, 0.05, 0.16, M.paint, 0.55, 0.58, s * 0.38, 0, true);   // mirrors
+    }
+    B(1.0, 0.22, 0.34, M.paint, -0.65, 0.50, 0);                     // engine cover
+    B(0.72, 0.30, 0.035, M.paint, -1.0, 0.70, 0);                    // shark fin
+    B(0.44, 0.06, 0.34, M.carbon, 0.28, 0.50, 0);                    // cockpit opening
+    B(0.14, 0.14, 0.14, M.carbon, -0.16, 0.66, 0, 0, true);          // airbox intake
+    // halo: half-torus hoop over the cockpit + front strut
+    const haloGeo = new THREE.TorusGeometry(0.24, 0.028, 8, 18, Math.PI);
+    const halo = new THREE.Mesh(haloGeo, M.carbon);
+    halo.position.set(0.30, 0.52, 0); halo.rotation.y = Math.PI / 2;
+    halo.userData.noInk = true;
+    g.add(halo);
+    const strut = CX(0.02, 0.02, 0.30, 8, M.carbon, 0.44, 0.63, 0);
+    strut.rotation.z = -0.9;
+    // rear wing stack: main + flap + endplates + pylon + beam wing
+    B(0.40, 0.03, 1.16, M.paint, -1.44, 0.86, 0, -0.10);
+    B(0.30, 0.03, 1.12, M.paint, -1.50, 0.96, 0, -0.22);
+    for (const s of [-1, 1]) B(0.46, 0.36, 0.035, M.paint, -1.44, 0.78, s * 0.58, 0, true);
+    CX(0.025, 0.025, 0.42, 8, M.carbon, -1.38, 0.62, 0).rotation.z = Math.PI / 2 - 0.15;
+    B(0.26, 0.025, 1.0, M.carbon, -1.40, 0.42, 0);
+    B(0.5, 0.05, 0.9, M.carbon, -1.30, 0.17, 0, 0.35);               // diffuser
+    CX(0.045, 0.05, 0.14, 10, M.chrome, -1.28, 0.44, 0);             // exhaust
+    B(0.04, 0.10, 0.06, M.lensR, -1.47, 0.60, 0, 0, true);           // rain light
+    W(0.27, 0.24, 1.02, 0.60); W(0.27, 0.24, 1.02, -0.60);           // exposed slicks
+    W(0.30, 0.28, -0.98, 0.62); W(0.30, 0.28, -0.98, -0.62);
+    g.userData.decor = { hoodY: 0.50, doorZ: 0.615, doorY: 0.35, wingX: -1.56, wingY: 0.86 };
+    return g;
+  }
+
+  /** EPIC — low, wide GT coupé: raked windshield, fastback, splitter,
+   *  ducktail, quad exhausts. */
+  function buildGT(M: CarM): InstanceType<typeof THREE.Group> {
+    const { g, B, CX, W } = carKit(M);
+    B(2.9, 0.30, 1.12, M.paint, 0, 0.34, 0);                         // main body
+    B(2.5, 0.12, 1.16, M.carbon, 0, 0.16, 0);                        // lower skirt
+    B(0.85, 0.06, 1.0, M.paint, 1.05, 0.48, 0, -0.09);               // sloping hood
+    B(0.14, 0.20, 1.02, M.paint, 1.50, 0.32, 0);                     // nose face
+    B(0.03, 0.10, 0.5, M.carbon, 1.575, 0.30, 0, 0, true);           // grille
+    B(0.16, 0.03, 1.2, M.carbon, 1.55, 0.10, 0);                     // splitter
+    B(0.5, 0.04, 0.88, M.glass, 0.42, 0.585, 0, -0.5);               // raked windshield
+    B(1.06, 0.26, 0.90, M.glass, -0.10, 0.60, 0);                    // greenhouse
+    B(0.72, 0.045, 0.86, M.paint, -0.18, 0.745, 0);                  // roof
+    B(0.72, 0.05, 0.9, M.paint, -0.86, 0.60, 0, 0.35);               // fastback slope
+    B(0.5, 0.08, 1.05, M.paint, -1.25, 0.44, 0);                     // rear deck
+    B(0.20, 0.04, 1.0, M.paint, -1.44, 0.55, 0, -0.15);              // ducktail
+    B(0.08, 0.20, 1.05, M.carbon, -1.50, 0.34, 0);                   // rear face
+    B(0.03, 0.05, 0.9, M.lensR, -1.53, 0.44, 0, 0, true);            // full-width tail bar
+    for (const s of [-1, 1]) {
+      B(0.04, 0.06, 0.20, M.lensW, 1.56, 0.42, s * 0.38, 0, true);   // headlights
+      B(0.10, 0.05, 0.14, M.paint, 0.50, 0.60, s * 0.58, 0, true);   // mirrors
+      CX(0.035, 0.035, 0.10, 10, M.chrome, -1.52, 0.20, s * 0.28);   // exhausts
+      CX(0.035, 0.035, 0.10, 10, M.chrome, -1.52, 0.20, s * 0.40);
+    }
+    W(0.28, 0.26, 0.95, 0.585); W(0.28, 0.26, 0.95, -0.585);
+    W(0.28, 0.26, -0.95, 0.585); W(0.28, 0.26, -0.95, -0.585);
+    g.userData.decor = { hoodY: 0.52, doorZ: 0.575, doorY: 0.42, wingX: -1.50, wingY: 0.72 };
+    return g;
+  }
+
+  /** COMMON — compact hot hatch: two-box shape, tall cabin, roof spoiler,
+   *  round headlights, single exhaust. */
+  function buildHatch(M: CarM): InstanceType<typeof THREE.Group> {
+    const { g, B, CX, W } = carKit(M);
+    B(2.75, 0.34, 1.08, M.paint, 0.05, 0.33, 0);                     // body
+    B(0.16, 0.22, 1.02, M.carbon, 1.50, 0.28, 0);                    // front bumper
+    B(0.16, 0.22, 1.02, M.carbon, -1.42, 0.28, 0);                   // rear bumper
+    B(0.8, 0.05, 0.98, M.paint, 0.95, 0.52, 0, -0.06);               // short hood
+    B(0.42, 0.04, 0.9, M.glass, 0.42, 0.62, 0, -0.55);               // windshield
+    B(1.3, 0.30, 0.92, M.glass, -0.30, 0.62, 0);                     // tall cabin
+    B(1.34, 0.05, 0.98, M.paint, -0.30, 0.79, 0);                    // roof
+    B(0.34, 0.04, 0.9, M.glass, -1.02, 0.62, 0, 0.7);                // hatch glass
+    B(0.26, 0.04, 1.0, M.paint, -1.12, 0.82, 0, -0.1);               // roof spoiler
+    for (const s of [-1, 1]) {
+      const hl = CX(0.075, 0.075, 0.04, 14, M.lensW, 1.585, 0.42, s * 0.36); // round lights
+      hl.userData.noInk = true;
+      B(0.03, 0.14, 0.10, M.lensR, -1.51, 0.44, s * 0.42, 0, true);  // tail lights
+      B(0.09, 0.05, 0.13, M.paint, 0.52, 0.62, s * 0.56, 0, true);   // mirrors
+    }
+    CX(0.04, 0.04, 0.10, 10, M.chrome, -1.49, 0.16, 0.30);           // exhaust
+    W(0.27, 0.24, 0.88, 0.565); W(0.27, 0.24, 0.88, -0.565);
+    W(0.27, 0.24, -0.88, 0.565); W(0.27, 0.24, -0.88, -0.565);
+    g.userData.decor = { hoodY: 0.56, doorZ: 0.555, doorY: 0.44, wingX: -1.30, wingY: 0.90 };
+    return g;
+  }
+
+  function buildProceduralCar(veh: string | null, color: number): InstanceType<typeof THREE.Group> {
+    const M = carMats(color);
+    return veh === 'LEGENDARY' ? buildF1(M) : veh === 'COMMON' ? buildHatch(M) : buildGT(M);
+  }
 
   interface CarRig {
     root: InstanceType<typeof THREE.Group>;
@@ -1120,39 +1237,10 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     wheels: InstanceType<typeof THREE.Object3D>[];
     wheelAxis: 'x' | 'z';
   } {
-    const template = templates[veh ?? 'DEFAULT'] ?? templates.DEFAULT;
     const group = new THREE.Group();
-    const mesh = template ? (template.clone(true) as InstanceType<typeof THREE.Object3D>) : buildProceduralCar(color);
-    if (template) {
-      // Team paint: recolour only the BRIGHT body panels; dark parts (wheels,
-      // glass, vents) keep their factory look. Punch the seat colour up to a
-      // vivid, saturated racing livery (the raw lerp read muted in daylight).
-      const vivid = new THREE.Color(color);
-      const hsl = { h: 0, s: 0, l: 0 };
-      vivid.getHSL(hsl);
-      vivid.setHSL(hsl.h, Math.max(hsl.s, 0.92), Math.min(Math.max(hsl.l, 0.5), 0.58));
-      mesh.traverse((o) => {
-        const m = o as InstanceType<typeof THREE.Mesh>;
-        if (m.isMesh && m.material && 'color' in (m.material as object)) {
-          const mat = (m.material as InstanceType<typeof THREE.MeshStandardMaterial>).clone();
-          const lum = mat.color.r * 0.3 + mat.color.g * 0.6 + mat.color.b * 0.1;
-          // 0.18: some kit bodies ship with dark factory paint that the old 0.3
-          // threshold skipped — those cars stayed murky. Tyres/glass sit ≈0.05.
-          if (lum > 0.18) {
-            // the kit's colormap texture MULTIPLIES the tint (cyan × orange
-            // texel = murky green) — drop it on painted panels for clean paint
-            mat.map = null;
-            mat.color.copy(vivid);
-            mat.roughness = 0.28; // glossy paint catches the sun
-            mat.metalness = 0.35;
-          }
-          m.material = mat;
-        }
-      });
-    } else {
-      // procedural geometry is built per assembly → safe to dispose on swap
-      mesh.traverse((o: InstanceType<typeof THREE.Object3D>) => { o.userData.ownGeo = true; });
-    }
+    const mesh = buildProceduralCar(veh, color);
+    // procedural geometry + materials are built per assembly → dispose on swap
+    mesh.traverse((o: InstanceType<typeof THREE.Object3D>) => { o.userData.ownGeo = true; });
 
     // ── pronounced contour lines ──────────────────────────────────────
     // Overlay crisp ink edges on every body panel so the low-poly silhouette
@@ -1162,7 +1250,9 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     const edgeTargets: InstanceType<typeof THREE.Mesh>[] = [];
     mesh.traverse((o) => {
       const m = o as InstanceType<typeof THREE.Mesh>;
-      if (m.isMesh && m.geometry && !/wheel/i.test(m.name)) edgeTargets.push(m);
+      // wheels + tiny detail parts (noInk) skip ink: their edges read as noise
+      if (m.isMesh && m.geometry && !/wheel/i.test(m.name) && !m.userData.noInk
+        && !/wheel/i.test(m.parent?.name ?? '')) edgeTargets.push(m);
     });
     for (const m of edgeTargets) {
       const edges = new THREE.EdgesGeometry(m.geometry as InstanceType<typeof THREE.BufferGeometry>, 24);
@@ -1175,7 +1265,6 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     // livery: AVAX badge on the nose + door decals + FROSTBITE banner at the
     // rear — positions derive from the actual mesh bounds so every silhouette
     // (racer / sedan / hatch) wears them correctly
-    const bb = new THREE.Box3().setFromObject(mesh);
     const decal = (map: InstanceType<typeof THREE.CanvasTexture>, w: number, h: number, doubleSided = false) => {
       const m = new THREE.Mesh(
         new THREE.PlaneGeometry(w, h),
@@ -1184,27 +1273,28 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       m.userData.ownGeo = true; m.userData.ownMap = true;
       return m;
     };
-    const hood = decal(avaxTex(), 0.82, 0.82);
+    // anchors come from the builder itself (each silhouette knows its own
+    // hood/door/wing planes) with safe fallbacks
+    const dec = (mesh.userData.decor ?? {}) as { hoodY?: number; doorZ?: number; doorY?: number; wingX?: number; wingY?: number };
+    const hood = decal(avaxTex(), 0.72, 0.72);
     hood.rotation.x = -Math.PI / 2;
-    hood.position.set(0.55, template ? Math.max(0.4, bb.max.y * 0.62) : 0.58, 0);
+    hood.position.set(0.55, (dec.hoodY ?? 0.55) + 0.015, 0);
     group.add(hood);
-    const doorZ = template ? bb.max.z + 0.03 : 0.57; // procedural bbox includes wheels → fixed hull offset
-    const doorY = template ? Math.max(0.42, bb.max.y * 0.52) : 0.45;
     for (const s of [-1, 1]) {
-      const door = decal(avaxTex(), 0.56, 0.56);
-      door.position.set(0.05, doorY, s * doorZ);
+      const door = decal(avaxTex(), 0.5, 0.5);
+      door.position.set(0.05, dec.doorY ?? 0.45, s * ((dec.doorZ ?? 0.57) + 0.012));
       if (s < 0) door.rotation.y = Math.PI;
       group.add(door);
     }
-    const wing = decal(frostbiteTex(), 1.35, 0.42, true);
-    wing.position.set(-1.45, template ? bb.max.y + 0.08 : 0.98, 0);
+    const wing = decal(frostbiteTex(), 1.25, 0.38, true);
+    wing.position.set(dec.wingX ?? -1.45, dec.wingY ?? 0.9, 0);
     wing.rotation.y = Math.PI / 2;
     group.add(wing);
 
-    // collect spinnable wheel nodes (GLB kits name them wheel-*; procedural uses wheel-proc)
+    // collect spinnable wheel groups (buildWheel names them wheel-proc)
     const wheels: InstanceType<typeof THREE.Object3D>[] = [];
     mesh.traverse((o) => { if (/^wheel/i.test(o.name)) wheels.push(o); });
-    return { group, wheels, wheelAxis: template ? 'x' : 'z' };
+    return { group, wheels, wheelAxis: 'z' };
   }
 
   /** Swap-time cleanup: dispose cloned materials + per-assembly resources, but
@@ -1681,9 +1771,7 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       bursts.length = 0;
       // meshes, sprites, points, lines — plus their canvas textures
       scene.traverse(disposeObject);
-      // GLB templates (never added to the scene) hold the original materials;
-      // fallback aliases may repeat a template — double dispose is harmless
-      for (const tpl of Object.values(templates)) tpl?.traverse(disposeObject);
+      carEnv?.dispose(); // PMREM environment used by the car paint/glass
       bloom.dispose();
       composer.dispose();
       renderer.dispose();
