@@ -1,0 +1,391 @@
+/**
+ * CAR(D) GAME — SAMPLE-based engine sound (Google Racer pattern): six CC0
+ * recordings of the SAME engine at rising pitches, crossfaded + fine-pitched
+ * with playbackRate. Replaces the rejected live-synth engine ("doesn't sound
+ * like a car") — only short transients (gear shift, blow-off, overrun crackle)
+ * are synthesized, because transients synth well.
+ *
+ * Assets: /avalanche/cardgame/audio/loop0..5.m4a (~0.86s mono loops; the
+ * basePath prefix must be manual for public assets). We anchor on loops
+ * 0/2/4/5 and bend between anchors with playbackRate (~0.85..1.3).
+ *
+ * Pure view-layer: never touches match state or the engine. Safe under jsdom /
+ * SSR — everything guarded, never throws into the game loop. Toggle persists
+ * in localStorage ('cg_engine'), independent from the music toggle.
+ */
+
+const KEY = 'cg_engine'; // '1' on (default) | '0' off
+const LOOP_URL = (n: number) => `/avalanche/cardgame/audio/loop${n}.m4a`;
+const ANCHOR_LOOPS = [0, 2, 4, 5]; // which of the six files we actually play
+const GEARS = 6;
+const MASTER_VOL = 0.5;      // engine bed under the music
+const TICK_TC = 0.09;        // setTargetAtTime time constant (~60-120ms) — no zipper
+const LP_STEADY = 5000;      // slightly closed at cruise (anti-fatigue)
+const LP_OPEN = 8000;        // accel / boost opens it
+const LP_DECEL = 2500;       // hard decel closes it
+const DECEL_HARD = -0.35;    // d(speed01)/dt below this = hard decel
+const DECEL_GAIN = 0.63;     // ~-4 dB dip while decelerating hard
+const WOBBLE = 0.02;         // ±2% playbackRate anti-fatigue wobble
+
+/* ------------------------------------------------------------------ */
+/* Pure math — exported for tests                                      */
+/* ------------------------------------------------------------------ */
+
+const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+
+/** Virtual gear index 0..gears-1 from normalized speed. Monotone. */
+export function gearOf(speed01: number, gears = GEARS): number {
+  const s = clamp(speed01, 0, 1);
+  return Math.min(gears - 1, Math.floor(s * gears));
+}
+
+/**
+ * Sawtooth rpm 0..1 within each gear: revs from ~0.25 up to ~1.0 across the
+ * gear's speed span, then snaps back down on upshift (the pitch drop is the
+ * arcade feel). Always within [0.2, 1.05].
+ */
+export function gearRpm(speed01: number, gears = GEARS): number {
+  const s = clamp(speed01, 0, 1);
+  const g = gearOf(s, gears);
+  const frac = clamp(s * gears - g, 0, 1); // 0..1 inside the gear
+  return 0.25 + 0.75 * frac;
+}
+
+/**
+ * Per-loop crossfade gains for n anchors evenly spaced over rpm 0..1.
+ * Each loop ramps up to its anchor, holds to ~1.3× the anchor, then decays
+ * over one anchor step. Normalized so the weights sum to 1.
+ */
+export function loopWeights(rpmNorm: number, n: number): number[] {
+  if (n <= 0) return [];
+  if (n === 1) return [1];
+  const r = clamp(rpmNorm, 0, 1.1);
+  const step = 1 / (n - 1);
+  const raw: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = i * step;                       // anchor rpm of this loop
+    const rampStart = a - step;               // rises from the previous anchor
+    const holdEnd = Math.max(a * 1.3, a + 0.02);
+    const decayEnd = holdEnd + step;
+    let v: number;
+    if (r <= a) v = clamp((r - rampStart) / (a - rampStart), 0, 1);
+    else if (r <= holdEnd) v = 1;
+    else v = clamp(1 - (r - holdEnd) / (decayEnd - holdEnd), 0, 1);
+    raw.push(v);
+  }
+  const sum = raw.reduce((x, y) => x + y, 0);
+  return sum > 0 ? raw.map((v) => v / sum) : raw.map((_, i) => (i === 0 ? 1 : 0));
+}
+
+/**
+ * playbackRate fine-tune for the loop anchored at anchorIdx (of n even
+ * anchors): 1.0 exactly on the anchor, bending ~0.85..1.3 between anchors so
+ * pitch tracks rpm continuously across the crossfade.
+ */
+export function rateFor(rpmNorm: number, anchorIdx: number, n: number): number {
+  const step = n > 1 ? 1 / (n - 1) : 1;
+  const a = n > 1 ? anchorIdx * step : 0.5;
+  const d = (clamp(rpmNorm, 0, 1.1) - a) / step; // distance in anchor units
+  return clamp(Math.pow(1.28, d), 0.85, 1.3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Runtime                                                             */
+/* ------------------------------------------------------------------ */
+
+export interface EngineAudio {
+  /** Per-tick state for the player car; cheap, callable at 10Hz. */
+  setState(s: { speed01: number; boosted: boolean; fin: boolean }): void;
+  /** Race running gate (also starts lazy asset load + ctx resume). */
+  raceOn(on: boolean): void;
+  enabled(): boolean;
+  /** Toggle + persist. Independent from the music toggle. */
+  toggle(): boolean;
+  destroy(): void;
+}
+
+export function createEngineAudio(): EngineAudio {
+  const W = typeof window !== 'undefined' ? (window as unknown as Record<string, unknown>) : null;
+  const D = typeof document !== 'undefined' ? document : null;
+  const AC = (W?.AudioContext || W?.webkitAudioContext) as (new () => AudioContext) | undefined;
+  const N_ANCHORS = ANCHOR_LOOPS.length;
+
+  let on = true;
+  try { on = localStorage.getItem(KEY) !== '0'; } catch { /* private mode / node */ }
+
+  let ctx: AudioContext | null = null;
+  let buffers: (AudioBuffer | null)[] | null = null; // decoded anchor loops
+  let loading = false;
+  let running = false;
+  let dead = false;
+  let hidden = false;
+
+  // graph (built once buffers land)
+  let sources: AudioBufferSourceNode[] = [];
+  let loopGains: GainNode[] = [];
+  let lowpass: BiquadFilterNode | null = null;
+  let master: GainNode | null = null;
+  let comp: DynamicsCompressorNode | null = null;
+  let lfo: OscillatorNode | null = null;
+  let noiseBuf: AudioBuffer | null = null; // shared white noise for one-shots
+
+  // per-tick state
+  let rpm = 0.25;            // smoothed rpm we actually voice
+  let prevSpeed = 0;
+  let prevGear = 0;
+  let prevBoost = false;
+  let finished = false;
+  let haveTick = false;
+  let nextCrackleAt = 0;
+
+  function ensureCtx(): AudioContext | null {
+    if (dead || !on || !AC) return null;
+    try {
+      if (!ctx) ctx = new AC();
+      if (ctx.state === 'suspended') ctx.resume().catch(() => { /* pre-gesture */ });
+      return ctx;
+    } catch { return null; }
+  }
+
+  function decode(c: AudioContext, data: ArrayBuffer): Promise<AudioBuffer> {
+    return new Promise((res, rej) => {
+      try { c.decodeAudioData(data, res, rej); } catch (e) { rej(e); }
+    });
+  }
+
+  function load() {
+    const c = ensureCtx();
+    if (!c || loading || buffers) return;
+    loading = true;
+    Promise.all(ANCHOR_LOOPS.map(async (n) => {
+      try {
+        const r = await fetch(LOOP_URL(n));
+        if (!r.ok) return null;
+        return await decode(c, await r.arrayBuffer());
+      } catch { return null; }
+    })).then((bufs) => {
+      loading = false;
+      if (dead) return;
+      buffers = bufs;
+      if (running && on) buildGraph();
+    }).catch(() => { loading = false; });
+  }
+
+  function buildGraph() {
+    const c = ensureCtx();
+    if (!c || !buffers || sources.length) return;
+    try {
+      comp = c.createDynamicsCompressor();
+      comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 6;
+      comp.connect(c.destination);
+      master = c.createGain();
+      master.gain.value = 0.0001; // fade in via tick
+      master.connect(comp);
+      lowpass = c.createBiquadFilter();
+      lowpass.type = 'lowpass'; lowpass.frequency.value = LP_STEADY; lowpass.Q.value = 0.5;
+      lowpass.connect(master);
+      lfo = c.createOscillator();
+      lfo.frequency.value = 0.45; // slow anti-fatigue wobble
+      const lfoGain = c.createGain();
+      lfoGain.gain.value = WOBBLE;
+      lfo.connect(lfoGain);
+      for (let i = 0; i < buffers.length; i++) {
+        const b = buffers[i];
+        if (!b) { sources.push(null as unknown as AudioBufferSourceNode); loopGains.push(null as unknown as GainNode); continue; }
+        const src = c.createBufferSource();
+        src.buffer = b; src.loop = true;
+        // trim AAC encoder priming/padding so the loop point doesn't click
+        try {
+          src.loopStart = Math.min(0.05, b.duration * 0.06);
+          src.loopEnd = Math.max(src.loopStart + 0.1, b.duration - 0.02);
+        } catch { /* older impl */ }
+        const g = c.createGain();
+        g.gain.value = 0.0001;
+        src.connect(g); g.connect(lowpass);
+        try { lfoGain.connect(src.playbackRate); } catch { /* param connect unsupported */ }
+        src.start();
+        sources.push(src); loopGains.push(g);
+      }
+      lfo.start();
+    } catch { teardownGraph(); }
+  }
+
+  function teardownGraph() {
+    try { sources.forEach((s) => { try { s?.stop(); s?.disconnect(); } catch { /* ignore */ } }); } catch { /* ignore */ }
+    try { loopGains.forEach((g) => { try { g?.disconnect(); } catch { /* ignore */ } }); } catch { /* ignore */ }
+    try { lfo?.stop(); lfo?.disconnect(); } catch { /* ignore */ }
+    try { lowpass?.disconnect(); } catch { /* ignore */ }
+    try { master?.disconnect(); } catch { /* ignore */ }
+    try { comp?.disconnect(); } catch { /* ignore */ }
+    sources = []; loopGains = []; lfo = null; lowpass = null; master = null; comp = null;
+  }
+
+  /** Shared white-noise buffer for the synthesized transients. */
+  function noise(c: AudioContext): AudioBuffer | null {
+    if (noiseBuf) return noiseBuf;
+    try {
+      const b = c.createBuffer(1, Math.floor(c.sampleRate * 0.35), c.sampleRate);
+      const d = b.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      noiseBuf = b;
+      return b;
+    } catch { return null; }
+  }
+
+  /** Bandpassed noise burst: gear shift / blow-off / crackle transients. */
+  function burst(freq: number, q: number, attack: number, decay: number, vol: number) {
+    const c = ensureCtx();
+    if (!c || !comp || hidden) return;
+    try {
+      const b = noise(c); if (!b) return;
+      const t0 = c.currentTime + 0.005;
+      const src = c.createBufferSource();
+      src.buffer = b;
+      const bp = c.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = freq; bp.Q.value = q;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(vol, t0 + attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + attack + decay);
+      src.connect(bp); bp.connect(g); g.connect(comp);
+      src.start(t0); src.stop(t0 + attack + decay + 0.05);
+    } catch { /* cosmetic */ }
+  }
+
+  /** ~10ms 70Hz sine thump under the gear-shift click. */
+  function thump() {
+    const c = ensureCtx();
+    if (!c || !comp || hidden) return;
+    try {
+      const t0 = c.currentTime + 0.005;
+      const o = c.createOscillator();
+      o.type = 'sine'; o.frequency.value = 70;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.014);
+      o.connect(g); g.connect(comp);
+      o.start(t0); o.stop(t0 + 0.05);
+    } catch { /* cosmetic */ }
+  }
+
+  const shiftClick = () => { burst(3000, 1.2, 0.005, 0.1, 0.28); thump(); };
+  const blowOff = () => burst(1200, 0.9, 0.012, 0.28, 0.3);
+  const crackle = () => burst(1000 + Math.random() * 2000, 2.5, 0.004, 0.03 + Math.random() * 0.03, 0.16 + Math.random() * 0.08);
+
+  /** Push current rpm/gain/filter targets into the graph (smoothed). */
+  function voice(accelHard: boolean, decelHard: boolean, boosted: boolean) {
+    const c = ctx;
+    if (!c || !master || !lowpass || !sources.length) return;
+    try {
+      const t = c.currentTime;
+      const w = loopWeights(rpm, N_ANCHORS);
+      for (let i = 0; i < N_ANCHORS; i++) {
+        const src = sources[i], g = loopGains[i];
+        if (!src || !g) continue;
+        g.gain.setTargetAtTime(Math.max(0.0001, w[i]), t, TICK_TC);
+        src.playbackRate.setTargetAtTime(rateFor(rpm, i, N_ANCHORS), t, TICK_TC);
+      }
+      const cutoff = boosted || accelHard ? LP_OPEN : decelHard ? LP_DECEL : LP_STEADY;
+      lowpass.frequency.setTargetAtTime(cutoff, t, TICK_TC * 1.5);
+      let vol = MASTER_VOL;
+      if (decelHard) vol *= DECEL_GAIN;
+      if (finished || !running || !on || hidden) vol = 0.0001;
+      master.gain.setTargetAtTime(Math.max(0.0001, vol),
+        t, finished ? 0.35 : hidden ? 0.02 : !running || !on ? 0.05 : TICK_TC);
+    } catch { /* never break the game loop */ }
+  }
+
+  function fadeOutFast() {
+    try { master?.gain.setTargetAtTime(0.0001, ctx?.currentTime ?? 0, 0.04); } catch { /* ignore */ }
+  }
+
+  function onVis() {
+    if (dead) return;
+    hidden = !!D && D.visibilityState === 'hidden';
+    if (hidden) fadeOutFast();
+    else if (running && on && !finished) voice(false, false, false);
+  }
+  try { D?.addEventListener('visibilitychange', onVis); } catch { /* jsdom */ }
+
+  return {
+    setState(s: { speed01: number; boosted: boolean; fin: boolean }) {
+      if (dead) return;
+      try {
+        const speed = clamp(Number.isFinite(s.speed01) ? s.speed01 : 0, 0, 1);
+        const dt = 0.1; // 10Hz nominal tick
+        const accel = haveTick ? (speed - prevSpeed) / dt : 0;
+        const gear = gearOf(speed);
+        const decelHard = accel < DECEL_HARD;
+        const accelHard = accel > 0.25;
+
+        // gear ladder: on upshift the rpm target snaps down + shift transient
+        if (haveTick && gear > prevGear && !s.fin && running && on) shiftClick();
+        // boost end → blow-off
+        if (haveTick && prevBoost && !s.boosted && running && on && !s.fin) blowOff();
+
+        let target = gearRpm(speed);
+        if (s.boosted) target = Math.min(1.05, target + 0.15);
+
+        // smooth rpm toward target; hard decel decays ~2× faster
+        const k = target < rpm && decelHard ? 0.7 : 0.35;
+        rpm = rpm + (target - rpm) * k;
+        rpm = clamp(rpm, 0.2, 1.05);
+
+        // overrun crackle while decelerating hard at high rpm
+        if (decelHard && rpm > 0.6 && running && on && !s.fin && !hidden) {
+          const now = Date.now();
+          if (now >= nextCrackleAt) {
+            crackle();
+            nextCrackleAt = now + 80 + Math.random() * 220;
+          }
+        }
+
+        if (s.fin && !finished) finished = true;
+        prevSpeed = speed; prevGear = gear; prevBoost = s.boosted; haveTick = true;
+        voice(accelHard, decelHard, s.boosted);
+      } catch { /* never break the game loop */ }
+    },
+    raceOn(v: boolean) {
+      if (dead || running === v) return;
+      running = v;
+      if (v) {
+        finished = false; haveTick = false; rpm = 0.25; prevGear = 0; prevBoost = false;
+        if (on) {
+          load(); // lazy: ctx + fetch/decode on first race
+          if (buffers && !sources.length) buildGraph();
+          if (ctx?.state === 'suspended') { try { ctx.resume().catch(() => { /* gate */ }); } catch { /* ignore */ } }
+        }
+      } else {
+        fadeOutFast();
+      }
+      if (W) W.__cgEngine = { on, running };
+    },
+    enabled() { return on; },
+    toggle() {
+      on = !on;
+      try { localStorage.setItem(KEY, on ? '1' : '0'); } catch { /* ignore */ }
+      if (on && running) {
+        load();
+        if (buffers && !sources.length) buildGraph();
+        if (ctx?.state === 'suspended') { try { ctx.resume().catch(() => { /* gate */ }); } catch { /* ignore */ } }
+        if (!finished) voice(false, false, false);
+      } else {
+        fadeOutFast();
+      }
+      if (W) W.__cgEngine = { on, running };
+      return on;
+    },
+    destroy() {
+      dead = true;
+      try { D?.removeEventListener('visibilitychange', onVis); } catch { /* ignore */ }
+      teardownGraph();
+      try { ctx?.close(); } catch { /* ignore */ }
+      ctx = null; buffers = null; noiseBuf = null;
+      try { if (W) delete W.__cgEngine; } catch { /* ignore */ }
+    },
+  };
+}
+
+/** Label for the engine toggle chip/button. */
+export function engineLabel(on: boolean): string { return on ? '🏎️ ENGINE' : '🔇 ENGINE'; }

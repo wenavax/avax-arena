@@ -23,6 +23,7 @@ import { attachView3D, type View3D } from './view3d';
 import { attachStageHud, type StageHud } from './stageHud';
 import { comboJuice, cancelComboJuice } from './juice';
 import { recordMatch } from './progress';
+import { createEngineAudio, engineLabel } from './engineAudio';
 
 export interface StakedOpts {
   seed: string;
@@ -54,6 +55,8 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   let bestCycle = { sig: '', i: 0 };
   // 🎵 quiet race music, shared toggle across modes
   const sound = createCgSound();
+  // 🏎️ sample-based engine bed for the player car (independent toggle)
+  const engine = createEngineAudio();
   // my strongest play this match → history/records (meta layer)
   const myBest = { mult: 0, combo: null as string | null, cards: 0 };
   let loopH: ReturnType<typeof setInterval> | null = null;
@@ -84,7 +87,8 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   hud.chips.innerHTML = `
     <span class="chip eng-round">ROUND 1/3</span>
     <span class="chip mono">seed ${short(opts.seed)} · server-verified</span>
-    <button class="chip eng-snd" title="Race music on/off">🎵 MUSIC</button>`;
+    <button class="chip eng-snd" title="Race music on/off">🎵 MUSIC</button>
+    <button class="chip eng-engt" title="Engine sound on/off">🏎️ ENGINE</button>`;
 
   // ── juice helpers (cosmetic only) ────────────────────────────────────
   function log(html: string) { hud.log(html); }
@@ -140,12 +144,20 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
           lastWall = performance.now();
           loopH = setInterval(loop, 100);
           sound.raceOn(true);
+          engine.raceOn(true);
         });
       },
     }));
   }
 
   function renderTrack() {
+    // engine bed follows the player car (speed tops out ≈ base 10 × cap 5)
+    const pe = s.players[0];
+    if (pe) engine.setState({
+      speed01: Math.min(1, speed(s, pe) / 50),
+      boosted: !!(pe.nm && s.t < pe.nm.endsAt) && !pe.fin,
+      fin: pe.fin,
+    });
     // forward a per-tick snapshot to the 3D stage (lerped to 60fps there)
     view3d?.forward(s.players.map((p) => ({
       pid: p.id, dist: p.dist, speed: speed(s, p),
@@ -235,6 +247,9 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   const sndBtn = root.querySelector('.eng-snd') as HTMLButtonElement;
   sndBtn.textContent = soundLabel(sound.enabled());
   sndBtn.onclick = () => { sndBtn.textContent = soundLabel(sound.toggle()); };
+  const engBtn = root.querySelector('.eng-engt') as HTMLButtonElement;
+  engBtn.textContent = engineLabel(engine.enabled());
+  engBtn.onclick = () => { engBtn.textContent = engineLabel(engine.toggle()); };
 
   // Keyboard: 1–9/0 toggle a card, Space/Enter play, B best, C clear.
   function onKey(e: KeyboardEvent) {
@@ -309,6 +324,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     if (roundDone(s)) {
       if (loopH) clearInterval(loopH); loopH = null;
       sound.raceOn(false);
+      engine.raceOn(false);
       const ended = s.roundIndex; // 0-based; scoreRound advances it
       const order = scoreRound(s);
       toast(`Round ${ended + 1}: ${nameOf(order[0])} wins!`);
@@ -369,6 +385,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     view3d?.destroy(); view3d = null;
     hud.destroy();
     sound.destroy();
+    engine.destroy();
     if (!done) root.innerHTML = '';
   };
 }

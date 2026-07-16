@@ -14,6 +14,7 @@ import { attachView3D, type View3D } from './view3d';
 import { showRaceResults, closeRaceResults } from './resultsOverlay';
 import { comboJuice, cancelComboJuice } from './juice';
 import { recordMatch } from './progress';
+import { createEngineAudio, engineLabel } from './engineAudio';
 
 export interface CardGameOptions {
   address?: string | null;
@@ -72,6 +73,7 @@ const CHIPS = `
   <span class="chip" id="roundChip">ROUND 1/3</span>
   <span class="chip mono" id="seedChip"></span>
   <button class="chip" id="sndToggle" title="Race music on/off">🎵 MUSIC</button>
+  <button class="chip" id="engToggle" title="Engine sound on/off">🏎️ ENGINE</button>
   <button class="chip" id="helpToggle" title="Rules, combos & keyboard shortcuts">❔ HOW TO PLAY</button>
 `;
 
@@ -180,6 +182,8 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   const myBest = { mult: 0, combo: null as string | null, cards: 0 };
   // 🎵 quiet race music, shared toggle across modes
   const sound = createCgSound();
+  // 🏎️ sample-based engine bed for the player car (independent toggle)
+  const engine = createEngineAudio();
   // 3D view (pure renderer swap — the game logic/tick is identical either way)
   let view3d: View3D | null = null;
   const usedVeh: Record<string, Record<string, boolean>> = { P1: {}, P2: {}, P3: {}, P4: {} };
@@ -238,6 +242,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       lastWall = performance.now();
       tickH = setInterval(tick, 100);
       sound.raceOn(true);
+      engine.raceOn(true);
       log(`<b>Round ${roundIndex + 1}</b> started`);
       // first race ever: one contextual tip beats a tutorial screen
       if (hintsOn && racesDone === 0 && roundIndex === 0)
@@ -351,7 +356,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
         log(`${nameOf(p.id)} <b>finished</b> @ ${p.ft}s`);
       }
     });
-    if (players.every((p) => p.fin) || t >= CFG.TIMEOUT) { if (tickH) clearInterval(tickH); sound.raceOn(false); endRound(); return true; }
+    if (players.every((p) => p.fin) || t >= CFG.TIMEOUT) { if (tickH) clearInterval(tickH); sound.raceOn(false); engine.raceOn(false); endRound(); return true; }
     t += 0.1;
     return false;
   }
@@ -415,6 +420,13 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   const colorCache: Record<string, string> = {};
   function colorOf(pid: string) { return (colorCache[pid] ??= (cssv(COLORS[pid]).trim() || '#ed2f39')); }
   function render(finalOrder?: Player[], rw?: number[]) {
+    // engine bed follows the player car (speed() tops out ≈ base 10 × cap 5)
+    const pe = players[0];
+    if (pe) engine.setState({
+      speed01: Math.min(1, speed(pe) / 50),
+      boosted: !!(pe.nm && t < pe.nm.endsAt) && !pe.fin,
+      fin: pe.fin,
+    });
     // 3D stage: forward a per-tick snapshot; three.js lerps to 60fps on its own
     view3d?.forward(players.map((p) => ({
       pid: p.id, dist: p.dist, speed: speed(p),
@@ -525,6 +537,10 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   const sndBtn = $('sndToggle') as HTMLButtonElement;
   sndBtn.textContent = soundLabel(sound.enabled());
   sndBtn.onclick = () => { sndBtn.textContent = soundLabel(sound.toggle()); };
+  const engBtn = $('engToggle') as HTMLButtonElement;
+  engBtn.textContent = engineLabel(engine.enabled());
+  engBtn.classList.toggle('off', !engine.enabled());
+  engBtn.onclick = () => { const on = engine.toggle(); engBtn.textContent = engineLabel(on); engBtn.classList.toggle('off', !on); };
 
   const helpBtn = $('helpToggle') as HTMLButtonElement;
   helpBtn.onclick = () => { const h = $('cgHelp'); h.hidden = !h.hidden; helpBtn.classList.toggle('on', !h.hidden); };
@@ -616,6 +632,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     if (toastT) clearTimeout(toastT);
     countT.forEach(clearTimeout);
     sound.destroy();
+    engine.destroy();
     view3d?.destroy(); view3d = null; // tears down three.js + fullscreen listeners
     hud.destroy();
     document.removeEventListener('keydown', onKey);

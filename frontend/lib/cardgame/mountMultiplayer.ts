@@ -19,6 +19,7 @@ import { attachStageHud, type StageHud } from './stageHud';
 import { showRaceResults, closeRaceResults, updateRaceResultsStatus } from './resultsOverlay';
 import { comboJuice, cancelComboJuice } from './juice';
 import { recordMatch } from './progress';
+import { createEngineAudio, engineLabel } from './engineAudio';
 
 type Pid = 'P1' | 'P2' | 'P3' | 'P4';
 interface Seat { pid: Pid; address: string }
@@ -70,6 +71,8 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   let curRound = 0;
   // 🎵 quiet race music, shared toggle across modes
   const sound = createCgSound();
+  // 🏎️ sample-based engine bed for my car (independent toggle)
+  const engine = createEngineAudio();
   let hand: HandCard[] = [];
   let hlim = 0, myCd = 0, myFin = false;
   // eval + cards of the play we just sent — lets the confirmed popup use the
@@ -106,6 +109,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     <span class="chip eng-round">MULTIPLAYER · WAITING</span>
     <span class="chip mono">4 players · server-authoritative</span>
     <button class="chip eng-snd" title="Race music on/off">🎵 MUSIC</button>
+    <button class="chip eng-engt" title="Engine sound on/off">🏎️ ENGINE</button>
     <span class="chip mono eng-note-chip" style="display:none"></span>`;
 
   // ── juice helpers (cosmetic only) ───────────────────────────────────
@@ -159,6 +163,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     curRound = d.round;
     view3d?.setRound(d.round); // per-round weather
     sound.raceOn(true);
+    engine.raceOn(true);
     ($('eng-round')).textContent = `ROUND ${d.round + 1}/${CFG.ROUNDS}`;
     ($('eng-vsel-slot')).innerHTML = '';
     banner(`ROUND ${d.round + 1}`);
@@ -168,7 +173,11 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   // ── live snapshots ──────────────────────────────────────────────────
   on('cardgame:state', (d: { round: number; t: number; players: StatePlayer[]; applied?: Partial<Record<Pid, AppliedPlay>> }) => {
-    for (const p of d.players) if (p.pid === myPid) { myCd = p.cd; myFin = p.fin; }
+    for (const p of d.players) if (p.pid === myPid) {
+      myCd = p.cd; myFin = p.fin;
+      // engine bed follows MY car from the server snapshot
+      engine.setState({ speed01: Math.min(1, p.speed / 50), boosted: p.fx === 'fx-nitro' && !p.fin, fin: p.fin });
+    }
     // server-accepted plays this tick → combo popup (mine) + event log (all)
     if (d.applied) {
       for (const pid of Object.keys(d.applied) as Pid[]) {
@@ -220,6 +229,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   on('cardgame:round-end', (d: { round: number; totals: Record<Pid, number>; order?: Pid[] }) => {
     const winner = d.order?.[0];
     sound.raceOn(false);
+    engine.raceOn(false);
     toast(winner ? `Round ${d.round + 1}: ${nameOf(winner)} wins!` : `Round ${d.round + 1} scored.`);
     log(`<b>Round ${d.round + 1}</b> — totals: ${(Object.keys(d.totals) as Pid[]).map((pid) => `${nameOf(pid)} ${d.totals[pid]}`).join(' · ')}`);
     note(`Round ${d.round + 1} scored.`);
@@ -227,6 +237,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   on('cardgame:finished', (d: { ranking: Pid[]; rankingAddresses: string[]; totals: Record<Pid, number> }) => {
     sound.raceOn(false);
+    engine.raceOn(false);
     const myPlace = d.ranking.indexOf(myPid) + 1;
     const flags = myPlace >= 1 ? recordMatch({
       ts: Date.now(), mode: 'mp', place: myPlace, pts: d.totals[myPid] ?? 0,
@@ -352,6 +363,9 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   const sndBtn = root.querySelector('.eng-snd') as HTMLButtonElement;
   sndBtn.textContent = soundLabel(sound.enabled());
   sndBtn.onclick = () => { sndBtn.textContent = soundLabel(sound.toggle()); };
+  const engBtn = root.querySelector('.eng-engt') as HTMLButtonElement;
+  engBtn.textContent = engineLabel(engine.enabled());
+  engBtn.onclick = () => { engBtn.textContent = engineLabel(engine.toggle()); };
 
   // Keyboard: 1–9/0 toggle a card, Space/Enter play, B best, C clear.
   function onKey(e: KeyboardEvent) {
@@ -386,6 +400,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     hud.destroy();
     if (toastT) clearTimeout(toastT);
     sound.destroy();
+    engine.destroy();
     root.innerHTML = '';
   };
 }

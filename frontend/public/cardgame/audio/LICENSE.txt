@@ -1,0 +1,4 @@
+Engine sound loops (loop0.m4a … loop5.m4a)
+Source: "Racing car engine sound loops" by domasx2
+https://opengameart.org/content/racing-car-engine-sound-loops
+License: CC0 (public domain). Converted WAV → AAC/m4a, otherwise unmodified.

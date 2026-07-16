@@ -1227,6 +1227,11 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     smokeAcc: number;
     slipUntil: number;
     lastFx: string | null;
+    // wheel FX (blur discs + brake glow) — one shared material each per assembly
+    blurMat: InstanceType<typeof THREE.MeshBasicMaterial>;
+    brakeMat: InstanceType<typeof THREE.MeshBasicMaterial>;
+    blurDiscs: InstanceType<typeof THREE.Mesh>[];
+    brakeGlow: number; // 0..1 envelope: flares while braking, decays ×0.93/frame
   }
   const rigs = new Map<string, CarRig>();
 
@@ -1242,6 +1247,35 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
   const glowTexture = radialTex('rgba(255,255,255,0.95)', 'rgba(255,255,255,0)');
   const smokeTexture = radialTex('rgba(150,155,165,0.5)', 'rgba(150,155,165,0)');
   const shadowTexture = radialTex('rgba(0,0,0,0.5)', 'rgba(0,0,0,0)'); // soft contact shadow
+
+  // ── wheel-blur smear (the classic Gran Turismo trick) ────────────────
+  // ONE shared canvas texture for every blur disc. Per-assembly materials
+  // reference it WITHOUT the ownMap flag, so vehicle swaps never dispose it;
+  // the destroy() scene traversal reclaims it once (same as glowTexture).
+  // Brightest gray is #d0d4da-range — pure white would bloom into a blob.
+  const wheelBlurTex = canvasTex(128, 128, (ctx) => {
+    ctx.clearRect(0, 0, 128, 128);
+    // dark tyre ring hugging the outer edge
+    ctx.strokeStyle = 'rgba(15,15,20,0.85)'; ctx.lineWidth = 13;
+    ctx.beginPath(); ctx.arc(64, 64, 54, 0, Math.PI * 2); ctx.stroke();
+    // faint smeared rim ring
+    ctx.strokeStyle = 'rgba(208,212,218,0.28)'; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.arc(64, 64, 41, 0, Math.PI * 2); ctx.stroke();
+    // broken gray arc sweeps — read as motion-blurred spokes
+    for (let i = 0; i < 4; i++) {
+      ctx.strokeStyle = `rgba(185,192,202,${0.18 - i * 0.03})`;
+      ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(64, 64, 17 + i * 8, i * 1.9, i * 1.9 + Math.PI * 1.45); ctx.stroke();
+    }
+    // hub smudge (transparent centre otherwise)
+    ctx.fillStyle = 'rgba(150,156,166,0.24)';
+    ctx.beginPath(); ctx.arc(64, 64, 10, 0, Math.PI * 2); ctx.fill();
+  });
+  // preallocated tints — the render loop lerps toward these, zero per-frame allocs
+  const BLUR_GOLD = new THREE.Color(0xf5c542);    // boost tint
+  const BLUR_NEUTRAL = new THREE.Color(0xffffff); // texture carries the gray
+  const BRAKE_ORANGE = new THREE.Color(0xff6a00); // idle-glow end of the ramp
+  const BRAKE_HOT = new THREE.Color(0xff3014);    // bright red-orange at full glow
 
   // exhaust / slip smoke: pooled sprites, skipped entirely on low-end devices
   const SMOKE_POOL = lowEnd ? 0 : 110;
@@ -1278,12 +1312,59 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     }
   }
 
+  /** Wheel FX pair for ONE wheel: speed-blur disc + brake-glow ring, both on
+   *  the wheel's OUTER face (the tyre cylinder is capped, so a centre-placed
+   *  plane would be occluded). They are parented to the wheel's PARENT — not
+   *  the wheel itself — so they never spin at wheel speed (a static smear is
+   *  the whole trick; the render loop drifts the disc slowly instead).
+   *  Geometry is per-assembly (ownGeo); materials are the assembly-shared
+   *  blurMat/brakeMat passed in. Returns the blur disc for the slow drift. */
+  function addWheelFx(
+    wheel: InstanceType<typeof THREE.Object3D>,
+    axis: 'x' | 'z',
+    fallbackParent: InstanceType<typeof THREE.Object3D>,
+    blurMat: InstanceType<typeof THREE.MeshBasicMaterial>,
+    brakeMat: InstanceType<typeof THREE.MeshBasicMaterial>,
+  ): InstanceType<typeof THREE.Mesh> {
+    // size from the wheel's bounds: radius across the spin plane, width along axis
+    const bb = new THREE.Box3().setFromObject(wheel);
+    const s = bb.getSize(new THREE.Vector3());
+    const width = axis === 'x' ? s.x : s.z;
+    const r = (axis === 'x' ? Math.max(s.y, s.z) : Math.max(s.x, s.y)) / 2;
+    // outer side of the car along the spin axis (which face the camera sees)
+    const out = (axis === 'x' ? Math.sign(wheel.position.x) : Math.sign(wheel.position.z)) || 1;
+    const parent = wheel.parent ?? fallbackParent;
+    const place = (m: InstanceType<typeof THREE.Mesh>, lift: number) => {
+      m.userData.ownGeo = true; m.userData.noInk = true;
+      m.position.copy(wheel.position);
+      if (axis === 'x') m.position.x += out * (width / 2 + lift);
+      else m.position.z += out * (width / 2 + lift);
+      parent.add(m);
+    };
+    // blur disc: slightly smaller than the tyre, perpendicular to the spin axis.
+    // CircleGeometry faces +z (matches procedural axis 'z'); bake a rotateY for
+    // GLB-style axis 'x' so the render loop can drift plain rotation.z/.x.
+    const discGeo = new THREE.CircleGeometry(r * 0.94, 24);
+    if (axis === 'x') discGeo.rotateY(Math.PI / 2);
+    const disc = new THREE.Mesh(discGeo, blurMat);
+    place(disc, 0.02);
+    // brake glow: emissive-orange ring sized like the actual brake disc,
+    // floated just off the wheel face so it reads as heat behind the spokes
+    const ringGeo = new THREE.RingGeometry(r * 0.26, r * 0.46, 20);
+    if (axis === 'x') ringGeo.rotateY(Math.PI / 2);
+    place(new THREE.Mesh(ringGeo, brakeMat), 0.035);
+    return disc;
+  }
+
   /** Car body + livery for one vehicle type; swapped in place when the seat
    *  picks a different vehicle for the round. */
   function buildAssembly(veh: string | null, color: number): {
     group: InstanceType<typeof THREE.Group>;
     wheels: InstanceType<typeof THREE.Object3D>[];
     wheelAxis: 'x' | 'z';
+    blurMat: InstanceType<typeof THREE.MeshBasicMaterial>;
+    brakeMat: InstanceType<typeof THREE.MeshBasicMaterial>;
+    blurDiscs: InstanceType<typeof THREE.Mesh>[];
   } {
     const group = new THREE.Group();
     const mesh = buildProceduralCar(veh, color);
@@ -1347,7 +1428,24 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     // collect spinnable wheel groups (buildWheel names them wheel-proc)
     const wheels: InstanceType<typeof THREE.Object3D>[] = [];
     mesh.traverse((o) => { if (/^wheel/i.test(o.name)) wheels.push(o); });
-    return { group, wheels, wheelAxis: 'z' };
+
+    // wheel FX: ONE material of each kind per assembly (all four wheels share
+    // it, so the render loop sets opacity/tint once per rig). Materials are
+    // per-assembly → disposeAssembly reclaims them on swap; the blur texture
+    // is module-shared and carries NO ownMap flag, so it survives swaps.
+    const wheelAxis: 'x' | 'z' = 'z';
+    const blurMat = new THREE.MeshBasicMaterial({
+      map: wheelBlurTex, transparent: true, opacity: 0,
+      side: THREE.DoubleSide, depthWrite: false,
+    });
+    const brakeMat = new THREE.MeshBasicMaterial({
+      color: 0xff6a00, transparent: true, opacity: 0,
+      side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const blurDiscs: InstanceType<typeof THREE.Mesh>[] = [];
+    for (const w of wheels) blurDiscs.push(addWheelFx(w, wheelAxis, mesh, blurMat, brakeMat));
+
+    return { group, wheels, wheelAxis, blurMat, brakeMat, blurDiscs };
   }
 
   /** Swap-time cleanup: dispose cloned materials + per-assembly resources, but
@@ -1453,6 +1551,7 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       wheels: asm.wheels, wheelAxis: asm.wheelAxis, trailAcc: 0,
       targetX: X0, curX: X0, speed: 0, boosted: false, fin: false,
       flameCore, headMats, tailMats, poolMat, smSpeed: 0, smokeAcc: 0, slipUntil: 0, lastFx: null,
+      blurMat: asm.blurMat, brakeMat: asm.brakeMat, blurDiscs: asm.blurDiscs, brakeGlow: 0,
     };
     rigs.set(seat.pid, rig);
     drawLabel(rig, seat.name, seat.color);
@@ -1656,6 +1755,9 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
         rig.assembly = next.group;
         rig.wheels = next.wheels;
         rig.wheelAxis = next.wheelAxis;
+        rig.blurMat = next.blurMat;   // old ones died with disposeAssembly
+        rig.brakeMat = next.brakeMat;
+        rig.blurDiscs = next.blurDiscs;
         rig.root.add(next.group);
       }
       rig.targetX = X0 + (Math.min(c.dist, TRACK) / TRACK) * LEN;
@@ -1731,6 +1833,22 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       // taillights: dim glow, flaring bright while decelerating
       const braking = moving && accel < -0.9;
       for (const m of rig.tailMats) m.opacity += ((rig.fin ? 0.08 : braking ? 1 : 0.3) - m.opacity) * Math.min(1, dt * 10);
+      // wheel blur discs: fade the smear over the real wheel as speed builds
+      // (GT trick — the wheel stays visible underneath). Gold tint on boost.
+      const blurTarget = Math.min(1, Math.max(0, (rig.smSpeed - 9) / 16)) * 0.85;
+      rig.blurMat.opacity += (blurTarget - rig.blurMat.opacity) * Math.min(1, dt * 8);
+      rig.blurMat.color.lerp(rig.boosted ? BLUR_GOLD : BLUR_NEUTRAL, Math.min(1, dt * 6));
+      if (rig.blurMat.opacity > 0.02) {
+        // slow drift only — a smear spinning at wheel speed defeats the illusion
+        const drift = dt * 1.3;
+        for (const d of rig.blurDiscs) { if (rig.wheelAxis === 'x') d.rotation.x += drift; else d.rotation.z += drift; }
+      }
+      // brake glow: instant flare on decel, exponential cool-down (pairs with
+      // the taillight flare above); colour ramps orange → hot red-orange
+      rig.brakeGlow = Math.max(rig.brakeGlow * 0.93, braking ? 1 : 0);
+      if (rig.brakeGlow < 0.004) rig.brakeGlow = 0;
+      rig.brakeMat.opacity = rig.brakeGlow * 0.7;
+      rig.brakeMat.color.copy(BRAKE_ORANGE).lerp(BRAKE_HOT, rig.brakeGlow);
       // twin-layer exhaust flame: length tracks boost intensity, core flickers hotter
       const boostRatio = Math.min(1, Math.max(0, (rig.speed - 10) / 30));
       const flameOn = rig.boosted && moving;
