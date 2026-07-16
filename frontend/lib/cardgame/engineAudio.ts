@@ -18,7 +18,8 @@ const KEY = 'cg_engine'; // '1' on (default) | '0' off
 const LOOP_URL = (n: number) => `/avalanche/cardgame/audio/loop${n}.m4a`;
 const ANCHOR_LOOPS = [0, 2, 4, 5]; // which of the six files we actually play
 const GEARS = 6;
-const MASTER_VOL = 0.5;      // engine bed under the music
+const MASTER_VOL = 0.2;      // engine bed sits just UNDER the music (0.22) —
+                             // ear-test feedback: 0.5 buried everything
 const TICK_TC = 0.09;        // setTargetAtTime time constant (~60-120ms) — no zipper
 const LP_STEADY = 5000;      // slightly closed at cruise (anti-fatigue)
 const LP_OPEN = 8000;        // accel / boost opens it
@@ -153,6 +154,33 @@ export function createEngineAudio(): EngineAudio {
     });
   }
 
+  /** Kill the loop-seam click for real: trim the AAC encoder priming/padding,
+   *  then crossfade the loop's TAIL into its HEAD inside the decoded buffer —
+   *  the wrap point becomes sample-continuous no matter what the codec did.
+   *  (Ear-test feedback: loopStart/loopEnd trimming alone still ticked.) */
+  function seamless(c: AudioContext, b: AudioBuffer): AudioBuffer {
+    try {
+      const sr = b.sampleRate;
+      const start = Math.min(Math.floor(0.06 * sr), b.length >> 2);
+      const end = b.length - Math.min(Math.floor(0.03 * sr), b.length >> 3);
+      const L = end - start;
+      const F = Math.min(Math.floor(0.045 * sr), L >> 2); // ~45ms equal fade
+      if (L - F < sr * 0.2) return b; // too short to surgery — keep as-is
+      const out = c.createBuffer(b.numberOfChannels, L - F, sr);
+      for (let ch = 0; ch < b.numberOfChannels; ch++) {
+        const s = b.getChannelData(ch);
+        const o = out.getChannelData(ch);
+        for (let i = 0; i < L - F; i++) o[i] = s[start + i];
+        // head = blend of (what naturally follows the last sample) → (real head)
+        for (let i = 0; i < F; i++) {
+          const w = i / F;
+          o[i] = o[i] * w + s[start + (L - F) + i] * (1 - w);
+        }
+      }
+      return out;
+    } catch { return b; }
+  }
+
   function load() {
     const c = ensureCtx();
     if (!c || loading || buffers) return;
@@ -161,7 +189,7 @@ export function createEngineAudio(): EngineAudio {
       try {
         const r = await fetch(LOOP_URL(n));
         if (!r.ok) return null;
-        return await decode(c, await r.arrayBuffer());
+        return seamless(c, await decode(c, await r.arrayBuffer()));
       } catch { return null; }
     })).then((bufs) => {
       loading = false;
@@ -193,12 +221,8 @@ export function createEngineAudio(): EngineAudio {
         const b = buffers[i];
         if (!b) { sources.push(null as unknown as AudioBufferSourceNode); loopGains.push(null as unknown as GainNode); continue; }
         const src = c.createBufferSource();
+        // buffers were made seam-continuous at decode time → loop the whole thing
         src.buffer = b; src.loop = true;
-        // trim AAC encoder priming/padding so the loop point doesn't click
-        try {
-          src.loopStart = Math.min(0.05, b.duration * 0.06);
-          src.loopEnd = Math.max(src.loopStart + 0.1, b.duration - 0.02);
-        } catch { /* older impl */ }
         const g = c.createGain();
         g.gain.value = 0.0001;
         src.connect(g); g.connect(lowpass);
@@ -235,7 +259,7 @@ export function createEngineAudio(): EngineAudio {
   /** Bandpassed noise burst: gear shift / blow-off / crackle transients. */
   function burst(freq: number, q: number, attack: number, decay: number, vol: number) {
     const c = ensureCtx();
-    if (!c || !comp || hidden) return;
+    if (!c || !master || hidden) return;
     try {
       const b = noise(c); if (!b) return;
       const t0 = c.currentTime + 0.005;
@@ -247,7 +271,8 @@ export function createEngineAudio(): EngineAudio {
       g.gain.setValueAtTime(0.0001, t0);
       g.gain.exponentialRampToValueAtTime(vol, t0 + attack);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + attack + decay);
-      src.connect(bp); bp.connect(g); g.connect(comp);
+      // through master: one-shots follow the engine volume/fades/mute too
+      src.connect(bp); bp.connect(g); g.connect(master!);
       src.start(t0); src.stop(t0 + attack + decay + 0.05);
     } catch { /* cosmetic */ }
   }
@@ -255,23 +280,26 @@ export function createEngineAudio(): EngineAudio {
   /** ~10ms 70Hz sine thump under the gear-shift click. */
   function thump() {
     const c = ensureCtx();
-    if (!c || !comp || hidden) return;
+    if (!c || !master || hidden) return;
     try {
       const t0 = c.currentTime + 0.005;
       const o = c.createOscillator();
       o.type = 'sine'; o.frequency.value = 70;
       const g = c.createGain();
       g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.55, t0 + 0.004); // ÷master ≈ old level
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.014);
-      o.connect(g); g.connect(comp);
+      o.connect(g); g.connect(master!);
       o.start(t0); o.stop(t0 + 0.05);
     } catch { /* cosmetic */ }
   }
 
-  const shiftClick = () => { burst(3000, 1.2, 0.005, 0.1, 0.28); thump(); };
-  const blowOff = () => burst(1200, 0.9, 0.012, 0.28, 0.3);
-  const crackle = () => burst(1000 + Math.random() * 2000, 2.5, 0.004, 0.03 + Math.random() * 0.03, 0.16 + Math.random() * 0.08);
+  // vols compensated for the master (0.2) they now route through — effective
+  // loudness lands slightly under the old direct-to-comp levels, matching the
+  // overall quieter mix the ear test asked for
+  const shiftClick = () => { burst(3000, 1.2, 0.005, 0.1, 0.8); thump(); };
+  const blowOff = () => burst(1200, 0.9, 0.012, 0.28, 0.85);
+  const crackle = () => burst(1000 + Math.random() * 2000, 2.5, 0.004, 0.03 + Math.random() * 0.03, 0.45 + Math.random() * 0.2);
 
   /** Push current rpm/gain/filter targets into the graph (smoothed). */
   function voice(accelHard: boolean, decelHard: boolean, boosted: boolean) {
