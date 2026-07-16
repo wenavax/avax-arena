@@ -23,9 +23,12 @@ const GEARS = 8;             // F1 gearbox — faster, denser shift ladder
 const F1_PITCH = 1.8;        // global playbackRate multiplier into the F1 register
 const WHINE_BASE = 340;      // scream-layer fundamental at idle (Hz)
 const WHINE_SPAN = 860;      // …rising to ~1.2kHz at redline (≈ V10 firing freq)
-const WHINE_VOL = 0.3;       // relative within the engine master (masked by loops)
-const MASTER_VOL = 0.2;      // engine bed sits just UNDER the music (0.22) —
-                             // ear-test feedback: 0.5 buried everything
+const WHINE_VOL = 0.22;      // relative within the engine master (masked by loops)
+                             // — the 1kHz scream region is ear-sensitive; ear-test
+                             // round 3 ("motor çok belirgin") pulled it back
+const MASTER_VOL = 0.13;     // engine bed clearly UNDER the music (0.22): the F1
+                             // brightness + scream layer raised perceived loudness,
+                             // so the fader dropped again (ear-test round 3)
 const TICK_TC = 0.09;        // setTargetAtTime time constant (~60-120ms) — no zipper
 const LP_STEADY = 7500;      // F1 register is bright — keep more top end
 const LP_OPEN = 12000;       // accel / boost opens to full scream
