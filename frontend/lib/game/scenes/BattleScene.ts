@@ -167,6 +167,9 @@ export class BattleScene extends Phaser.Scene {
   private monsterGfx!: Phaser.GameObjects.Graphics;
   private playerHpBar!: Phaser.GameObjects.Rectangle;
   private monsterHpBar!: Phaser.GameObjects.Rectangle;
+  private playerHpGhost!: Phaser.GameObjects.Rectangle;
+  private monsterHpGhost!: Phaser.GameObjects.Rectangle;
+  private lowHpOverlay: Phaser.GameObjects.Rectangle | null = null;
   private playerHpText!: Phaser.GameObjects.Text;
   private monsterHpText!: Phaser.GameObjects.Text;
   private playerMpBar!: Phaser.GameObjects.Rectangle;
@@ -232,6 +235,10 @@ export class BattleScene extends Phaser.Scene {
     this.playerDodgeBuff = 0;
     this.playerDodgeBuffTurns = 0;
     this.monsterStunned = false;
+    this.monsterDefBuff = 0;
+    this.monsterDefBuffTurns = 0;
+    this.extraTurnArmed = false;
+    this.lowHpOverlay = null; // scene objects die on shutdown; drop the stale ref
     this.skillMenuContainer = null;
     this.btnGraphics = [];
 
@@ -318,6 +325,7 @@ export class BattleScene extends Phaser.Scene {
 
     // Player HP bar
     this.add.rectangle(W * 0.25 + 20, panelY + 68, 202, 16, 0x222233).setDepth(11);
+    this.playerHpGhost = this.add.rectangle(W * 0.25 + 20 - 100, panelY + 68, 200, 14, 0xffffff, 0.35).setOrigin(0, 0.5).setDepth(11);
     this.playerHpBar = this.add.rectangle(W * 0.25 + 20 - 100, panelY + 68, 200, 14, 0x00cc66).setOrigin(0, 0.5).setDepth(12);
     // Player HP gradient highlight + glass edge
     const pHpHighlight = this.add.graphics().setDepth(12);
@@ -351,6 +359,7 @@ export class BattleScene extends Phaser.Scene {
 
     // Monster HP bar
     this.add.rectangle(W * 0.75 + 20, panelY + 68, 202, 16, 0x222233).setDepth(11);
+    this.monsterHpGhost = this.add.rectangle(W * 0.75 + 20 - 100, panelY + 68, 200, 14, 0xffffff, 0.35).setOrigin(0, 0.5).setDepth(11);
     this.monsterHpBar = this.add.rectangle(W * 0.75 + 20 - 100, panelY + 68, 200, 14, 0xcc3333).setOrigin(0, 0.5).setDepth(12);
     // Monster HP gradient highlight + glass edge
     const mHpHighlight = this.add.graphics().setDepth(12);
@@ -2095,8 +2104,16 @@ export class BattleScene extends Phaser.Scene {
 
   // ── Critical hit enhanced effect ──
   private playCriticalEffect(x: number, y: number): void {
-    // Larger camera shake
+    // Larger camera shake + quick zoom punch (impact weight). Direct tween
+    // with yoyo — a nested zoomTo(1) gets ignored while the first zoom
+    // effect is active and left the camera stuck at 1.05.
     this.cameras.main.shake(120, 0.012);
+    this.tweens.killTweensOf(this.cameras.main);
+    this.cameras.main.zoom = 1;
+    this.tweens.add({
+      targets: this.cameras.main, zoom: 1.05, duration: 90, yoyo: true, ease: 'Power2',
+      onComplete: () => { this.cameras.main.zoom = 1; },
+    });
 
     // "CRITICAL!" text bounces
     const critText = this.add.text(x, y - 60, 'CRITICAL!', {
@@ -2130,6 +2147,30 @@ export class BattleScene extends Phaser.Scene {
         });
       },
     });
+  }
+
+  // ── Victory confetti burst (from the fallen monster) ──
+  private playVictoryConfetti(): void {
+    const colors = [0xffdd00, 0x00ccee, 0xff4466, 0x44dd66, 0xcc44ff];
+    for (let i = 0; i < 26; i++) {
+      const piece = this.add.rectangle(
+        this.monsterBaseX + Phaser.Math.Between(-20, 20),
+        this.stageY - 40,
+        Phaser.Math.Between(4, 7), Phaser.Math.Between(6, 10),
+        colors[i % colors.length],
+      ).setDepth(40).setAngle(Phaser.Math.Between(0, 360));
+      this.tweens.add({
+        targets: piece,
+        x: piece.x + Phaser.Math.Between(-120, 120),
+        y: piece.y + Phaser.Math.Between(60, 200),
+        angle: piece.angle + Phaser.Math.Between(-360, 360),
+        alpha: 0,
+        duration: Phaser.Math.Between(700, 1300),
+        delay: Phaser.Math.Between(0, 150),
+        ease: 'Cubic.easeIn',
+        onComplete: () => piece.destroy(),
+      });
+    }
   }
 
   // ── Monster death animation ──
@@ -2173,20 +2214,27 @@ export class BattleScene extends Phaser.Scene {
 
   // ── Floating damage number ──
   private showDamage(x: number, y: number, amount: number, crit: boolean, color = '#ffffff'): void {
-    const size = crit ? '28px' : '22px';
+    const size = crit ? '30px' : '22px';
     const txt = this.add.text(x, y, `${crit ? 'CRIT ' : ''}${amount}`, {
       fontSize: size, color: crit ? '#ffdd00' : color,
       fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
       stroke: '#000000', strokeThickness: 4,
-    }).setOrigin(0.5).setDepth(30);
+    }).setOrigin(0.5).setDepth(30).setScale(0.4).setAngle(crit ? Phaser.Math.Between(-8, 8) : 0);
 
+    // Pop in with overshoot, then float up and fade
     this.tweens.add({
-      targets: txt,
-      y: y - 50,
-      alpha: 0,
-      duration: 1200,
-      ease: 'Power1',
-      onComplete: () => txt.destroy(),
+      targets: txt, scale: crit ? 1.25 : 1, duration: crit ? 180 : 140, ease: 'Back.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: txt,
+          y: y - (crit ? 65 : 50),
+          alpha: 0,
+          scale: 1,
+          duration: crit ? 1050 : 1000,
+          ease: 'Power1',
+          onComplete: () => txt.destroy(),
+        });
+      },
     });
   }
 
@@ -2278,6 +2326,7 @@ export class BattleScene extends Phaser.Scene {
     this.turnIndicator.setText('').setColor('#44dd66');
     this.setButtonsEnabled(false);
     this.playMonsterDeathAnimation();
+    this.playVictoryConfetti();
 
     let msg = `Victory!  +${this.monster.xpReward} XP  +${this.monster.goldReward} Gold`;
     if (leveled) msg += `\n⬆ LEVEL UP! Now level ${state.level}!`;
@@ -2412,13 +2461,31 @@ export class BattleScene extends Phaser.Scene {
   private updatePlayerHp(): void {
     const ratio = this.playerHp / this.playerMaxHp;
     this.tweens.add({ targets: this.playerHpBar, width: 200 * ratio, duration: 300 });
+    // Ghost trail: the pale bar lags behind, showing the chunk just lost
+    this.tweens.add({ targets: this.playerHpGhost, width: 200 * ratio, duration: 450, delay: 280, ease: 'Power2' });
     this.playerHpText.setText(`HP ${this.playerHp}/${this.playerMaxHp}`);
     this.playerHpBar.setFillStyle(ratio > 0.5 ? 0x00cc66 : ratio > 0.25 ? 0xccaa00 : 0xcc3333);
+    this.updateLowHpPulse(ratio);
+  }
+
+  // Red heartbeat vignette while HP is critical (≤25%)
+  private updateLowHpPulse(ratio: number): void {
+    const critical = ratio > 0 && ratio <= 0.25;
+    if (critical && !this.lowHpOverlay) {
+      this.lowHpOverlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xcc0000, 0)
+        .setDepth(48);
+      this.tweens.add({ targets: this.lowHpOverlay, fillAlpha: 0.10, duration: 550, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    } else if (!critical && this.lowHpOverlay) {
+      this.tweens.killTweensOf(this.lowHpOverlay);
+      this.lowHpOverlay.destroy();
+      this.lowHpOverlay = null;
+    }
   }
 
   private updateMonsterHp(): void {
     const ratio = this.monster.hp / this.monster.maxHp;
     this.tweens.add({ targets: this.monsterHpBar, width: 200 * ratio, duration: 300 });
+    this.tweens.add({ targets: this.monsterHpGhost, width: 200 * ratio, duration: 450, delay: 280, ease: 'Power2' });
     this.monsterHpText.setText(`HP ${this.monster.hp}/${this.monster.maxHp}`);
   }
 
