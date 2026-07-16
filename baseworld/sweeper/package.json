@@ -1,0 +1,15 @@
+{
+  "name": "baseworld-sweeper",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "AtlasTreasury sweep auto-trigger bot",
+  "scripts": {
+    "once": "node sweep-bot.mjs",
+    "watch": "LOOP=1 node sweep-bot.mjs",
+    "dry": "DRY_RUN=1 node sweep-bot.mjs"
+  },
+  "dependencies": {
+    "ethers": "^6.13.4"
+  }
+}

@@ -1,0 +1,105 @@
+:root {
+  --ink: #070d14;
+  --ocean: #0c1a24;
+  --panel: rgba(16, 34, 48, 0.86);
+  --panel-2: #16303f;
+  --line: rgba(180, 210, 225, 0.16);
+  --line-strong: rgba(190, 222, 235, 0.34);
+  --text: #dce8ee;
+  --muted: #86a0ad;
+  --amber: #f4a259;
+  --cyan: #6fd6e8;
+  --good: #5ad19a;
+  --bad: #ef6f7e;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+#viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(1400px 800px at 60% -10%, #0f2230 0%, transparent 60%),
+    var(--ink);
+  cursor: grab;
+  touch-action: none;
+}
+
+#viewport.grabbing {
+  cursor: grabbing;
+}
+
+#world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+#pixels {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  box-shadow:
+    0 0 0 1px rgba(111, 214, 232, 0.2),
+    0 30px 120px -40px rgba(0, 0, 0, 0.9);
+}
+
+#borders,
+#fx {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.glass {
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+}
+
+.btn {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.btn.primary {
+  background: var(--cyan);
+  color: #06222b;
+  border-color: transparent;
+  font-weight: 600;
+}
+.btn.ghost {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hud.bl button {
+  min-width: 28px;
+}

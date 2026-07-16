@@ -1,0 +1,33 @@
+{
+  "name": "baseworld-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "d3": "^7.9.0",
+    "d3-geo": "^3.1.1",
+    "ethers": "^6.13.4",
+    "next": "15.0.3",
+    "ox": "^0.14.29",
+    "react": "19.0.0-rc-66855b96-20241106",
+    "react-dom": "19.0.0-rc-66855b96-20241106",
+    "topojson-client": "^3.1.0"
+  },
+  "devDependencies": {
+    "@openzeppelin/merkle-tree": "^1.0.7",
+    "@types/d3": "^7.4.3",
+    "@types/d3-geo": "^3.1.0",
+    "@types/node": "^22.10.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/topojson-client": "^3.1.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

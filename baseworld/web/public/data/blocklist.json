@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "updated": "2026-06-14",
+  "tokenIds": [],
+  "uris": [],
+  "_note": "tokenIds: bu pixellerin görseli render edilmez (varsayılan kara karelik gösterilir). uris: belirli IPFS hash'lerini hangi pixele atanmış olursa olsun gösterme. On-chain veri silinemez, bu yalnız renderer-side filtre."
+}

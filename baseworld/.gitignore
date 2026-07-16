@@ -1,0 +1,22 @@
+# env
+.env
+.env.local
+.env.*.local
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/
+
+# Next.js
+web/node_modules/
+web/.next/
+web/out/
+web/.vercel/
+
+# OS / editor
+.DS_Store
+*.log
+.idea/
+.vscode/

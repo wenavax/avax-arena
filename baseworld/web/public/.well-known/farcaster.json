@@ -1,0 +1,19 @@
+{
+  "accountAssociation": {
+    "header": "TODO_REPLACE_WITH_FARCASTER_SIGNED_HEADER",
+    "payload": "TODO_REPLACE_WITH_FARCASTER_SIGNED_PAYLOAD",
+    "signature": "TODO_REPLACE_WITH_FARCASTER_SIGNATURE"
+  },
+  "frame": {
+    "version": "1",
+    "name": "Base Atlas",
+    "iconUrl": "https://frostbite.pro/baseworld/icon.png",
+    "homeUrl": "https://frostbite.pro/baseworld/atlas",
+    "imageUrl": "https://frostbite.pro/baseworld/og.png",
+    "buttonTitle": "Mint a pixel",
+    "splashImageUrl": "https://frostbite.pro/baseworld/splash.png",
+    "splashBackgroundColor": "#070d14",
+    "webhookUrl": "https://frostbite.pro/baseworld/api/frame/webhook"
+  },
+  "_note": "accountAssociation: Warpcast Developer Tools -> Manifest Signer ile cüzdan + domain'i imzalayıp üret. iconUrl/imageUrl/splashImageUrl gerçek görsellerle değiştir. webhookUrl is opsiyonel."
+}
