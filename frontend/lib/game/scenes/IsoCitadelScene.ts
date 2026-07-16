@@ -633,6 +633,7 @@ export class IsoCitadelScene extends IsoBaseScene {
       state.gold += 60;
       this.showDialog('Ornate Chest', ['Found: 3x Health Potion, 60 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Ornate Chest', ['Already opened.'], tx, ty);
     }

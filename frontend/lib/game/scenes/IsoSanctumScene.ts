@@ -856,6 +856,7 @@ export class IsoSanctumScene extends IsoBaseScene {
       state.gold += 200;
       this.showDialog('Dragon Hoard Chest', ['Found: 5x Health Potion, 200 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Dragon Hoard Chest', ['Already opened.'], tx, ty);
     }

@@ -703,6 +703,7 @@ export class IsoForgeScene extends IsoBaseScene {
       state.gold += 150;
       this.showDialog('Titan Chest', ['Found: 4x Health Potion, 150 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Titan Chest', ['Already opened.'], tx, ty);
     }

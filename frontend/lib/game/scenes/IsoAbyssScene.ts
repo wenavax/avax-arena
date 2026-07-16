@@ -747,6 +747,7 @@ export class IsoAbyssScene extends IsoBaseScene {
       state.gold += 75;
       this.showDialog('Sunken Chest', ['Found: 3x Health Potion, 75 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Sunken Chest', ['Already opened.'], tx, ty);
     }

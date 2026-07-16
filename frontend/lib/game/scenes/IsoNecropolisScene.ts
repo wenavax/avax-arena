@@ -705,6 +705,7 @@ export class IsoNecropolisScene extends IsoBaseScene {
       state.gold += 80;
       this.showDialog('Ancient Sarcophagus', ['Found: 3x Health Potion, 80 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Ancient Sarcophagus', ['Already opened.'], tx, ty);
     }

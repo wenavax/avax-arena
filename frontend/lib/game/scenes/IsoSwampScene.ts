@@ -605,6 +605,7 @@ export class IsoSwampScene extends IsoBaseScene {
       state.gold += 40;
       this.showDialog('Mossy Chest', ['Found: 2x Health Potion, 40 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Mossy Chest', ['Already opened.'], tx, ty);
     }

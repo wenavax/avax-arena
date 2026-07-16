@@ -1573,6 +1573,10 @@ export class IsoBaseScene extends Phaser.Scene {
       if (pointer.y < 50 || pointer.y > this.scale.height - 100) return;
       // Ignore right side (minimap area — top-right 180x200)
       if (pointer.x > this.scale.width - 180 && pointer.y < 200) return;
+      // Mobile: the left half belongs to the floating joystick — the same
+      // touch used to ALSO start a click-to-walk path, and the two movement
+      // systems fought over the player
+      if (this.isMobile && pointer.x < this.scale.width / 2) return;
 
       const worldX = pointer.worldX;
       const worldY = pointer.worldY;
@@ -2845,7 +2849,7 @@ export class IsoBaseScene extends Phaser.Scene {
     // Background panel
     this.minimapBg = this.add.graphics();
     this.minimapBg.setScrollFactor(0);
-    this.minimapBg.setDepth(500);
+    this.minimapBg.setDepth(4500);
     this.minimapBg.fillStyle(0x0a0e1a, 0.85);
     this.minimapBg.fillRoundedRect(mx - 4, my - 14, size + 8, size + 22, 6);
     this.minimapBg.lineStyle(1, 0x2a3a4a, 0.8);
@@ -2855,7 +2859,7 @@ export class IsoBaseScene extends Phaser.Scene {
     const title = this.add.text(mx + size / 2, my - 6, 'MAP', {
       fontSize: '9px', fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
       color: '#00e5ff', align: 'center',
-    }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(502);
+    }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(4502);
 
     // Tile rendering
     const tileSize = Math.max(1, Math.floor(size / Math.max(this.mapW, this.mapH)));
@@ -2865,7 +2869,7 @@ export class IsoBaseScene extends Phaser.Scene {
     // Static terrain layer
     const terrainGfx = this.add.graphics();
     terrainGfx.setScrollFactor(0);
-    terrainGfx.setDepth(501);
+    terrainGfx.setDepth(4501);
 
     for (let r = 0; r < this.mapH; r++) {
       for (let c = 0; c < this.mapW; c++) {
@@ -2893,7 +2897,7 @@ export class IsoBaseScene extends Phaser.Scene {
     // Player dot overlay (updated each move)
     this.minimapGfx = this.add.graphics();
     this.minimapGfx.setScrollFactor(0);
-    this.minimapGfx.setDepth(503);
+    this.minimapGfx.setDepth(4503);
 
     this.updateMinimapPlayer();
 

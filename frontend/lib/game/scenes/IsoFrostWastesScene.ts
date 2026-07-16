@@ -693,6 +693,7 @@ export class IsoFrostWastesScene extends IsoBaseScene {
       state.gold += 100;
       this.showDialog('Frozen Chest', ['Found: 4x Health Potion, 100 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Frozen Chest', ['Already opened.'], tx, ty);
     }

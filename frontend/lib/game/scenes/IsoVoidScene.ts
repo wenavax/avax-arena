@@ -693,6 +693,7 @@ export class IsoVoidScene extends IsoBaseScene {
       state.gold += 120;
       this.showDialog('Void Chest', ['Found: 4x Health Potion, 120 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Void Chest', ['Already opened.'], tx, ty);
     }

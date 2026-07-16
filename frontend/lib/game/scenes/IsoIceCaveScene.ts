@@ -490,6 +490,7 @@ export class IsoIceCaveScene extends IsoBaseScene {
       state.gold += 50;
       this.showDialog('Frozen Chest', ['Found: 3x Health Potion, 50 Gold!'], 15, 13);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Frozen Chest', ['Already opened.'], 15, 13);
     }

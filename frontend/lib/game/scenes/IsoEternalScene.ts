@@ -755,6 +755,7 @@ export class IsoEternalScene extends IsoBaseScene {
       state.gold += 200;
       this.showDialog('Abyssal Chest', ['Found: 5x Health Potion, 200 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Abyssal Chest', ['Already opened.'], tx, ty);
     }

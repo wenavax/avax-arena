@@ -674,6 +674,7 @@ export class IsoCryptScene extends IsoBaseScene {
       state.gold += 30;
       this.showDialog('Dusty Chest', ['Found: 2x Health Potion, 30 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Dusty Chest', ['Already opened.'], tx, ty);
     }

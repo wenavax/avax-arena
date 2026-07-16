@@ -669,6 +669,7 @@ export class IsoDemonGateScene extends IsoBaseScene {
       state.gold += 80;
       this.showDialog('Infernal Chest', ['Found: 3x Health Potion, 80 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Infernal Chest', ['Already opened.'], tx, ty);
     }

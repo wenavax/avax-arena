@@ -625,6 +625,7 @@ export class IsoMinesScene extends IsoBaseScene {
       state.gold += 50;
       this.showDialog('Iron Chest', ['Found: 3x Health Potion, 50 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Iron Chest', ['Already opened.'], tx, ty);
     }

@@ -685,6 +685,7 @@ export class IsoRuinsScene extends IsoBaseScene {
       state.gold += 90;
       this.showDialog('Ancient Chest', ['Found: 3x Health Potion, 90 Gold!'], tx, ty);
       this.events.emit('hp-change');
+      state.save(); // persist loot + opened flag immediately
     } else {
       this.showDialog('Ancient Chest', ['Already opened.'], tx, ty);
     }
