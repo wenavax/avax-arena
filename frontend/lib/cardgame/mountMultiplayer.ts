@@ -18,6 +18,7 @@ import { attachView3D, type View3D } from './view3d';
 import { attachStageHud, type StageHud } from './stageHud';
 import { showRaceResults, closeRaceResults, updateRaceResultsStatus } from './resultsOverlay';
 import { comboJuice, cancelComboJuice } from './juice';
+import { recordMatch } from './progress';
 
 type Pid = 'P1' | 'P2' | 'P3' | 'P4';
 interface Seat { pid: Pid; address: string }
@@ -75,6 +76,8 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   // full fxClass (incl. NITRO gold) and drives the sequential combo reveal
   let sentEval: PlayEval | null = null;
   let sentCards: { value: number; magic: string | null }[] = [];
+  // my strongest play this match → history/records (meta layer)
+  const myBest = { mult: 0, combo: null as string | null, cards: 0 };
   let toastT: ReturnType<typeof setTimeout> | null = null;
   let view3d: View3D | null = null;
   const handlers: Array<[string, (d: any) => void]> = [];
@@ -173,6 +176,8 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
         const mine = pid === myPid;
         const label = a.combo || (mine && sentEval ? sentEval.kind : 'BOOST');
         if (mine) {
+          if (a.mult > myBest.mult) { myBest.mult = a.mult; myBest.combo = label; }
+          myBest.cards = Math.max(myBest.cards, sentCards.length);
           // Balatro-style sequential reveal of the cards we sent (server-confirmed)
           comboJuice({
             host: $('eng-track3d'), cards: sentCards,
@@ -222,6 +227,12 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   on('cardgame:finished', (d: { ranking: Pid[]; rankingAddresses: string[]; totals: Record<Pid, number> }) => {
     sound.raceOn(false);
+    const myPlace = d.ranking.indexOf(myPid) + 1;
+    if (myPlace >= 1) recordMatch({
+      ts: Date.now(), mode: 'mp', place: myPlace, pts: d.totals[myPid] ?? 0,
+      bestCombo: myBest.combo, bestMult: myBest.mult, comboCards: myBest.cards,
+      prize: `◆ ${payoutStr(myPlace - 1)}`,
+    });
     if (d.ranking[0] === myPid) sound.victory();
     ($('eng-round')).textContent = 'MATCH OVER';
     hud.rank(d.ranking.map((pid, i) => ({

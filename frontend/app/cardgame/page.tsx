@@ -11,6 +11,7 @@ import { createCardgameSocket, reserveMessage } from '@/lib/cardgame/mpClient';
 import type { MatchInput } from '@/lib/cardgame/engine';
 import { CARDGAME_ESCROW, CARDGAME_CHAIN_ID, ESCROW_ABI, STATUS } from '@/lib/cardgame/escrow';
 import { updateRaceResultsStatus } from '@/lib/cardgame/resultsOverlay';
+import { getHistory, getRecords, getDaily, DAILY_GOALS, type MatchRecord, type Records, type Daily } from '@/lib/cardgame/progress';
 import LiveMatches from '@/components/cardgame/LiveMatches';
 import IcmLab from '@/components/cardgame/IcmLab';
 import GameStageBanner from '@/components/GameStageBanner';
@@ -122,6 +123,98 @@ function HoldButton({ onConfirm, disabled, children }: { onConfirm: () => void; 
       <span className="cg-hold-fill" style={{ transform: `scaleX(${p})` }} aria-hidden />
       <span className="cg-hold-body">{children}</span>
     </button>
+  );
+}
+
+const shortA = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+const MEDALS = ['🥇', '🥈', '🥉', '4th'];
+function ago(ts: number): string {
+  const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
+}
+
+/** Personal record + daily goals + recent-races panel (device-local meta).
+ *  Personal bests beat a global leaderboard while the player base is small. */
+function StatsPanel() {
+  const [hist, setHist] = useState<MatchRecord[]>([]);
+  const [rec, setRec] = useState<Records | null>(null);
+  const [daily, setDaily] = useState<Daily | null>(null);
+  useEffect(() => {
+    const read = () => { setHist(getHistory()); setRec(getRecords()); setDaily(getDaily()); };
+    read();
+    window.addEventListener('cg:progress', read);
+    return () => window.removeEventListener('cg:progress', read);
+  }, []);
+  if (!rec || !daily || rec.races === 0) return null; // nothing yet — stay quiet
+  return (
+    <div className="cg-stats glass">
+      <div className="cg-stats-hd">
+        <span className="cg-stats-t">YOUR RECORD</span>
+        <span className="chip mono">🏁 {rec.races} race{rec.races === 1 ? '' : 's'}</span>
+        <span className="chip mono">🏆 {rec.wins} win{rec.wins === 1 ? '' : 's'}</span>
+        {rec.streak >= 2 && <span className="chip mono gold">🔥 {rec.streak} win streak</span>}
+        {rec.bestMult > 0 && <span className="chip mono">⚡ best {rec.bestCombo ?? ''} ×{rec.bestMult.toFixed(2)}</span>}
+      </div>
+      <div className="cg-daily">
+        <span className="cg-daily-t">TODAY</span>
+        {DAILY_GOALS.map((g) => {
+          const v = Math.min(daily[g.key], g.target);
+          const done = v >= g.target;
+          return (
+            <span key={g.key} className={`cg-daily-goal${done ? ' done' : ''}`}>
+              {done ? '✓ ' : ''}{g.label} <b>{v}/{g.target}</b>
+            </span>
+          );
+        })}
+      </div>
+      {hist.length > 0 && (
+        <div className="cg-hist">
+          {hist.slice(0, 8).map((r, i) => (
+            <div key={r.ts + '-' + i} className={`cg-hist-row${r.place === 1 ? ' won' : ''}`}>
+              <b>{MEDALS[r.place - 1] ?? `${r.place}.`}</b>
+              <span className={`cg-hist-mode m-${r.mode}`}>{r.mode === 'mp' ? 'MULTI' : r.mode.toUpperCase()}</span>
+              <span className="cg-hist-combo">{r.bestCombo ? `${r.bestCombo} ×${r.bestMult.toFixed(2)}` : '—'}</span>
+              <em>{r.pts}p</em>
+              <span className="cg-hist-prize">{r.mode === 'practice' ? '' : r.prize ?? ''}</span>
+              <time>{ago(r.ts)}</time>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Recent on-chain winners — makes the 5-minute-slot lobby feel inhabited. */
+function WinnersTicker() {
+  const [items, setItems] = useState<Array<{ id: string; w: string; prize: string }>>([]);
+  useEffect(() => {
+    let dead = false;
+    const load = async () => {
+      try {
+        const f = await (await fetch('/avalanche/api/cardgame/matches')).json();
+        if (dead || !Array.isArray(f.matches)) return;
+        const prize = f.rewards?.[0] ? formatEther(BigInt(f.rewards[0])) : '';
+        setItems(f.matches
+          .filter((m: { status: string; ranking?: string[] }) => m.status === 'Settled' && m.ranking?.[0])
+          .sort((a: { block: number }, b: { block: number }) => b.block - a.block)
+          .slice(0, 3)
+          .map((m: { matchId: string; ranking: string[] }) => ({ id: m.matchId, w: shortA(m.ranking[0]), prize })));
+      } catch { /* feed offline — stay quiet */ }
+    };
+    void load();
+    const t = setInterval(load, 60_000);
+    return () => { dead = true; clearInterval(t); };
+  }, []);
+  if (!items.length) return null;
+  return (
+    <div className="cg-ticker">
+      <span className="cg-ticker-t">RECENT WINNERS</span>
+      {items.map((i) => <span key={i.id} className="cg-ticker-i">🏆 {i.w}{i.prize ? ` took ◆ ${i.prize}` : ''}</span>)}
+    </div>
   );
 }
 
@@ -598,6 +691,7 @@ export default function CardGamePage() {
                   ))} {slot.reserved}/4 reserved</span>
                 </div>
               )}
+              <WinnersTicker />
               <IcmLab />
             </div>
           </div>
@@ -639,6 +733,7 @@ export default function CardGamePage() {
       )}
 
       <div ref={rootRef} style={{ display: mode === 'watch' ? 'none' : undefined }} />
+      {mode !== 'watch' && <StatsPanel />}
     </div>
   );
 }

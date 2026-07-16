@@ -559,6 +559,40 @@ body.cg-noscroll{overflow:hidden}
   font-family:'Chakra Petch',sans-serif;backdrop-filter:blur(10px)}
 .cgroot .foot{margin-top:14px;font-size:11px;line-height:1.6;text-align:center}
 
+/* ── meta layer: personal record + daily goals + recent races ─────────── */
+.cgroot .cg-stats{margin-top:14px;padding:13px 16px;display:flex;flex-direction:column;gap:9px}
+.cgroot .cg-stats-hd{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cgroot .cg-stats-t{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:2px;font-size:12px;margin-right:4px}
+.cgroot .cg-daily{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cgroot .cg-daily-t{font-size:9px;letter-spacing:2px;color:var(--cg-muted);font-family:'JetBrains Mono',monospace;margin-right:2px}
+.cgroot .cg-daily-goal{font-size:11px;padding:4px 11px;border-radius:14px;color:var(--cg-muted);
+  background:rgba(255,255,255,.03);border:1px solid var(--cg-line)}
+.cgroot .cg-daily-goal b{color:var(--cg-text);font-family:'JetBrains Mono',monospace;font-weight:600}
+.cgroot .cg-daily-goal.done{color:var(--cg-green);border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.06)}
+.cgroot .cg-daily-goal.done b{color:var(--cg-green)}
+.cgroot .cg-hist{display:flex;flex-direction:column;border-top:1px solid rgba(255,255,255,.06);padding-top:7px}
+.cgroot .cg-hist-row{display:flex;align-items:center;gap:9px;font-size:11.5px;color:var(--cg-muted);
+  padding:4px 2px;font-family:'JetBrains Mono',monospace}
+.cgroot .cg-hist-row+.cg-hist-row{border-top:1px solid rgba(255,255,255,.04)}
+.cgroot .cg-hist-row b{width:26px;text-align:center;font-size:13px}
+.cgroot .cg-hist-row.won .cg-hist-combo{color:var(--cg-text)}
+.cgroot .cg-hist-mode{font-size:8px;letter-spacing:1px;padding:2px 7px;border-radius:8px;border:1px solid var(--cg-line)}
+.cgroot .cg-hist-mode.m-practice{color:var(--cg-muted)}
+.cgroot .cg-hist-mode.m-staked{color:var(--cg-gold);border-color:rgba(245,197,66,.35)}
+.cgroot .cg-hist-mode.m-mp{color:var(--cg-ice);border-color:rgba(77,208,225,.35)}
+.cgroot .cg-hist-combo{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cgroot .cg-hist-row em{font-style:normal;color:var(--cg-text)}
+.cgroot .cg-hist-prize{color:var(--cg-gold);min-width:58px;text-align:right}
+.cgroot .cg-hist-row time{color:rgba(255,255,255,.35);font-size:10px;min-width:56px;text-align:right}
+@media(max-width:560px){.cgroot .cg-hist-prize{display:none}.cgroot .cg-hist-row time{min-width:44px}}
+
+/* recent-winners ticker (mp lobby liveliness) */
+.cgroot .cg-ticker{margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  font-size:10.5px;font-family:'JetBrains Mono',monospace;color:var(--cg-muted)}
+.cgroot .cg-ticker-t{font-size:8.5px;letter-spacing:1.5px;color:rgba(255,255,255,.4)}
+.cgroot .cg-ticker-i{padding:2.5px 9px;border-radius:10px;background:rgba(245,197,66,.06);
+  border:1px solid rgba(245,197,66,.22);color:var(--cg-gold)}
+
 /* scheduled-race lobby */
 .cgroot .cg-slot{display:flex;align-items:center;gap:14px;margin-top:8px}
 .cgroot .cg-slot-count{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:26px;letter-spacing:2px;color:var(--cg-ice);text-shadow:0 0 14px rgba(77,208,225,.45)}

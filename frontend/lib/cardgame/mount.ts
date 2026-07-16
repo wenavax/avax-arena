@@ -13,6 +13,7 @@ import { ABILITIES, triggerAbilities, SELF_BUDGET } from './abilities';
 import { attachView3D, type View3D } from './view3d';
 import { showRaceResults, closeRaceResults } from './resultsOverlay';
 import { comboJuice, cancelComboJuice } from './juice';
+import { recordMatch } from './progress';
 
 export interface CardGameOptions {
   address?: string | null;
@@ -78,7 +79,6 @@ const CHIPS = `
  * Practice wins soft-gate the real-money modes (page.tsx reads the same keys),
  * and the first few races get ghost hints on the suggested play. */
 function lsNum(k: string): number { try { return +(localStorage.getItem(k) || 0) || 0; } catch { return 0; } }
-function lsSet(k: string, v: number) { try { localStorage.setItem(k, String(v)); } catch { /* private mode */ } }
 const HINT_RACES = 3; // ghost hints fade out after this many completed races
 
 type Card = { id: number; type: 'NORMAL' | 'MAGIC'; value: number; magic: string | null };
@@ -176,6 +176,8 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   const hintsOn = racesDone < HINT_RACES && !opts.staked;
   let hintSig = '';
   let hintIds = new Set<number>();
+  // my strongest play this match → history/records (meta layer)
+  const myBest = { mult: 0, combo: null as string | null, cards: 0 };
   // 🎵 quiet race music, shared toggle across modes
   const sound = createCgSound();
   // 3D view (pure renderer swap — the game logic/tick is identical either way)
@@ -379,13 +381,12 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       b.scores.filter((s) => s === 5).length - a.scores.filter((s) => s === 5).length ||
       a.times.reduce((s, x) => s + x, 0) - b.times.reduce((s, x) => s + x, 0));
     const rw = [2.0, 1.0, 0.5, 0.3];
-    // onboarding progression: races played + practice wins (the wins soft-gate
-    // the real-money modes). The page listens for cg:progress to update live.
-    if (!opts.staked) {
-      lsSet('cg_races', lsNum('cg_races') + 1);
-      if (arr[0].id === 'P1') lsSet('cg_wins', lsNum('cg_wins') + 1);
-      try { window.dispatchEvent(new CustomEvent('cg:progress')); } catch { /* jsdom */ }
-    }
+    // meta layer: history + records + daily goals + onboarding keys, one writer
+    recordMatch({
+      ts: Date.now(), mode: opts.staked ? 'staked' : 'practice',
+      place: arr.findIndex((p) => p.id === 'P1') + 1, pts: players[0].total,
+      bestCombo: myBest.combo, bestMult: myBest.mult, comboCards: myBest.cards,
+    });
     if (arr[0].id === 'P1') sound.victory();
     toast(`🏆 ${nameOf(arr[0].id)} wins the match!`);
     log(`<b>MATCH OVER.</b> Final: ` + arr.map((p, i) => `${i + 1}. ${nameOf(p.id)} (${p.total}pts, ${rw[i]} AVAX)`).join(' · '));
@@ -487,6 +488,8 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     const cardsSel = idxs.map((i) => p1.hand[i]); // applyPlay removes them — capture first
     const res = applyPlay(p1, idxs);
     if (res.ok) {
+      if (res.r.mult > myBest.mult) { myBest.mult = res.r.mult; myBest.combo = res.r.combo || res.r.kind; }
+      myBest.cards = Math.max(myBest.cards, cardsSel.length);
       log(`You played <b>${res.r.combo || res.r.kind}</b> (x${res.r.mult.toFixed(2)})` + (res.r.magic.length ? ` + ${res.r.magic.map((m) => m.type).join(', ')}` : ''));
       // Balatro-style sequential reveal: cards pop one-by-one, the multiplier
       // ticks up per card, then the combo lands with shake/hit-stop by tier

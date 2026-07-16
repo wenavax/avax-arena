@@ -22,6 +22,7 @@ import { createCgSound, soundLabel } from './sound';
 import { attachView3D, type View3D } from './view3d';
 import { attachStageHud, type StageHud } from './stageHud';
 import { comboJuice, cancelComboJuice } from './juice';
+import { recordMatch } from './progress';
 
 export interface StakedOpts {
   seed: string;
@@ -53,6 +54,8 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   let bestCycle = { sig: '', i: 0 };
   // 🎵 quiet race music, shared toggle across modes
   const sound = createCgSound();
+  // my strongest play this match → history/records (meta layer)
+  const myBest = { mult: 0, combo: null as string | null, cards: 0 };
   let loopH: ReturnType<typeof setInterval> | null = null;
   let toastT: ReturnType<typeof setTimeout> | null = null;
   let done = false;
@@ -284,6 +287,8 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     const played = stepTick(s, play);
     if (played) {
       const label = played.combo || played.kind;
+      if (played.mult > myBest.mult) { myBest.mult = played.mult; myBest.combo = label; }
+      myBest.cards = Math.max(myBest.cards, playedCards.length);
       // Balatro-style sequential reveal: cards pop one-by-one, the multiplier
       // ticks up per card, then the combo lands with shake/hit-stop by tier
       comboJuice({
@@ -328,6 +333,12 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     done = true;
     const ranking = finalRanking(s);
     renderBoard(ranking, true);
+    const myPlace = ranking.indexOf('P1') + 1;
+    recordMatch({
+      ts: Date.now(), mode: 'staked', place: myPlace, pts: s.players[0].total,
+      bestCombo: myBest.combo, bestMult: myBest.mult, comboCards: myBest.cards,
+      prize: `◆ ${payoutStr(myPlace - 1)}`,
+    });
     if (ranking[0] === 'P1') sound.victory();
     toast(`🏆 ${nameOf(ranking[0])} wins the match!`);
     log(`<b>MATCH OVER.</b> ${ranking.map((id, i) => `${i + 1}. ${nameOf(id)} (◆ ${payoutStr(i)})`).join(' · ')}`);
