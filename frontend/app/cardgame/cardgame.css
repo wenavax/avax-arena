@@ -483,6 +483,62 @@ body.cg-noscroll{overflow:hidden}
   .cgroot .card.magic:not(.nail):not(.oil)::before,.cgroot .card.nail .cardart{animation:none}
 }
 
+/* ── touch targets: 44px minimum on coarse pointers (WCAG 2.1 / Apple HIG).
+   Width can stay compact — a transparent ::after halo extends the hit area
+   of the small HUD chips without changing the visual design. ─────────── */
+@media (pointer:coarse){
+  .cgroot .cg-fs{width:44px;height:44px}
+  .cgroot .track3d .cg-cambtn{height:44px;right:62px}
+  /* vertical halo reaches ~44px; horizontal stays tight so adjacent chips'
+     hit areas barely overlap (gap is only 6px) */
+  .cgroot .cg-hud-chips button.chip{position:relative;min-height:30px}
+  .cgroot .cg-hud-chips button.chip::after{content:'';position:absolute;inset:-10px -3px}
+  .cgroot .cg-gate-skip{padding:10px 4px}
+  .cgroot .cg-hud-log{min-height:34px}
+}
+
+/* ── landscape phones (short viewport): the 640px-width rules never fire, so
+   without this a 390px-tall phone got a 430px stage + full-size dock. Compact
+   everything and put PLAY at the right edge — landscape thumbs rest on the
+   near edges, so confirm belongs bottom-right (thumb-zone research). ──── */
+@media (pointer:coarse) and (orientation:landscape) and (max-height:540px){
+  .cgroot .track3d{height:calc(100dvh - 150px);min-height:230px}
+  .cgroot .track3d .cg-fsdock{width:min(760px,94%);max-height:52vh;bottom:calc(6px + env(safe-area-inset-bottom));padding:8px 10px}
+  .cgroot .cg-fsdock .hand-hd{margin:0 0 4px}
+  .cgroot .cg-fsdock .card{width:44px;height:62px}
+  .cgroot .cg-fsdock .card .cv{font-size:17px}
+  .cgroot .cg-fsdock .hand{gap:6px;padding:7px 9px;min-height:70px}
+  .cgroot .cg-fsdock .cooldown{margin-top:7px}
+  .cgroot .cg-fsdock .row{margin-top:7px;flex-wrap:nowrap}
+  /* preview reads first (left), PLAY sits under the right thumb */
+  .cgroot .cg-fsdock .row #playPreview,.cgroot .cg-fsdock .row .eng-note,.cgroot .cg-fsdock .row .eng-hint{
+    order:-1;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cgroot .cg-fsdock .row #playBtn,.cgroot .cg-fsdock .row .eng-play{order:9}
+  .cgroot .cg-hud-rank{top:40px;font-size:9px;min-width:138px;padding:5px 7px}
+  .cgroot .cg-hud-pos{top:40px;font-size:19px}
+  .cgroot .cg-hud-log{top:128px;width:34%;max-height:58px;font-size:9px}
+  .cgroot .cg-hud-ovt{font-size:20px;letter-spacing:3px}
+  .cgroot .cg-vsel-cards{grid-template-columns:repeat(3,minmax(0,150px))}
+}
+
+/* ── safe areas: in (pseudo-)fullscreen the stage touches the physical screen
+   edges — pad every screen-anchored overlay by the device insets so notches
+   and the home indicator never cover controls. env() is 0 elsewhere. ──── */
+.cgroot .track3d:fullscreen .cg-hud-chips,.cgroot .track3d.cg-fs-fake .cg-hud-chips{
+  top:calc(10px + env(safe-area-inset-top));left:calc(12px + env(safe-area-inset-left))}
+.cgroot .track3d:fullscreen .cg-fs,.cgroot .track3d.cg-fs-fake .cg-fs{
+  top:calc(10px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right))}
+.cgroot .track3d:fullscreen .cg-cambtn,.cgroot .track3d.cg-fs-fake .cg-cambtn{
+  top:calc(10px + env(safe-area-inset-top))}
+.cgroot .track3d:fullscreen .cg-hud-rank,.cgroot .track3d.cg-fs-fake .cg-hud-rank{
+  top:calc(52px + env(safe-area-inset-top));right:calc(12px + env(safe-area-inset-right))}
+.cgroot .track3d:fullscreen .cg-hud-pos,.cgroot .track3d.cg-fs-fake .cg-hud-pos{
+  top:calc(50px + env(safe-area-inset-top));left:calc(14px + env(safe-area-inset-left))}
+.cgroot .track3d:fullscreen .cg-hud-log,.cgroot .track3d.cg-fs-fake .cg-hud-log{
+  right:calc(12px + env(safe-area-inset-right))}
+.cgroot .track3d:fullscreen .cg-fsdock,.cgroot .track3d.cg-fs-fake .cg-fsdock{
+  bottom:calc(14px + env(safe-area-inset-bottom))}
+
 .cgroot .btn{background:linear-gradient(135deg,var(--cg-red),var(--cg-red2));color:#fff;border:0;border-radius:10px;
   padding:10px 18px;font-weight:700;cursor:pointer;font-size:13px;letter-spacing:1px;
   box-shadow:0 4px 20px rgba(237,47,57,.2);transition:box-shadow .2s,transform .1s}
