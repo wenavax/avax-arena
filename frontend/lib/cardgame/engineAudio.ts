@@ -26,9 +26,9 @@ const WHINE_SPAN = 860;      // …rising to ~1.2kHz at redline (≈ V10 firing 
 const WHINE_VOL = 0.22;      // relative within the engine master (masked by loops)
                              // — the 1kHz scream region is ear-sensitive; ear-test
                              // round 3 ("motor çok belirgin") pulled it back
-const MASTER_VOL = 0.13;     // engine bed clearly UNDER the music (0.22): the F1
-                             // brightness + scream layer raised perceived loudness,
-                             // so the fader dropped again (ear-test round 3)
+const MASTER_VOL = 0.09;     // engine bed well under the music (0.22) — settled
+                             // over four ear-test rounds (0.5 → 0.2 → 0.13 → 0.09);
+                             // the F1 brightness reads loud even at low fader
 const TICK_TC = 0.09;        // setTargetAtTime time constant (~60-120ms) — no zipper
 const LP_STEADY = 7500;      // F1 register is bright — keep more top end
 const LP_OPEN = 12000;       // accel / boost opens to full scream
