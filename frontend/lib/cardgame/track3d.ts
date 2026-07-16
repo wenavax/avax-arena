@@ -766,6 +766,62 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       head.position.set(x, 3.25, EDGE + 1.1);
       scene.add(head);
     }
+    // corner floodlight towers — four masts with tilted lamp banks, an additive
+    // halo and a soft volumetric shaft washing the track ends. Visual-only (no
+    // real THREE lights) so the mobile tier pays nothing extra per fragment.
+    const floodGlowTex = radialTex('rgba(234,246,255,0.95)', 'rgba(234,246,255,0)');
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const FH = 11.5;                                   // mast height (above the stand roofline)
+      const cx = sx * (LEN / 2 + 5), cz = sz * (EDGE + 8);
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.3, FH, 10), poleMat);
+      mast.position.set(cx, FH / 2, cz);
+      scene.add(mast);
+      // head: dark housing + 3x2 lamp grid, aimed down at the track near its corner
+      const aim = new THREE.Vector3(cx * 0.72, 0, cz * 0.2);
+      const bank = new THREE.Group();
+      const housing = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.5, 0.3),
+        new THREE.MeshStandardMaterial({ color: 0x15151d, roughness: 0.4, metalness: 0.7 }));
+      bank.add(housing);
+      const lampMat = new THREE.MeshBasicMaterial({ color: 0xeaf6ff });
+      for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) {
+        const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.26, 12), lampMat);
+        lamp.position.set((c - 1) * 0.78, (r - 0.5) * 0.72, 0.17);
+        bank.add(lamp);
+      }
+      bank.position.set(cx, FH + 0.7, cz);
+      bank.lookAt(aim.x, 0.5, aim.z);
+      scene.add(bank);
+      // additive halo so the bank reads as blazing from every camera angle
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: floodGlowTex, color: 0xdfefff, transparent: true, opacity: 0.75,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      halo.scale.set(4.6, 4.6, 1);
+      halo.position.set(cx, FH + 0.7, cz);
+      scene.add(halo);
+      // volumetric shaft: open cone from the head down to the aimed patch
+      const from = new THREE.Vector3(cx, FH + 0.7, cz);
+      const dir = aim.clone().sub(from);
+      const flen = dir.length();
+      const shaft = new THREE.Mesh(
+        new THREE.ConeGeometry(flen * 0.22, flen, 14, 1, true),
+        new THREE.MeshBasicMaterial({
+          color: 0xbfe4ff, transparent: true, opacity: 0.05,
+          blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+        }));
+      shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir.normalize());
+      shaft.position.copy(from.clone().add(aim).multiplyScalar(0.5));
+      scene.add(shaft);
+      // light pool on the asphalt where the shaft lands
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(flen * 0.24, 20),
+        new THREE.MeshBasicMaterial({
+          map: floodGlowTex, color: 0x9fc6e8, transparent: true, opacity: 0.13,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        }));
+      pool.rotation.x = -Math.PI / 2;
+      pool.position.set(aim.x, 0.06, aim.z);
+      scene.add(pool);
+    }
     // START gantry with the game wordmark
     const gantryMat = new THREE.MeshStandardMaterial({ color: 0x22222e, roughness: 0.45, metalness: 0.7 });
     for (const side of [-1, 1]) {
