@@ -492,14 +492,7 @@ export class IsoDungeonScene extends IsoBaseScene {
     ] : dialogue.preBattle, 11, 2);
 
     // Wait for dialog to close, then start fight
-    const checkDialog = () => {
-      if (!this.frozen) {
-        this.startBossFight(state);
-      } else {
-        this.time.delayedCall(100, checkDialog);
-      }
-    };
-    this.time.delayedCall(1000, checkDialog);
+    this.runAfterDialog(() => this.startBossFight(state));
   }
 
   private startBossFight(state: PlayerState): void {

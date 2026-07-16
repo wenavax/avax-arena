@@ -661,14 +661,7 @@ export class IsoEternalScene extends IsoBaseScene {
 
     this.showDialog('Abyssal Overlord', dialogue.preBattle, 19, 5);
 
-    const checkDialog = () => {
-      if (!this.frozen) {
-        this.startBossFight(state);
-      } else {
-        this.time.delayedCall(100, checkDialog);
-      }
-    };
-    this.time.delayedCall(1000, checkDialog);
+    this.runAfterDialog(() => this.startBossFight(state));
   }
 
   private startBossFight(state: PlayerState): void {

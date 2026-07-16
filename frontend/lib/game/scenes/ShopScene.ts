@@ -3,6 +3,7 @@ import { SCALE, tileIndex } from '../config';
 import { PlayerState, InventoryItem } from '../PlayerState';
 import { getObjectTint } from '../tints';
 import { generateItemTraits, drawItem } from '../nft/itemGenerator';
+import { SELL_PRICES } from '../lootTables';
 import type { ItemCategory } from '../nft/itemGenerator';
 
 const POTION_SHOP_CONTRACT = '0xFe8c04Fb8E06FfDB892fFc17427AA786aAB11B28';
@@ -32,23 +33,23 @@ const RARITY_NAMES = ['Common', 'Uncommon', 'Rare'];
 // All items priced in AVAX — sorted by category, then rarity
 const SHOP_ITEMS: ShopItem[] = [
   // ── Potions (on-chain PotionShop contract) ──
-  { id: 'potion_hp',       name: 'Health Potion',    tile: tileIndex(46, 1), type: 'potion',    price: 0, sellPrice: 0, stat: { hp: 40 },  description: 'Restores 40 HP',             stackable: true,  sprite: 'potion',    rarity: 0, avaxPrice: '0.001',  potionId: 0 },
-  { id: 'potion_mp',       name: 'Mana Potion',      tile: tileIndex(46, 1), type: 'potion',    price: 0, sellPrice: 0, stat: { mp: 20 },  description: 'Restores 20 MP',             stackable: true,  sprite: 'potion',    rarity: 0, avaxPrice: '0.001',  potionId: 2 },
-  { id: 'potion_hp_large', name: 'Greater Potion',   tile: tileIndex(46, 1), type: 'potion',    price: 0, sellPrice: 0, stat: { hp: 100 }, description: 'Restores 100 HP',            stackable: true,  sprite: 'potion',    rarity: 1, avaxPrice: '0.002',  potionId: 1 },
-  { id: 'speed_tonic',     name: 'Speed Tonic',      tile: tileIndex(46, 1), type: 'potion',    price: 0, sellPrice: 0, stat: { spd: 3 },  description: 'Temporarily boosts SPD +3',   stackable: true,  sprite: 'potion',    rarity: 1, avaxPrice: '0.0015', potionId: 3 },
+  { id: 'potion_hp',       name: 'Health Potion',    tile: tileIndex(46, 1), type: 'potion',    price: 0, sellPrice: 10, stat: { hp: 40 },  description: 'Restores 40 HP',             stackable: true,  sprite: 'potion',    rarity: 0, avaxPrice: '0.001',  potionId: 0 },
+  { id: 'potion_mp',       name: 'Mana Potion',      tile: tileIndex(46, 1), type: 'potion',    price: 0, sellPrice: 10, stat: { mp: 20 },  description: 'Restores 20 MP',             stackable: true,  sprite: 'potion',    rarity: 0, avaxPrice: '0.001',  potionId: 2 },
+  { id: 'potion_hp_large', name: 'Greater Potion',   tile: tileIndex(46, 1), type: 'potion',    price: 0, sellPrice: 20, stat: { hp: 100 }, description: 'Restores 100 HP',            stackable: true,  sprite: 'potion',    rarity: 1, avaxPrice: '0.002',  potionId: 1 },
+  { id: 'speed_tonic',     name: 'Speed Tonic',      tile: tileIndex(46, 1), type: 'potion',    price: 0, sellPrice: 15, stat: { spd: 3 },  description: 'Temporarily boosts SPD +3',   stackable: true,  sprite: 'potion',    rarity: 1, avaxPrice: '0.0015', potionId: 3 },
   // ── Weapons ──
-  { id: 'iron_sword',      name: 'Iron Sword',       tile: tileIndex(46, 0), type: 'weapon',    price: 0, sellPrice: 0, stat: { atk: 5 },  description: 'A sturdy blade forged in iron',    stackable: false, sprite: 'sword',     rarity: 0, avaxPrice: '0.005' },
-  { id: 'steel_sword',     name: 'Steel Sword',      tile: tileIndex(46, 0), type: 'weapon',    price: 0, sellPrice: 0, stat: { atk: 12 }, description: 'Tempered steel, sharp and deadly',  stackable: false, sprite: 'sword',     rarity: 1, avaxPrice: '0.012' },
+  { id: 'iron_sword',      name: 'Iron Sword',       tile: tileIndex(46, 0), type: 'weapon',    price: 0, sellPrice: 25, stat: { atk: 5 },  description: 'A sturdy blade forged in iron',    stackable: false, sprite: 'sword',     rarity: 0, avaxPrice: '0.005' },
+  { id: 'steel_sword',     name: 'Steel Sword',      tile: tileIndex(46, 0), type: 'weapon',    price: 0, sellPrice: 60, stat: { atk: 12 }, description: 'Tempered steel, sharp and deadly',  stackable: false, sprite: 'sword',     rarity: 1, avaxPrice: '0.012' },
   // ── Armor ──
-  { id: 'iron_shield',     name: 'Iron Shield',      tile: tileIndex(47, 0), type: 'armor',     price: 0, sellPrice: 0, stat: { def: 4 },  description: 'Basic protection against attacks',  stackable: false, sprite: 'shield',    rarity: 0, avaxPrice: '0.004' },
-  { id: 'chain_armor',     name: 'Chain Armor',      tile: tileIndex(47, 0), type: 'armor',     price: 0, sellPrice: 0, stat: { def: 8 },  description: 'Heavy chain links, solid defense',  stackable: false, sprite: 'shield',    rarity: 1, avaxPrice: '0.01' },
+  { id: 'iron_shield',     name: 'Iron Shield',      tile: tileIndex(47, 0), type: 'armor',     price: 0, sellPrice: 20, stat: { def: 4 },  description: 'Basic protection against attacks',  stackable: false, sprite: 'shield',    rarity: 0, avaxPrice: '0.004' },
+  { id: 'chain_armor',     name: 'Chain Armor',      tile: tileIndex(47, 0), type: 'armor',     price: 0, sellPrice: 50, stat: { def: 8 },  description: 'Heavy chain links, solid defense',  stackable: false, sprite: 'shield',    rarity: 1, avaxPrice: '0.01' },
   // ── Accessories ──
-  { id: 'fire_amulet',     name: 'Fire Amulet',      tile: tileIndex(47, 1), type: 'accessory', price: 0, sellPrice: 0, stat: { atk: 3 },  description: 'Imbued with fire essence',          stackable: false, sprite: 'accessory', rarity: 1, avaxPrice: '0.015' },
-  { id: 'ghost_cloak',     name: 'Ghost Cloak',      tile: tileIndex(47, 1), type: 'accessory', price: 0, sellPrice: 0, stat: { spd: 5 },  description: 'Spectral cloak, enhances agility',  stackable: false, sprite: 'accessory', rarity: 1, avaxPrice: '0.018' },
+  { id: 'fire_amulet',     name: 'Fire Amulet',      tile: tileIndex(47, 1), type: 'accessory', price: 0, sellPrice: 75, stat: { atk: 3 },  description: 'Imbued with fire essence',          stackable: false, sprite: 'accessory', rarity: 1, avaxPrice: '0.015' },
+  { id: 'ghost_cloak',     name: 'Ghost Cloak',      tile: tileIndex(47, 1), type: 'accessory', price: 0, sellPrice: 90, stat: { spd: 5 },  description: 'Spectral cloak, enhances agility',  stackable: false, sprite: 'accessory', rarity: 1, avaxPrice: '0.018' },
   // ── Rings ──
-  { id: 'ring_vitality',   name: 'Ring of Vitality', tile: tileIndex(47, 1), type: 'ring',      price: 0, sellPrice: 0, stat: { hp: 30 },  description: 'Grants extra vitality',             stackable: false, sprite: 'ring',      rarity: 1, avaxPrice: '0.018' },
-  { id: 'ring_speed',      name: 'Ring of Speed',    tile: tileIndex(47, 1), type: 'ring',      price: 0, sellPrice: 0, stat: { spd: 5 },  description: 'Quickens reflexes',                 stackable: false, sprite: 'ring',      rarity: 1, avaxPrice: '0.02' },
-  { id: 'ring_power',      name: 'Ring of Power',    tile: tileIndex(47, 1), type: 'ring',      price: 0, sellPrice: 0, stat: { atk: 5 },  description: 'Raw power flows through this ring',  stackable: false, sprite: 'ring',      rarity: 2, avaxPrice: '0.025' },
+  { id: 'ring_vitality',   name: 'Ring of Vitality', tile: tileIndex(47, 1), type: 'ring',      price: 0, sellPrice: 90, stat: { hp: 30 },  description: 'Grants extra vitality',             stackable: false, sprite: 'ring',      rarity: 1, avaxPrice: '0.018' },
+  { id: 'ring_speed',      name: 'Ring of Speed',    tile: tileIndex(47, 1), type: 'ring',      price: 0, sellPrice: 100, stat: { spd: 5 },  description: 'Quickens reflexes',                 stackable: false, sprite: 'ring',      rarity: 1, avaxPrice: '0.02' },
+  { id: 'ring_power',      name: 'Ring of Power',    tile: tileIndex(47, 1), type: 'ring',      price: 0, sellPrice: 100, stat: { atk: 5 },  description: 'Raw power flows through this ring',  stackable: false, sprite: 'ring',      rarity: 2, avaxPrice: '0.025' },
 ];
 
 export class ShopScene extends Phaser.Scene {
@@ -295,7 +296,9 @@ export class ShopScene extends Phaser.Scene {
       .filter(item => item.type !== 'quest' && item.type !== 'key')
       .map(item => {
         const ref = SHOP_ITEMS.find(s => s.id === item.id);
-        return { ...item, sellPrice: ref?.sellPrice ?? 5, tile: ref?.tile ?? tileIndex(46, 1), rarity: ref?.rarity ?? 0 };
+        // Loot drops aren't shop items — price them from the canonical table
+        const sellPrice = ref?.sellPrice || SELL_PRICES[item.id] || 5;
+        return { ...item, sellPrice, tile: ref?.tile ?? tileIndex(46, 1), rarity: ref?.rarity ?? 0 };
       });
   }
 

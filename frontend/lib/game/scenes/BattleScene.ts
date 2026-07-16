@@ -150,6 +150,9 @@ export class BattleScene extends Phaser.Scene {
   private playerDodgeBuff = 0;
   private playerDodgeBuffTurns = 0;
   private monsterStunned = false;
+  private monsterDefBuff = 0;
+  private monsterDefBuffTurns = 0;
+  private extraTurnArmed = false;
 
   // Achievement tracking per battle
   private battleCrits = 0;
@@ -1255,7 +1258,7 @@ export class BattleScene extends Phaser.Scene {
       const afterElem = Math.floor(raw * elemMult);
 
       // Crit check: base 10% + (SPD diff * 2%), max 30%
-      const spdDiff = Math.max(0, this.playerSpd - (this.monster.spd || 5));
+      const spdDiff = Math.max(0, this.effectivePlayerSpd() - (this.monster.spd || 5));
       const critChance = Math.min(0.30, 0.10 + spdDiff * 0.02);
       const crit = Math.random() < critChance;
       const dmg = crit ? Math.floor(afterElem * 1.75) : afterElem;
@@ -1327,6 +1330,18 @@ export class BattleScene extends Phaser.Scene {
     this.afterPlayerTurn();
   }
 
+  // Player SPD after active slow effects (spdReduction is a % cut). Feeds
+  // crit, dodge and double-strike checks so "slow" actually bites.
+  private effectivePlayerSpd(): number {
+    let spd = this.playerSpd;
+    for (const eff of this.playerStatusEffects) {
+      if (eff.type === 'slow' && eff.spdReduction) {
+        spd = Math.floor(spd * (1 - eff.spdReduction / 100));
+      }
+    }
+    return Math.max(1, spd);
+  }
+
   private afterPlayerTurn(): void {
     // Tick down player buffs here — every player action funnels through this
     // method; the old tick in endPlayerTurn was skipped by the attack/skill
@@ -1379,6 +1394,17 @@ export class BattleScene extends Phaser.Scene {
 
     this.time.delayedCall(700 + dotDelay, () => {
       if (this.monster.hp <= 0) { this.victory(); return; }
+      // Double strike: consume the armed extra turn — enemy turn skipped once
+      if (this.extraTurnArmed) {
+        this.extraTurnArmed = false;
+        this.log('⚡ Extra turn! Strike again!');
+        this.turn = 'player';
+        this.busy = false;
+        this.turnIndicator.setText('— EXTRA TURN —').setColor('#ffdd00');
+        this.setButtonsEnabled(true);
+        this.updateStatusDisplay();
+        return;
+      }
       if (this.monsterStunned) {
         this.monsterStunned = false;
         this.log(`Enemy is stunned! Skips turn.`);
@@ -1577,10 +1603,15 @@ export class BattleScene extends Phaser.Scene {
 
       // ── Ice Cavern Monsters ──
       case 'ice_golem':
-        // Slow but heavy hitter, crystallize at low HP
-        if (mHpPct < 0.3) {
-          this.monster.def = Math.floor(this.monster.def * 1.2);
-          specialMsg = 'Ice Golem hardens its shell!';
+        // Slow but heavy hitter, crystallize at low HP: one-shot +50% DEF for
+        // 3 turns (was a compounding permanent 1.2x that re-hardened — and
+        // skipped — every turn below 30% HP, so the golem never attacked again)
+        if (mHpPct < 0.3 && this.monsterDefBuffTurns === 0 && this.monsterDefBuff === 0) {
+          this.monsterDefBuff = Math.floor(this.monster.def * 0.5);
+          this.monster.def += this.monsterDefBuff;
+          this.monsterDefBuffTurns = 3;
+          this.showBuff(this.monsterBaseX, this.stageY - 60, '🧊 DEF UP!', '#55ccff');
+          specialMsg = 'Ice Golem hardens its shell! DEF up for 3 turns!';
           skipTurn = true;
         } else if (this.enemyTurnCount % 3 === 0) {
           dmgMult = 1.8;
@@ -1708,8 +1739,8 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
 
-    // Dodge check (player SPD vs monster SPD)
-    const spdDiff = Math.max(0, this.playerSpd - (this.monster.spd || 5));
+    // Dodge check (player SPD vs monster SPD, slow effects included)
+    const spdDiff = Math.max(0, this.effectivePlayerSpd() - (this.monster.spd || 5));
     const baseDodge = spdDiff * 0.03;
     const dodgeChance = Math.min(0.20, baseDodge) + (this.playerDodgeBuff / 100);
 
@@ -1775,8 +1806,19 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private afterEnemyTurn(): void {
+    // Tick down monster DEF buff (ice golem harden etc.)
+    if (this.monsterDefBuffTurns > 0) {
+      this.monsterDefBuffTurns--;
+      if (this.monsterDefBuffTurns === 0 && this.monsterDefBuff > 0) {
+        this.monster.def = Math.max(1, this.monster.def - this.monsterDefBuff);
+        this.monsterDefBuff = 0;
+        this.showBuff(this.monsterBaseX, this.stageY - 60, '🧊 Shell cracks!', '#8899aa');
+      }
+    }
+
     // Apply DOT on player
     let dotDelay = 0;
+    let skipReason: 'freeze' | 'stun' | null = null;
     const dotsToRemove: number[] = [];
     this.playerStatusEffects.forEach((eff, idx) => {
       if (eff.turns > 0) {
@@ -1794,17 +1836,24 @@ export class BattleScene extends Phaser.Scene {
         }
         // Freeze: 30% chance to skip player's next turn
         if (eff.type === 'freeze' && Math.random() < 0.30) {
+          skipReason = 'freeze';
           this.time.delayedCall(dotDelay, () => {
             this.showBuff(this.playerBaseX, this.stageY - 50, '❄️ Frozen!', '#55ccff');
             this.log('You are frozen! Turn skipped!');
           });
           dotDelay += 400;
-          // Will skip the unfreeze below since turn won't go to player
         }
-        // Slow: reduce SPD temporarily
-        if (eff.type === 'slow' && eff.spdReduction) {
-          // SPD reduction is applied during dodge calculation
+        // Stun: guaranteed skip of player's next turn
+        if (eff.type === 'stun') {
+          skipReason = skipReason || 'stun';
+          this.time.delayedCall(dotDelay, () => {
+            this.showBuff(this.playerBaseX, this.stageY - 50, '💫 Stunned!', '#ffdd00');
+            this.log('You are stunned! Turn skipped!');
+          });
+          dotDelay += 400;
         }
+        // Slow needs no per-turn handling: effectivePlayerSpd() reads active
+        // slow effects inside the crit/dodge/double-strike checks.
         eff.turns--;
         if (eff.turns <= 0) dotsToRemove.push(idx);
       }
@@ -1815,10 +1864,27 @@ export class BattleScene extends Phaser.Scene {
 
     this.time.delayedCall(dotDelay + 200, () => {
       if (this.playerHp <= 0) { this.defeat(); return; }
+      if (this.battleOver) return;
 
-      // Double strike check: SPD >= 2x monster → 15% extra turn
-      const doubleStrikeChance = this.playerSpd >= (this.monster.spd || 5) * 2 ? 0.15 : 0;
+      // Freeze/stun: the player loses this action — the enemy acts again
+      if (skipReason) {
+        this.defending = false;
+        this.turn = 'enemy';
+        this.turnIndicator
+          .setText(skipReason === 'freeze' ? '— FROZEN —' : '— STUNNED —')
+          .setColor(skipReason === 'freeze' ? '#55ccff' : '#ffdd00');
+        this.setButtonsEnabled(false);
+        this.updateStatusDisplay();
+        this.time.delayedCall(800, () => { if (!this.battleOver) this.enemyTurn(); });
+        return;
+      }
+
+      // Double strike check: SPD >= 2x monster → 15% chance the player acts
+      // twice before the next enemy turn (armed here, consumed in
+      // afterPlayerTurn where the enemy turn gets skipped once)
+      const doubleStrikeChance = this.effectivePlayerSpd() >= (this.monster.spd || 5) * 2 ? 0.15 : 0;
       if (doubleStrikeChance > 0 && Math.random() < doubleStrikeChance) {
+        this.extraTurnArmed = true;
         this.showBuff(this.playerBaseX, this.stageY - 50, '⚡ DOUBLE STRIKE!', '#ffdd00');
         this.log('Your speed grants an extra turn!');
       }

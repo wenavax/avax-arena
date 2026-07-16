@@ -576,6 +576,26 @@ const LOOT_TABLES: Record<string, LootEntry[]> = {
   ],
 };
 
+// ─── Sell values (gold) ───
+// Canonical per-item sell price, keyed by item id so items already sitting in
+// old saves (which carry no price field) sell correctly. Anchors: common
+// ~10g, uncommon ~25g, rare ~60-110g, epic ~100-150g, legendary 350g+.
+export const SELL_PRICES: Record<string, number> = {
+  // Potions
+  potion_hp: 10, potion_mp: 10, potion_hp_large: 20, speed_tonic: 15,
+  // Weapons
+  iron_sword: 25, steel_sword: 60, flame_sword: 90, ice_blade: 110, shadow_dagger: 70,
+  // Armor
+  leather_armor: 20, iron_shield: 20, chain_armor: 50, spider_silk_armor: 65,
+  heavy_armor: 120, dragon_scale: 100,
+  // Accessories
+  ghost_cloak: 90, fire_amulet: 75, frost_pendant: 85, shadow_cape: 110,
+  // Rings
+  ring_vitality: 90, ring_power: 100, ring_speed: 100, ring_elements: 150,
+  // Legendary
+  excalibur: 350, aegis_shield: 350, ancient_amulet: 400, dragon_ring: 380,
+};
+
 export interface LootResult {
   item: InventoryItem;
   rarity: Rarity;

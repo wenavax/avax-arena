@@ -578,14 +578,7 @@ export class IsoCryptScene extends IsoBaseScene {
 
     this.showDialog('Shadow Lord', dialogue.preBattle, 12, 2);
 
-    const checkDialog = () => {
-      if (!this.frozen) {
-        this.startBossFight(state);
-      } else {
-        this.time.delayedCall(100, checkDialog);
-      }
-    };
-    this.time.delayedCall(1000, checkDialog);
+    this.runAfterDialog(() => this.startBossFight(state));
   }
 
   private startBossFight(state: PlayerState): void {

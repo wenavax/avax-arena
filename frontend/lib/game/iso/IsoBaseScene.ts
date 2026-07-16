@@ -1503,6 +1503,26 @@ export class IsoBaseScene extends Phaser.Scene {
   }
 
   // -----------------------------------------------------------------------
+  // Run an action once the current dialog closes (frozen → false).
+  // Single-slot: a second E in the gap between dialog close and the poll used
+  // to queue a SECOND boss fight that fired right after the first one ended.
+  // -----------------------------------------------------------------------
+  private afterDialogPending = false;
+  protected runAfterDialog(fn: () => void, delayMs = 1000): void {
+    if (this.afterDialogPending) return;
+    this.afterDialogPending = true;
+    const poll = () => {
+      if (!this.frozen) {
+        this.afterDialogPending = false;
+        fn();
+      } else {
+        this.time.delayedCall(100, poll);
+      }
+    };
+    this.time.delayedCall(delayMs, poll);
+  }
+
+  // -----------------------------------------------------------------------
   // Freeze / unfreeze
   // -----------------------------------------------------------------------
   protected freeze(): void {

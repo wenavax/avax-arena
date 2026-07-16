@@ -611,14 +611,7 @@ export class IsoNecropolisScene extends IsoBaseScene {
 
     this.showDialog('Lich King', dialogue.preBattle, 15, 1);
 
-    const checkDialog = () => {
-      if (!this.frozen) {
-        this.startBossFight(state);
-      } else {
-        this.time.delayedCall(100, checkDialog);
-      }
-    };
-    this.time.delayedCall(1000, checkDialog);
+    this.runAfterDialog(() => this.startBossFight(state));
   }
 
   private startBossFight(state: PlayerState): void {
