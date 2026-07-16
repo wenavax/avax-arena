@@ -45,7 +45,13 @@ export function updateRaceResultsStatus(html: string): void {
   if (t) { t.innerHTML = html; t.hidden = !html; }
 }
 
-export function showRaceResults(o: { rows: ResultRow[]; sim?: boolean; note?: string; delayMs?: number }): void {
+export function showRaceResults(o: {
+  rows: ResultRow[]; sim?: boolean; note?: string; delayMs?: number;
+  /** Personal-best callout, e.g. "best play TWO_TRIOS ×3.42" → gold ribbon. */
+  record?: string | null;
+  /** Instant-rematch hook (practice): renders a primary RACE AGAIN button. */
+  onAgain?: () => void;
+}): void {
   closeRaceResults();
   payStat = ''; // a new match starts a fresh settle story
   const build = () => {
@@ -59,6 +65,7 @@ export function showRaceResults(o: { rows: ResultRow[]; sim?: boolean; note?: st
         <div class="cg-results-flag">🏁</div>
         <h3>RACE RESULTS</h3>
         <div class="cg-results-winner"><span style="color:${winner.color}">${esc(winner.name)}</span> wins the match!</div>
+        ${o.record ? `<div class="cg-results-record">🏆 NEW RECORD — ${esc(o.record)}</div>` : ''}
         <div class="cg-results-rows">
           ${o.rows.map((r, i) => `
             <div class="cg-results-row${r.you ? ' me' : ''}${i === 0 ? ' first' : ''}">
@@ -71,10 +78,14 @@ export function showRaceResults(o: { rows: ResultRow[]; sim?: boolean; note?: st
         </div>
         <div class="cg-results-paystat"${payStat ? '' : ' hidden'}>${payStat}</div>
         ${o.note ? `<div class="cg-results-note">${esc(o.note)}</div>` : ''}
-        <button type="button" class="cg-results-close">CONTINUE</button>
+        <div class="cg-results-btns">
+          ${o.onAgain ? '<button type="button" class="cg-results-again">🏁 RACE AGAIN</button>' : ''}
+          <button type="button" class="cg-results-close">CONTINUE</button>
+        </div>
       </div>`;
     el.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
+      if (t.closest('.cg-results-again')) { closeRaceResults(); o.onAgain?.(); return; }
       if (t === el || t.closest('.cg-results-close')) closeRaceResults();
     });
     host.appendChild(el);

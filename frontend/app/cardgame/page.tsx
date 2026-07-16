@@ -142,33 +142,47 @@ function StatsPanel() {
   const [hist, setHist] = useState<MatchRecord[]>([]);
   const [rec, setRec] = useState<Records | null>(null);
   const [daily, setDaily] = useState<Daily | null>(null);
+  const [, setClock] = useState(0); // re-render for the "resets in" countdown
   useEffect(() => {
     const read = () => { setHist(getHistory()); setRec(getRecords()); setDaily(getDaily()); };
     read();
     window.addEventListener('cg:progress', read);
-    return () => window.removeEventListener('cg:progress', read);
+    const t = setInterval(() => setClock((c) => c + 1), 60_000);
+    return () => { window.removeEventListener('cg:progress', read); clearInterval(t); };
   }, []);
   if (!rec || !daily || rec.races === 0) return null; // nothing yet — stay quiet
+  const winRate = Math.round((rec.wins / rec.races) * 100);
+  // time-boxed framing (Agent Intercept "Ends in…"): goals reset at local midnight
+  const mid = new Date(); mid.setHours(24, 0, 0, 0);
+  const left = mid.getTime() - Date.now();
+  const resetsIn = `${Math.floor(left / 3600000)}h ${Math.floor((left % 3600000) / 60000)}m`;
+  const allDone = DAILY_GOALS.every((g) => daily[g.key] >= g.target);
   return (
     <div className="cg-stats glass">
       <div className="cg-stats-hd">
         <span className="cg-stats-t">YOUR RECORD</span>
         <span className="chip mono">🏁 {rec.races} race{rec.races === 1 ? '' : 's'}</span>
         <span className="chip mono">🏆 {rec.wins} win{rec.wins === 1 ? '' : 's'}</span>
+        {rec.races >= 3 && <span className="chip mono">🎯 {winRate}% win rate</span>}
         {rec.streak >= 2 && <span className="chip mono gold">🔥 {rec.streak} win streak</span>}
         {rec.bestMult > 0 && <span className="chip mono">⚡ best {rec.bestCombo ?? ''} ×{rec.bestMult.toFixed(2)}</span>}
       </div>
       <div className="cg-daily">
-        <span className="cg-daily-t">TODAY</span>
+        <span className="cg-daily-t">TODAY · resets in {resetsIn}</span>
         {DAILY_GOALS.map((g) => {
           const v = Math.min(daily[g.key], g.target);
           const done = v >= g.target;
+          const pct = Math.round((v / g.target) * 100);
           return (
-            <span key={g.key} className={`cg-daily-goal${done ? ' done' : ''}`}>
+            <span
+              key={g.key} className={`cg-daily-goal${done ? ' done' : ''}`}
+              style={done ? undefined : { background: `linear-gradient(90deg, rgba(77,208,225,.13) ${pct}%, rgba(255,255,255,.03) ${pct}%)` }}
+            >
               {done ? '✓ ' : ''}{g.label} <b>{v}/{g.target}</b>
             </span>
           );
         })}
+        {allDone && <span className="cg-daily-goal alldone">🏁 All goals done — see you tomorrow!</span>}
       </div>
       {hist.length > 0 && (
         <div className="cg-hist">

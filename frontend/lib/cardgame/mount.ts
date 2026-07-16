@@ -382,7 +382,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       a.times.reduce((s, x) => s + x, 0) - b.times.reduce((s, x) => s + x, 0));
     const rw = [2.0, 1.0, 0.5, 0.3];
     // meta layer: history + records + daily goals + onboarding keys, one writer
-    recordMatch({
+    const flags = recordMatch({
       ts: Date.now(), mode: opts.staked ? 'staked' : 'practice',
       place: arr.findIndex((p) => p.id === 'P1') + 1, pts: players[0].total,
       bestCombo: myBest.combo, bestMult: myBest.mult, comboCards: myBest.cards,
@@ -399,6 +399,10 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       })),
       sim: !opts.staked,
       note: opts.staked ? 'Settling on-chain — payouts claimable after settlement' : 'Practice mode — simulated pool, nothing at stake',
+      record: flags.newBestPlay ? `best play ${myBest.combo} ×${myBest.mult.toFixed(2)}`
+        : flags.newBestStreak ? 'longest win streak yet 🔥' : null,
+      // practice: instant rematch — the play-again loop must never dead-end
+      onAgain: opts.staked ? undefined : restart,
     });
     // staked mode: hand the final ranking (winner first) back as on-chain addresses
     if (opts.staked) opts.staked.onFinish(arr.map((p) => ADDR[p.id]));
@@ -557,6 +561,22 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     onLog: (m) => log(m),
     onReady: () => render(),
   });
+
+  /** Instant rematch (RACE AGAIN on the results overlay): full state reset —
+   *  fresh deck/hands/vehicles, back to the round-1 vehicle pick. */
+  function restart() {
+    if (tickH) clearInterval(tickH); tickH = null;
+    countT.forEach(clearTimeout); countT = [];
+    deck = buildDeck(); players = mkPlayers(); roundIndex = 0; t = 0;
+    selected.clear(); bestNote = ''; bestCycle = { sig: '', i: 0 };
+    myBest.mult = 0; myBest.combo = null; myBest.cards = 0;
+    ['P1', 'P2', 'P3', 'P4'].forEach((id) => { usedVeh[id] = {}; });
+    players.forEach((p) => p.hand.push(...draw(8)));
+    $('seedChip').textContent = `seed ${short(mockHex(64))}`;
+    $('roundChip').textContent = 'ROUND 1/3';
+    log('<b>New race</b> — choose your vehicle');
+    showVehicleSelect(); updatePreview(); render();
+  }
 
   /** Very first race ever: make sure the opening hand contains a pair, so the
    *  first combo moment always happens (design-level onboarding — the Marvel

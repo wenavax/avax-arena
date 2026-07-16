@@ -334,7 +334,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     const ranking = finalRanking(s);
     renderBoard(ranking, true);
     const myPlace = ranking.indexOf('P1') + 1;
-    recordMatch({
+    const flags = recordMatch({
       ts: Date.now(), mode: 'staked', place: myPlace, pts: s.players[0].total,
       bestCombo: myBest.combo, bestMult: myBest.mult, comboCards: myBest.cards,
       prize: `◆ ${payoutStr(myPlace - 1)}`,
@@ -352,6 +352,8 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
         };
       }),
       note: 'Settling on-chain — the payout lands in your wallet panel below',
+      record: flags.newBestPlay ? `best play ${myBest.combo} ×${myBest.mult.toFixed(2)}`
+        : flags.newBestStreak ? 'longest win streak yet 🔥' : null,
     });
     opts.onFinish({ vehicles, plays }, ranking.map((id) => addr[id]));
   }

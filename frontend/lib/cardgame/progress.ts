@@ -57,17 +57,24 @@ export function getDaily(): Daily {
   return d.date === today() ? d : { date: today(), races: 0, won: 0, bigCombo: 0 };
 }
 
-export function recordMatch(r: MatchRecord): void {
+/** What this match improved — the mounts turn these into a NEW RECORD ribbon
+ *  on the results overlay (the #DRIVE "NEW RECORD!" moment). */
+export interface RecordFlags { newBestPlay: boolean; newBestStreak: boolean }
+
+export function recordMatch(r: MatchRecord): RecordFlags {
   // history (latest first, capped)
   write(H_KEY, [r, ...getHistory()].slice(0, H_MAX));
 
   // records: streaks + all-time strongest play
   const rec = getRecords();
+  const newBestPlay = rec.races > 0 && r.bestMult > rec.bestMult; // first race ≠ a record
+  const prevBestStreak = rec.bestStreak;
   rec.races += 1;
   if (r.place === 1) { rec.wins += 1; rec.streak += 1; rec.bestStreak = Math.max(rec.bestStreak, rec.streak); }
   else rec.streak = 0;
   if (r.bestMult > rec.bestMult) { rec.bestMult = r.bestMult; rec.bestCombo = r.bestCombo; }
   write(R_KEY, rec);
+  const newBestStreak = rec.bestStreak > prevBestStreak && rec.bestStreak >= 2;
 
   // daily goals
   const d = getDaily();
@@ -85,4 +92,5 @@ export function recordMatch(r: MatchRecord): void {
   }
 
   try { window.dispatchEvent(new CustomEvent('cg:progress')); } catch { /* jsdom */ }
+  return { newBestPlay, newBestStreak };
 }

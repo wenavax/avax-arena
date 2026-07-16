@@ -228,11 +228,11 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   on('cardgame:finished', (d: { ranking: Pid[]; rankingAddresses: string[]; totals: Record<Pid, number> }) => {
     sound.raceOn(false);
     const myPlace = d.ranking.indexOf(myPid) + 1;
-    if (myPlace >= 1) recordMatch({
+    const flags = myPlace >= 1 ? recordMatch({
       ts: Date.now(), mode: 'mp', place: myPlace, pts: d.totals[myPid] ?? 0,
       bestCombo: myBest.combo, bestMult: myBest.mult, comboCards: myBest.cards,
       prize: `◆ ${payoutStr(myPlace - 1)}`,
-    });
+    }) : null;
     if (d.ranking[0] === myPid) sound.victory();
     ($('eng-round')).textContent = 'MATCH OVER';
     hud.rank(d.ranking.map((pid, i) => ({
@@ -248,6 +248,8 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
         total: d.totals[pid] ?? 0, prize: `◆ ${payoutStr(i)}`,
       })),
       note: 'Settling on-chain — withdraw your payout from the panel below',
+      record: flags?.newBestPlay ? `best play ${myBest.combo} ×${myBest.mult.toFixed(2)}`
+        : flags?.newBestStreak ? 'longest win streak yet 🔥' : null,
     });
     opts.onFinished?.({ ranking: d.ranking, rankingAddresses: d.rankingAddresses });
   });
