@@ -1,0 +1,12 @@
+import { network } from "hardhat";
+const HERO = "0x8b43A80A8EeBC2bf27EAa934B870AF1742f1e523";
+const ITEM = "0xA121AD68f54347215C67AD9A254c8dbBD653d5e6";
+const TREASURY = "0x301b013280317a75f808a3c0d23e82e9027a6b77";
+const { ethers } = await network.connect();
+const [deployer] = await ethers.getSigners();
+console.log("Deploying with:", deployer.address);
+console.log("Balance:", ethers.formatEther(await ethers.provider.getBalance(deployer.address)), "AVAX");
+const WM = await ethers.getContractFactory("WorldMarketplace");
+const wm = await WM.deploy(HERO, ITEM, TREASURY);
+await wm.waitForDeployment();
+console.log("WorldMarketplace deployed to:", await wm.getAddress());
