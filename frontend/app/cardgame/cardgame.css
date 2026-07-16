@@ -631,6 +631,30 @@ body.cg-noscroll{overflow:hidden}
   font-family:'Chakra Petch',sans-serif;backdrop-filter:blur(10px)}
 .cgroot .foot{margin-top:14px;font-size:11px;line-height:1.6;text-align:center}
 
+/* ── global leaderboard (watch mode) ──────────────────────────────────── */
+.cgroot .lb-wrap{margin-top:14px;padding:13px 16px}
+.cgroot .lb-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:10px}
+.cgroot .lb-crown{color:var(--cg-gold)}
+.cgroot .lb-title{font-family:'Chakra Petch',sans-serif;font-weight:700;letter-spacing:2px;font-size:13px}
+.cgroot .lb-sub{font-size:10.5px;color:var(--cg-muted)}
+.cgroot .lb-empty{padding:18px 4px;color:var(--cg-muted);font-size:12px}
+.cgroot .lb-rows{display:flex;flex-direction:column}
+.cgroot .lb-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:9px;
+  font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--cg-muted)}
+.cgroot .lb-row+.lb-row{border-top:1px solid rgba(255,255,255,.04)}
+.cgroot .lb-row b{width:32px;text-align:center;font-size:13px;color:var(--cg-text)}
+.cgroot .lb-row span{flex:1;color:var(--cg-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cgroot .lb-row em{font-style:normal;width:58px;text-align:right;font-variant-numeric:tabular-nums}
+.cgroot .lb-row em.gold{color:var(--cg-gold)}
+.cgroot .lb-row.lb-hd{font-size:8.5px;letter-spacing:1px;color:rgba(255,255,255,.38);padding-bottom:3px}
+.cgroot .lb-row.lb-hd b,.cgroot .lb-row.lb-hd span{color:rgba(255,255,255,.38);font-size:8.5px}
+.cgroot .lb-row.first{background:linear-gradient(90deg,rgba(245,197,66,.1),rgba(245,197,66,.02));border:1px solid rgba(245,197,66,.3)}
+.cgroot .lb-row.me{outline:1px solid rgba(237,47,57,.5)}
+.cgroot .lb-row.me span{color:var(--cg-gold);font-weight:700}
+.cgroot .lb-row.lb-mine-far{margin-top:6px;border-top:1px dashed rgba(255,255,255,.14)!important}
+.cgroot .lb-foot{margin-top:8px;font-size:9.5px;color:rgba(255,255,255,.35);font-family:'JetBrains Mono',monospace}
+@media(max-width:560px){.cgroot .lb-row em{width:44px;font-size:10.5px}.cgroot .lb-row{gap:6px}}
+
 /* ── meta layer: personal record + daily goals + recent races ─────────── */
 .cgroot .cg-stats{margin-top:14px;padding:13px 16px;display:flex;flex-direction:column;gap:9px}
 .cgroot .cg-stats-hd{display:flex;align-items:center;gap:6px;flex-wrap:wrap}

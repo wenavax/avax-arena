@@ -13,6 +13,7 @@ import { CARDGAME_ESCROW, CARDGAME_CHAIN_ID, ESCROW_ABI, STATUS } from '@/lib/ca
 import { updateRaceResultsStatus } from '@/lib/cardgame/resultsOverlay';
 import { getHistory, getRecords, getDaily, DAILY_GOALS, type MatchRecord, type Records, type Daily } from '@/lib/cardgame/progress';
 import LiveMatches from '@/components/cardgame/LiveMatches';
+import Leaderboard from '@/components/cardgame/Leaderboard';
 import IcmLab from '@/components/cardgame/IcmLab';
 import GameStageBanner from '@/components/GameStageBanner';
 import { formatEther, type Hex } from 'viem';
@@ -643,7 +644,12 @@ export default function CardGamePage() {
         )}
       </div>
 
-      {mode === 'watch' && <LiveMatches myAddress={address ?? undefined} />}
+      {mode === 'watch' && (
+        <>
+          <LiveMatches myAddress={address ?? undefined} />
+          <Leaderboard myAddress={address ?? undefined} />
+        </>
+      )}
 
       {mode === 'staked' && authenticated && address && (
         <div className="cg-stakebar glass">

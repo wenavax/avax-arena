@@ -63,6 +63,10 @@ function opWallet() {
 export function botAddresses(): Address[] {
   return BOT_PKS.map((pk) => privateKeyToAccount(pk).address);
 }
+/** All house wallets (operator + bots) — excluded from the public leaderboard. */
+export function houseAddresses(): Address[] {
+  return OPERATOR_PK ? [op().address, ...botAddresses()] : botAddresses();
+}
 
 async function waitOk(hash: Hex) {
   const r = await pub.waitForTransactionReceipt({ hash });
