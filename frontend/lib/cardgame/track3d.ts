@@ -997,43 +997,49 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
 
   /** Realistic wheel: slick tyre + metal rim + spokes + brake disc. The GROUP
    *  carries the wheel-proc name (children unnamed → no double spin). */
-  function buildWheel(M: CarM, r: number, w: number): InstanceType<typeof THREE.Group> {
+  function buildWheel(M: CarM, r: number, w: number, band: number): InstanceType<typeof THREE.Group> {
     const g = new THREE.Group();
     g.name = 'wheel-proc';
-    const tyreGeo = new THREE.CylinderGeometry(r, r, w, 22);
+    const tyreGeo = new THREE.CylinderGeometry(r, r, w, 24);
     tyreGeo.rotateX(Math.PI / 2);
     g.add(new THREE.Mesh(tyreGeo, M.tyre));
-    const rimGeo = new THREE.CylinderGeometry(r * 0.56, r * 0.56, w + 0.015, 16);
+    const rimGeo = new THREE.CylinderGeometry(r * 0.55, r * 0.55, w + 0.012, 18);
     rimGeo.rotateX(Math.PI / 2);
-    const rim = new THREE.Mesh(rimGeo, M.rim);
-    g.add(rim);
+    g.add(new THREE.Mesh(rimGeo, M.rim));
     if (!lowEnd) {
+      // tyre-compound sidewall rings (soft/medium/hard colour, like the real ones)
+      const bandMat = new THREE.MeshBasicMaterial({ color: band });
+      for (const sz of [-1, 1]) {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 0.8, 0.013, 6, 24), bandMat);
+        ring.position.z = sz * (w / 2);
+        g.add(ring);
+      }
       for (let i = 0; i < 5; i++) { // 5-spoke star
-        const sp = new THREE.Mesh(new THREE.BoxGeometry(r * 0.95, r * 0.22, w * 0.5), M.rim);
+        const sp = new THREE.Mesh(new THREE.BoxGeometry(r * 0.92, r * 0.2, w * 0.45), M.rim);
         sp.rotation.z = (i / 5) * Math.PI * 2;
         g.add(sp);
       }
-      const discGeo = new THREE.CylinderGeometry(r * 0.42, r * 0.42, w * 0.2, 14);
+      const discGeo = new THREE.CylinderGeometry(r * 0.42, r * 0.42, w * 0.18, 16);
       discGeo.rotateX(Math.PI / 2);
       g.add(new THREE.Mesh(discGeo, M.chrome));
     }
-    const capGeo = new THREE.CylinderGeometry(r * 0.14, r * 0.14, w + 0.03, 10);
+    const capGeo = new THREE.CylinderGeometry(r * 0.13, r * 0.13, w + 0.026, 10);
     capGeo.rotateX(Math.PI / 2);
     g.add(new THREE.Mesh(capGeo, M.chrome));
     return g;
   }
 
-  /** Tiny builder DSL shared by the three cars. */
+  /** Tiny builder DSL for the formula car. */
   function carKit(M: CarM) {
     const g = new THREE.Group();
     const B = (w: number, h: number, d: number, m: InstanceType<typeof THREE.Material>,
-      x: number, y: number, z: number, rz = 0, small = false) => {
+      x: number, y: number, z: number, rz = 0, small = false, ry = 0) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-      mesh.position.set(x, y, z); mesh.rotation.z = rz;
+      mesh.position.set(x, y, z); mesh.rotation.z = rz; mesh.rotation.y = ry;
       if (small) mesh.userData.noInk = true;
       g.add(mesh); return mesh;
     };
-    // cylinder lying along the car's X axis (nose cones, exhausts)
+    // cylinder lying along the car's X axis (nose cone, exhausts, rings)
     const CX = (rt: number, rb: number, len: number, seg: number, m: InstanceType<typeof THREE.Material>,
       x: number, y: number, z: number) => {
       const geo = new THREE.CylinderGeometry(rt, rb, len, seg);
@@ -1042,116 +1048,153 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
       mesh.position.set(x, y, z); mesh.userData.noInk = true;
       g.add(mesh); return mesh;
     };
-    const W = (r: number, w: number, x: number, z: number) => {
-      const wheel = buildWheel(M, r, w);
+    // suspension rod between two points (wishbones, pushrods, wing pylons)
+    const R = (r: number, x1: number, y1: number, z1: number, x2: number, y2: number, z2: number,
+      m: InstanceType<typeof THREE.Material> = M.carbon) => {
+      const dir = new THREE.Vector3(x2 - x1, y2 - y1, z2 - z1);
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, dir.length(), 6), m);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+      mesh.position.set((x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2);
+      mesh.userData.noInk = true;
+      g.add(mesh); return mesh;
+    };
+    const W = (r: number, w: number, x: number, z: number, band: number) => {
+      const wheel = buildWheel(M, r, w, band);
       wheel.position.set(x, r, z);
       g.add(wheel); return wheel;
     };
-    return { g, B, CX, W };
+    return { g, B, CX, R, W };
   }
 
-  /** LEGENDARY — modern open-wheel formula car: nose cone, wings, sidepods,
-   *  halo, shark fin, diffuser, exposed slicks. */
-  function buildF1(M: CarM): InstanceType<typeof THREE.Group> {
-    const { g, B, CX, W } = carKit(M);
-    B(2.5, 0.05, 0.96, M.carbon, -0.05, 0.10, 0);                    // floor
-    B(1.3, 0.28, 0.52, M.paint, 0.25, 0.34, 0);                      // monocoque tub
-    const nose = CX(0.08, 0.20, 1.0, 4, M.paint, 1.20, 0.30, 0);     // tapered square nose
-    nose.rotation.x = Math.PI / 4;
-    B(0.44, 0.035, 1.5, M.carbon, 1.58, 0.10, 0);                    // front wing main
-    B(0.30, 0.03, 1.44, M.paint, 1.47, 0.17, 0, 0.16);               // front flap
-    for (const s of [-1, 1]) {
-      B(0.30, 0.16, 0.04, M.paint, 1.55, 0.15, s * 0.76, 0, true);   // endplates
-      B(1.05, 0.30, 0.34, M.paint, -0.30, 0.33, s * 0.44);           // sidepods
-      B(0.06, 0.24, 0.30, M.carbon, 0.23, 0.35, s * 0.44, 0, true);  // pod intakes
-      B(0.10, 0.05, 0.16, M.paint, 0.55, 0.58, s * 0.38, 0, true);   // mirrors
-    }
-    B(1.0, 0.22, 0.34, M.paint, -0.65, 0.50, 0);                     // engine cover
-    B(0.72, 0.30, 0.035, M.paint, -1.0, 0.70, 0);                    // shark fin
-    B(0.44, 0.06, 0.34, M.carbon, 0.28, 0.50, 0);                    // cockpit opening
-    B(0.14, 0.14, 0.14, M.carbon, -0.16, 0.66, 0, 0, true);          // airbox intake
-    // halo: half-torus hoop over the cockpit + front strut
-    const haloGeo = new THREE.TorusGeometry(0.24, 0.028, 8, 18, Math.PI);
+  /** Per-rarity F1 trim: tyre-compound colour (soft/medium/hard), front-wing
+   *  flap count and an accent colour on fin/endplate edges. */
+  const F1_TRIM: Record<string, { band: number; flaps: number; accent: number }> = {
+    LEGENDARY: { band: 0xd53a3a, flaps: 3, accent: 0xf5c542 },  // softs, gold trim
+    EPIC:      { band: 0xf0c93c, flaps: 2, accent: 0xa78bfa },  // mediums
+    COMMON:    { band: 0xe9edf4, flaps: 2, accent: 0x8ea0b5 },  // hards
+  };
+
+  /** Ultra-detailed modern open-wheel formula car. Every element of the real
+   *  anatomy is present: multi-element front wing, wishbone+pushrod suspension,
+   *  halo with struts, airbox, coke-bottle sidepods, shark fin, swan-neck rear
+   *  wing with DRS pod, beam wing, diffuser strakes, brake ducts, pitot, T-cam.
+   *  lowEnd devices skip the fine detail layer (rods, cascades, rings). */
+  function buildF1(M: CarM, trim: { band: number; flaps: number; accent: number }): InstanceType<typeof THREE.Group> {
+    const { g, B, CX, R, W } = carKit(M);
+    const accent = new THREE.MeshBasicMaterial({ color: trim.accent });
+
+    // ── floor + plank: ground-effect deck with upturned edge wings ──
+    B(2.45, 0.04, 0.98, M.carbon, -0.08, 0.10, 0);
+    B(1.6, 0.02, 0.22, M.tyre, -0.2, 0.075, 0, 0, true);              // wooden plank line
+    for (const s of [-1, 1]) B(0.9, 0.02, 0.14, M.carbon, -0.15, 0.14, s * 0.52, 0, true, s * 0.06); // floor edges
+
+    // ── monocoque: tub, cockpit ring, tapered nose with droop ──
+    B(1.15, 0.26, 0.5, M.paint, 0.32, 0.33, 0);                       // survival cell
+    B(0.5, 0.14, 0.42, M.paint, 0.9, 0.3, 0, -0.08);                  // chassis taper to nose
+    const nose = CX(0.05, 0.14, 0.85, 8, M.paint, 1.32, 0.26, 0);
+    nose.rotation.z = -0.045;                                          // slight droop
+    CX(0.055, 0.055, 0.03, 8, accent, 1.72, 0.245, 0);                // nose-tip ring
+    B(0.42, 0.05, 0.34, M.carbon, 0.32, 0.475, 0);                    // cockpit opening
+    B(0.16, 0.09, 0.24, M.carbon, 0.02, 0.51, 0, 0, true);            // headrest padding
+    B(0.028, 0.075, 0.13, M.rim, 0.5, 0.44, 0, -0.25, true);          // steering wheel
+
+    // ── halo: hoop + centre strut + side supports ──
+    const haloGeo = new THREE.TorusGeometry(0.22, 0.024, 8, 20, Math.PI);
     const halo = new THREE.Mesh(haloGeo, M.carbon);
-    halo.position.set(0.30, 0.52, 0); halo.rotation.y = Math.PI / 2;
+    halo.position.set(0.32, 0.5, 0); halo.rotation.y = Math.PI / 2;
     halo.userData.noInk = true;
     g.add(halo);
-    const strut = CX(0.02, 0.02, 0.30, 8, M.carbon, 0.44, 0.63, 0);
-    strut.rotation.z = -0.9;
-    // rear wing stack: main + flap + endplates + pylon + beam wing
-    B(0.40, 0.03, 1.16, M.paint, -1.44, 0.86, 0, -0.10);
-    B(0.30, 0.03, 1.12, M.paint, -1.50, 0.96, 0, -0.22);
-    for (const s of [-1, 1]) B(0.46, 0.36, 0.035, M.paint, -1.44, 0.78, s * 0.58, 0, true);
-    CX(0.025, 0.025, 0.42, 8, M.carbon, -1.38, 0.62, 0).rotation.z = Math.PI / 2 - 0.15;
-    B(0.26, 0.025, 1.0, M.carbon, -1.40, 0.42, 0);
-    B(0.5, 0.05, 0.9, M.carbon, -1.30, 0.17, 0, 0.35);               // diffuser
-    CX(0.045, 0.05, 0.14, 10, M.chrome, -1.28, 0.44, 0);             // exhaust
-    B(0.04, 0.10, 0.06, M.lensR, -1.47, 0.60, 0, 0, true);           // rain light
-    W(0.27, 0.24, 1.02, 0.60); W(0.27, 0.24, 1.02, -0.60);           // exposed slicks
-    W(0.30, 0.28, -0.98, 0.62); W(0.30, 0.28, -0.98, -0.62);
-    g.userData.decor = { hoodY: 0.50, doorZ: 0.615, doorY: 0.35, wingX: -1.56, wingY: 0.86 };
-    return g;
-  }
+    R(0.016, 0.62, 0.46, 0, 0.42, 0.68, 0);                           // centre strut
+    R(0.016, 0.06, 0.5, 0.2, 0.32, 0.52, 0.21);                       // side supports
+    R(0.016, 0.06, 0.5, -0.2, 0.32, 0.52, -0.21);
 
-  /** EPIC — low, wide GT coupé: raked windshield, fastback, splitter,
-   *  ducktail, quad exhausts. */
-  function buildGT(M: CarM): InstanceType<typeof THREE.Group> {
-    const { g, B, CX, W } = carKit(M);
-    B(2.9, 0.30, 1.12, M.paint, 0, 0.34, 0);                         // main body
-    B(2.5, 0.12, 1.16, M.carbon, 0, 0.16, 0);                        // lower skirt
-    B(0.85, 0.06, 1.0, M.paint, 1.05, 0.48, 0, -0.09);               // sloping hood
-    B(0.14, 0.20, 1.02, M.paint, 1.50, 0.32, 0);                     // nose face
-    B(0.03, 0.10, 0.5, M.carbon, 1.575, 0.30, 0, 0, true);           // grille
-    B(0.16, 0.03, 1.2, M.carbon, 1.55, 0.10, 0);                     // splitter
-    B(0.5, 0.04, 0.88, M.glass, 0.42, 0.585, 0, -0.5);               // raked windshield
-    B(1.06, 0.26, 0.90, M.glass, -0.10, 0.60, 0);                    // greenhouse
-    B(0.72, 0.045, 0.86, M.paint, -0.18, 0.745, 0);                  // roof
-    B(0.72, 0.05, 0.9, M.paint, -0.86, 0.60, 0, 0.35);               // fastback slope
-    B(0.5, 0.08, 1.05, M.paint, -1.25, 0.44, 0);                     // rear deck
-    B(0.20, 0.04, 1.0, M.paint, -1.44, 0.55, 0, -0.15);              // ducktail
-    B(0.08, 0.20, 1.05, M.carbon, -1.50, 0.34, 0);                   // rear face
-    B(0.03, 0.05, 0.9, M.lensR, -1.53, 0.44, 0, 0, true);            // full-width tail bar
-    for (const s of [-1, 1]) {
-      B(0.04, 0.06, 0.20, M.lensW, 1.56, 0.42, s * 0.38, 0, true);   // headlights
-      B(0.10, 0.05, 0.14, M.paint, 0.50, 0.60, s * 0.58, 0, true);   // mirrors
-      CX(0.035, 0.035, 0.10, 10, M.chrome, -1.52, 0.20, s * 0.28);   // exhausts
-      CX(0.035, 0.035, 0.10, 10, M.chrome, -1.52, 0.20, s * 0.40);
+    // ── front wing: main plane + cascading flaps + endplates + pylons ──
+    B(0.42, 0.028, 1.46, M.carbon, 1.56, 0.085, 0);                   // main plane
+    for (let f = 0; f < trim.flaps && !(lowEnd && f > 0); f++) {      // cascade
+      B(0.26 - f * 0.05, 0.02, 1.4 - f * 0.1, M.paint, 1.5 - f * 0.075, 0.145 + f * 0.052, 0, 0.14 + f * 0.07);
     }
-    W(0.28, 0.26, 0.95, 0.585); W(0.28, 0.26, 0.95, -0.585);
-    W(0.28, 0.26, -0.95, 0.585); W(0.28, 0.26, -0.95, -0.585);
-    g.userData.decor = { hoodY: 0.52, doorZ: 0.575, doorY: 0.42, wingX: -1.50, wingY: 0.72 };
-    return g;
-  }
+    for (const s of [-1, 1]) {
+      B(0.34, 0.17, 0.026, M.paint, 1.54, 0.14, s * 0.75, 0, true);   // endplates
+      B(0.12, 0.016, 0.09, accent, 1.44, 0.225, s * 0.72, 0.3, true); // endplate top wing
+      R(0.013, 1.44, 0.22, s * 0.07, 1.5, 0.11, s * 0.07);            // wing pylons
+    }
 
-  /** COMMON — compact hot hatch: two-box shape, tall cabin, roof spoiler,
-   *  round headlights, single exhaust. */
-  function buildHatch(M: CarM): InstanceType<typeof THREE.Group> {
-    const { g, B, CX, W } = carKit(M);
-    B(2.75, 0.34, 1.08, M.paint, 0.05, 0.33, 0);                     // body
-    B(0.16, 0.22, 1.02, M.carbon, 1.50, 0.28, 0);                    // front bumper
-    B(0.16, 0.22, 1.02, M.carbon, -1.42, 0.28, 0);                   // rear bumper
-    B(0.8, 0.05, 0.98, M.paint, 0.95, 0.52, 0, -0.06);               // short hood
-    B(0.42, 0.04, 0.9, M.glass, 0.42, 0.62, 0, -0.55);               // windshield
-    B(1.3, 0.30, 0.92, M.glass, -0.30, 0.62, 0);                     // tall cabin
-    B(1.34, 0.05, 0.98, M.paint, -0.30, 0.79, 0);                    // roof
-    B(0.34, 0.04, 0.9, M.glass, -1.02, 0.62, 0, 0.7);                // hatch glass
-    B(0.26, 0.04, 1.0, M.paint, -1.12, 0.82, 0, -0.1);               // roof spoiler
-    for (const s of [-1, 1]) {
-      const hl = CX(0.075, 0.075, 0.04, 14, M.lensW, 1.585, 0.42, s * 0.36); // round lights
-      hl.userData.noInk = true;
-      B(0.03, 0.14, 0.10, M.lensR, -1.51, 0.44, s * 0.42, 0, true);  // tail lights
-      B(0.09, 0.05, 0.13, M.paint, 0.52, 0.62, s * 0.56, 0, true);   // mirrors
+    // ── front suspension: double wishbone + pushrod per side ──
+    if (!lowEnd) for (const s of [-1, 1]) {
+      R(0.011, 0.84, 0.4, s * 0.18, 1.02, 0.34, s * 0.5);             // upper wishbone
+      R(0.011, 1.18, 0.4, s * 0.18, 1.02, 0.34, s * 0.5);
+      R(0.011, 0.84, 0.19, s * 0.2, 1.02, 0.2, s * 0.5);              // lower wishbone
+      R(0.011, 1.18, 0.19, s * 0.2, 1.02, 0.2, s * 0.5);
+      R(0.009, 0.96, 0.45, s * 0.2, 1.02, 0.22, s * 0.46);            // pushrod
+      B(0.1, 0.12, 0.05, M.carbon, 1.02, 0.3, s * 0.42, 0, true);     // brake duct
     }
-    CX(0.04, 0.04, 0.10, 10, M.chrome, -1.49, 0.16, 0.30);           // exhaust
-    W(0.27, 0.24, 0.88, 0.565); W(0.27, 0.24, 0.88, -0.565);
-    W(0.27, 0.24, -0.88, 0.565); W(0.27, 0.24, -0.88, -0.565);
-    g.userData.decor = { hoodY: 0.56, doorZ: 0.555, doorY: 0.44, wingX: -1.30, wingY: 0.90 };
+
+    // ── sidepods: undercut inlet, coke-bottle taper ──
+    for (const s of [-1, 1]) {
+      B(0.92, 0.235, 0.3, M.paint, -0.32, 0.4, s * 0.42);             // pod top
+      B(0.05, 0.17, 0.26, M.carbon, 0.15, 0.38, s * 0.42, 0, true);   // radiator inlet
+      B(0.55, 0.14, 0.2, M.paint, -0.85, 0.32, s * 0.3, 0, true, s * 0.28); // coke-bottle taper
+      B(0.1, 0.045, 0.14, M.paint, 0.55, 0.575, s * 0.36, 0, true);   // mirrors
+      R(0.009, 0.55, 0.555, s * 0.3, 0.55, 0.5, s * 0.26);            // mirror stalks
+      // floor fences ahead of the pods
+      if (!lowEnd) B(0.2, 0.09, 0.016, M.carbon, 0.62, 0.16, s * 0.4, 0, true, s * 0.35);
+    }
+
+    // ── engine cover + airbox + shark fin ──
+    B(1.05, 0.2, 0.28, M.paint, -0.62, 0.48, 0);                      // spine
+    B(0.55, 0.13, 0.2, M.paint, -1.12, 0.42, 0, -0.12);               // tail taper
+    B(0.15, 0.13, 0.17, M.carbon, -0.05, 0.65, 0, 0, true);           // airbox intake
+    R(0.014, 0.1, 0.52, 0, -0.02, 0.7, 0);                            // roll hoop blade
+    B(0.8, 0.26, 0.03, M.paint, -1.02, 0.66, 0);                      // shark fin
+    B(0.8, 0.018, 0.034, accent, -1.02, 0.795, 0, 0, true);           // fin accent edge
+    if (!lowEnd) {
+      B(0.07, 0.05, 0.1, M.tyre, -0.05, 0.76, 0, 0, true);            // T-cam
+      CX(0.006, 0.006, 0.16, 6, M.tyre, 1.66, 0.34, 0);               // pitot tube
+    }
+
+    // ── rear wing: swan-neck pylons, main + flap, DRS pod, endplates ──
+    B(0.36, 0.026, 1.1, M.paint, -1.43, 0.83, 0, -0.09);              // main plane
+    B(0.27, 0.02, 1.06, M.paint, -1.5, 0.925, 0, -0.24);              // upper flap
+    B(0.09, 0.05, 0.09, M.carbon, -1.46, 0.965, 0, 0, true);          // DRS actuator pod
+    R(0.013, -1.25, 0.52, 0.12, -1.4, 0.82, 0.1);                     // swan-neck pylons
+    R(0.013, -1.25, 0.52, -0.12, -1.4, 0.82, -0.1);
+    for (const s of [-1, 1]) {
+      B(0.44, 0.34, 0.024, M.paint, -1.43, 0.76, s * 0.56, 0, true);  // endplates
+      B(0.2, 0.016, 0.026, accent, -1.55, 0.93, s * 0.55, -0.24, true); // endplate accent
+    }
+    B(0.24, 0.022, 0.96, M.carbon, -1.38, 0.44, 0, -0.18);            // beam wing
+
+    // ── diffuser: kicked ramp + strakes ──
+    B(0.5, 0.04, 0.92, M.carbon, -1.28, 0.16, 0, 0.32);
+    if (!lowEnd) for (const s of [-0.3, -0.1, 0.1, 0.3]) {
+      B(0.34, 0.09, 0.014, M.carbon, -1.3, 0.15, s, 0.32, true);      // strakes
+    }
+    B(0.3, 0.1, 0.16, M.carbon, -1.45, 0.5, 0, 0, true);              // crash structure
+    B(0.035, 0.09, 0.05, M.lensR, -1.53, 0.52, 0, 0, true);           // rain light
+    CX(0.04, 0.048, 0.12, 10, M.chrome, -1.24, 0.56, 0);              // exhaust tip
+
+    // ── rear suspension ──
+    if (!lowEnd) for (const s of [-1, 1]) {
+      R(0.011, -0.72, 0.42, s * 0.14, -0.98, 0.36, s * 0.52);
+      R(0.011, -1.2, 0.42, s * 0.14, -0.98, 0.36, s * 0.52);
+      R(0.011, -0.72, 0.18, s * 0.16, -0.98, 0.2, s * 0.52);
+      R(0.011, -1.2, 0.18, s * 0.16, -0.98, 0.2, s * 0.52);
+    }
+
+    // ── wheels: exposed slicks, wider at the rear (like the real car) ──
+    W(0.27, 0.25, 1.02, 0.6, trim.band); W(0.27, 0.25, 1.02, -0.6, trim.band);
+    W(0.3, 0.3, -0.98, 0.63, trim.band); W(0.3, 0.3, -0.98, -0.63, trim.band);
+
+    g.userData.decor = {
+      hoodY: 0.47, hoodS: 0.4, doorZ: 0.575, doorY: 0.4, doorS: 0.32,
+      wingX: -1.57, wingY: 0.83, wingW: 1.0, wingH: 0.3,
+    };
     return g;
   }
 
   function buildProceduralCar(veh: string | null, color: number): InstanceType<typeof THREE.Group> {
     const M = carMats(color);
-    return veh === 'LEGENDARY' ? buildF1(M) : veh === 'COMMON' ? buildHatch(M) : buildGT(M);
+    return buildF1(M, F1_TRIM[veh ?? ''] ?? F1_TRIM.EPIC);
   }
 
   interface CarRig {
@@ -1275,18 +1318,23 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     };
     // anchors come from the builder itself (each silhouette knows its own
     // hood/door/wing planes) with safe fallbacks
-    const dec = (mesh.userData.decor ?? {}) as { hoodY?: number; doorZ?: number; doorY?: number; wingX?: number; wingY?: number };
-    const hood = decal(avaxTex(), 0.72, 0.72);
+    const dec = (mesh.userData.decor ?? {}) as {
+      hoodY?: number; hoodS?: number; doorZ?: number; doorY?: number; doorS?: number;
+      wingX?: number; wingY?: number; wingW?: number; wingH?: number;
+    };
+    const hoodS = dec.hoodS ?? 0.72;
+    const hood = decal(avaxTex(), hoodS, hoodS);
     hood.rotation.x = -Math.PI / 2;
     hood.position.set(0.55, (dec.hoodY ?? 0.55) + 0.015, 0);
     group.add(hood);
+    const doorS = dec.doorS ?? 0.5;
     for (const s of [-1, 1]) {
-      const door = decal(avaxTex(), 0.5, 0.5);
+      const door = decal(avaxTex(), doorS, doorS);
       door.position.set(0.05, dec.doorY ?? 0.45, s * ((dec.doorZ ?? 0.57) + 0.012));
       if (s < 0) door.rotation.y = Math.PI;
       group.add(door);
     }
-    const wing = decal(frostbiteTex(), 1.25, 0.38, true);
+    const wing = decal(frostbiteTex(), dec.wingW ?? 1.25, dec.wingH ?? 0.38, true);
     wing.position.set(dec.wingX ?? -1.45, dec.wingY ?? 0.9, 0);
     wing.rotation.y = Math.PI / 2;
     group.add(wing);
