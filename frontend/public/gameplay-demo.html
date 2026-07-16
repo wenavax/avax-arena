@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frostbite Arena — Gameplay</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+* { margin:0; padding:0; box-sizing:border-box; }
+:root { --red:#e84142; --dark:#050d1a; --navy:#0d1f35; --blue:#7ab8e0; --dim:#4a7aa0; --green:#1d9e75; --gold:#f0b429; }
+body { background:#000; width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-family:'Press Start 2P','Courier New',monospace; overflow:hidden; cursor:default; }
+body::after { content:''; position:fixed; inset:0; background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px); pointer-events:none; z-index:9999; }
+.screen { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; }
+.screen.active { display:flex; }
+.topbar { position:fixed; top:0; left:0; right:0; z-index:100; background:#000; border-bottom:2px solid var(--red); padding:8px 16px; display:flex; align-items:center; justify-content:space-between; }
+.topbar-logo { font-size:8px; color:var(--red); letter-spacing:3px; }
+.topbar-live { display:flex; align-items:center; gap:6px; font-size:7px; color:var(--green); letter-spacing:2px; }
+.live-dot { width:5px; height:5px; border-radius:50%; background:var(--green); animation:blink 1s step-end infinite; }
+.topbar-nav { display:flex; gap:10px; }
+.nav-item { font-size:6px; color:var(--dim); letter-spacing:2px; cursor:pointer; padding:3px 6px; border:1px solid transparent; }
+.nav-item:hover,.nav-item.active { color:var(--red); border-color:var(--red); }
+#hero { background:radial-gradient(ellipse at center,#0d1020 0%,#000 70%); padding-top:50px; }
+.hero-title { font-size:clamp(18px,5vw,36px); color:var(--red); letter-spacing:5px; text-shadow:0 0 30px rgba(232,65,66,0.5); margin-bottom:8px; text-align:center; }
+.hero-sub { font-size:clamp(7px,1.5vw,10px); color:var(--red); letter-spacing:3px; margin-bottom:24px; }
+.hero-tagline { font-size:clamp(6px,1.2vw,8px); color:var(--blue); letter-spacing:2px; margin-bottom:30px; }
+.live-badge { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--green); padding:5px 12px; border-radius:20px; font-size:6px; color:var(--green); letter-spacing:2px; margin-bottom:24px; }
+.hero-stats { display:flex; gap:24px; margin-bottom:30px; flex-wrap:wrap; justify-content:center; }
+.hstat { text-align:center; }
+.hstat-num { font-size:clamp(12px,2.5vw,20px); color:#fff; letter-spacing:2px; display:block; margin-bottom:4px; }
+.hstat-label { font-size:5px; color:var(--dim); letter-spacing:2px; }
+.hero-btn { background:var(--red); color:#fff; font-size:clamp(7px,1.3vw,9px); letter-spacing:3px; padding:10px 24px; border:none; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:8px; transition:transform .1s; }
+.hero-btn:hover { transform:scale(1.03); }
+#arena { background:var(--dark); padding-top:50px; }
+.arena-title { font-size:8px; color:var(--dim); letter-spacing:3px; margin-bottom:20px; }
+.battle-stage { width:100%; max-width:600px; padding:0 16px; }
+.vs-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; }
+.warrior-card { flex:1; background:var(--navy); border:2px solid; padding:14px 10px; text-align:center; position:relative; overflow:hidden; }
+.warrior-card.player { border-color:var(--green); }
+.warrior-card.enemy { border-color:var(--red); }
+.warrior-card .wlabel { font-size:5px; letter-spacing:2px; margin-bottom:6px; }
+.warrior-card.player .wlabel { color:var(--green); }
+.warrior-card.enemy .wlabel { color:var(--red); }
+.warrior-sprite { font-size:28px; margin:6px 0; display:block; filter:drop-shadow(0 0 10px rgba(255,255,255,0.2)); }
+.warrior-name { font-size:6px; color:#fff; letter-spacing:2px; margin-bottom:8px; }
+.stat-row { display:flex; justify-content:space-between; margin-bottom:3px; }
+.stat-key { font-size:5px; color:var(--dim); }
+.stat-val { font-size:5px; color:#fff; }
+.stat-bar { height:2px; background:#1a2d4a; margin-bottom:6px; border-radius:1px; overflow:hidden; }
+.stat-fill { height:100%; border-radius:1px; }
+.el-badge { display:inline-block; font-size:6px; padding:2px 6px; border-radius:2px; margin-top:6px; background:#1a2d4a; color:var(--blue); letter-spacing:2px; }
+.vs-center { font-size:16px; color:var(--red); flex-shrink:0; }
+.stake-row { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:14px; }
+.stake-label { font-size:6px; color:var(--dim); letter-spacing:2px; }
+.stake-val { font-size:9px; color:var(--gold); letter-spacing:2px; }
+.fight-btn { width:100%; background:var(--red); color:#fff; font-size:8px; letter-spacing:3px; padding:10px; border:none; cursor:pointer; font-family:inherit; display:flex; align-items:center; justify-content:center; gap:8px; transition:transform .1s; }
+.fight-btn:hover { transform:scale(1.01); }
+.hp-wrap { margin:12px 0 6px; }
+.hp-label { display:flex; justify-content:space-between; margin-bottom:3px; }
+.hp-key { font-size:5px; color:var(--dim); }
+.hp-num { font-size:5px; color:#fff; }
+.hp-bar { height:4px; background:#1a2d4a; border-radius:1px; overflow:hidden; }
+.hp-fill { height:100%; transition:width 0.5s ease; border-radius:1px; }
+.hp-fill.player-hp { background:var(--green); }
+.hp-fill.enemy-hp { background:var(--red); }
+#battle-anim { background:var(--dark); padding-top:50px; }
+.battle-log { width:100%; max-width:500px; padding:0 16px; }
+.log-title { font-size:7px; color:var(--dim); letter-spacing:3px; margin-bottom:14px; text-align:center; }
+.log-entries { display:flex; flex-direction:column; gap:6px; min-height:150px; }
+.log-entry { font-size:6px; letter-spacing:1px; padding:7px 10px; border-left:3px solid; opacity:0; transform:translateX(-10px); transition:all 0.4s; }
+.log-entry.show { opacity:1; transform:translateX(0); }
+.log-entry.player-hit { border-color:var(--green); color:#c8dff0; background:rgba(29,158,117,0.08); }
+.log-entry.enemy-hit { border-color:var(--red); color:#ffcccc; background:rgba(232,65,66,0.08); }
+.log-entry.system { border-color:var(--dim); color:var(--dim); }
+.log-entry.win { border-color:var(--gold); color:var(--gold); background:rgba(240,180,41,0.1); font-size:8px; }
+.hp-bars-anim { display:flex; gap:14px; margin-bottom:14px; }
+.hp-anim-block { flex:1; }
+.hp-anim-name { font-size:5px; color:var(--dim); letter-spacing:2px; margin-bottom:4px; }
+.onchain-badge { display:flex; align-items:center; gap:6px; margin:10px 0; font-size:6px; color:var(--dim); letter-spacing:2px; }
+.tx-hash { font-size:5px; color:#1d5a8a; letter-spacing:1px; }
+#result { background:var(--dark); padding-top:50px; }
+.result-wrap { text-align:center; max-width:400px; padding:0 16px; }
+.result-icon { font-size:40px; margin-bottom:14px; animation:bounce 0.5s ease; }
+.result-title { font-size:clamp(12px,2.5vw,18px); color:var(--gold); letter-spacing:3px; margin-bottom:10px; }
+.result-sub { font-size:6px; color:var(--blue); letter-spacing:2px; margin-bottom:20px; line-height:2; }
+.reward-box { background:var(--navy); border:2px solid var(--gold); padding:14px; margin-bottom:20px; }
+.reward-label { font-size:6px; color:var(--dim); letter-spacing:2px; margin-bottom:6px; }
+.reward-amount { font-size:20px; color:var(--gold); letter-spacing:3px; }
+.reward-unit { font-size:8px; color:var(--gold); }
+.onchain-proof { font-size:5px; color:var(--dim); letter-spacing:2px; margin-bottom:4px; }
+.tx-proof { font-size:5px; color:#1d5a8a; letter-spacing:1px; }
+.result-btns { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+.btn-outline { background:transparent; border:2px solid var(--red); color:var(--red); font-size:6px; letter-spacing:2px; padding:8px 14px; cursor:pointer; font-family:inherit; }
+.btn-solid { background:var(--red); border:2px solid var(--red); color:#fff; font-size:6px; letter-spacing:2px; padding:8px 14px; cursor:pointer; font-family:inherit; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+@keyframes bounce { 0%{transform:scale(0.5)} 60%{transform:scale(1.15)} 100%{transform:scale(1)} }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-logo">❄ FROSTBITE</div>
+  <div class="topbar-live"><div class="live-dot"></div>LIVE</div>
+  <div class="topbar-nav">
+    <div class="nav-item" onclick="goTo('hero')">HOME</div>
+    <div class="nav-item active" onclick="goTo('arena')">BATTLE</div>
+    <div class="nav-item">MINT</div>
+    <div class="nav-item">FUSE</div>
+  </div>
+</div>
+
+<div class="screen active" id="hero">
+  <div class="live-badge"><div class="live-dot"></div>LIVE ON AVALANCHE</div>
+  <div class="hero-title">FROSTBITE</div>
+  <div class="hero-sub">BATTLE ARENA</div>
+  <div class="hero-tagline">Mint warriors. Battle PvP. Earn AVAX.</div>
+  <div class="hero-stats">
+    <div class="hstat"><span class="hstat-num" id="cnt-minted">30,205</span><span class="hstat-label">MINTED</span></div>
+    <div class="hstat"><span class="hstat-num" id="cnt-fused">28,407</span><span class="hstat-label">FUSED</span></div>
+    <div class="hstat"><span class="hstat-num" id="cnt-battles">11,819</span><span class="hstat-label">BATTLES</span></div>
+    <div class="hstat"><span class="hstat-num">152,47</span><span class="hstat-label">AVAX VOL</span></div>
+  </div>
+  <button class="hero-btn" onclick="goTo('arena')">⚔ ENTER ARENA</button>
+</div>
+
+<div class="screen" id="arena">
+  <div class="arena-title">▲ PvP BATTLE ARENA</div>
+  <div class="battle-stage">
+    <div class="vs-row">
+      <div class="warrior-card player">
+        <div class="wlabel">YOUR WARRIOR</div>
+        <span class="warrior-sprite">🧊</span>
+        <div class="warrior-name">GLACIUS #4721</div>
+        <div class="stat-row"><span class="stat-key">ATK</span><span class="stat-val">88</span></div>
+        <div class="stat-bar"><div class="stat-fill" style="width:88%;background:var(--red)"></div></div>
+        <div class="stat-row"><span class="stat-key">DEF</span><span class="stat-val">72</span></div>
+        <div class="stat-bar"><div class="stat-fill" style="width:72%;background:var(--blue)"></div></div>
+        <div class="stat-row"><span class="stat-key">SPD</span><span class="stat-val">95</span></div>
+        <div class="stat-bar"><div class="stat-fill" style="width:95%;background:var(--green)"></div></div>
+        <div class="stat-row" style="margin-top:4px"><span class="stat-key">POWER</span><span class="stat-val" style="color:var(--gold)">255</span></div>
+        <div class="el-badge">❄️ ICE</div>
+      </div>
+      <div class="vs-center">VS</div>
+      <div class="warrior-card enemy">
+        <div class="wlabel">OPPONENT</div>
+        <span class="warrior-sprite">🔥</span>
+        <div class="warrior-name">PYRON #2981</div>
+        <div class="stat-row"><span class="stat-key">ATK</span><span class="stat-val">95</span></div>
+        <div class="stat-bar"><div class="stat-fill" style="width:95%;background:var(--red)"></div></div>
+        <div class="stat-row"><span class="stat-key">DEF</span><span class="stat-val">61</span></div>
+        <div class="stat-bar"><div class="stat-fill" style="width:61%;background:var(--blue)"></div></div>
+        <div class="stat-row"><span class="stat-key">SPD</span><span class="stat-val">78</span></div>
+        <div class="stat-bar"><div class="stat-fill" style="width:78%;background:var(--green)"></div></div>
+        <div class="stat-row" style="margin-top:4px"><span class="stat-key">POWER</span><span class="stat-val" style="color:var(--gold)">234</span></div>
+        <div class="el-badge">🔥 FIRE</div>
+      </div>
+    </div>
+    <div class="stake-row">
+      <div class="stake-label">STAKE</div>
+      <div class="stake-val">0.5 AVAX</div>
+      <div class="stake-label">WIN</div>
+      <div class="stake-val" style="color:var(--green)">0.95 AVAX</div>
+    </div>
+    <div style="text-align:center;font-size:6px;color:var(--dim);letter-spacing:2px;margin-bottom:12px;padding:6px;background:rgba(29,158,117,0.08);border:1px solid rgba(29,158,117,0.2)">
+      ✓ ELEMENT ADVANTAGE: ICE HAS STRATEGIC POSITIONING
+    </div>
+    <button class="fight-btn" onclick="startBattle()">⚔ FIGHT — STAKE 0.5 AVAX</button>
+  </div>
+</div>
+
+<div class="screen" id="battle-anim">
+  <div class="battle-log">
+    <div class="log-title">⚔ BATTLE IN PROGRESS</div>
+    <div class="hp-bars-anim">
+      <div class="hp-anim-block">
+        <div class="hp-anim-name">🧊 GLACIUS</div>
+        <div class="hp-bar"><div class="hp-fill player-hp" id="php" style="width:100%"></div></div>
+        <div style="font-size:6px;color:var(--green);margin-top:3px" id="php-num">HP: 100</div>
+      </div>
+      <div class="hp-anim-block">
+        <div class="hp-anim-name">🔥 PYRON</div>
+        <div class="hp-bar"><div class="hp-fill enemy-hp" id="ehp" style="width:100%"></div></div>
+        <div style="font-size:6px;color:var(--red);margin-top:3px" id="ehp-num">HP: 100</div>
+      </div>
+    </div>
+    <div class="onchain-badge"><div class="live-dot"></div>RESOLVING ON AVALANCHE</div>
+    <div class="tx-hash" id="tx-hash">TX: 0x7f2a...e4b1 — PENDING</div>
+    <div class="log-entries" id="log-entries"></div>
+  </div>
+</div>
+
+<div class="screen" id="result">
+  <div class="result-wrap">
+    <div class="result-icon">🏆</div>
+    <div class="result-title">VICTORY!</div>
+    <div class="result-sub">GLACIUS #4721 DEFEATED PYRON #2981<br>ON-CHAIN VERIFIED ▲</div>
+    <div class="reward-box">
+      <div class="reward-label">AVAX EARNED</div>
+      <div class="reward-amount">0.95 <span class="reward-unit">AVAX</span></div>
+    </div>
+    <div class="onchain-proof">ON-CHAIN PROOF</div>
+    <div class="tx-proof">0x7f2a4c9d1e8b...e4b1</div>
+    <div style="font-size:5px;color:var(--dim);letter-spacing:2px;margin:8px 0 16px">VERIFIED · IMMUTABLE · YOURS</div>
+    <div class="result-btns">
+      <button class="btn-outline" onclick="goTo('hero')">← HOME</button>
+      <button class="btn-solid" onclick="replayBattle()">⚔ AGAIN</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function goTo(id) {
+  ['hero','arena','battle-anim','result'].forEach(s => document.getElementById(s).classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+const battleLog = [
+  { delay:600,  type:'system',     text:'▲ Smart contract initialized' },
+  { delay:1400, type:'system',     text:'⚡ SPD: GLACIUS (95) > PYRON (78)' },
+  { delay:2400, type:'player-hit', text:'🧊 GLACIUS → 31 DMG → PYRON HP: 69', pHp:100, eHp:69 },
+  { delay:3400, type:'enemy-hit',  text:'🔥 PYRON → 27 DMG → GLACIUS HP: 73', pHp:73, eHp:69 },
+  { delay:4400, type:'player-hit', text:'🧊 GLACIUS → 34 DMG → PYRON HP: 35', pHp:73, eHp:35 },
+  { delay:5200, type:'system',     text:'🌀 Critical variance +8' },
+  { delay:6000, type:'enemy-hit',  text:'🔥 PYRON → 24 DMG → GLACIUS HP: 49', pHp:49, eHp:35 },
+  { delay:7000, type:'player-hit', text:'🧊 GLACIUS → 38 DMG → PYRON HP: 0', pHp:49, eHp:0 },
+  { delay:8200, type:'system',     text:'✓ TX CONFIRMED on Avalanche' },
+  { delay:9000, type:'win',        text:'🏆 GLACIUS WINS! +0.95 AVAX' },
+];
+function startBattle() {
+  goTo('battle-anim');
+  const entries = document.getElementById('log-entries');
+  entries.innerHTML = '';
+  battleLog.forEach(({ delay, type, text, pHp, eHp }) => {
+    setTimeout(() => {
+      if (pHp !== undefined) { document.getElementById('php').style.width = pHp+'%'; document.getElementById('php-num').textContent = 'HP: '+pHp; }
+      if (eHp !== undefined) { document.getElementById('ehp').style.width = Math.max(0,eHp)+'%'; document.getElementById('ehp-num').textContent = 'HP: '+Math.max(0,eHp); }
+      if (type==='system' && text.includes('TX')) { document.getElementById('tx-hash').textContent='TX: 0x7f2a...e4b1 — CONFIRMED ✓'; document.getElementById('tx-hash').style.color='var(--green)'; }
+      const el = document.createElement('div');
+      el.className = 'log-entry '+type;
+      el.textContent = text;
+      entries.appendChild(el);
+      requestAnimationFrame(() => el.classList.add('show'));
+      if (type==='win') setTimeout(() => goTo('result'), 1200);
+    }, delay);
+  });
+}
+function replayBattle() {
+  document.getElementById('php').style.width='100%'; document.getElementById('ehp').style.width='100%';
+  document.getElementById('php-num').textContent='HP: 100'; document.getElementById('ehp-num').textContent='HP: 100';
+  document.getElementById('tx-hash').textContent='TX: 0x7f2a...e4b1 — PENDING'; document.getElementById('tx-hash').style.color='';
+  goTo('arena');
+}
+// Auto-play demo
+setTimeout(() => goTo('arena'), 2000);
+setTimeout(() => startBattle(), 4000);
+</script>
+</body>
+</html>
