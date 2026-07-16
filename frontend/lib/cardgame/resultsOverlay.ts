@@ -20,6 +20,7 @@ export interface ResultRow {
 
 let el: HTMLDivElement | null = null;
 let showT: ReturnType<typeof setTimeout> | null = null;
+let payStat = ''; // live payout-status line (survives the 1.8s build delay)
 
 const MEDALS = ['🥇', '🥈', '🥉', '4th'];
 
@@ -33,8 +34,20 @@ export function closeRaceResults(): void {
   el = null;
 }
 
+/** Update the payout-status line on the results overlay AFTER it was shown —
+ *  collapses the game outcome and the money outcome into one moment (the
+ *  settle tx lands seconds after the finish). Trusted HTML only (our own
+ *  templates). No-op if the player already closed the overlay; if the overlay
+ *  is still in its entrance delay, the line lands when it builds. */
+export function updateRaceResultsStatus(html: string): void {
+  payStat = html;
+  const t = el?.querySelector('.cg-results-paystat') as HTMLElement | null;
+  if (t) { t.innerHTML = html; t.hidden = !html; }
+}
+
 export function showRaceResults(o: { rows: ResultRow[]; sim?: boolean; note?: string; delayMs?: number }): void {
   closeRaceResults();
+  payStat = ''; // a new match starts a fresh settle story
   const build = () => {
     showT = null;
     const host = (document.fullscreenElement as HTMLElement | null) ?? document.body;
@@ -56,6 +69,7 @@ export function showRaceResults(o: { rows: ResultRow[]; sim?: boolean; note?: st
               <span class="crr-prize">${esc(r.prize)}${o.sim ? '<small>SIM</small>' : ''}</span>
             </div>`).join('')}
         </div>
+        <div class="cg-results-paystat"${payStat ? '' : ' hidden'}>${payStat}</div>
         ${o.note ? `<div class="cg-results-note">${esc(o.note)}</div>` : ''}
         <button type="button" class="cg-results-close">CONTINUE</button>
       </div>`;

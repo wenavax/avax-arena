@@ -16,7 +16,7 @@ import { bestPlan, bestPlay, planNote } from './bestPlay';
 import { createCgSound, soundLabel } from './sound';
 import { attachView3D, type View3D } from './view3d';
 import { attachStageHud, type StageHud } from './stageHud';
-import { showRaceResults, closeRaceResults } from './resultsOverlay';
+import { showRaceResults, closeRaceResults, updateRaceResultsStatus } from './resultsOverlay';
 import { comboJuice, cancelComboJuice } from './juice';
 
 type Pid = 'P1' | 'P2' | 'P3' | 'P4';
@@ -245,7 +245,15 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     const won = d.ranking[0]?.toLowerCase() === opts.myAddress.toLowerCase();
     note(won ? 'You won! Withdraw your payout below.' : 'Settled on-chain — better luck next race.');
     toast(won ? '✓ Settled — withdraw your payout!' : '✓ Settled on-chain.');
-    log(`Result settled on-chain${d.txHash ? ` — tx <a class="txh" href="https://testnet.snowtrace.io/tx/${d.txHash}" target="_blank" rel="noopener noreferrer">${short(d.txHash)}</a>` : ''} ✓`);
+    const txLink = d.txHash ? ` — tx <a class="txh" href="https://testnet.snowtrace.io/tx/${d.txHash}" target="_blank" rel="noopener noreferrer">${short(d.txHash)}</a>` : '';
+    log(`Result settled on-chain${txLink} ✓`);
+    // game outcome + money outcome in ONE place: the results overlay updates
+    // live with the settle status and your claimable amount
+    const myRank = d.ranking.findIndex((a) => a?.toLowerCase() === opts.myAddress.toLowerCase());
+    const amt = myRank >= 0 ? payoutStr(myRank) : '0';
+    updateRaceResultsStatus(
+      `✓ Settled on-chain${txLink}<br>${Number(amt) > 0 ? `<b>◆ ${amt} AVAX</b> is claimable — use the <b>WITHDRAW</b> button in the panel above` : 'No payout this race — your next entry is a fresh start'}`,
+    );
     opts.onSettled?.(d);
   });
 

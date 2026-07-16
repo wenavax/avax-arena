@@ -10,6 +10,7 @@ import { mountMultiplayer } from '@/lib/cardgame/mountMultiplayer';
 import { createCardgameSocket, reserveMessage } from '@/lib/cardgame/mpClient';
 import type { MatchInput } from '@/lib/cardgame/engine';
 import { CARDGAME_ESCROW, CARDGAME_CHAIN_ID, ESCROW_ABI, STATUS } from '@/lib/cardgame/escrow';
+import { updateRaceResultsStatus } from '@/lib/cardgame/resultsOverlay';
 import LiveMatches from '@/components/cardgame/LiveMatches';
 import IcmLab from '@/components/cardgame/IcmLab';
 import GameStageBanner from '@/components/GameStageBanner';
@@ -20,6 +21,98 @@ import './cardgame.css';
 type Phase = 'idle' | 'creating' | 'joining' | 'waiting' | 'playing' | 'settling' | 'settled';
 type Mode = 'practice' | 'staked' | 'watch' | 'mp';
 type Seat = { pid: 'P1' | 'P2' | 'P3' | 'P4'; address: string };
+/** Explicit transaction feedback: wallet-confirm → pending (+explorer) → ok/fail.
+ *  Web3's documented trust-killer is a tx that "breaks quietly" — every on-chain
+ *  action here narrates all four states. */
+type TxInfo = { label: string; state: 'wallet' | 'pending' | 'ok' | 'fail'; hash?: string; msg?: string } | null;
+
+const txUrl = (h: string) => `https://testnet.snowtrace.io/tx/${h}`;
+
+// money-flow steps: who holds your AVAX and what happens next, at a glance
+const STAKED_STEPS = ['SIGN', 'OPEN', 'ENTRY', 'LOCK', 'RACE', 'SETTLE', 'PAID'];
+const MP_STEPS = ['RESERVE', 'ENTRY', 'LOCK', 'RACE', 'SETTLE', 'PAID'];
+// mpPhase → [completed steps, active index]
+const MP_FLOW: Record<string, [number, number]> = {
+  idle: [0, -1], reserved: [1, -1], paying: [1, 1], waiting: [2, 2],
+  playing: [3, 3], settling: [4, 4], settled: [6, -1],
+};
+
+/** Horizontal money-flow stepper: done ✓ / active (pulsing) / upcoming (dim). */
+function FlowSteps({ steps, done, active }: { steps: string[]; done: number; active: number }) {
+  return (
+    <div className="cg-flow">
+      {steps.map((s, i) => (
+        <span key={s} className={`cg-flow-step ${i < done ? 'done' : i === active ? 'act' : ''}`}>
+          {i < done ? '✓ ' : ''}{s}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Transaction status row for the current on-chain action. */
+function TxRow({ tx }: { tx: TxInfo }) {
+  if (!tx) return null;
+  return (
+    <div className={`cg-txrow ${tx.state}`}>
+      {(tx.state === 'wallet' || tx.state === 'pending') && <Loader2 size={13} className="cg-spin" />}
+      {tx.state === 'ok' && <span className="cg-tx-ic">✓</span>}
+      {tx.state === 'fail' && <span className="cg-tx-ic">✗</span>}
+      <span>
+        {tx.state === 'wallet' && <>Check your wallet — confirm <b>{tx.label}</b></>}
+        {tx.state === 'pending' && <><b>{tx.label}</b> submitted — confirming on-chain…</>}
+        {tx.state === 'ok' && <><b>{tx.label}</b> confirmed</>}
+        {tx.state === 'fail' && <><b>{tx.label}</b> failed{tx.msg ? ` — ${tx.msg}` : ''}</>}
+      </span>
+      {tx.hash && <a className="txh" href={txUrl(tx.hash)} target="_blank" rel="noopener noreferrer">view tx ↗</a>}
+    </div>
+  );
+}
+
+/** Hold-to-confirm button: real money should never be one accidental tap away.
+ *  Press and hold ~0.9s to fire (progress fill); keyboard Enter/Space fires
+ *  directly (the wallet popup stays as the accessible second gate). */
+function HoldButton({ onConfirm, disabled, children }: { onConfirm: () => void; disabled?: boolean; children: React.ReactNode }) {
+  const [p, setP] = useState(0);
+  const raf = useRef(0);
+  const t0 = useRef(0);
+  const fired = useRef(false);
+  const stop = useCallback(() => { cancelAnimationFrame(raf.current); raf.current = 0; setP(0); }, []);
+  const tick = useCallback(() => {
+    const k = Math.min(1, (performance.now() - t0.current) / 900);
+    setP(k);
+    if (k >= 1) { stop(); if (!fired.current) { fired.current = true; onConfirm(); } return; }
+    raf.current = requestAnimationFrame(tick);
+  }, [onConfirm, stop]);
+  const down = useCallback((e: React.PointerEvent) => {
+    if (disabled) return;
+    e.preventDefault();
+    fired.current = false; t0.current = performance.now();
+    raf.current = requestAnimationFrame(tick);
+  }, [disabled, tick]);
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+  return (
+    <button
+      className="btn cg-hold" disabled={disabled} title="Hold to confirm"
+      onPointerDown={down} onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop}
+      onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !e.repeat && !disabled) { e.preventDefault(); onConfirm(); } }}
+    >
+      <span className="cg-hold-fill" style={{ transform: `scaleX(${p})` }} aria-hidden />
+      <span className="cg-hold-body">{children}</span>
+    </button>
+  );
+}
+
+/** Plain-language payout preview — what you stake and what each place pays. */
+function PayoutLine({ fee }: { fee: bigint | null }) {
+  if (fee === null) return null;
+  const f = (x: bigint) => formatEther((fee * x) / 10n);
+  return (
+    <div className="cg-payline">
+      payouts&nbsp; 🥇 ◆{f(20n)} · 🥈 ◆{f(10n)} · 🥉 ◆{f(5n)} · 4th ◆{f(3n)} <span className="dim">· protocol fee ◆{f(2n)}</span>
+    </div>
+  );
+}
 
 export default function CardGamePage() {
   const { ready, authenticated, login, logout } = usePrivy();
@@ -39,8 +132,12 @@ export default function CardGamePage() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [note, setNote] = useState('');
   const [payout, setPayout] = useState<bigint>(0n);
+  // explicit 4-state feedback for the on-chain action currently in flight
+  const [txInfo, setTxInfo] = useState<TxInfo>(null);
+  // staked money-flow stepper position (index into STAKED_STEPS; -1 hidden)
+  const [stakedStep, setStakedStep] = useState(-1);
   // multiplayer lobby
-  const [mpPhase, setMpPhase] = useState<'idle' | 'reserved' | 'paying' | 'waiting' | 'playing' | 'settled'>('idle');
+  const [mpPhase, setMpPhase] = useState<'idle' | 'reserved' | 'paying' | 'waiting' | 'playing' | 'settling' | 'settled'>('idle');
   // latest mp phase + the reserve signature, for the socket reconnect handler
   // (kept in refs so the handler never closes over stale state)
   const mpPhaseRef = useRef<typeof mpPhase>('idle');
@@ -75,7 +172,7 @@ export default function CardGamePage() {
   const teardownMp = useCallback(() => {
     socketRef.current?.emit('cardgame:leave');
     cleanupRef.current?.(); cleanupRef.current = null;
-    setMpPhase('idle'); setMpNote('');
+    setMpPhase('idle'); setMpNote(''); setTxInfo(null);
   }, []);
   // Unmount everything on page unmount.
   useEffect(() => () => { cleanupRef.current?.(); cleanupRef.current = null; socketRef.current?.disconnect(); }, []);
@@ -123,7 +220,7 @@ export default function CardGamePage() {
   // the settle (the play log only lives in this tab until the server has it).
   const onFinish = useCallback(async (input: MatchInput) => {
     if (!address || !authRef.current) return;
-    setPhase('settling');
+    setPhase('settling'); setStakedStep(5);
     setNote('Submitting play log — server re-derives the result…');
     const waits = [2_000, 5_000, 10_000, 20_000, 30_000];
     for (let attempt = 0; ; attempt++) {
@@ -136,16 +233,24 @@ export default function CardGamePage() {
         if (!res.ok) throw new Error(data.error || 'settle failed');
         const p = await readPending();
         setPayout(p);
-        setPhase('settled');
+        setPhase('settled'); setStakedStep(6);
         setNote(p > 0n ? `You won ◆ ${formatEther(p)} AVAX — withdraw below.` : 'Match settled — no payout this time.');
+        // money outcome joins the game outcome on the results overlay
+        const txLink = data.txHash ? ` — tx <a class="txh" href="${txUrl(data.txHash)}" target="_blank" rel="noopener noreferrer">${String(data.txHash).slice(0, 10)}…</a>` : '';
+        updateRaceResultsStatus(`✓ Settled on-chain${txLink}<br>${p > 0n
+          ? `<b>◆ ${formatEther(p)} AVAX</b> is claimable — use the <b>WITHDRAW</b> button in the panel above`
+          : 'No payout this race — your entry funded the pot'}`);
         return;
       } catch (e) {
         if (attempt >= waits.length) {
-          setPhase('settled');
+          setPhase('settled'); setStakedStep(-1);
           setNote(`Settle error: ${(e as Error).message} — your entry stays refundable on-chain after the settle window.`);
+          updateRaceResultsStatus(`✗ Settlement failed after ${waits.length + 1} attempts — your entry stays <b>refundable on-chain</b> after the settle window`);
           return;
         }
-        setNote(`Settle attempt ${attempt + 1} failed — retrying in ${waits[attempt] / 1000}s (keep this tab open)…`);
+        // never fail quietly: the retry loop narrates itself
+        setNote(`Settle attempt ${attempt + 1}/${waits.length + 1} failed — auto-retrying in ${waits[attempt] / 1000}s (keep this tab open)…`);
+        updateRaceResultsStatus(`Settling on-chain — attempt ${attempt + 1}/${waits.length + 1} failed, auto-retrying…`);
         await new Promise((r) => setTimeout(r, waits[attempt]));
       }
     }
@@ -157,19 +262,20 @@ export default function CardGamePage() {
 
   const startStaked = useCallback(async () => {
     if (!address || !publicClient) return;
-    setPayout(0n);
+    setPayout(0n); setTxInfo(null);
     try {
       await ensureFuji();
       const nonce = Math.floor(Math.random() * 2_000_000_000); // avoid id reuse across sessions
 
       // 0) prove wallet ownership once — gates create/seat-bots/settle server-side
-      setPhase('creating');
-      setNote('Sign to authorize your staked match…');
+      setPhase('creating'); setStakedStep(0);
+      setNote('Sign to authorize your staked match (free — no funds move yet)…');
       const message = `Frostbite CAR(D) GAME — authorize staked match\nplayer: ${address.toLowerCase()}\nnonce: ${nonce}`;
       const sig = (await signMessageAsync({ message })) as Hex;
       authRef.current = { nonce, sig };
 
       // 1) server opens the match (createMatch only — bots seated after you pay)
+      setStakedStep(1);
       setNote('Opening escrow match…');
       const cr = await fetch('/avalanche/api/cardgame/create-match', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -181,20 +287,26 @@ export default function CardGamePage() {
       const bots = created.bots as string[];
       const fee = BigInt(created.entryFee);
 
-      // 2) player joins with real AVAX
-      setPhase('joining');
-      setNote(`Confirm your ${formatEther(fee)} AVAX entry…`);
+      // 2) player joins with real AVAX — narrate every tx state explicitly
+      setPhase('joining'); setStakedStep(2);
+      setNote(`You are staking ${formatEther(fee)} AVAX. Finish 1st to receive ${formatEther(fee * 2n)}.`);
+      setTxInfo({ label: `${formatEther(fee)} AVAX entry`, state: 'wallet' });
       // explicit gas: the 4th join also runs the lock path (~+25k) — with four
       // concurrent payers a pre-join estimate is stale and under-budgets it
       const hash = await writeContractAsync({
         address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'joinMatch',
         args: [mId], value: fee, chainId: CARDGAME_CHAIN_ID, gas: 160_000n,
       });
+      setTxInfo({ label: `${formatEther(fee)} AVAX entry`, state: 'pending', hash });
       const rcpt = await publicClient.waitForTransactionReceipt({ hash });
-      if (rcpt.status !== 'success') throw new Error('entry transaction reverted — you were not charged beyond gas');
+      if (rcpt.status !== 'success') {
+        setTxInfo({ label: `${formatEther(fee)} AVAX entry`, state: 'fail', hash, msg: 'reverted — you were not charged beyond gas' });
+        throw new Error('entry transaction reverted — you were not charged beyond gas');
+      }
+      setTxInfo({ label: `${formatEther(fee)} AVAX entry`, state: 'ok', hash });
 
       // 3) now that you've paid, ask the server to seat the 3 bots → lock
-      setPhase('waiting');
+      setPhase('waiting'); setStakedStep(3);
       setNote('Seating opponents & locking match…');
       const sb = await fetch('/avalanche/api/cardgame/seat-bots', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -211,7 +323,7 @@ export default function CardGamePage() {
 
       // 4) play the shared deterministic engine seeded by the server; capture the
       //    play log and send it to settle (server re-derives the ranking)
-      setPhase('playing');
+      setPhase('playing'); setStakedStep(4);
       setNote(`Match locked — race! The server verifies your plays. Winner takes ◆ ${formatEther(fee * 2n)}.`);
       cleanupRef.current?.();
       if (rootRef.current) {
@@ -221,9 +333,9 @@ export default function CardGamePage() {
       }
     } catch (e) {
       const msg = (e as { shortMessage?: string; message?: string }).shortMessage || (e as Error).message;
-      setPhase('idle');
+      setPhase('idle'); setStakedStep(-1);
       if (!/rejected|denied/i.test(msg)) setNote(`Error: ${msg.slice(0, 140)}`);
-      else setNote('');
+      else { setNote(''); setTxInfo(null); } // user declined in the wallet — clean slate
     }
   }, [address, publicClient, ensureFuji, writeContractAsync, signMessageAsync]);
 
@@ -263,9 +375,11 @@ export default function CardGamePage() {
       // the server's fee is authoritative — never let a slow/failed contract
       // read leave feeRef at '0' (mountMultiplayer would render ◆ 0 payouts)
       feeRef.current = d.entryFee; setFeeWei(BigInt(d.entryFee));
+      const feeLabel = `${formatEther(BigInt(d.entryFee))} AVAX entry`;
       try {
         setMpPhase('paying');
-        setMpNote(`Race starting — confirm your ${formatEther(BigInt(d.entryFee))} AVAX entry…`);
+        setMpNote(`Race starting — you are staking ${formatEther(BigInt(d.entryFee))} AVAX (90s window). Finish 1st to receive ${formatEther(BigInt(d.entryFee) * 2n)}.`);
+        setTxInfo({ label: feeLabel, state: 'wallet' });
         await ensureFujiRef.current();
         // explicit gas: all four pay at once, so the 4th join (which also locks
         // the match, ~+25k gas) would revert on a stale pre-join estimate
@@ -273,13 +387,19 @@ export default function CardGamePage() {
           address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'joinMatch',
           args: [d.matchId], value: BigInt(d.entryFee), chainId: CARDGAME_CHAIN_ID, gas: 160_000n,
         });
+        setTxInfo({ label: feeLabel, state: 'pending', hash });
         const rcpt = await publicClient.waitForTransactionReceipt({ hash });
-        if (rcpt.status !== 'success') throw new Error('entry transaction reverted — you were not charged beyond gas');
+        if (rcpt.status !== 'success') {
+          setTxInfo({ label: feeLabel, state: 'fail', hash, msg: 'reverted — you were not charged beyond gas' });
+          throw new Error('entry transaction reverted — you were not charged beyond gas');
+        }
+        setTxInfo({ label: feeLabel, state: 'ok', hash });
         socket.emit('cardgame:paid');
         setMpPhase('waiting'); setMpNote('Paid — waiting for all four to lock in…');
       } catch (e) {
         const msg = (e as { shortMessage?: string; message?: string }).shortMessage || (e as Error).message;
-        setMpNote(/rejected|denied/i.test(msg) ? 'Entry declined — your seat was released.' : `Pay error: ${msg.slice(0, 120)}`);
+        if (/rejected|denied/i.test(msg)) { setMpNote('Entry declined — your seat was released.'); setTxInfo(null); }
+        else setMpNote(`Pay error: ${msg.slice(0, 120)}`);
         socket.emit('cardgame:leave'); setMpPhase('idle');
       }
     });
@@ -289,7 +409,7 @@ export default function CardGamePage() {
       if (rootRef.current) {
         cleanupRef.current = mountMultiplayer(rootRef.current, {
           socket, myAddress: address, seats: d.seats, entryFee: feeRef.current,
-          onFinished: () => setMpNote('Match over — settling on-chain…'),
+          onFinished: () => { setMpPhase('settling'); setMpNote('Match over — the server is settling on-chain (automatic)…'); },
           onSettled: async () => {
             const p = await readPendingRef.current(); setPayout(p); setMpPhase('settled');
             setMpNote(p > 0n ? `You won ◆ ${formatEther(p)} AVAX — withdraw below.` : 'Settled — no payout this time.');
@@ -297,7 +417,7 @@ export default function CardGamePage() {
         });
       }
     });
-    return () => { socket.disconnect(); socketRef.current = null; setSlot(null); setMpPhase('idle'); setMpNote(''); };
+    return () => { socket.disconnect(); socketRef.current = null; setSlot(null); setMpPhase('idle'); setMpNote(''); setTxInfo(null); };
   }, [mode, authenticated, address, publicClient]);
 
   const joinRace = useCallback(async () => {
@@ -313,21 +433,31 @@ export default function CardGamePage() {
 
   const withdraw = useCallback(async () => {
     if (!publicClient) return;
+    const label = `◆ ${formatEther(payout)} withdrawal`;
     try {
       await ensureFuji();
-      setNote('Confirm withdrawal…');
+      setNote('Withdrawing your payout…');
+      setTxInfo({ label, state: 'wallet' });
       const hash = await writeContractAsync({
         address: CARDGAME_ESCROW, abi: ESCROW_ABI, functionName: 'withdrawPayout', args: [], chainId: CARDGAME_CHAIN_ID,
       });
-      await publicClient.waitForTransactionReceipt({ hash });
+      setTxInfo({ label, state: 'pending', hash });
+      const rcpt = await publicClient.waitForTransactionReceipt({ hash });
+      if (rcpt.status !== 'success') {
+        setTxInfo({ label, state: 'fail', hash, msg: 'reverted — your payout is still claimable' });
+        return;
+      }
+      setTxInfo({ label, state: 'ok', hash });
       setPayout(0n);
       setNote('Withdrawn ✓ — play again to stake another match.');
-      setPhase('idle');
+      setPhase('idle'); setStakedStep(-1);
+      updateRaceResultsStatus(`✓ <b>${label}</b> sent to your wallet — tx <a class="txh" href="${txUrl(hash)}" target="_blank" rel="noopener noreferrer">${hash.slice(0, 10)}…</a>`);
     } catch (e) {
       const msg = (e as { shortMessage?: string; message?: string }).shortMessage || (e as Error).message;
       if (!/rejected|denied/i.test(msg)) setNote(`Withdraw error: ${msg.slice(0, 120)}`);
+      else setTxInfo(null);
     }
-  }, [publicClient, ensureFuji, writeContractAsync]);
+  }, [publicClient, ensureFuji, writeContractAsync, payout]);
 
   const busy = phase === 'creating' || phase === 'joining' || phase === 'waiting' || phase === 'settling';
 
@@ -342,7 +472,7 @@ export default function CardGamePage() {
           <>
             <span className="chip mono" style={{ borderColor: 'rgba(34,197,94,.4)', color: '#22c55e' }}>● {shortAddr}</span>
             <div className="cg-modes">
-              <button className={`cg-mode ${mode === 'practice' ? 'on' : ''}`} onClick={() => { setMode('practice'); setPhase('idle'); setNote(''); }}>Practice</button>
+              <button className={`cg-mode ${mode === 'practice' ? 'on' : ''}`} onClick={() => { setMode('practice'); setPhase('idle'); setNote(''); setTxInfo(null); setStakedStep(-1); }}>Practice</button>
               <button className={`cg-mode ${mode === 'staked' ? 'on' : ''}`} onClick={() => { setMode('staked'); }}>Staked · Testnet</button>
               <button className={`cg-mode ${mode === 'mp' ? 'on' : ''}`} onClick={() => { setMode('mp'); }}>Multiplayer · Testnet</button>
               <button className={`cg-mode ${mode === 'watch' ? 'on' : ''}`} onClick={() => { setMode('watch'); }}>Watch · Live</button>
@@ -373,7 +503,8 @@ export default function CardGamePage() {
             <Coins size={18} className="gold-ic" />
             <div>
               <div className="cg-stake-title">Staked Match <span className="tn">FUJI TESTNET</span></div>
-              <div className="cg-stake-sub">Stake <b>{feeWei !== null ? formatEther(feeWei) : '…'} AVAX</b> vs 3 house bots · winner takes ◆ {feeWei !== null ? formatEther(feeWei * 2n) : '…'} · real on-chain escrow</div>
+              <div className="cg-stake-sub">Stake <b>{feeWei !== null ? formatEther(feeWei) : '…'} AVAX</b> vs 3 house bots · real on-chain escrow</div>
+              <PayoutLine fee={feeWei} />
             </div>
           </div>
           <div className="cg-stakebar-r">
@@ -381,14 +512,23 @@ export default function CardGamePage() {
               <button className="btn" onClick={withdraw} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                 <Trophy size={15} /> WITHDRAW ◆ {formatEther(payout)}
               </button>
-            ) : (
-              <button className="btn" onClick={startStaked} disabled={busy || phase === 'playing'} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            ) : busy || phase === 'playing' ? (
+              <button className="btn" disabled style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                 {busy && <Loader2 size={15} className="cg-spin" />}
-                {phase === 'playing' ? 'RACING…' : busy ? 'WORKING…' : 'STAKE & PLAY'}
+                {phase === 'playing' ? 'RACING…' : 'WORKING…'}
               </button>
+            ) : (
+              <HoldButton onConfirm={startStaked}>
+                STAKE &amp; PLAY
+                <small>hold to stake ◆ {feeWei !== null ? formatEther(feeWei) : '…'}</small>
+              </HoldButton>
             )}
           </div>
-          {note && <div className="cg-stake-note">{note}</div>}
+          {stakedStep >= 0 && (
+            <FlowSteps steps={STAKED_STEPS} done={stakedStep >= 6 ? 7 : stakedStep} active={stakedStep >= 6 ? -1 : stakedStep} />
+          )}
+          {note && <div className={`cg-stake-note${/^(Error|Pay error|Settle error|Withdraw error|✗)/.test(note) ? ' err' : ''}`}>{note}</div>}
+          <TxRow tx={txInfo} />
         </div>
       )}
 
@@ -404,8 +544,9 @@ export default function CardGamePage() {
               <div className="cg-stake-title">Scheduled Race <span className="tn">FUJI TESTNET</span></div>
               <div className="cg-stake-sub">
                 A race starts <b>every 5 minutes</b> · first four reserved seats play ·
-                entry <b>{feeWei !== null ? formatEther(feeWei) : '…'} AVAX</b> · winner takes <b>◆ {feeWei !== null ? formatEther(feeWei * 2n) : '…'}</b>
+                entry <b>{feeWei !== null ? formatEther(feeWei) : '…'} AVAX</b>
               </div>
+              <PayoutLine fee={feeWei} />
               {slot && (
                 <div className="cg-slot">
                   <span className="cg-slot-count">{slotLeft || '…'}</span>
@@ -423,9 +564,16 @@ export default function CardGamePage() {
                 <Trophy size={15} /> WITHDRAW ◆ {formatEther(payout)}
               </button>
             ) : mpPhase === 'idle' || mpPhase === 'settled' ? (
-              <button className="btn" onClick={joinRace}>JOIN RACE</button>
+              <HoldButton onConfirm={joinRace}>
+                JOIN RACE
+                <small>hold to reserve · ◆ {feeWei !== null ? formatEther(feeWei) : '…'} charged at race start</small>
+              </HoldButton>
             ) : mpPhase === 'reserved' ? (
               <button className="btn ghost" onClick={leaveRace}>RESERVED ✓ · LEAVE</button>
+            ) : mpPhase === 'settling' ? (
+              <button className="btn ghost" disabled style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                <Loader2 size={15} className="cg-spin" /> SETTLING…
+              </button>
             ) : (
               <button className="btn ghost" onClick={teardownMp} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                 {mpPhase === 'waiting' && <Loader2 size={15} className="cg-spin" />}
@@ -433,7 +581,11 @@ export default function CardGamePage() {
               </button>
             )}
           </div>
-          {mpNote && <div className="cg-stake-note">{mpNote}</div>}
+          {mpPhase !== 'idle' && (
+            <FlowSteps steps={MP_STEPS} done={MP_FLOW[mpPhase][0]} active={MP_FLOW[mpPhase][1]} />
+          )}
+          {mpNote && <div className={`cg-stake-note${/^(Error|Pay error|Settle error|✗)/.test(mpNote) ? ' err' : ''}`}>{mpNote}</div>}
+          <TxRow tx={txInfo} />
         </div>
       )}
 

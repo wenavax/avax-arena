@@ -28,8 +28,44 @@
 .cgroot .cg-stake-sub{font-size:12px;color:var(--cg-muted);margin-top:3px}
 .cgroot .cg-stake-sub b{color:var(--cg-text)}
 .cgroot .cg-stake-note{flex-basis:100%;font-size:12px;color:var(--cg-gold);font-family:'JetBrains Mono',monospace;padding-top:6px;border-top:1px solid rgba(255,255,255,.06)}
+.cgroot .cg-stake-note.err{color:#f87171;border-top-color:rgba(248,113,113,.25)}
 @keyframes cg-spin2{to{transform:rotate(360deg)}}
 .cgroot .cg-spin{animation:cg-spin2 .8s linear infinite}
+
+/* ── money-flow stepper: where your AVAX is in the pipeline ───────────── */
+.cgroot .cg-flow{flex-basis:100%;display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding-top:8px}
+.cgroot .cg-flow-step{font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:1px;
+  padding:3px 9px;border-radius:10px;color:var(--cg-muted);background:rgba(255,255,255,.03);
+  border:1px solid var(--cg-line);position:relative}
+.cgroot .cg-flow-step:not(:last-child)::after{content:'›';position:absolute;right:-6px;color:rgba(255,255,255,.22)}
+.cgroot .cg-flow-step.done{color:var(--cg-green);border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.06)}
+@keyframes cg-flowpulse{0%,100%{border-color:rgba(77,208,225,.35)}50%{border-color:rgba(77,208,225,.9)}}
+.cgroot .cg-flow-step.act{color:var(--cg-ice);border-color:rgba(77,208,225,.5);background:rgba(77,208,225,.07);
+  animation:cg-flowpulse 1.4s ease-in-out infinite}
+
+/* transaction status row: wallet-confirm → pending (+explorer) → ok / fail */
+.cgroot .cg-txrow{flex-basis:100%;display:flex;align-items:center;gap:8px;font-size:11.5px;
+  font-family:'JetBrains Mono',monospace;color:var(--cg-muted);padding:7px 10px;margin-top:6px;
+  border-radius:9px;background:rgba(255,255,255,.03);border:1px solid var(--cg-line)}
+.cgroot .cg-txrow b{color:var(--cg-text)}
+.cgroot .cg-txrow.pending{border-color:rgba(77,208,225,.3)}
+.cgroot .cg-txrow.ok{border-color:rgba(34,197,94,.35);color:var(--cg-green)}
+.cgroot .cg-txrow.ok b{color:var(--cg-green)}
+.cgroot .cg-txrow.fail{border-color:rgba(248,113,113,.4);color:#f87171}
+.cgroot .cg-txrow.fail b{color:#f87171}
+.cgroot .cg-tx-ic{font-weight:800}
+.cgroot .cg-txrow a.txh{margin-left:auto;color:var(--cg-ice);text-decoration:none;white-space:nowrap}
+.cgroot .cg-txrow a.txh:hover{text-decoration:underline}
+
+/* hold-to-confirm: expensive actions are never one accidental tap away */
+.cgroot .cg-hold{position:relative;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+.cgroot .cg-hold-fill{position:absolute;inset:0;transform-origin:left;transform:scaleX(0);
+  background:linear-gradient(90deg,rgba(255,255,255,.28),rgba(255,255,255,.16));pointer-events:none}
+.cgroot .cg-hold-body{position:relative;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.15}
+.cgroot .cg-hold-body small{font-size:8.5px;font-weight:600;letter-spacing:.6px;opacity:.75;font-family:'JetBrains Mono',monospace}
+
+/* plain-language payout preview under the stake bars */
+.cgroot .cg-payline{font-size:11px;color:var(--cg-muted);margin-top:4px;font-family:'JetBrains Mono',monospace;letter-spacing:.2px}
 
 /* live matches (watch mode) */
 .cgroot .lm-wrap{margin-top:2px}
@@ -538,6 +574,14 @@ body.cg-noscroll{overflow:hidden}
 .crr-pts small{font-size:9px;color:#93a1b8;margin-left:3px}
 .crr-prize{font-size:14px;font-weight:800;color:#f5c542;text-align:right}
 .crr-prize small{font-size:8.5px;color:#93a1b8;margin-left:4px;letter-spacing:.08em}
+/* live payout status: the money outcome lands ON the results screen */
+.cg-results-paystat{margin-top:14px;font-size:12px;line-height:1.6;color:#8ee7f2;
+  background:rgba(77,208,225,.07);border:1px solid rgba(77,208,225,.25);border-radius:10px;padding:9px 12px;
+  font-family:ui-monospace,monospace}
+.cg-results-paystat[hidden]{display:none}
+.cg-results-paystat b{color:#f5c542}
+.cg-results-paystat a.txh{color:#4dd0e1;text-decoration:none}
+.cg-results-paystat a.txh:hover{text-decoration:underline}
 .cg-results-note{margin-top:14px;font-size:11.5px;color:#93a1b8}
 .cg-results-close{margin-top:16px;padding:11px 34px;border-radius:12px;border:1px solid rgba(77,208,225,.5);background:linear-gradient(180deg,rgba(77,208,225,.2),rgba(77,208,225,.08));color:#bfeef5;font-weight:800;font-size:13px;letter-spacing:.14em;cursor:pointer;transition:filter .15s}
 .cg-results-close:hover{filter:brightness(1.25)}
