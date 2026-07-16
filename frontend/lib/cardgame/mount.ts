@@ -71,8 +71,15 @@ const CHIPS = `
   <span class="chip" id="roundChip">ROUND 1/3</span>
   <span class="chip mono" id="seedChip"></span>
   <button class="chip" id="sndToggle" title="Race music on/off">🎵 MUSIC</button>
-  <button class="chip" id="helpToggle" title="How to play">❔</button>
+  <button class="chip" id="helpToggle" title="Rules, combos & keyboard shortcuts">❔ HOW TO PLAY</button>
 `;
+
+/* device-local onboarding progression: races completed + practice wins.
+ * Practice wins soft-gate the real-money modes (page.tsx reads the same keys),
+ * and the first few races get ghost hints on the suggested play. */
+function lsNum(k: string): number { try { return +(localStorage.getItem(k) || 0) || 0; } catch { return 0; } }
+function lsSet(k: string, v: number) { try { localStorage.setItem(k, String(v)); } catch { /* private mode */ } }
+const HINT_RACES = 3; // ghost hints fade out after this many completed races
 
 type Card = { id: number; type: 'NORMAL' | 'MAGIC'; value: number; magic: string | null };
 type Player = {
@@ -164,6 +171,11 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   // ✨ Best: repeated clicks cycle through the plan's plays; note rides the preview
   let bestNote = '';
   let bestCycle = { sig: '', i: 0 };
+  // onboarding: ghost hints on the suggested cards for the first few races
+  const racesDone = lsNum('cg_races');
+  const hintsOn = racesDone < HINT_RACES && !opts.staked;
+  let hintSig = '';
+  let hintIds = new Set<number>();
   // 🎵 quiet race music, shared toggle across modes
   const sound = createCgSound();
   // 3D view (pure renderer swap — the game logic/tick is identical either way)
@@ -225,6 +237,9 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       tickH = setInterval(tick, 100);
       sound.raceOn(true);
       log(`<b>Round ${roundIndex + 1}</b> started`);
+      // first race ever: one contextual tip beats a tutorial screen
+      if (hintsOn && racesDone === 0 && roundIndex === 0)
+        toast('TIP: tap the glowing cards — matching values boost harder. ✨ Best picks for you.');
     });
   }
 
@@ -364,6 +379,13 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
       b.scores.filter((s) => s === 5).length - a.scores.filter((s) => s === 5).length ||
       a.times.reduce((s, x) => s + x, 0) - b.times.reduce((s, x) => s + x, 0));
     const rw = [2.0, 1.0, 0.5, 0.3];
+    // onboarding progression: races played + practice wins (the wins soft-gate
+    // the real-money modes). The page listens for cg:progress to update live.
+    if (!opts.staked) {
+      lsSet('cg_races', lsNum('cg_races') + 1);
+      if (arr[0].id === 'P1') lsSet('cg_wins', lsNum('cg_wins') + 1);
+      try { window.dispatchEvent(new CustomEvent('cg:progress')); } catch { /* jsdom */ }
+    }
     if (arr[0].id === 'P1') sound.victory();
     toast(`🏆 ${nameOf(arr[0].id)} wins the match!`);
     log(`<b>MATCH OVER.</b> Final: ` + arr.map((p, i) => `${i + 1}. ${nameOf(p.id)} (${p.total}pts, ${rw[i]} AVAX)`).join(' · '));
@@ -424,6 +446,16 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     const cd = Math.max(0, p1.cdUntil - t);
     ($('cdbar')).style.width = (cd / CFG.COOLDOWN * 100) + '%';
     ($('playBtn') as HTMLButtonElement).disabled = cd > 0 || selected.size === 0 || p1.fin;
+    // onboarding ghost hints: pulse the suggested play on the cards themselves
+    // (contextual coach marks beat tutorial screens). Recomputed only when the
+    // hand changes; shown only when the player could actually play right now.
+    if (hintsOn) {
+      const hs = p1.hand.map((c) => c.id).join(',');
+      if (hs !== hintSig) { hintSig = hs; hintIds = new Set(bestPlay(p1.hand).map((c) => c.id)); }
+      const show = !selected.size && !p1.fin && cd <= 0;
+      h.querySelectorAll('.card').forEach((el, i) =>
+        el.classList.toggle('hint', show && hintIds.has(p1.hand[i]?.id)));
+    }
     // mini standings overlay (racing-game position widget)
     const order = finalOrder || [...players].sort((a, b) => b.total - a.total || b.dist - a.dist);
     hud.rank(order.map((p, i) => ({
@@ -523,13 +555,34 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     onReady: () => render(),
   });
 
+  /** Very first race ever: make sure the opening hand contains a pair, so the
+   *  first combo moment always happens (design-level onboarding — the Marvel
+   *  Snap "Quicksilver always in the opening hand" pattern). Practice deck is
+   *  unseeded, so the swap is safe: one deck card trades places with one hand
+   *  card, deck size unchanged. */
+  function ensurePair(p: Player) {
+    const seen = new Map<number, number>();
+    for (const c of p.hand) if (c.type === 'NORMAL') seen.set(c.value, (seen.get(c.value) || 0) + 1);
+    if ([...seen.values()].some((n) => n >= 2)) return;
+    const keep = p.hand.find((c) => c.type === 'NORMAL');
+    if (!keep) return;
+    const di = deck.findIndex((c) => c.type === 'NORMAL' && c.value === keep.value);
+    if (di < 0) return;
+    const hi = p.hand.findIndex((c) => c !== keep);
+    if (hi < 0) return;
+    const swapped = deck.splice(di, 1, p.hand[hi])[0]; // deck card ↔ hand card
+    p.hand[hi] = swapped;
+  }
+
   // ---- Boot ----
   deck = buildDeck(); players = mkPlayers(); roundIndex = 0;
   players.forEach((p) => p.hand.push(...draw(8)));
+  if (racesDone === 0 && !opts.staked) ensurePair(players[0]);
   $('seedChip').textContent = `seed ${short(mockHex(64))}`;
   ['P1', 'P2', 'P3', 'P4'].forEach((id) => { usedVeh[id] = {}; });
   $('cgHelpAbs').innerHTML = Object.entries(ABILITIES)
     .map(([v, a]) => `<span><b>${v}</b> ${a.icon} ${a.key} — ${a.desc}</span>`).join('');
+  if (hintsOn) $('bestBtn').classList.add('hint'); // pulse ✨ Best for newcomers
   showVehicleSelect(); updatePreview();
 
   // ---- Cleanup ----

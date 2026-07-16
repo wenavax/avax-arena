@@ -28,6 +28,28 @@ type TxInfo = { label: string; state: 'wallet' | 'pending' | 'ok' | 'fail'; hash
 
 const txUrl = (h: string) => `https://testnet.snowtrace.io/tx/${h}`;
 
+// competence-before-risk soft gate (the Marvel Snap "snapping unlock" pattern):
+// real-money modes open after this many practice wins — framed as progression,
+// with an explicit skip for players who know what they're doing
+const GATE_WINS = 2;
+
+/** Locked-mode panel shown in place of the stake/join button until unlocked. */
+function GatePanel({ wins, onSkip }: { wins: number; onSkip: () => void }) {
+  const left = Math.max(0, GATE_WINS - wins);
+  return (
+    <div className="cg-gate">
+      <div className="cg-gate-t">
+        🔒 Win <b>{left}</b> more practice race{left === 1 ? '' : 's'} to unlock real-stake racing
+      </div>
+      <div className="cg-gate-p">
+        {Array.from({ length: GATE_WINS }, (_, i) => <i key={i} className={i < wins ? 'on' : ''} />)}
+        <span>{wins}/{GATE_WINS} wins</span>
+      </div>
+      <button type="button" className="cg-gate-skip" onClick={onSkip}>I know what I&apos;m doing — skip</button>
+    </div>
+  );
+}
+
 // money-flow steps: who holds your AVAX and what happens next, at a glance
 const STAKED_STEPS = ['SIGN', 'OPEN', 'ENTRY', 'LOCK', 'RACE', 'SETTLE', 'PAID'];
 const MP_STEPS = ['RESERVE', 'ENTRY', 'LOCK', 'RACE', 'SETTLE', 'PAID'];
@@ -147,6 +169,25 @@ export default function CardGamePage() {
   const [slotLeft, setSlotLeft] = useState('');
   const [feeWei, setFeeWei] = useState<bigint | null>(null);
   const feeRef = useRef<string>('0');
+  // onboarding gate: practice wins (written by the practice mount, same keys)
+  const [gateWins, setGateWins] = useState(GATE_WINS); // optimistic until read
+  const [gateSkip, setGateSkip] = useState(true);
+  useEffect(() => {
+    const read = () => {
+      try {
+        setGateWins(+(localStorage.getItem('cg_wins') || 0) || 0);
+        setGateSkip(localStorage.getItem('cg_gate_skip') === '1');
+      } catch { /* private mode → never gate */ }
+    };
+    read();
+    window.addEventListener('cg:progress', read);
+    return () => window.removeEventListener('cg:progress', read);
+  }, []);
+  const gated = gateWins < GATE_WINS && !gateSkip;
+  const skipGate = useCallback(() => {
+    try { localStorage.setItem('cg_gate_skip', '1'); } catch { /* ignore */ }
+    setGateSkip(true);
+  }, []);
 
   const shortAddr = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : '';
 
@@ -517,6 +558,8 @@ export default function CardGamePage() {
                 {busy && <Loader2 size={15} className="cg-spin" />}
                 {phase === 'playing' ? 'RACING…' : 'WORKING…'}
               </button>
+            ) : gated ? (
+              <GatePanel wins={gateWins} onSkip={skipGate} />
             ) : (
               <HoldButton onConfirm={startStaked}>
                 STAKE &amp; PLAY
@@ -563,6 +606,8 @@ export default function CardGamePage() {
               <button className="btn" onClick={withdraw} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                 <Trophy size={15} /> WITHDRAW ◆ {formatEther(payout)}
               </button>
+            ) : (mpPhase === 'idle' || mpPhase === 'settled') && gated ? (
+              <GatePanel wins={gateWins} onSkip={skipGate} />
             ) : mpPhase === 'idle' || mpPhase === 'settled' ? (
               <HoldButton onConfirm={joinRace}>
                 JOIN RACE

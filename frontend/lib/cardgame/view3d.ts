@@ -89,17 +89,25 @@ export function attachView3D(cfg: View3DConfig): View3D {
   }
 
   // ── start the 3D scene right away (three.js lazy chunk) ─────────────
+  // The lazy chunk takes 1-2s on slow connections — an empty stage reads as
+  // broken, so a small loader holds the space until the scene (or fallback).
+  const loader = document.createElement('div');
+  loader.className = 'cg-3dload';
+  loader.innerHTML = '<i></i>LOADING TRACK…';
+  cfg.host.appendChild(loader);
   void (async () => {
     try {
       const { createTrack3D } = await import('./track3d');
       const seats = cfg.buildSeats();
       const inst = await createTrack3D(cfg.host, seats);
+      loader.remove();
       if (unmounted) { inst.destroy(); return; } // left while three.js loaded
       track3d = inst;
       inst.setWeather(lastRound);
       if (lastCars) inst.update(lastCars);
       cfg.onReady?.();
     } catch {
+      loader.remove();
       cfg.host.classList.add('cg-no3d');
       cfg.onLog?.('3D view unavailable on this device');
     }

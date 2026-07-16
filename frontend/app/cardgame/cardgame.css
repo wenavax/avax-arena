@@ -67,6 +67,25 @@
 /* plain-language payout preview under the stake bars */
 .cgroot .cg-payline{font-size:11px;color:var(--cg-muted);margin-top:4px;font-family:'JetBrains Mono',monospace;letter-spacing:.2px}
 
+/* competence-before-risk gate: unlock staked racing via practice wins */
+.cgroot .cg-gate{display:flex;flex-direction:column;align-items:flex-end;gap:6px;text-align:right}
+.cgroot .cg-gate-t{font-size:12px;color:var(--cg-text)}
+.cgroot .cg-gate-t b{color:var(--cg-gold)}
+.cgroot .cg-gate-p{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:var(--cg-muted);font-family:'JetBrains Mono',monospace}
+.cgroot .cg-gate-p i{width:16px;height:8px;border-radius:4px;background:rgba(255,255,255,.08);border:1px solid var(--cg-line)}
+.cgroot .cg-gate-p i.on{background:linear-gradient(90deg,var(--cg-ice),var(--cg-gold));border-color:transparent;box-shadow:0 0 8px rgba(77,208,225,.5)}
+.cgroot .cg-gate-skip{background:none;border:0;padding:0;cursor:pointer;font-size:10px;color:var(--cg-muted);
+  text-decoration:underline;text-underline-offset:2px;font-family:inherit}
+.cgroot .cg-gate-skip:hover{color:var(--cg-ice)}
+
+/* 3D lazy-chunk loader: holds the stage while three.js downloads */
+.cgroot .cg-3dload{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:4;
+  display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;
+  font-family:'Chakra Petch',sans-serif;font-size:12px;letter-spacing:3px;color:var(--cg-muted)}
+.cgroot .cg-3dload i{width:34px;height:34px;border-radius:50%;border:3px solid rgba(77,208,225,.18);
+  border-top-color:var(--cg-ice);animation:cg-spin2 .9s linear infinite}
+@media (prefers-reduced-motion:reduce){.cgroot .cg-3dload i{animation:none}}
+
 /* live matches (watch mode) */
 .cgroot .lm-wrap{margin-top:2px}
 .cgroot .lm-head{padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
@@ -223,13 +242,15 @@ body.cg-noscroll{overflow:hidden}
    is owned by the docked hand panel */
 .cgroot .cg-hud-log{position:absolute;right:12px;top:172px;z-index:7;width:min(280px,40%);
   max-height:96px;overflow:hidden;padding:7px 10px;border-radius:11px;cursor:pointer;
-  background:rgba(10,10,16,.5);border:1px solid rgba(255,255,255,.08);
+  background:rgba(10,10,16,.55);border:1px solid rgba(255,255,255,.08);
   backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
-  font-size:10.5px;line-height:1.6;color:var(--cg-muted);
+  font-size:11px;line-height:1.6;color:rgba(255,255,255,.66);
   mask-image:linear-gradient(#000 55%,transparent);-webkit-mask-image:linear-gradient(#000 55%,transparent)}
 .cgroot .cg-hud-log.open{max-height:44vh;overflow:auto;mask-image:none;-webkit-mask-image:none;background:rgba(10,10,16,.85)}
 .cgroot .cg-hud-log:empty{display:none}
 .cgroot .cg-hud-log b{color:var(--cg-text)}
+/* my own events read cyan — the log parses at a glance mid-race */
+.cgroot .cg-hud-log .me,.cgroot .cg-hud-log .me b{color:#8ee7f2}
 .cgroot .cg-hud-log a.txh{color:var(--cg-ice);text-decoration:none}
 
 /* docked how-to-play sheet (over the stage, toggled by the ❔ chip) */
@@ -410,6 +431,13 @@ body.cg-noscroll{overflow:hidden}
 /* selected: rising red pulse (after .nodeal so it survives selection rebuilds) */
 @keyframes cg-selpulse{0%,100%{box-shadow:0 0 0 1px rgba(237,47,57,.4),0 10px 24px rgba(237,47,57,.32)}50%{box-shadow:0 0 0 2px rgba(237,47,57,.7),0 12px 30px rgba(237,47,57,.5)}}
 .cgroot .hand .card.sel{animation:cg-selpulse 1.3s ease-in-out infinite}
+/* onboarding ghost hint: the suggested play breathes cyan (first races only) */
+@keyframes cg-hintpulse{0%,100%{box-shadow:0 0 0 1px rgba(77,208,225,.45),0 0 14px rgba(77,208,225,.3)}50%{box-shadow:0 0 0 2.5px rgba(77,208,225,.85),0 0 26px rgba(77,208,225,.55)}}
+.cgroot .hand .card.hint:not(.sel){animation:cg-hintpulse 1.5s ease-in-out infinite;border-color:rgba(77,208,225,.8)}
+.cgroot .btn.hint{box-shadow:0 0 0 1px rgba(77,208,225,.4),0 0 18px rgba(77,208,225,.3);animation:cg-hintpulse 1.5s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){
+  .cgroot .hand .card.hint:not(.sel),.cgroot .btn.hint{animation:none;box-shadow:0 0 0 2px rgba(77,208,225,.7)}
+}
 /* non-fullscreen hand tray runs more compact so the card section takes less of
    the page — the docked (.cg-fsdock) fullscreen version keeps the larger cards */
 .cgroot .panel:not(.cg-fsdock) .hand{gap:7px;padding:10px 11px;min-height:76px}

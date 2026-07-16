@@ -162,6 +162,8 @@ export function attachStageHud(host: HTMLElement, opts: StageHudOpts = {}): Stag
     log(html) {
       const d = document.createElement('div');
       d.innerHTML = html;
+      // colour-code my own events so the log parses at a glance mid-race
+      if (/^(<b>)?(You\b|Passed CP|Reconnected)/.test(html)) d.className = 'me';
       logEl.insertBefore(d, logEl.firstChild);
       while (logEl.childElementCount > 60) logEl.removeChild(logEl.lastElementChild!);
     },
