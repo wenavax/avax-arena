@@ -45,3 +45,12 @@ frozenfriends/contracts/cache/
 frozenfriends/contracts/lib/
 frozenfriends/contracts/.env
 docs/grants/
+
+# Kullanıcı yüklemeleri (token logoları) — rsync'te de hariç, silinirse geri gelmez
+frontend/data/uploads/
+
+# Capacitor üretimi (npx cap sync web build kopyası) + gradle cache
+frontend/android/app/src/main/assets/public/
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/android/build/
