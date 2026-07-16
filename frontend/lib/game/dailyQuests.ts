@@ -21,8 +21,16 @@ const DAILY_POOL: Omit<DailyQuest, 'progress' | 'completed' | 'claimed'>[] = [
 
 const DAILY_KEY = 'frostbite_daily';
 
+// Player-local day key (YYYY-MM-DD). toISOString() sliced to a date is UTC —
+// dailies used to reset mid-evening for anyone west of UTC (e.g. 19:00 in
+// New York), and "today's" zone visits could straddle two different keys.
+function localDayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function getDailyQuests(): DailyQuest[] {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDayKey();
 
   try {
     const saved = localStorage.getItem(DAILY_KEY);
@@ -45,7 +53,7 @@ export function getDailyQuests(): DailyQuest[] {
 }
 
 export function saveDailyQuests(quests: DailyQuest[]): void {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDayKey();
   try {
     localStorage.setItem(DAILY_KEY, JSON.stringify({ date: today, quests }));
   } catch { /* localStorage unavailable */ }
@@ -66,7 +74,7 @@ export function updateDailyProgress(questId: string, increment: number = 1): voi
  * Call this whenever the player enters a zone (Town, Forest, Dungeon).
  */
 export function trackZoneVisit(zone: string): void {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDayKey();
   const zoneKey = 'frostbite_daily_zones';
 
   let visited: Set<string>;

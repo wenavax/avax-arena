@@ -82,10 +82,14 @@ export class CharacterSelectScene extends Phaser.Scene {
       state.nftElement = heroNft.element;
       state.nftRarity = heroNft.rarity;
       state.useNftSprite = true;
-      state.atk = heroNft.atk;
-      state.def = heroNft.def;
-      state.spd = heroNft.spd;
-      state.level = heroNft.level || 1;
+      // On-chain stats become the BASE (captured at the chain's level) —
+      // assigning atk/def/spd directly got silently overwritten by the next
+      // recalcStats (equip/level-up) and dropped equipment bonuses on reload.
+      state.baseAtk = heroNft.atk;
+      state.baseDef = heroNft.def;
+      state.baseSpd = heroNft.spd;
+      state.nftStatLevel = heroNft.level || 1;
+      state.level = Math.max(state.level, heroNft.level || 1);
       state.xp = heroNft.xp || 0;
       const rarityBonus = [0, 2, 5, 10, 20][heroNft.rarity] || 0;
       // Compute maxHp absolutely (base 120 + 15/level + rarity) — the old
@@ -93,6 +97,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       // forever. Absolute form also repairs already-inflated saves.
       state.maxHp = 120 + (state.level - 1) * 15 + rarityBonus * 5;
       state.hp = Math.min(state.hp, state.maxHp);
+      state.recalcStats(); // NFT base + local levels + equipment, one formula
       state.save();
     }
 
@@ -548,14 +553,14 @@ export class CharacterSelectScene extends Phaser.Scene {
     state.nftElement = heroNft.element;
     state.nftRarity = heroNft.rarity;
     state.useNftSprite = true;
-    state.atk = heroNft.atk;
-    state.def = heroNft.def;
-    state.spd = heroNft.spd;
-    state.baseAtk = cls.stats.atk;
-    state.baseDef = cls.stats.def;
-    state.baseSpd = cls.stats.spd;
+    // NFT stats are the base (see recalcStats note in PlayerState)
+    state.baseAtk = heroNft.atk;
+    state.baseDef = heroNft.def;
+    state.baseSpd = heroNft.spd;
+    state.nftStatLevel = heroNft.level || 1;
     state.mp = cls.stats.mp;
     state.maxMp = cls.stats.mp;
+    state.recalcStats();
 
     // Rarity HP bonus
     const rarityBonus = [0, 2, 5, 10, 20][heroNft.rarity] || 0;
@@ -594,14 +599,23 @@ export class CharacterSelectScene extends Phaser.Scene {
     // Check if wallet connected (Privy) + load NFT hero stats
     const walletInfo = (window as any).__frostbiteWallet;
     const heroNft = (window as any).__frostbiteHero;
+    state.baseAtk = cls.stats.atk;
+    state.baseDef = cls.stats.def;
+    state.baseSpd = cls.stats.spd;
+    state.nftStatLevel = 1;
+
     if (walletInfo?.authenticated && heroNft) {
       state.nftTokenId = heroNft.tokenId;
       state.nftElement = heroNft.element;
       state.nftRarity = heroNft.rarity;
       state.useNftSprite = true;
-      state.atk = heroNft.atk;
-      state.def = heroNft.def;
-      state.spd = heroNft.spd;
+      // NFT stats are the base; must come AFTER the class-base assignment
+      // (the old order set atk directly, then class bases below won every
+      // later recalcStats — NFT stats silently vanished on first equip)
+      state.baseAtk = heroNft.atk;
+      state.baseDef = heroNft.def;
+      state.baseSpd = heroNft.spd;
+      state.nftStatLevel = heroNft.level || 1;
       state.level = heroNft.level || 1;
       state.xp = heroNft.xp || 0;
       const rarityBonus = [0, 2, 5, 10, 20][heroNft.rarity] || 0;
@@ -609,11 +623,9 @@ export class CharacterSelectScene extends Phaser.Scene {
       state.hp = state.maxHp;
     }
 
-    state.baseAtk = cls.stats.atk;
-    state.baseDef = cls.stats.def;
-    state.baseSpd = cls.stats.spd;
     state.mp = cls.stats.mp;
     state.maxMp = cls.stats.mp;
+    state.recalcStats();
     state.save(); // save new character
 
     this.animTimer?.destroy();

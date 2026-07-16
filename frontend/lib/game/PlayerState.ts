@@ -68,10 +68,14 @@ export class PlayerState {
     ring: null,
   };
 
-  // Base stats (before equipment bonuses)
+  // Base stats (before equipment bonuses). For NFT heroes these hold the
+  // on-chain atk/def/spd, which already include the chain's own level-up
+  // allocations — so the local per-level bonus must only count levels gained
+  // AFTER the capture level (nftStatLevel), or stats double-scale.
   baseAtk = 15;
   baseDef = 8;
   baseSpd = 10;
+  nftStatLevel = 1; // level at which base stats were captured (1 = class hero)
 
   equip(item: InventoryItem): string | null {
     const slotMap: Record<string, string> = { weapon: 'weapon', armor: 'armor', accessory: 'accessory', ring: 'ring' };
@@ -111,9 +115,10 @@ export class PlayerState {
   }
 
   recalcStats() {
-    this.atk = this.baseAtk + (this.level - 1) * 3;
-    this.def = this.baseDef + (this.level - 1) * 2;
-    this.spd = this.baseSpd + (this.level - 1) * 1;
+    const lvls = Math.max(0, this.level - this.nftStatLevel);
+    this.atk = this.baseAtk + lvls * 3;
+    this.def = this.baseDef + lvls * 2;
+    this.spd = this.baseSpd + lvls * 1;
     for (const item of [this.equipped.weapon, this.equipped.armor, this.equipped.accessory, this.equipped.ring]) {
       if (item?.stat?.atk) this.atk += item.stat.atk;
       if (item?.stat?.def) this.def += item.stat.def;
@@ -222,6 +227,7 @@ export class PlayerState {
         mp: this.mp,
         maxMp: this.maxMp,
         baseSpd: this.baseSpd,
+        nftStatLevel: this.nftStatLevel,
         inventory: this.inventory,
         equipped: this.equipped,
         quests: this.quests,
@@ -265,6 +271,7 @@ export class PlayerState {
       this.mp = d.mp ?? 30;
       this.maxMp = d.maxMp ?? 30;
       this.baseSpd = d.baseSpd ?? 10;
+      this.nftStatLevel = d.nftStatLevel ?? 1;
       this.inventory = d.inventory ?? [];
       this.equipped = d.equipped ?? { weapon: null, armor: null, accessory: null, ring: null };
       // Ensure new slots exist for old saves

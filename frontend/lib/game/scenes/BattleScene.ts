@@ -1740,6 +1740,176 @@ export class BattleScene extends Phaser.Scene {
           skipTurn = true;
         }
         break;
+
+      // ── Dungeon bosses — signature cycles (all 13 hit generically before) ──
+      case 'shadow_lord':
+        // Crypt: vanish, then backstab with bleed
+        if (this.enemyTurnCount % 3 === 0) {
+          specialMsg = 'Shadow Lord melts into the darkness...';
+          skipTurn = true;
+        } else if (this.enemyTurnCount % 3 === 1) {
+          dmgMult = 2.4;
+          applyDot = { type: 'bleed', turns: 2, pctPerTurn: 0.05 };
+          specialMsg = 'Shadow Lord strikes from behind! Backstab!';
+        }
+        break;
+      case 'swamp_hag':
+        // Swamp: poison brews + self-heal
+        if (this.enemyTurnCount % 4 === 0) {
+          const hagHeal = Math.floor(this.monster.maxHp * 0.12);
+          this.monster.hp = Math.min(this.monster.maxHp, this.monster.hp + hagHeal);
+          this.updateMonsterHp();
+          this.showBuff(this.monsterBaseX, this.stageY - 40, `+${hagHeal} HP`, '#44aa44');
+          specialMsg = 'Swamp Hag drinks a foul brew!';
+          skipTurn = true;
+        } else if (this.enemyTurnCount % 4 === 2) {
+          dmgMult = 1.5;
+          applyDot = { type: 'poison', turns: 3, pctPerTurn: 0.05 };
+          specialMsg = 'Swamp Hag hurls a venom flask!';
+        }
+        break;
+      case 'crystal_colossus':
+        // Mines: crystallize (one-shot DEF wall), then shattering slam
+        if (mHpPct < 0.4 && this.monsterDefBuffTurns === 0 && this.monsterDefBuff === 0) {
+          this.monsterDefBuff = Math.floor(this.monster.def * 0.6);
+          this.monster.def += this.monsterDefBuff;
+          this.monsterDefBuffTurns = 3;
+          this.showBuff(this.monsterBaseX, this.stageY - 60, '💎 DEF UP!', '#88ddff');
+          specialMsg = 'Crystal Colossus crystallizes!';
+          skipTurn = true;
+        } else if (this.enemyTurnCount % 3 === 0) {
+          dmgMult = 1.9;
+          specialMsg = 'Crystal Colossus slams with crystal fists!';
+        }
+        break;
+      case 'sky_sentinel':
+      case 'storm_titan':
+        // Citadel: lightning cycle, occasional stunning bolt
+        if (this.enemyTurnCount % 4 === 0) {
+          dmgMult = 1.4;
+          applyDot = { type: 'stun', turns: 1, pctPerTurn: 0 };
+          specialMsg = `${mType === 'storm_titan' ? 'Storm Titan' : 'Sky Sentinel'} hurls a stunning bolt!`;
+        } else if (this.enemyTurnCount % 4 === 2) {
+          dmgMult = 2.0;
+          specialMsg = 'Lightning crashes down!';
+        }
+        break;
+      case 'lich_king':
+        // Necropolis: life drain — heals for part of the hit
+        if (this.enemyTurnCount % 3 === 1) {
+          dmgMult = 1.6;
+          const drain = Math.floor(this.monster.maxHp * 0.08);
+          this.monster.hp = Math.min(this.monster.maxHp, this.monster.hp + drain);
+          this.updateMonsterHp();
+          this.showBuff(this.monsterBaseX, this.stageY - 40, `+${drain} HP`, '#aa66ff');
+          specialMsg = 'Lich King drains your life force!';
+        } else if (this.enemyTurnCount % 3 === 0) {
+          applyDot = { type: 'poison', turns: 3, pctPerTurn: 0.06 };
+          dmgMult = 1.2;
+          specialMsg = 'Lich King unleashes a plague curse!';
+        }
+        break;
+      case 'frost_emperor':
+        // Frost Wastes: freezing cycle + glacial crush
+        if (this.enemyTurnCount % 4 === 1) {
+          dmgMult = 1.5;
+          applyDot = { type: 'freeze', turns: 1, pctPerTurn: 0 };
+          specialMsg = 'Frost Emperor breathes absolute cold!';
+        } else if (this.enemyTurnCount % 4 === 3) {
+          dmgMult = 2.2;
+          specialMsg = 'Frost Emperor crushes with a glacier!';
+        }
+        break;
+      case 'demon_lord':
+        // Demon's Gate: burning strikes, enrages below 40% HP
+        if (mHpPct < 0.4) {
+          dmgMult = 1.7;
+          applyDot = { type: 'burn', turns: 2, pctPerTurn: 0.06 };
+          specialMsg = 'Demon Lord burns with fury!';
+        } else if (this.enemyTurnCount % 3 === 0) {
+          dmgMult = 1.6;
+          applyDot = { type: 'burn', turns: 2, pctPerTurn: 0.05 };
+          specialMsg = 'Demon Lord lashes with hellfire!';
+        }
+        break;
+      case 'ancient_guardian':
+        // Ruins: stone ward (one-shot DEF), then seismic slam
+        if (mHpPct < 0.5 && this.monsterDefBuffTurns === 0 && this.monsterDefBuff === 0) {
+          this.monsterDefBuff = Math.floor(this.monster.def * 0.5);
+          this.monster.def += this.monsterDefBuff;
+          this.monsterDefBuffTurns = 3;
+          this.showBuff(this.monsterBaseX, this.stageY - 60, '🛡 DEF UP!', '#ccaa66');
+          specialMsg = 'Ancient Guardian raises a stone ward!';
+          skipTurn = true;
+        } else if (this.enemyTurnCount % 3 === 2) {
+          dmgMult = 2.0;
+          specialMsg = 'Ancient Guardian slams the earth!';
+        }
+        break;
+      case 'void_sovereign':
+        // Void: phases out, then reality-tearing strike with slow
+        if (this.enemyTurnCount % 3 === 0) {
+          specialMsg = 'Void Sovereign phases out of reality...';
+          skipTurn = true;
+        } else if (this.enemyTurnCount % 3 === 1) {
+          dmgMult = 2.6;
+          applyDot = { type: 'slow', turns: 2, pctPerTurn: 0, spdReduction: 40 };
+          specialMsg = 'Void Sovereign tears through reality!';
+        }
+        break;
+      case 'titan_forgemaster':
+        // Forge: molten hammer + one-shot forged armor
+        if (mHpPct < 0.5 && this.monsterDefBuffTurns === 0 && this.monsterDefBuff === 0) {
+          this.monsterDefBuff = Math.floor(this.monster.def * 0.5);
+          this.monster.def += this.monsterDefBuff;
+          this.monsterDefBuffTurns = 3;
+          this.showBuff(this.monsterBaseX, this.stageY - 60, '⚒ DEF UP!', '#ffaa44');
+          specialMsg = 'Titan Forgemaster forges molten armor!';
+          skipTurn = true;
+        } else if (this.enemyTurnCount % 3 === 1) {
+          dmgMult = 2.2;
+          applyDot = { type: 'burn', turns: 2, pctPerTurn: 0.05 };
+          specialMsg = 'Titan Forgemaster swings the molten hammer!';
+        }
+        break;
+      case 'abyssal_leviathan':
+        // Abyss: tidal wave with slow, deep-heal every 5th turn
+        if (this.enemyTurnCount % 5 === 0) {
+          const levHeal = Math.floor(this.monster.maxHp * 0.10);
+          this.monster.hp = Math.min(this.monster.maxHp, this.monster.hp + levHeal);
+          this.updateMonsterHp();
+          this.showBuff(this.monsterBaseX, this.stageY - 40, `+${levHeal} HP`, '#44aacc');
+          specialMsg = 'Abyssal Leviathan dives into the deep!';
+          skipTurn = true;
+        } else if (this.enemyTurnCount % 5 === 2) {
+          dmgMult = 2.0;
+          applyDot = { type: 'slow', turns: 2, pctPerTurn: 0, spdReduction: 40 };
+          specialMsg = 'Abyssal Leviathan summons a tidal wave!';
+        }
+        break;
+      case 'boss_frost':
+        // Original dungeon boss: frost breath cycle
+        if (this.enemyTurnCount % 3 === 1) {
+          dmgMult = 1.8;
+          applyDot = { type: 'freeze', turns: 1, pctPerTurn: 0 };
+          specialMsg = 'Frost Boss breathes freezing wind!';
+        }
+        break;
+      case 'abyssal_overlord':
+        // Eternal Abyss final boss: 5-turn mixed onslaught
+        if (this.enemyTurnCount % 5 === 1) {
+          dmgMult = 1.6;
+          applyDot = { type: 'burn', turns: 2, pctPerTurn: 0.06 };
+          specialMsg = 'Abyssal Overlord ignites the abyss!';
+        } else if (this.enemyTurnCount % 5 === 3) {
+          dmgMult = 1.6;
+          applyDot = { type: 'freeze', turns: 1, pctPerTurn: 0 };
+          specialMsg = 'Abyssal Overlord freezes your soul!';
+        } else if (this.enemyTurnCount % 5 === 0) {
+          dmgMult = 2.4;
+          specialMsg = 'Abyssal Overlord unleashes annihilation!';
+        }
+        break;
     }
 
     if (skipTurn) {

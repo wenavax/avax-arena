@@ -2,6 +2,11 @@ import * as Phaser from 'phaser';
 import { TILE_SIZE, TILE_GAP, SPRITE_SHEET_PATH, GAME_WIDTH, GAME_HEIGHT } from '../config';
 
 export class BootScene extends Phaser.Scene {
+  // Spritesheets the world can't render without; SFX failures are benign
+  // (every play() is try/catch'd) so they only log
+  private static CRITICAL_ASSETS = new Set(['tiles', 'ninja-floor', 'ninja-village', 'ninja-interior']);
+  private failedCritical: string[] = [];
+
   constructor() {
     super({ key: 'Boot' });
   }
@@ -24,6 +29,12 @@ export class BootScene extends Phaser.Scene {
     });
     this.load.on('complete', () => {
       bar.destroy(); fill.destroy(); loadText.destroy();
+    });
+    // Without this, a failed asset (bad deploy, offline, ad-blocker) left a
+    // silent black screen — the loader "completes" and the world renders void
+    this.load.on('loaderror', (file: Phaser.Loader.File) => {
+      console.warn(`[Boot] asset failed to load: ${file.key} (${file.url})`);
+      if (BootScene.CRITICAL_ASSETS.has(file.key)) this.failedCritical.push(file.key);
     });
 
     // Load spritesheet
@@ -59,6 +70,22 @@ export class BootScene extends Phaser.Scene {
   create() {
     const w = GAME_WIDTH;
     const h = GAME_HEIGHT;
+
+    // Critical assets missing → recoverable error screen instead of a void
+    if (this.failedCritical.length > 0) {
+      this.cameras.main.setBackgroundColor('#0a0e1a');
+      this.add.text(w / 2, h * 0.4, '⚠ ASSETS FAILED TO LOAD', {
+        fontSize: '22px', color: '#ff6655', fontFamily: 'monospace', fontStyle: 'bold',
+      }).setOrigin(0.5);
+      this.add.text(w / 2, h * 0.4 + 34, `${this.failedCritical.join(', ')}\nCheck your connection, then retry.`, {
+        fontSize: '12px', color: '#8899aa', fontFamily: 'monospace', align: 'center',
+      }).setOrigin(0.5);
+      const retry = this.add.text(w / 2, h * 0.4 + 90, '[ RETRY ]', {
+        fontSize: '18px', color: '#00ccff', fontFamily: 'monospace', fontStyle: 'bold',
+      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      retry.on('pointerdown', () => window.location.reload());
+      return;
+    }
 
     // F key — fullscreen toggle (works from splash/boot screen)
     if (this.input.keyboard) {
