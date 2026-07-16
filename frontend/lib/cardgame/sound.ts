@@ -23,6 +23,12 @@ export interface CgSound {
   victory(): void;
   /** Countdown beep: n=3/2/1 short tick, n=0 the higher "GO!" tone. */
   count(n: number): void;
+  /** Rising pitch ladder for the sequential combo reveal (i = card index). */
+  comboNote(i: number): void;
+  /** Combo "lands on the car" hit — tier 0 soft / 1 mid / 2 big. */
+  impact(tier: number): void;
+  /** Quick two-note rise when the player gains a race position. */
+  overtake(): void;
   enabled(): boolean;
   /** Flip on/off, persist, apply immediately. Returns the new state. */
   toggle(): boolean;
@@ -102,6 +108,33 @@ export function createCgSound(): CgSound {
         if (n > 0) note(c, 660, t0, 0.13, 'square', 0.16);           // 3·2·1 tick
         else { note(c, 880, t0, 0.42, 'square', 0.18); note(c, 1108.73, t0, 0.42, 'triangle', 0.08); } // GO!
       } catch { /* never break the start flow */ }
+    },
+    comboNote(i: number) {
+      const c = ensureCtx(); if (!c) return;
+      try {
+        // pentatonic ladder (C major) — always consonant however many cards land
+        const PENTA = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21];
+        const f = 523.25 * Math.pow(2, PENTA[Math.min(i, PENTA.length - 1)] / 12);
+        note(c, f, c.currentTime + 0.01, 0.12, 'triangle', 0.13);
+        note(c, f * 2, c.currentTime + 0.01, 0.08, 'sine', 0.04); // sparkle octave
+      } catch { /* cosmetic */ }
+    },
+    impact(tier: number) {
+      const c = ensureCtx(); if (!c) return;
+      try {
+        const t0 = c.currentTime + 0.01;
+        note(c, 130.81, t0, 0.16 + tier * 0.06, 'triangle', 0.14 + tier * 0.05); // low thump
+        if (tier >= 1) note(c, 523.25, t0 + 0.02, 0.14, 'square', 0.1);
+        if (tier >= 2) { note(c, 1046.5, t0 + 0.05, 0.2, 'square', 0.12); note(c, 65.4, t0, 0.3, 'sine', 0.16); }
+      } catch { /* cosmetic */ }
+    },
+    overtake() {
+      const c = ensureCtx(); if (!c) return;
+      try {
+        const t0 = c.currentTime + 0.01;
+        note(c, 587.33, t0, 0.09, 'square', 0.11);        // D5 → A5 quick rise
+        note(c, 880, t0 + 0.09, 0.16, 'square', 0.13);
+      } catch { /* cosmetic */ }
     },
     enabled() { return on; },
     toggle() {

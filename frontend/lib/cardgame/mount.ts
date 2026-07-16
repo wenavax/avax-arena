@@ -12,6 +12,7 @@ import { createCgSound, soundLabel } from './sound';
 import { ABILITIES, triggerAbilities, SELF_BUDGET } from './abilities';
 import { attachView3D, type View3D } from './view3d';
 import { showRaceResults, closeRaceResults } from './resultsOverlay';
+import { comboJuice, cancelComboJuice } from './juice';
 
 export interface CardGameOptions {
   address?: string | null;
@@ -84,8 +85,11 @@ type Player = {
 export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): () => void {
   root.innerHTML = TEMPLATE;
   const $ = (id: string) => root.querySelector('#' + id) as HTMLElement;
-  // in-stage HUD overlays (chips / mini standings / compact log)
-  const hud: StageHud = attachStageHud($('track3d'));
+  // in-stage HUD overlays (chips / standings+progress / position badge / log);
+  // gaining a place plays the overtake sting + a small camera nudge
+  const hud: StageHud = attachStageHud($('track3d'), {
+    onPosChange: (_pos, up) => { if (up) { sound.overtake(); view3d?.shake(0.05); } },
+  });
   hud.chips.innerHTML = CHIPS;
 
   // ---- Config (mirrors the design document) ----
@@ -367,7 +371,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     render(arr, rw);
     showRaceResults({
       rows: arr.map((p, i) => ({
-        name: nameOf(p.id), color: colorOf(p.id), you: p.id === 'P1',
+        pid: p.id, name: nameOf(p.id), color: colorOf(p.id), you: p.id === 'P1',
         rounds: p.scores, total: p.total, prize: `◆ ${rw[i].toFixed(1)}`,
       })),
       sim: !opts.staked,
@@ -383,13 +387,6 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   // calling getComputedStyle() (a forced reflow) 4× on every 10Hz render tick.
   const colorCache: Record<string, string> = {};
   function colorOf(pid: string) { return (colorCache[pid] ??= (cssv(COLORS[pid]).trim() || '#ed2f39')); }
-  function popup(txt: string, cls?: string) {
-    const tk = $('track3d');
-    const el = document.createElement('div');
-    el.className = 'popup' + (cls ? ' ' + cls : ''); el.textContent = txt; tk.appendChild(el);
-    setTimeout(() => el.remove(), 1400);
-  }
-
   function render(finalOrder?: Player[], rw?: number[]) {
     // 3D stage: forward a per-tick snapshot; three.js lerps to 60fps on its own
     view3d?.forward(players.map((p) => ({
@@ -430,8 +427,9 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     // mini standings overlay (racing-game position widget)
     const order = finalOrder || [...players].sort((a, b) => b.total - a.total || b.dist - a.dist);
     hud.rank(order.map((p, i) => ({
-      name: nameOf(p.id), color: colorOf(p.id), you: p.id === 'P1', fin: p.fin,
+      pid: p.id, name: nameOf(p.id), color: colorOf(p.id), you: p.id === 'P1', fin: p.fin,
       value: rw ? `◆ ${rw[i].toFixed(1)}` : (p.fin ? `✔ ${p.ft}s · ${p.total}p` : `${Math.round(p.dist)}u · ${p.total}p`),
+      ...(rw ? {} : { dist: p.dist, pts: p.total }),
     })));
   }
   function updatePreview() {
@@ -453,14 +451,21 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
 
   // ---- Controls ----
   ($('playBtn')).onclick = () => {
-    const p1 = players[0]; const idxs = [...selected].sort((a, b) => a - b); const res = applyPlay(p1, idxs);
+    const p1 = players[0]; const idxs = [...selected].sort((a, b) => a - b);
+    const cardsSel = idxs.map((i) => p1.hand[i]); // applyPlay removes them — capture first
+    const res = applyPlay(p1, idxs);
     if (res.ok) {
       log(`You played <b>${res.r.combo || res.r.kind}</b> (x${res.r.mult.toFixed(2)})` + (res.r.magic.length ? ` + ${res.r.magic.map((m) => m.type).join(', ')}` : ''));
-      popup(`${res.r.combo || res.r.kind} ×${res.r.mult.toFixed(2)}`, fxClass(res.r));
-      res.fired.forEach((txt, i) => {
-        setTimeout(() => popup(txt, 'pop-ab'), 350 + i * 300);
-        log(txt);
+      // Balatro-style sequential reveal: cards pop one-by-one, the multiplier
+      // ticks up per card, then the combo lands with shake/hit-stop by tier
+      comboJuice({
+        host: $('track3d'),
+        cards: cardsSel.map((c) => ({ value: c.value, magic: c.magic })),
+        label: res.r.combo || res.r.kind, mult: res.r.mult, fxCls: fxClass(res.r),
+        abilities: res.fired, sound,
+        fx: { shake: (m) => view3d?.shake(m), hitstop: (ms) => view3d?.hitstop(ms) },
       });
+      res.fired.forEach((txt) => log(txt));
       selected.clear(); bestNote = ''; updatePreview(); render();
     }
   };
@@ -530,6 +535,7 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   // ---- Cleanup ----
   return () => {
     closeRaceResults();
+    cancelComboJuice();
     if (tickH) clearInterval(tickH);
     if (toastT) clearTimeout(toastT);
     countT.forEach(clearTimeout);

@@ -35,6 +35,9 @@ export interface View3D {
   /** Round index (0-based) → per-round weather in the 3D scene. Cached, so it
    *  also applies when the scene finishes loading mid-match. */
   setRound: (round: number) => void;
+  /** Impact feedback pass-throughs (no-ops until the scene is ready). */
+  shake: (mag: number) => void;
+  hitstop: (ms: number) => void;
   destroy: () => void;
 }
 
@@ -106,6 +109,8 @@ export function attachView3D(cfg: View3DConfig): View3D {
     is3D: () => !!track3d,
     forward: (cars) => { lastCars = cars; track3d?.update(cars); },
     setRound: (round) => { lastRound = round; track3d?.setWeather(round); },
+    shake: (mag) => track3d?.shake(mag),
+    hitstop: (ms) => track3d?.hitstop(ms),
     destroy: () => {
       unmounted = true;
       track3d?.destroy(); track3d = null;

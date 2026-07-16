@@ -150,14 +150,39 @@ body.cg-noscroll{overflow:hidden}
   min-width:172px;padding:8px 10px;border-radius:12px;background:rgba(10,10,16,.55);
   border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
   font-family:'JetBrains Mono',monospace;font-size:10.5px;pointer-events:none}
-.cgroot .cg-hud-rank:empty{display:none}
+.cgroot .cg-hud-rank:not(.on){display:none}
 .cgroot .cg-hud-row{display:flex;align-items:center;gap:6px;color:var(--cg-muted)}
 .cgroot .cg-hud-row b{width:12px;color:var(--cg-text);font-weight:700}
-.cgroot .cg-hud-row i{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+/* seat mark = colour + fixed shape (▲●■◆) — identity never colour-alone */
+.cgroot .cg-hud-row i{font-style:normal;width:12px;font-size:9px;text-align:center;flex:0 0 auto;text-shadow:0 0 6px currentColor}
 .cgroot .cg-hud-row span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cgroot .cg-hud-row em{font-style:normal;color:var(--cg-text);white-space:nowrap}
+.cgroot .cg-hud-row em{font-style:normal;color:var(--cg-text);white-space:nowrap;font-variant-numeric:tabular-nums}
 .cgroot .cg-hud-row.you span{color:var(--cg-gold);font-weight:700}
 .cgroot .cg-hud-row.fin em{color:var(--cg-green)}
+/* track-progress strip: 4 shape dots racing toward the chequer (inside the
+   standings widget so it inherits its placement on every breakpoint) */
+.cgroot .cg-hud-trk{position:relative;height:16px;margin:1px 0 5px;border-radius:8px;
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.06);display:none}
+.cgroot .cg-hud-trk.live{display:block}
+.cgroot .cg-hud-trk::after{content:'';position:absolute;right:0;top:0;bottom:0;width:6px;border-radius:0 8px 8px 0;
+  background:repeating-conic-gradient(#e8edf6 0 25%,#0a0a10 0 50%) 0 0/6px 6px;opacity:.75}
+.cgroot .cg-hud-trk i{position:absolute;top:50%;transform:translate(-50%,-50%);font-style:normal;font-size:9px;
+  line-height:1;text-shadow:0 0 5px currentColor;transition:left .22s linear}
+.cgroot .cg-hud-trk i.you{font-size:11.5px;filter:drop-shadow(0 0 4px currentColor)}
+.cgroot .cg-hud-trk i.fin{opacity:.45}
+/* big position badge — the one number a racer always needs (top-left, under chips) */
+.cgroot .cg-hud-pos{position:absolute;top:50px;left:14px;z-index:7;pointer-events:none;display:none;
+  font-family:'Chakra Petch',sans-serif;font-weight:800;font-size:34px;letter-spacing:2px;line-height:1;
+  color:#e8edf6;text-shadow:0 2px 10px rgba(0,0,0,.7),0 0 22px rgba(77,208,225,.25);font-variant-numeric:tabular-nums}
+.cgroot .cg-hud-pos.live{display:block}
+.cgroot .cg-hud-pos.p1{color:var(--cg-gold);text-shadow:0 2px 10px rgba(0,0,0,.7),0 0 26px rgba(245,197,66,.55)}
+@keyframes cg-pospop{0%{transform:scale(1)}35%{transform:scale(1.35)}100%{transform:scale(1)}}
+.cgroot .cg-hud-pos.pop{animation:cg-pospop .45s cubic-bezier(.2,1.4,.4,1)}
+/* overtake banner: "▲ 2ND!" — the emotional core of a racing game */
+.cgroot .cg-hud-ovt{position:absolute;left:50%;top:24%;transform:translateX(-50%);z-index:6;pointer-events:none;
+  font-family:'Chakra Petch',sans-serif;font-weight:800;font-size:30px;letter-spacing:5px;color:var(--cg-gold);
+  text-shadow:0 0 20px rgba(245,197,66,.65),0 2px 8px rgba(0,0,0,.6);opacity:0}
+.cgroot .cg-hud-ovt.on{animation:cg-bannerfade 1.25s ease forwards}
 /* event log sits under the standings in the right column — the bottom-centre
    is owned by the docked hand panel */
 .cgroot .cg-hud-log{position:absolute;right:12px;top:172px;z-index:7;width:min(280px,40%);
@@ -193,6 +218,25 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .popup.fx-max{background:linear-gradient(90deg,#ed2f39,#f5c542,#4dd0e1,#a78bfa);
   -webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;
   filter:drop-shadow(0 0 18px rgba(245,197,66,.5));animation:cg-rise 1.4s ease-out forwards,cg-hueshift 1.2s linear infinite}
+
+/* ── combo juice: sequential card reveal + running multiplier ─────────── */
+.cgroot .cg-jz{position:absolute;left:50%;top:26%;transform:translateX(-50%);z-index:6;pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;gap:9px}
+.cgroot .cg-jz-cards{display:flex;gap:6px}
+.cgroot .cg-jz-card{width:36px;height:50px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+  font-family:'Chakra Petch',sans-serif;font-weight:800;font-size:18px;color:#223049;
+  background:linear-gradient(158deg,#fdfeff,#d7e2f1);border:1px solid rgba(255,255,255,.9);
+  box-shadow:0 4px 14px rgba(9,15,28,.55),0 0 16px rgba(77,208,225,.25)}
+@keyframes cg-jzpop{0%{opacity:0;transform:translateY(14px) scale(.4)}60%{opacity:1;transform:translateY(-3px) scale(1.14)}100%{opacity:1;transform:none}}
+.cgroot .cg-jz-card.on{animation:cg-jzpop .3s cubic-bezier(.2,1.5,.4,1) both}
+.cgroot .cg-jz-card.m-hi{background:linear-gradient(158deg,#fffdf3,#e6cd8a);color:#6f4e0d;box-shadow:0 4px 14px rgba(9,15,28,.55),0 0 18px rgba(245,197,66,.5)}
+.cgroot .cg-jz-card.m-nitro{background:linear-gradient(158deg,#ffe9a8,#f5c542);color:#4a3500;box-shadow:0 4px 14px rgba(9,15,28,.55),0 0 20px rgba(245,197,66,.7)}
+.cgroot .cg-jz-card.m-nail{background:linear-gradient(158deg,#ffb8b8,#ed6b6b);color:#4a0d0d;box-shadow:0 4px 14px rgba(9,15,28,.55),0 0 18px rgba(237,47,57,.6)}
+.cgroot .cg-jz-card.m-oil{background:linear-gradient(158deg,#b9bfd1,#7c8299);color:#14161f;box-shadow:0 4px 14px rgba(9,15,28,.55),0 0 16px rgba(124,130,153,.6)}
+.cgroot .cg-jz-mult{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-weight:800;
+  font-size:30px;color:var(--cg-ice);text-shadow:0 0 18px rgba(77,208,225,.6)}
+@keyframes cg-jztick{0%{transform:scale(1.22)}100%{transform:scale(1)}}
+.cgroot .cg-jz-mult.tick{animation:cg-jztick .16s ease-out}
 
 /* panels */
 /* the stage variant widens the page — the 3D scene wants the room */
@@ -339,6 +383,8 @@ body.cg-noscroll{overflow:hidden}
 @media (prefers-reduced-motion:reduce){
   .cgroot .card,.cgroot .card::before,.cgroot .card::after,.cgroot .card .cardart{animation:none!important}
   .cgroot .cg-flash,.cgroot .cg-flash::after{animation:none!important;opacity:0!important}
+  .cgroot .cg-hud-pos.pop,.cgroot .cg-jz-mult.tick{animation:none!important}
+  .cgroot .cg-hud-ovt.on{animation:none!important;opacity:1;transition:opacity .3s}
 }
 
 /* ── mobile polish: bigger touch targets, lighter GPU load ─────────────── */
@@ -361,6 +407,10 @@ body.cg-noscroll{overflow:hidden}
   .cgroot .cg-fsdock .row{gap:6px}
   .cgroot .cg-hud-rank{top:44px;font-size:9.5px;min-width:150px;padding:6px 8px}
   .cgroot .cg-hud-log{top:150px;width:52%;font-size:9.5px}
+  .cgroot .cg-hud-pos{top:44px;left:10px;font-size:23px}
+  .cgroot .cg-hud-ovt{font-size:22px;letter-spacing:3px}
+  .cgroot .cg-jz-card{width:28px;height:40px;font-size:14px}
+  .cgroot .cg-jz-mult{font-size:23px}
 }
 /* touch devices: stop the always-on per-card idle loops (battery/paint). The
    deal-in, selection lift and boost effects still play. */
@@ -480,7 +530,7 @@ body.cg-noscroll{overflow:hidden}
 .cg-results-row.me{outline:1px solid rgba(237,47,57,.55)}
 .crr-place{font-size:19px;text-align:center;color:#93a1b8;font-weight:700}
 .crr-name{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:700;color:#e8edf6;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.crr-name i{width:10px;height:10px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 8px currentColor}
+.crr-name i.crr-shp{font-style:normal;width:14px;font-size:11px;text-align:center;flex:0 0 auto;text-shadow:0 0 8px currentColor}
 .crr-you{font-size:9px;letter-spacing:.12em;background:#ed2f39;color:#fff;border-radius:4px;padding:2px 5px;font-style:normal}
 .crr-rounds{display:flex;gap:4px}
 .crr-rounds u{text-decoration:none;font-size:10.5px;color:#8ee7f2;background:rgba(77,208,225,.12);border:1px solid rgba(77,208,225,.25);border-radius:5px;padding:2px 6px;font-family:ui-monospace,monospace}

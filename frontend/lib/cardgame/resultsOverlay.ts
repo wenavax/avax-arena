@@ -3,9 +3,13 @@
  *  closeRaceResults() in their teardown. Appended into the fullscreen element
  *  when one is active (a fixed overlay outside it would be invisible). */
 
+import { SEAT_SHAPE } from './stageHud';
+
 export interface ResultRow {
   name: string;
   color: string;
+  /** Seat id (P1..P4) → the colour-blind-safe shape mark next to the name. */
+  pid?: string;
   you?: boolean;
   /** per-round points, e.g. [5,3,5] */
   rounds?: number[];
@@ -46,7 +50,7 @@ export function showRaceResults(o: { rows: ResultRow[]; sim?: boolean; note?: st
           ${o.rows.map((r, i) => `
             <div class="cg-results-row${r.you ? ' me' : ''}${i === 0 ? ' first' : ''}">
               <span class="crr-place">${MEDALS[i] ?? i + 1}</span>
-              <span class="crr-name"><i style="background:${r.color}"></i>${esc(r.name)}${r.you ? '<b class="crr-you">YOU</b>' : ''}</span>
+              <span class="crr-name"><i class="crr-shp" style="color:${r.color}">${SEAT_SHAPE[r.pid ?? ''] ?? '●'}</i>${esc(r.name)}${r.you ? '<b class="crr-you">YOU</b>' : ''}</span>
               <span class="crr-rounds">${(r.rounds ?? []).map((p) => `<u>${p}</u>`).join('')}</span>
               <span class="crr-pts">${r.total}<small>pts</small></span>
               <span class="crr-prize">${esc(r.prize)}${o.sim ? '<small>SIM</small>' : ''}</span>

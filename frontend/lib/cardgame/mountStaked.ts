@@ -21,6 +21,7 @@ import { showRaceResults, closeRaceResults } from './resultsOverlay';
 import { createCgSound, soundLabel } from './sound';
 import { attachView3D, type View3D } from './view3d';
 import { attachStageHud, type StageHud } from './stageHud';
+import { comboJuice, cancelComboJuice } from './juice';
 
 export interface StakedOpts {
   seed: string;
@@ -72,8 +73,11 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     </div>`;
   const $ = (c: string) => root.querySelector('.' + c) as HTMLElement;
 
-  // in-stage HUD (chips / mini standings / compact log)
-  const hud: StageHud = attachStageHud($('eng-track3d'));
+  // in-stage HUD (chips / standings+progress / position badge / log);
+  // gaining a place plays the overtake sting + a small camera nudge
+  const hud: StageHud = attachStageHud($('eng-track3d'), {
+    onPosChange: (_pos, up) => { if (up) { sound.overtake(); view3d?.shake(0.05); } },
+  });
   hud.chips.innerHTML = `
     <span class="chip eng-round">ROUND 1/3</span>
     <span class="chip mono">seed ${short(opts.seed)} · server-verified</span>
@@ -85,11 +89,6 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     const el = $('eng-toast'); if (!el) return;
     el.textContent = msg; el.style.opacity = '1';
     if (toastT) clearTimeout(toastT); toastT = setTimeout(() => { el.style.opacity = '0'; }, 2200);
-  }
-  function popup(txt: string, cls: string) {
-    const tk = $('eng-track3d'); if (!tk) return;
-    const el = document.createElement('div'); el.className = 'popup ' + cls; el.textContent = txt;
-    tk.appendChild(el); setTimeout(() => el.remove(), 1400);
   }
   // 3·2·1·GO race countdown over the stage, with beeps. Purely presentational:
   // the engine loop only starts when `go()` fires, so the recorded (round, tick)
@@ -200,8 +199,9 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   function renderBoard(order?: Pid[], final = false) {
     const ranked = order ? order.map((id) => s.players.find((p) => p.id === id)!) : [...s.players].sort((a, b) => b.total - a.total || b.dist - a.dist);
     hud.rank(ranked.map((p, i) => ({
-      name: nameOf(p.id), color: cssv(P_VAR[p.id]) || '#ed2f39', you: p.id === 'P1', fin: p.fin,
+      pid: p.id, name: nameOf(p.id), color: cssv(P_VAR[p.id]) || '#ed2f39', you: p.id === 'P1', fin: p.fin,
       value: final ? `◆ ${payoutStr(i)}` : (p.fin ? `✔ ${p.ft}s · ${p.total}p` : `${Math.round(p.dist)}u · ${p.total}p`),
+      ...(final ? {} : { dist: p.dist, pts: p.total }),
     })));
   }
 
@@ -279,15 +279,22 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     const nmBefore = new Map(s.players.map((p) => [p.id, p.nm]));
     const finBefore = new Map(s.players.map((p) => [p.id, p.fin]));
     const cpBefore = s.players[0].cp.size;
+    // the step consumes the played cards — capture them for the reveal first
+    const playedCards = play ? s.players[0].hand.filter((c) => play.includes(c.id)) : [];
     const played = stepTick(s, play);
     if (played) {
       const label = played.combo || played.kind;
-      popup(`${label} ×${played.mult.toFixed(2)}`, fxClass(played));
-      log(`You played <b>${label}</b> (×${played.mult.toFixed(2)})${played.magic.length ? ' + ' + played.magic.map((m) => m.type).join(', ') : ''}`);
-      (played.abilities ?? []).forEach((txt, i) => {
-        setTimeout(() => popup(txt, 'pop-ab'), 350 + i * 300);
-        log(txt);
+      // Balatro-style sequential reveal: cards pop one-by-one, the multiplier
+      // ticks up per card, then the combo lands with shake/hit-stop by tier
+      comboJuice({
+        host: $('eng-track3d'),
+        cards: playedCards.map((c) => ({ value: c.value, magic: c.magic })),
+        label, mult: played.mult, fxCls: fxClass(played),
+        abilities: played.abilities ?? [], sound,
+        fx: { shake: (m) => view3d?.shake(m), hitstop: (ms) => view3d?.hitstop(ms) },
       });
+      log(`You played <b>${label}</b> (×${played.mult.toFixed(2)})${played.magic.length ? ' + ' + played.magic.map((m) => m.type).join(', ') : ''}`);
+      (played.abilities ?? []).forEach((txt) => log(txt));
     }
     for (const p of s.players) {
       if (p.id !== 'P1' && p.nm && p.nm !== nmBefore.get(p.id)) log(`${nameOf(p.id)} boosts <b>×${p.nm.mult.toFixed(2)}</b>`);
@@ -329,7 +336,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
       rows: ranking.map((id, i) => {
         const p = s.players.find((x) => x.id === id)!;
         return {
-          name: nameOf(id), color: cssv(P_VAR[id]) || '#ed2f39', you: id === 'P1',
+          pid: id, name: nameOf(id), color: cssv(P_VAR[id]) || '#ed2f39', you: id === 'P1',
           rounds: p.scores, total: p.total, prize: `◆ ${payoutStr(i)}`,
         };
       }),
@@ -341,6 +348,7 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   beginRound();
   return () => {
     closeRaceResults();
+    cancelComboJuice();
     if (loopH) clearInterval(loopH);
     if (toastT) clearTimeout(toastT);
     countT.forEach(clearTimeout);

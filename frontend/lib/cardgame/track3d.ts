@@ -24,6 +24,11 @@ export interface Track3D {
   setNames(names: Record<string, string>): void;
   /** Round-driven weather: 0 sunny day · 1 rainstorm · 2 snowy night (mod 3). */
   setWeather(round: number): void;
+  /** Camera impact shake (world units, ~0.05 small / 0.2 big). Render-only. */
+  shake(mag: number): void;
+  /** Freeze the RENDERED frame for a beat (≤120ms) — the "that mattered" hit-stop.
+   *  Logical ticks keep running; cars catch up by lerp. Render-only. */
+  hitstop(ms: number): void;
   resize(): void;
   destroy(): void;
 }
@@ -1620,6 +1625,14 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     }
     camera.position.lerp(desiredPos, Math.min(1, dt * 2.5));
     camera.lookAt(lookAtV);
+    // impact shake: randomized jitter with an eased taper (Vlambeer-style).
+    // Applied after lookAt so it reads as a screen wobble; the lerp above pulls
+    // the camera back to its path, so the jitter can never accumulate drift.
+    if (shakeAmp > 0.001) {
+      camera.position.x += (Math.random() - 0.5) * 2 * shakeAmp;
+      camera.position.y += (Math.random() - 0.5) * 2 * shakeAmp;
+      shakeAmp = Math.max(0, shakeAmp - dt * (shakeAmp * 5 + 0.25));
+    }
   }
 
   // ── snapshot intake (10 Hz) + 60 fps lerp loop ───────────────────────
@@ -1671,9 +1684,16 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
   let raf = 0;
   let last = performance.now();
   let alive = true;
+  // impact feedback (combo hits): decaying camera jitter + brief render freeze.
+  // Both are pure view effects — logical ticks never pause. Disabled entirely
+  // under prefers-reduced-motion (flash/sound carry the feedback instead).
+  const reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let shakeAmp = 0;
+  let freezeUntil = 0;
   const clockTick = () => {
     if (!alive) return;
     const now = performance.now();
+    if (now < freezeUntil) { last = now; composer.render(); raf = requestAnimationFrame(clockTick); return; }
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     for (const rig of rigs.values()) {
@@ -1807,6 +1827,8 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     update,
     setNames(n) { Object.assign(names, n); },
     setWeather(round) { applyWeather(round); },
+    shake(mag) { if (!reducedMotion) shakeAmp = Math.max(shakeAmp, Math.min(mag, 0.35)); },
+    hitstop(ms) { if (!reducedMotion) freezeUntil = performance.now() + Math.min(ms, 120); },
     resize,
     destroy() {
       alive = false;

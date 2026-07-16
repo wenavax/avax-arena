@@ -17,6 +17,7 @@ import { createCgSound, soundLabel } from './sound';
 import { attachView3D, type View3D } from './view3d';
 import { attachStageHud, type StageHud } from './stageHud';
 import { showRaceResults, closeRaceResults } from './resultsOverlay';
+import { comboJuice, cancelComboJuice } from './juice';
 
 type Pid = 'P1' | 'P2' | 'P3' | 'P4';
 interface Seat { pid: Pid; address: string }
@@ -70,9 +71,10 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   const sound = createCgSound();
   let hand: HandCard[] = [];
   let hlim = 0, myCd = 0, myFin = false;
-  // eval of the play we just sent — lets the popup use the full fxClass (incl.
-  // NITRO gold) once the server confirms it in the `applied` map
+  // eval + cards of the play we just sent — lets the confirmed popup use the
+  // full fxClass (incl. NITRO gold) and drives the sequential combo reveal
   let sentEval: PlayEval | null = null;
+  let sentCards: { value: number; magic: string | null }[] = [];
   let toastT: ReturnType<typeof setTimeout> | null = null;
   let view3d: View3D | null = null;
   const handlers: Array<[string, (d: any) => void]> = [];
@@ -92,8 +94,11 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     </div>`;
   const $ = (c: string) => root.querySelector('.' + c) as HTMLElement;
 
-  // in-stage HUD (chips / mini standings / compact log)
-  const hud: StageHud = attachStageHud($('eng-track3d'));
+  // in-stage HUD (chips / standings+progress / position badge / log);
+  // gaining a place plays the overtake sting + a small camera nudge
+  const hud: StageHud = attachStageHud($('eng-track3d'), {
+    onPosChange: (_pos, up) => { if (up) { sound.overtake(); view3d?.shake(0.05); } },
+  });
   hud.chips.innerHTML = `
     <span class="chip eng-round">MULTIPLAYER · WAITING</span>
     <span class="chip mono">4 players · server-authoritative</span>
@@ -106,11 +111,6 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     const el = $('eng-toast'); if (!el) return;
     el.textContent = msg; el.style.opacity = '1';
     if (toastT) clearTimeout(toastT); toastT = setTimeout(() => { el.style.opacity = '0'; }, 2200);
-  }
-  function popup(txt: string, cls: string) {
-    const tk = $('eng-track3d'); if (!tk) return;
-    const el = document.createElement('div'); el.className = 'popup ' + cls; el.textContent = txt;
-    tk.appendChild(el); setTimeout(() => el.remove(), 1400);
   }
   function banner(txt: string) {
     const tk = $('eng-track3d'); if (!tk) return;
@@ -173,9 +173,14 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
         const mine = pid === myPid;
         const label = a.combo || (mine && sentEval ? sentEval.kind : 'BOOST');
         if (mine) {
-          popup(`${label} ×${a.mult.toFixed(2)}`, sentEval ? fxClass(sentEval) : tierFx(a.combo, a.mult));
-          sentEval = null;
-          (a.abilities ?? []).forEach((txt, i) => setTimeout(() => popup(txt, 'pop-ab'), 350 + i * 300));
+          // Balatro-style sequential reveal of the cards we sent (server-confirmed)
+          comboJuice({
+            host: $('eng-track3d'), cards: sentCards,
+            label, mult: a.mult, fxCls: sentEval ? fxClass(sentEval) : tierFx(a.combo, a.mult),
+            abilities: a.abilities ?? [], sound,
+            fx: { shake: (m) => view3d?.shake(m), hitstop: (ms) => view3d?.hitstop(ms) },
+          });
+          sentEval = null; sentCards = [];
         }
         log(`${mine ? 'You' : nameOf(pid)} played <b>${label}</b> (×${a.mult.toFixed(2)})`);
         (a.abilities ?? []).forEach((txt) => log(mine ? txt : `${nameOf(pid)}: ${txt}`));
@@ -199,7 +204,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     renderHand();
   });
 
-  on('cardgame:rejected', () => { note('Illegal play — ignored.'); log('Play rejected by the server — ignored'); sentEval = null; });
+  on('cardgame:rejected', () => { note('Illegal play — ignored.'); log('Play rejected by the server — ignored'); sentEval = null; sentCards = []; });
   on('cardgame:seat-dropped', (d: { pid: Pid }) => { note(`${nameOf(d.pid)} dropped — bot takes over if they don’t return.`); log(`${nameOf(d.pid)} <b>dropped</b>`); });
   on('cardgame:seat-rejoined', (d: { pid: Pid; bot?: boolean }) => { note(`${nameOf(d.pid)} is back.`); log(`${nameOf(d.pid)} <b>reconnected</b>`); });
   on('cardgame:seat-botted', (d: { pid: Pid }) => { note(`${nameOf(d.pid)} is now bot-controlled.`); log(`${nameOf(d.pid)} is now <b>bot-controlled</b> 🤖`); });
@@ -220,7 +225,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     if (d.ranking[0] === myPid) sound.victory();
     ($('eng-round')).textContent = 'MATCH OVER';
     hud.rank(d.ranking.map((pid, i) => ({
-      name: nameOf(pid), color: cssv(P_VAR[pid]) || '#ed2f39', you: pid === myPid, fin: true,
+      pid, name: nameOf(pid), color: cssv(P_VAR[pid]) || '#ed2f39', you: pid === myPid, fin: true,
       value: `◆ ${payoutStr(i)}`,
     })));
     toast(`🏆 ${nameOf(d.ranking[0])} wins the match!`);
@@ -228,7 +233,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     note('Settling on-chain…');
     showRaceResults({
       rows: d.ranking.map((pid, i) => ({
-        name: nameOf(pid), color: cssv(P_VAR[pid]) || '#ed2f39', you: pid === myPid,
+        pid, name: nameOf(pid), color: cssv(P_VAR[pid]) || '#ed2f39', you: pid === myPid,
         total: d.totals[pid] ?? 0, prize: `◆ ${payoutStr(i)}`,
       })),
       note: 'Settling on-chain — withdraw your payout from the panel below',
@@ -251,9 +256,10 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   function renderBoard(players: StatePlayer[]) {
     const ranked = [...players].sort((a, b) => b.total - a.total || b.dist - a.dist);
     hud.rank(ranked.map((p) => ({
-      name: nameOf(p.pid, p.address) + (p.bot ? ' 🤖' : ''), color: cssv(P_VAR[p.pid]) || '#888',
+      pid: p.pid, name: nameOf(p.pid, p.address) + (p.bot ? ' 🤖' : ''), color: cssv(P_VAR[p.pid]) || '#888',
       you: p.pid === myPid, fin: p.fin,
       value: p.fin ? `✔ ${p.ft}s · ${p.total}p` : `${Math.round(p.dist)}u · ${p.total}p`,
+      ...(p.fin ? {} : { dist: p.dist, pts: p.total }),
     })));
   }
 
@@ -302,7 +308,10 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     if (myCd > 0 || selected.size === 0 || myFin) return;
     const cardIds = [...selected];
     // remember what we sent so the confirmed popup can colour by full fxClass
-    sentEval = evaluate(hand.filter((c) => selected.has(c.id)));
+    // and the sequential reveal can show the actual cards
+    const sent = hand.filter((c) => selected.has(c.id));
+    sentEval = evaluate(sent);
+    sentCards = sent.map((c) => ({ value: c.value, magic: c.magic }));
     opts.socket.emit('cardgame:play', { cardIds });
     selected.clear(); bestNote = ''; renderHand();
   };
@@ -349,6 +358,7 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
   // ── cleanup ─────────────────────────────────────────────────────────
   return () => {
     closeRaceResults();
+    cancelComboJuice();
     for (const [event, cb] of handlers) opts.socket.off?.(event, cb);
     document.removeEventListener('keydown', onKey);
     view3d?.destroy(); view3d = null;
