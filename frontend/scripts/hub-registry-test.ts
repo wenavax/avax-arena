@@ -1,4 +1,4 @@
-import { HUB_GAMES } from '/Users/hts_bot/avax-arena/frontend/lib/game/hub/hubGames';
+import { HUB_GAMES } from '../lib/game/hub/hubGames';
 
 let fails = 0;
 const ok = (c: boolean, m: string) => { console.log(c ? `  ✓ ${m}` : `  ✗ ${m}`); if (!c) fails++; };
