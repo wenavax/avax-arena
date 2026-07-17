@@ -23,7 +23,8 @@ const nextConfig = {
       source: "/(.*)",
       headers: [
         { key: "X-Content-Type-Options", value: "nosniff" },
-        { key: "X-Frame-Options", value: "DENY" },
+        // SAMEORIGIN: World Hub overlay'i oyunları same-origin iframe'de açar; DENY kendi iframe'lerimizi de engelliyordu (üçüncü taraf framing hâlâ engelli)
+        { key: "X-Frame-Options", value: "SAMEORIGIN" },
         { key: "X-XSS-Protection", value: "0" },
         { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         {

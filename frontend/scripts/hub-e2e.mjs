@@ -55,6 +55,20 @@ for (const d of doors) {
   const src = await page.getAttribute('[data-testid="hub-overlay"] iframe', 'src');
   ok(src.startsWith('/avalanche') && src.includes('embed=1'), `${d.id}: overlay açıldı, src=${src}`);
   await page.waitForTimeout(400);
+  const fr = page.frames().find(f => f.url().includes('embed=1'));
+  let rendered = false;
+  try {
+    if (fr) {
+      // state:'attached' — 'visible' (default) script/style gibi görünmez DOM
+      // düğümlerine takılıp yanlış-negatif timeout veriyordu (içerik gerçekte render olmuş olsa da).
+      await fr.waitForSelector('body *', { state: 'attached', timeout: 15000 });
+      // Overlay kapanış/başka bir kapı geçişiyle frame yeniden navigate/detach olabilir;
+      // waitForSelector sonrası taze referansla oku.
+      const fr2 = page.frames().find(f => f.url().includes('embed=1')) || fr;
+      rendered = await fr2.evaluate(() => document.body.children.length > 0 && document.body.innerText.length > 0);
+    }
+  } catch { /* rendered kalır false */ }
+  ok(rendered, `${d.id}: iframe içerik render`);
   const paused = await page.evaluate(() => window.__frostbiteGame.scene.getScene('Town').scene.isPaused());
   ok(paused, `${d.id}: sahne pause`);
   await page.click('[data-testid="hub-close"]');
@@ -66,10 +80,7 @@ for (const d of doors) {
   ok(resumed, `${d.id}: kapatınca resume + unfreeze`);
 }
 
-// X-Frame-Options gürültüsü Privy'nin embedded-wallet iframe'inin KENDİ alt-çerçevesinden
-// gelir (about:blank alt-frame, ana sayfa/overlay etkilenmez — debug ile doğrulandı);
-// gerçek bir regresyon değil.
-const real = errs.filter(e => !/net::ERR|Failed to fetch|walletconnect|favicon|status of 40|X-Frame-Options/i.test(e));
+const real = errs.filter(e => !/net::ERR|Failed to fetch|walletconnect|favicon|status of 40/i.test(e));
 ok(real.length === 0, `konsol hatasız (${real.length})`);
 real.slice(0, 5).forEach(e => console.log('   ', e.slice(0, 160)));
 await browser.close();
