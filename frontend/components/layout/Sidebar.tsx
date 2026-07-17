@@ -349,7 +349,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="hidden lg:flex sticky top-0 z-40 w-[16.5rem] flex-shrink-0 h-screen flex-col bg-[rgb(var(--frost-bg))]/95 backdrop-blur-sm border-r border-white/[0.04]">
+    <aside data-chrome="" className="hidden lg:flex sticky top-0 z-40 w-[16.5rem] flex-shrink-0 h-screen flex-col bg-[rgb(var(--frost-bg))]/95 backdrop-blur-sm border-r border-white/[0.04]">
       {/* Logo area */}
       <Link href="/" className="flex items-center gap-3.5 px-5 h-[4.5rem] group flex-shrink-0 border-b border-white/[0.04]">
         <div className="relative flex h-11 w-11 items-center justify-center rounded-xl overflow-hidden ring-1 ring-white/[0.08] shadow-[0_0_15px_rgba(255,32,32,0.1)] group-hover:shadow-[0_0_20px_rgba(255,32,32,0.2)] transition-shadow">
@@ -432,7 +432,7 @@ export function MobileTopBar() {
   return (
     <>
       {/* Top bar */}
-      <header className="lg:hidden sticky top-0 z-50 flex items-center justify-between h-14 px-4 bg-[rgb(var(--frost-bg))]/95 backdrop-blur-xl border-b border-white/[0.04]">
+      <header data-chrome="" className="lg:hidden sticky top-0 z-50 flex items-center justify-between h-14 px-4 bg-[rgb(var(--frost-bg))]/95 backdrop-blur-xl border-b border-white/[0.04]">
         <Link href="/" className="flex items-center gap-2">
           <Image src="/avalanche/logo.png" alt="Frostbite" width={30} height={30} className="rounded-lg" priority />
           <span className="font-display text-base font-bold tracking-wide">
@@ -463,6 +463,7 @@ export function MobileTopBar() {
 
       {/* Slide-in drawer */}
       <div
+        data-chrome=""
         className={cn(
           'lg:hidden fixed inset-y-0 left-0 z-[60] w-72 max-w-[85vw] flex flex-col bg-[rgb(var(--frost-bg))] border-r border-white/[0.04] transition-transform duration-300 ease-in-out',
           open ? 'translate-x-0' : '-translate-x-full'

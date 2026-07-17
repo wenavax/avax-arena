@@ -1080,3 +1080,7 @@ body {
   -webkit-background-clip: text;
   background-clip: text;
 }
+
+/* ── World Hub embed modu: iframe içinde site kromu gizlenir ── */
+body.embed [data-chrome] { display: none !important; }
+body.embed main { padding: 0 !important; }

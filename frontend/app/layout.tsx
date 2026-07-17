@@ -7,6 +7,7 @@ import { Sidebar, MobileTopBar } from '@/components/layout/Sidebar';
 import { Footer } from '@/components/layout/Footer';
 import { ActivityTicker } from '@/components/layout/ActivityTicker';
 import { ChainGuard } from '@/components/ChainGuard';
+import { EmbedMode } from '@/components/EmbedMode';
 import dynamic from 'next/dynamic';
 
 const MusicPlayer = dynamic(
@@ -157,6 +158,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} ${silkscreen.variable} ${anton.variable}`} suppressHydrationWarning>
       <body className="font-sans antialiased min-h-screen">
+        <EmbedMode />
         {/* Pre-hydration: resolve collapsed-feed width before first paint (no margin slide) */}
         <script
           dangerouslySetInnerHTML={{
