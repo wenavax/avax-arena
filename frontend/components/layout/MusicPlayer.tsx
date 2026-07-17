@@ -94,7 +94,7 @@ export function MusicPlayer() {
   }, [currentTrack, isPlaying]);
 
   return (
-    <div className="fixed bottom-4 left-4 z-50 hidden lg:flex items-center gap-1">
+    <div data-chrome="" className="fixed bottom-4 left-4 z-50 hidden lg:flex items-center gap-1">
       <motion.div
         className="flex items-center gap-1 bg-[rgb(var(--frost-bg))]/90 backdrop-blur-md border border-white/[0.08] rounded-xl px-2 py-1.5 shadow-lg"
         initial={{ opacity: 0, y: 20 }}

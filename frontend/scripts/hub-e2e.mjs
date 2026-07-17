@@ -1,7 +1,16 @@
 // frontend/scripts/hub-e2e.mjs
-// Harness rotasında: her hub kapısı için interact'i tetikle → overlay doğru
-// iframe src ile açılır, sahne pause → ✕ → resume. VP=WxH ile viewport seçilir.
+// Her hub kapısı için interact'i tetikle → overlay doğru iframe src ile açılır
+// + içerik render olur, sahne pause → ✕ → resume. VP=WxH ile viewport seçilir.
 // Kullanım: node scripts/hub-e2e.mjs [baseUrl]   (default http://localhost:3000)
+//
+// NOT: /avalanche/world/hub-test harness rotası gerekir; ship öncesi bilinçli
+// silindi (login-gate bypass'ı prod'da durmasın). Regresyon koşusu için geçici
+// geri ekle — app/world/hub-test/page.tsx:
+//   'use client';
+//   import nextDynamic from 'next/dynamic';
+//   import { GameOverlay } from '@/components/game/GameOverlay';
+//   const PhaserGame = nextDynamic(() => import('@/lib/game/PhaserGame').then(m => m.PhaserGame), { ssr: false });
+//   export default function HubTestPage() { return (<><PhaserGame /><GameOverlay /></>); }
 import { chromium } from 'file:///Users/hts_bot/.npm/_npx/e41f203b7505f1fb/node_modules/playwright/index.mjs';
 
 const BASE = process.argv[2] || 'http://localhost:3000';
