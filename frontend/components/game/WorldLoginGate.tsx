@@ -6,6 +6,7 @@ import { useReadContract, useReadContracts } from 'wagmi';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import GameStageBanner from '@/components/GameStageBanner';
+import { GameOverlay } from '@/components/game/GameOverlay';
 import { HERO_CONTRACT, HERO_ABI, ITEM_CONTRACT, ITEM_ABI } from '@/lib/game/nft/contracts';
 
 declare global {
@@ -273,7 +274,12 @@ export function WorldLoginGate() {
   }, [heroReady]);
 
   if (enterGame) {
-    return <PhaserGame />;
+    return (
+      <>
+        <PhaserGame />
+        <GameOverlay />
+      </>
+    );
   }
 
   if (!ready) {
