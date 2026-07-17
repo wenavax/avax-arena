@@ -22,6 +22,7 @@ export function GameOverlay() {
         setLoaded(false); setFailed(false);
         return g;
       });
+      window.dispatchEvent(new CustomEvent('hub-overlay-opened'));
     };
     window.addEventListener('hub-open-game', onOpen);
     return () => window.removeEventListener('hub-open-game', onOpen);

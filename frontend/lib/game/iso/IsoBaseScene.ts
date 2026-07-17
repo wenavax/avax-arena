@@ -10,6 +10,7 @@ import { mp } from '../multiplayer/socket';
 import { RemotePlayer, RemotePlayerData } from '../multiplayer/RemotePlayer';
 import { music, ZoneMusic } from '../musicSystem';
 import { generateHeroTraits, drawHero, ELEMENTS, type DrawHeroOptions } from '../nft/heroGenerator';
+import { HUB_INTERACT_PREFIX } from '../hub/hubGames';
 
 // ---------------------------------------------------------------------------
 // Direction helpers
@@ -1507,8 +1508,8 @@ export class IsoBaseScene extends Phaser.Scene {
   // hub_ kapıları tüm zone'larda ortak işlenir; kalan her şey alt sınıfın
   // onInteract switch'ine gider
   private dispatchInteract(tile: ZoneTile, tx: number, ty: number): void {
-    if (tile.interact?.startsWith('hub_')) {
-      this.openHubGame(tile.interact.slice(4));
+    if (tile.interact?.startsWith(HUB_INTERACT_PREFIX)) {
+      this.openHubGame(tile.interact.slice(HUB_INTERACT_PREFIX.length));
       return;
     }
     this.onInteract(tile, tx, ty);
@@ -1535,22 +1536,43 @@ export class IsoBaseScene extends Phaser.Scene {
   }
 
   // ── World Hub: oyun binası kapısı — React overlay'ini açar ──
-  // Sahne duraklar (render+update), müzik durur; overlay kapanınca
-  // 'hub-overlay-closed' ile kaldığı yerden devam eder. MP socket'e
-  // dokunulmaz (presence düşmez; paused sahne update işlemez zaten).
+  // Sahne duraklar (update durur, render sürer), müzik durur; overlay
+  // kapanınca 'hub-overlay-closed' ile kaldığı yerden devam eder. MP
+  // socket'e dokunulmaz (presence düşmez; paused sahne update işlemez zaten).
   protected openHubGame(gameId: string): void {
     this.freeze();
     music.stop();
+    let acked = false;
+    const onAck = () => { acked = true; };
+    window.addEventListener('hub-overlay-opened', onAck, { once: true });
     window.dispatchEvent(new CustomEvent('hub-open-game', { detail: { gameId } }));
     const onClosed = () => {
       window.removeEventListener('hub-overlay-closed', onClosed);
+      clearTimeout(rollbackTimer);
       this.scene.resume();
       music.play(this.zoneMusicKey);
       this.unfreeze();
     };
     window.addEventListener('hub-overlay-closed', onClosed);
-    this.events.once('shutdown', () => window.removeEventListener('hub-overlay-closed', onClosed));
-    // pause'u ertele: dispatch + freeze görselleri otursun
+    this.events.once('shutdown', () => {
+      window.removeEventListener('hub-overlay-closed', onClosed);
+      window.removeEventListener('hub-overlay-opened', onAck);
+      clearTimeout(rollbackTimer);
+    });
+    // Overlay ack'lemezse (GameOverlay mount değilse) donmayı geri al —
+    // aksi hâlde sahne kalıcı kilitlenirdi (sadece sayfa yenileme kurtarır).
+    // window.setTimeout kullanılıyor: this.time (sahne Clock'u) scene.pause()
+    // ile birlikte durur, bu yüzden Phaser'ın kendi delayedCall'ı hiç ateşlemez.
+    const rollbackTimer = window.setTimeout(() => {
+      if (acked) return;
+      window.removeEventListener('hub-overlay-closed', onClosed);
+      window.removeEventListener('hub-overlay-opened', onAck);
+      if (this.scene.isPaused()) this.scene.resume();
+      music.play(this.zoneMusicKey);
+      this.unfreeze();
+    }, 1500);
+    // pause'u ertele: dispatch + freeze görselleri otursun (not: pause update'i
+    // durdurur, render sürer — overlay opak olduğundan sorun değil)
     this.time.delayedCall(50, () => { if (this.frozen) this.scene.pause(); });
   }
 

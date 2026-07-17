@@ -134,6 +134,10 @@ export class RemotePlayer {
     const h = getTileHeight(tx, ty);
     const pos = toScreen(tx, ty, h);
 
+    // overlay/pause sırasında biriken hareket tween'leri resume'da üst üste
+    // patlıyordu; ayrıca normal teleport catch-up'ı da düzeltir
+    this.scene.tweens.killTweensOf(this.container);
+
     this.scene.tweens.add({
       targets: this.container,
       x: pos.x,
