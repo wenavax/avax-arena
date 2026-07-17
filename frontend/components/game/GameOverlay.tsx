@@ -16,7 +16,12 @@ export function GameOverlay() {
     const onOpen = (e: Event) => {
       const id = (e as CustomEvent).detail?.gameId as string;
       const g = HUB_GAMES.find(x => x.id === id);
-      if (g) { setGame(g); setLoaded(false); setFailed(false); }
+      if (!g) return;
+      setGame(prev => {
+        if (prev?.id === g.id) return prev; // zaten açık — watchdog'u yeniden kurma
+        setLoaded(false); setFailed(false);
+        return g;
+      });
     };
     window.addEventListener('hub-open-game', onOpen);
     return () => window.removeEventListener('hub-open-game', onOpen);
@@ -38,7 +43,7 @@ export function GameOverlay() {
   const src = `/avalanche${game.url}${game.url.includes('?') ? '&' : '?'}embed=1`;
 
   return (
-    <div data-testid="hub-overlay" style={{
+    <div data-testid="hub-overlay" role="dialog" aria-modal="true" style={{
       position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(4,8,16,.96)',
       display: 'flex', flexDirection: 'column',
       paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)',
@@ -60,14 +65,14 @@ export function GameOverlay() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: '#8899aa', fontFamily: 'monospace' }}>
           <span>Game failed to load.</span>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={() => { setFailed(false); setLoaded(false); setGame({ ...game }); }}
+            <button onClick={() => { setFailed(false); setLoaded(false); }}
               style={{ background: game.accent, color: '#000', border: 0, borderRadius: 8, padding: '10px 18px', fontWeight: 700, cursor: 'pointer' }}>RETRY</button>
             <a href={src} target="_blank" rel="noreferrer"
               style={{ color: '#4dd0e1', alignSelf: 'center' }}>Open as page →</a>
           </div>
         </div>
       ) : (
-        <iframe src={src} onLoad={() => setLoaded(true)} allow="clipboard-write"
+        <iframe src={src} title={game.name} onLoad={() => setLoaded(true)} allow="clipboard-write; fullscreen"
           style={{ flex: 1, width: '100%', border: 0, background: '#0a0e1a' }} />
       )}
     </div>
