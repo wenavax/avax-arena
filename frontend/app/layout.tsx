@@ -157,12 +157,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} ${silkscreen.variable} ${anton.variable}`} suppressHydrationWarning>
-      <body className="font-sans antialiased min-h-screen">
+      <body className="font-sans antialiased min-h-screen" suppressHydrationWarning>
         <EmbedMode />
         {/* Pre-hydration: resolve collapsed-feed width before first paint (no margin slide) */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var c=localStorage.getItem('frostbite_feed_collapsed')==='1';document.documentElement.style.setProperty('--feed-w',c?'48px':'280px');}catch(e){}})();`,
+            __html: `(function(){try{var c=localStorage.getItem('frostbite_feed_collapsed')==='1';document.documentElement.style.setProperty('--feed-w',c?'48px':'280px');}catch(e){}if(location.search.indexOf('embed=1')>-1)document.body.classList.add('embed');})();`,
           }}
         />
         <script
@@ -180,10 +180,10 @@ export default function RootLayout({
             {/* App shell: sidebar + main + activity ticker */}
             <div className="mx-auto max-w-[1560px] w-full flex min-h-screen relative">
               <Sidebar />
-              <div className="flex-1 min-w-0 flex flex-col min-h-screen xl:[margin-right:var(--feed-w,280px)] transition-[margin] duration-300">
+              <div data-content-wrap="" className="flex-1 min-w-0 flex flex-col min-h-screen xl:[margin-right:var(--feed-w,280px)] transition-[margin] duration-300">
                 <MobileTopBar />
                 <ChainGuard />
-                <main className="relative flex-1 pb-4 px-3 sm:px-6 lg:px-8">{children}</main>
+                <main data-app-main="" className="relative flex-1 pb-4 px-3 sm:px-6 lg:px-8">{children}</main>
                 <Footer />
               </div>
               <ActivityTicker />

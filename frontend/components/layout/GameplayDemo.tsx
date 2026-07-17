@@ -26,6 +26,7 @@ export function GameplayDemo() {
   if (!open) {
     return visible ? (
       <button
+        data-chrome=""
         onClick={() => setOpen(true)}
         className="fixed bottom-20 right-4 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-frost-red/90 hover:bg-frost-red text-white text-[10px] font-pixel uppercase tracking-wider shadow-[0_0_20px_rgba(232,65,66,0.3)] hover:shadow-[0_0_30px_rgba(232,65,66,0.5)] transition-all animate-bounce-slow border border-frost-red/50"
         style={{ animationDuration: '3s' }}
@@ -39,6 +40,7 @@ export function GameplayDemo() {
   // Opened demo window
   return (
     <div
+      data-chrome=""
       className={`fixed z-50 transition-all duration-300 shadow-2xl shadow-black/50 ${
         minimized
           ? 'bottom-4 right-4 w-48 h-10'

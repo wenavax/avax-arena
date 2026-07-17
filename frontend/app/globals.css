@@ -1083,4 +1083,5 @@ body {
 
 /* ── World Hub embed modu: iframe içinde site kromu gizlenir ── */
 body.embed [data-chrome] { display: none !important; }
-body.embed main { padding: 0 !important; }
+body.embed main[data-app-main] { padding: 0 !important; }
+body.embed [data-content-wrap] { margin-right: 0 !important; }

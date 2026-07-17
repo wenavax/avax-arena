@@ -83,7 +83,7 @@ export function ActivityTicker() {
   /* ---- Collapsed: thin vertical strip with a re-open control ---- */
   if (collapsed) {
     return (
-      <div className="hidden xl:flex fixed right-0 top-0 bottom-0 w-12 z-30 flex-col items-center border-l border-white/[0.05] bg-[rgb(var(--frost-bg))]/90 backdrop-blur-sm">
+      <div data-chrome="" className="hidden xl:flex fixed right-0 top-0 bottom-0 w-12 z-30 flex-col items-center border-l border-white/[0.05] bg-[rgb(var(--frost-bg))]/90 backdrop-blur-sm">
         <button
           onClick={toggle}
           aria-label="Show live activity"
@@ -110,7 +110,7 @@ export function ActivityTicker() {
 
   /* ---- Expanded: compact feed ---- */
   return (
-    <div className="hidden xl:flex fixed right-0 top-0 bottom-0 w-[280px] z-30 flex-col border-l border-white/[0.05] bg-[rgb(var(--frost-bg))]/90 backdrop-blur-sm">
+    <div data-chrome="" className="hidden xl:flex fixed right-0 top-0 bottom-0 w-[280px] z-30 flex-col border-l border-white/[0.05] bg-[rgb(var(--frost-bg))]/90 backdrop-blur-sm">
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-11 border-b border-white/[0.05] flex-shrink-0">
         <div className="flex items-center gap-2">

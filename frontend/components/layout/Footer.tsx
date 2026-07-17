@@ -9,7 +9,7 @@ const SOCIAL_LINKS = [
 
 export function Footer() {
   return (
-    <footer className="relative mt-auto border-t border-transparent">
+    <footer data-chrome="" className="relative mt-auto border-t border-transparent">
       {/* Gradient top border */}
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-frost-primary/40 to-transparent" />
 
