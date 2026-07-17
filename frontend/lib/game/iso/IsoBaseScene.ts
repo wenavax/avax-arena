@@ -75,6 +75,7 @@ export class IsoBaseScene extends Phaser.Scene {
   private interactKey!: Phaser.Input.Keyboard.Key;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   protected frozen: boolean = false;
+  protected zoneMusicKey: ZoneMusic = 'town';
 
   // Animated character rendering
   private playerBodyGfx!: Phaser.GameObjects.Graphics;
@@ -212,6 +213,7 @@ export class IsoBaseScene extends Phaser.Scene {
       VoidRealm: 'dungeon', Forge: 'volcano', Eternal: 'dungeon',
     };
     const zoneMusic = musicMap[this.scene.key] || 'town';
+    this.zoneMusicKey = zoneMusic;
     music.play(zoneMusic);
 
     // HP regen: +1 HP every 3 seconds (out of combat)
@@ -1309,7 +1311,7 @@ export class IsoBaseScene extends Phaser.Scene {
       if (this.inBounds(this.playerTx, this.playerTy)) {
         const standTile = this.tiles[this.playerTy][this.playerTx];
         if (standTile.interact && !standTile.interact.startsWith('exit_')) {
-          this.onInteract(standTile, this.playerTx, this.playerTy);
+          this.dispatchInteract(standTile, this.playerTx, this.playerTy);
           return;
         }
       }
@@ -1324,7 +1326,7 @@ export class IsoBaseScene extends Phaser.Scene {
         if (this.inBounds(ntx, nty)) {
           const tile = this.tiles[nty][ntx];
           if (tile.interact && !tile.interact.startsWith('exit_')) {
-            this.onInteract(tile, ntx, nty);
+            this.dispatchInteract(tile, ntx, nty);
             return;
           }
         }
@@ -1502,6 +1504,16 @@ export class IsoBaseScene extends Phaser.Scene {
     // Subclass handles specific interactions
   }
 
+  // hub_ kapıları tüm zone'larda ortak işlenir; kalan her şey alt sınıfın
+  // onInteract switch'ine gider
+  private dispatchInteract(tile: ZoneTile, tx: number, ty: number): void {
+    if (tile.interact?.startsWith('hub_')) {
+      this.openHubGame(tile.interact.slice(4));
+      return;
+    }
+    this.onInteract(tile, tx, ty);
+  }
+
   // -----------------------------------------------------------------------
   // Run an action once the current dialog closes (frozen → false).
   // Single-slot: a second E in the gap between dialog close and the poll used
@@ -1520,6 +1532,26 @@ export class IsoBaseScene extends Phaser.Scene {
       }
     };
     this.time.delayedCall(delayMs, poll);
+  }
+
+  // ── World Hub: oyun binası kapısı — React overlay'ini açar ──
+  // Sahne duraklar (render+update), müzik durur; overlay kapanınca
+  // 'hub-overlay-closed' ile kaldığı yerden devam eder. MP socket'e
+  // dokunulmaz (presence düşmez; paused sahne update işlemez zaten).
+  protected openHubGame(gameId: string): void {
+    this.freeze();
+    music.stop();
+    window.dispatchEvent(new CustomEvent('hub-open-game', { detail: { gameId } }));
+    const onClosed = () => {
+      window.removeEventListener('hub-overlay-closed', onClosed);
+      this.scene.resume();
+      music.play(this.zoneMusicKey);
+      this.unfreeze();
+    };
+    window.addEventListener('hub-overlay-closed', onClosed);
+    this.events.once('shutdown', () => window.removeEventListener('hub-overlay-closed', onClosed));
+    // pause'u ertele: dispatch + freeze görselleri otursun
+    this.time.delayedCall(50, () => { if (this.frozen) this.scene.pause(); });
   }
 
   // -----------------------------------------------------------------------
