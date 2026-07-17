@@ -2681,7 +2681,7 @@ export class IsoBaseScene extends Phaser.Scene {
       if (this.inBounds(this.playerTx, this.playerTy)) {
         const standTile = this.tiles[this.playerTy][this.playerTx];
         if (standTile.interact && !standTile.interact.startsWith('exit_')) {
-          this.onInteract(standTile, this.playerTx, this.playerTy);
+          this.dispatchInteract(standTile, this.playerTx, this.playerTy);
           return;
         }
       }
@@ -2695,7 +2695,7 @@ export class IsoBaseScene extends Phaser.Scene {
         if (this.inBounds(ntx, nty)) {
           const tile = this.tiles[nty][ntx];
           if (tile.interact && !tile.interact.startsWith('exit_')) {
-            this.onInteract(tile, ntx, nty);
+            this.dispatchInteract(tile, ntx, nty);
             return;
           }
         }
