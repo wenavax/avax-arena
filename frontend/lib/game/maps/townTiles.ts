@@ -473,9 +473,17 @@ export function buildTownTiles(): ZoneTile[][] {
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
         if (r < 0 || r >= ROWS || c < 0 || c >= COLS) continue;
-        if (tiles[r][c].interact || tiles[r][c].data) continue;
+        if (tiles[r][c].interact) continue; // interact taşıyan tile'a asla dokunma (npc/kapı/exit)
         const isWall = r === r0 || r === r1 || c === c0 || c === c1;
-        tiles[r][c] = tile(isWall ? 'wall' : g.roof, isWall ? 4 : 5, true);
+        if (isWall) {
+          // Duvar halkası: düz dekor (interact'sız data) ezilir — yoksa duvar delik bırakır
+          // ve oyuncu çatı altına yürüyebilir (Task 5 code-review bulgusu).
+          tiles[r][c] = tile('wall', 4, true);
+        } else {
+          // İç mekan: dekor varsa atla (çatının altından dekor sızması kozmetik, zararsız).
+          if (tiles[r][c].data) continue;
+          tiles[r][c] = tile(g.roof, 5, true);
+        }
       }
     }
     tiles[r1][g.door.tx] = tile('wood', 2, false, { interact: `${HUB_INTERACT_PREFIX}${g.id}` });
