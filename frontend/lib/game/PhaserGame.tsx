@@ -66,6 +66,8 @@ export function PhaserGame() {
 
       // Store game instance globally for sceneLoader
       (window as any).__phaserGame = game;
+      // World Hub test harness / external tooling handle
+      (window as unknown as Record<string, unknown>).__frostbiteGame = game;
 
       // Preload town bundle after game init (player will likely go to town first)
       import('./sceneLoader').then(({ loadTownBundle }) => {
@@ -79,6 +81,7 @@ export function PhaserGame() {
       gameRef.current = null;
       (window as any).__phaserGame = undefined;
       (window as any).__Phaser = undefined;
+      delete (window as unknown as Record<string, unknown>).__frostbiteGame;
       // The music singleton runs on WebAudio intervals outside Phaser's lifecycle —
       // without this, zone music keeps playing after navigating away from /world.
       import('./musicSystem').then(({ music }) => music.stop()).catch(() => {});
