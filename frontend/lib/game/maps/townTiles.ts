@@ -492,5 +492,26 @@ export function buildTownTiles(): ZoneTile[][] {
     }
   }
 
+  // İkinci geçiş: tema dekoru — TÜM hub binaları (duvar/çatı/kapı) inşa edildikten SONRA
+  // uygulanır. Binalar birbirine yakın olduğunda (ör. battleroyale/adventures veya
+  // swap/marketplace bitişik) bir sonraki binanın duvar geçişi önceki binanın dekorunu
+  // sessizce ezebiliyordu (data alanı wall tile() çağrısında sıfırlanıyor) — bu yüzden
+  // dekor artık ayrı bir geçişte, tüm bina geometrisi sabitlendikten sonra yazılıyor.
+  for (const g of HUB_GAMES) {
+    if (!g.decor) continue;
+    const { r1 } = buildingRect(g);
+    for (const d of g.decor) {
+      const dr = r1 + d.dy;
+      const dc = g.door.tx + d.dx;
+      if (dr < 0 || dr >= ROWS || dc < 0 || dc >= COLS) continue;
+      if (dr === r1 && dc === g.door.tx) continue; // kapı tile'ı
+      if (dr === r1 + 1 && dc === g.door.tx) continue; // kapı önü apron
+      const t = tiles[dr][dc];
+      if (t.interact) continue; // interact taşıyan tile'a asla dokunma
+      if (t.data) continue; // mevcut dekor/veri korunur (başka hub binasının dekoru dahil)
+      tiles[dr][dc] = { ...t, data: { deco: d.type } };
+    }
+  }
+
   return tiles;
 }

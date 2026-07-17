@@ -6,6 +6,7 @@ import { trackZoneVisit } from '../dailyQuests';
 import { isTutorialDone, markTutorialDone, getTutorialSteps } from '../tutorial';
 import { buildTownTiles } from '../maps/townTiles';
 import { HUB_GAMES } from '../hub/hubGames';
+import { GAME_WIDTH, GAME_HEIGHT } from '../config';
 
 // ---------------------------------------------------------------------------
 // NPC idle chat lines
@@ -59,13 +60,45 @@ export class IsoTownScene extends IsoBaseScene {
     this.addNpcAt(6, 9, 'Elder Frost', 0xffdd44);
     this.addNpcAt(25, 9, 'Merchant Bjorn', 0xddaa44);
 
-    // Hub bina tabelaları — kapının üstünde oyun adı
+    // Hub bina tabelaları — kapının üstünde küçük panel (koyu zemin + accent çerçeve + glow nabzı)
     for (const g of HUB_GAMES) {
       const pos = toScreen(g.door.tx, g.door.ty, 6);
-      this.add.text(pos.x, pos.y - 8, `${g.icon} ${g.name}`, {
-        fontSize: '9px', fontFamily: 'monospace', color: '#7fe3f5',
-        stroke: '#000000', strokeThickness: 3,
-      }).setOrigin(0.5).setDepth((g.door.tx + g.door.ty) * 10 + g.door.ty + 9);
+      const depth = (g.door.tx + g.door.ty) * 10 + g.door.ty + 9;
+      const accent = Phaser.Display.Color.HexStringToColor(g.accent).color;
+
+      const label = `${g.icon} ${g.name}`;
+      const text = this.add.text(0, 0, label, {
+        fontSize: '9px', fontFamily: 'monospace', color: '#f4f7fa',
+        stroke: '#000000', strokeThickness: 2,
+      }).setOrigin(0.5);
+
+      const panelW = Math.max(text.width + 12, 40);
+      const panelH = text.height + 8;
+
+      // Panel background — dark rounded rect
+      const bg = this.add.graphics();
+      bg.fillStyle(0x0d1420, 0.92);
+      bg.fillRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 4);
+      bg.lineStyle(1.5, accent, 0.95);
+      bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 4);
+
+      // Outer glow ring — pulsed for a subtle "neon sign" feel
+      const glow = this.add.graphics();
+      glow.lineStyle(2.5, accent, 0.35);
+      glow.strokeRoundedRect(-panelW / 2 - 2, -panelH / 2 - 2, panelW + 4, panelH + 4, 6);
+
+      const panel = this.add.container(pos.x, pos.y - 10, [glow, bg, text]);
+      panel.setDepth(depth);
+
+      this.tweens.add({
+        targets: panel, alpha: { from: 1, to: 0.85 }, duration: 1200,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      });
+    }
+
+    // Ambient snow — screen-fixed, very subtle, skipped on mobile for perf
+    if (!this.isMobile) {
+      this.setupAmbientSnow();
     }
 
     this.events.emit('zone-change', 'Hearthvale Town');
@@ -74,6 +107,54 @@ export class IsoTownScene extends IsoBaseScene {
     if (!isTutorialDone()) {
       this.time.delayedCall(1000, () => this.runTutorial());
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Ambient snow — screen-fixed light flurry, purely cosmetic (see BootScene
+  // splash for the pattern this mirrors: a single Graphics redrawn on a timer).
+  // -----------------------------------------------------------------------
+  private setupAmbientSnow(): void {
+    const w = GAME_WIDTH;
+    const h = GAME_HEIGHT;
+
+    const flakes: { x: number; y: number; speed: number; size: number; alpha: number; drift: number }[] = [];
+    for (let i = 0; i < 24; i++) {
+      flakes.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        speed: 0.25 + Math.random() * 0.5,
+        size: 0.8 + Math.random() * 1.4,
+        alpha: 0.08 + Math.random() * 0.2,
+        drift: Math.random() * Math.PI * 2,
+      });
+    }
+
+    const gfx = this.add.graphics();
+    gfx.setScrollFactor(0);
+    gfx.setDepth(4000);
+
+    const snowTimer = this.time.addEvent({
+      delay: 33, // ~30fps
+      loop: true,
+      callback: () => {
+        gfx.clear();
+        for (const f of flakes) {
+          f.y += f.speed;
+          f.drift += 0.01;
+          f.x += Math.sin(f.drift) * 0.25;
+          if (f.y > h) { f.y = -4; f.x = Math.random() * w; }
+          if (f.x < -4) f.x = w + 4;
+          if (f.x > w + 4) f.x = -4;
+          gfx.fillStyle(0xdff4ff, f.alpha);
+          gfx.fillCircle(f.x, f.y, f.size);
+        }
+      },
+    });
+
+    this.events.once('shutdown', () => {
+      snowTimer.destroy();
+      gfx.destroy();
+    });
   }
 
   // -----------------------------------------------------------------------

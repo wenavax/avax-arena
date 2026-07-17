@@ -127,7 +127,7 @@ export class IsoBaseScene extends Phaser.Scene {
   private activeBattleId: string | null = null;
 
   // Mobile touch controls
-  private isMobile: boolean = false;
+  protected isMobile: boolean = false;
   private touchControls: Phaser.GameObjects.Container | null = null;
   private joystickBase: Phaser.GameObjects.Graphics | null = null;
   private joystickThumb: Phaser.GameObjects.Graphics | null = null;
@@ -467,6 +467,193 @@ export class IsoBaseScene extends Phaser.Scene {
         // Top rim
         g.lineStyle(1, 0x5a4510, 1);
         g.strokeEllipse(screen.x, screen.y - 12, 12, 5);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'crate': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        // Wooden crate — top face + two side faces for a boxy 3D look
+        g.fillStyle(0xa87c3f, 1);
+        g.fillRect(screen.x - 6, screen.y - 11, 12, 11);
+        // Side shading (right face darker)
+        g.fillStyle(0x8a6530, 1);
+        g.fillRect(screen.x + 2, screen.y - 11, 4, 11);
+        // Slats
+        g.lineStyle(1, 0x6b4d24, 0.9);
+        g.strokeRect(screen.x - 6, screen.y - 11, 12, 11);
+        g.beginPath();
+        g.moveTo(screen.x - 6, screen.y - 6);
+        g.lineTo(screen.x + 6, screen.y - 6);
+        g.strokePath();
+        g.beginPath();
+        g.moveTo(screen.x - 6, screen.y - 11);
+        g.lineTo(screen.x, screen.y - 5);
+        g.strokePath();
+        // Top rim highlight
+        g.fillStyle(0xc79a55, 1);
+        g.fillRect(screen.x - 6, screen.y - 11, 12, 2);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'coins': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        // Stacked gold coin pile — 3 ellipse "stacks" of decreasing size
+        const drawStack = (ox: number, count: number, w: number) => {
+          for (let i = 0; i < count; i++) {
+            const cy = screen.y - 2 - i * 2.2;
+            g.fillStyle(0xd4a017, 1);
+            g.fillEllipse(screen.x + ox, cy, w, 3.5);
+            g.lineStyle(0.8, 0x8a6a10, 0.9);
+            g.strokeEllipse(screen.x + ox, cy, w, 3.5);
+          }
+          // Top coin highlight
+          g.fillStyle(0xffe066, 1);
+          g.fillEllipse(screen.x + ox, screen.y - 2 - count * 2.2, w * 0.55, 2);
+        };
+        drawStack(-4, 3, 9);
+        drawStack(3, 4, 8);
+        drawStack(0, 2, 7);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'rocket': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        // Small standing rocket silhouette — nose cone + body + fins + flame flicker
+        const bx = screen.x, by = screen.y;
+        // Fins
+        g.fillStyle(0xc0392b, 1);
+        g.fillTriangle(bx - 3.5, by - 6, bx - 7, by, bx - 3.5, by - 2);
+        g.fillTriangle(bx + 3.5, by - 6, bx + 7, by, bx + 3.5, by - 2);
+        // Body
+        g.fillStyle(0xe6e9ee, 1);
+        g.fillRect(bx - 3.5, by - 20, 7, 16);
+        // Nose cone
+        g.fillStyle(0xc0392b, 1);
+        g.fillTriangle(bx - 3.5, by - 20, bx + 3.5, by - 20, bx, by - 27);
+        // Window
+        g.fillStyle(0x2dd4bf, 1);
+        g.fillCircle(bx, by - 13, 2.2);
+        g.lineStyle(0.8, 0x1a1a1a, 0.6);
+        g.strokeCircle(bx, by - 13, 2.2);
+        // Body seam lines
+        g.lineStyle(0.6, 0xaab0bb, 0.8);
+        g.beginPath(); g.moveTo(bx - 3.5, by - 8); g.lineTo(bx + 3.5, by - 8); g.strokePath();
+        // Flame (drawn last, glow underneath)
+        g.fillStyle(0xff8800, 0.25);
+        g.fillCircle(bx, by + 1, 7);
+        g.fillStyle(0xffaa33, 0.95);
+        g.fillTriangle(bx, by + 9, bx - 3, by - 1, bx + 3, by - 1);
+        g.fillStyle(0xffdd66, 0.9);
+        g.fillTriangle(bx, by + 6, bx - 1.5, by - 1, bx + 1.5, by - 1);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'crystal': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Small stone pedestal
+        g.fillStyle(0x555566, 1);
+        g.fillRect(bx - 6, by - 4, 12, 4);
+        g.fillStyle(0x6b6b7d, 1);
+        g.fillEllipse(bx, by - 4, 12, 3);
+        // Glow halo behind the gem (pulsed via tween on alpha)
+        const glow = this.add.graphics();
+        glow.setDepth(depth - 1);
+        glow.fillStyle(0xc084fc, 0.28);
+        glow.fillCircle(bx, by - 14, 14);
+        glow.fillStyle(0xc084fc, 0.16);
+        glow.fillCircle(bx, by - 14, 20);
+        // Faceted gem body
+        g.fillStyle(0x9f5fe0, 1);
+        g.fillTriangle(bx, by - 26, bx - 7, by - 12, bx + 7, by - 12);
+        g.fillStyle(0xc084fc, 1);
+        g.fillTriangle(bx, by - 26, bx - 7, by - 12, bx, by - 12);
+        g.fillStyle(0xe0b3ff, 0.9);
+        g.fillTriangle(bx, by - 24, bx - 3, by - 13, bx + 1, by - 13);
+        g.fillStyle(0x7a3fc0, 1);
+        g.fillTriangle(bx - 7, by - 12, bx + 7, by - 12, bx, by - 4);
+        // Sparkle
+        g.fillStyle(0xffffff, 0.9);
+        g.fillCircle(bx - 2, by - 20, 1.1);
+        this.objectGfxList.push(g, glow);
+        this.tweens.add({
+          targets: glow, alpha: { from: 1, to: 0.45 }, duration: 1400,
+          yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+        });
+        break;
+      }
+      case 'banner': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Hanging pole
+        g.fillStyle(0x4a3620, 1);
+        g.fillRect(bx - 1, by - 22, 2, 20);
+        // Gold finial
+        g.fillStyle(0xd4af37, 1);
+        g.fillCircle(bx, by - 22, 2);
+        // Cloth banner (gold, tapered bottom point)
+        g.fillStyle(0xd4af37, 0.95);
+        g.beginPath();
+        g.moveTo(bx - 6, by - 20);
+        g.lineTo(bx + 6, by - 20);
+        g.lineTo(bx + 6, by - 6);
+        g.lineTo(bx, by - 2);
+        g.lineTo(bx - 6, by - 6);
+        g.closePath();
+        g.fillPath();
+        // Inner emblem stripe
+        g.fillStyle(0x8a6d1f, 0.8);
+        g.fillRect(bx - 6, by - 15, 12, 2);
+        // Rim highlight
+        g.lineStyle(0.8, 0xf5e28c, 0.7);
+        g.strokeRect(bx - 6, by - 20, 12, 14);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'flag_checkered': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Pole
+        g.fillStyle(0x3a3a3a, 1);
+        g.fillRect(bx - 1, by - 22, 2, 22);
+        // Checkered pennant (triangle) — 3x2 grid of small squares
+        const flagW = 12, flagH = 8, cell = flagW / 3;
+        for (let row = 0; row < 2; row++) {
+          for (let col = 0; col < 3; col++) {
+            const isDark = (row + col) % 2 === 0;
+            g.fillStyle(isDark ? 0x111111 : 0xffffff, 0.95);
+            g.fillRect(bx + 1 + col * cell, by - 21 + row * (flagH / 2), cell, flagH / 2);
+          }
+        }
+        g.lineStyle(0.8, 0x000000, 0.5);
+        g.strokeRect(bx + 1, by - 21, flagW, flagH);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'skull_post': {
+        // Skull perched on a small post — warning-marker look for Battle Royale entrance
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Post
+        g.fillStyle(0x4a3620, 1);
+        g.fillRect(bx - 1, by - 10, 2, 10);
+        // Skull head
+        g.fillStyle(0xddddcc, 1);
+        g.fillCircle(bx, by - 15, 5);
+        g.fillStyle(0xccccbb, 1);
+        g.fillRect(bx - 3.5, by - 12, 7, 3);
+        g.fillStyle(0x222222, 1);
+        g.fillCircle(bx - 2, by - 16, 1.3);
+        g.fillCircle(bx + 2, by - 16, 1.3);
+        g.fillStyle(0x333333, 1);
+        g.fillTriangle(bx, by - 13, bx - 1, by - 14.5, bx + 1, by - 14.5);
         this.objectGfxList.push(g);
         break;
       }
