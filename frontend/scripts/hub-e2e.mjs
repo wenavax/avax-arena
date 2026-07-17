@@ -30,59 +30,70 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(4000);
 
-// Kapı listesi sahnenin kendisinden (registry'yi ayrıca yüklemeye gerek yok)
-const doors = await page.evaluate(() => {
-  const g = window.__frostbiteGame;
-  const town = g.scene.getScene('Town');
-  const out = [];
-  for (let ty = 0; ty < town.tiles.length; ty++)
-    for (let tx = 0; tx < town.tiles[0].length; tx++) {
-      const it = town.tiles[ty][tx].interact;
-      if (it && it.startsWith('hub_')) out.push({ tx, ty, id: it.slice(4) });
-    }
-  return out;
-});
-ok(doors.length === 9, `sahnede 9 hub kapısı bulundu (${doors.length})`);
-
-for (const d of doors) {
-  await page.evaluate(({ tx, ty }) => {
+try {
+  // Kapı listesi sahnenin kendisinden (registry'yi ayrıca yüklemeye gerek yok)
+  const doors = await page.evaluate(() => {
     const g = window.__frostbiteGame;
     const town = g.scene.getScene('Town');
-    town.playerTx = tx; town.playerTy = Math.min(town.tiles.length - 1, ty + 1);
-    town.dispatchInteract(town.tiles[ty][tx], tx, ty);
-  }, d);
-  await page.waitForSelector('[data-testid="hub-overlay"] iframe', { timeout: 8000 });
-  const src = await page.getAttribute('[data-testid="hub-overlay"] iframe', 'src');
-  ok(src.startsWith('/avalanche') && src.includes('embed=1'), `${d.id}: overlay açıldı, src=${src}`);
-  await page.waitForTimeout(400);
-  const fr = page.frames().find(f => f.url().includes('embed=1'));
-  let rendered = false;
-  try {
-    if (fr) {
-      // state:'attached' — 'visible' (default) script/style gibi görünmez DOM
-      // düğümlerine takılıp yanlış-negatif timeout veriyordu (içerik gerçekte render olmuş olsa da).
-      await fr.waitForSelector('body *', { state: 'attached', timeout: 15000 });
-      // Overlay kapanış/başka bir kapı geçişiyle frame yeniden navigate/detach olabilir;
-      // waitForSelector sonrası taze referansla oku.
-      const fr2 = page.frames().find(f => f.url().includes('embed=1')) || fr;
-      rendered = await fr2.evaluate(() => document.body.children.length > 0 && document.body.innerText.length > 0);
-    }
-  } catch { /* rendered kalır false */ }
-  ok(rendered, `${d.id}: iframe içerik render`);
-  const paused = await page.evaluate(() => window.__frostbiteGame.scene.getScene('Town').scene.isPaused());
-  ok(paused, `${d.id}: sahne pause`);
-  await page.click('[data-testid="hub-close"]');
-  await page.waitForTimeout(500);
-  const resumed = await page.evaluate(() => {
-    const t = window.__frostbiteGame.scene.getScene('Town');
-    return !t.scene.isPaused() && !t.frozen;
+    const out = [];
+    for (let ty = 0; ty < town.tiles.length; ty++)
+      for (let tx = 0; tx < town.tiles[0].length; tx++) {
+        const it = town.tiles[ty][tx].interact;
+        if (it && it.startsWith('hub_')) out.push({ tx, ty, id: it.slice(4) });
+      }
+    return out;
   });
-  ok(resumed, `${d.id}: kapatınca resume + unfreeze`);
-}
+  // HUB_GAMES.length ile senkron — kayıt defterine oyun eklenirse burayı da güncelle (mjs'ten TS registry import edilemiyor)
+  ok(doors.length === 9, `sahnede 9 hub kapısı bulundu (${doors.length})`);
 
-const real = errs.filter(e => !/net::ERR|Failed to fetch|walletconnect|favicon|status of 40/i.test(e));
-ok(real.length === 0, `konsol hatasız (${real.length})`);
-real.slice(0, 5).forEach(e => console.log('   ', e.slice(0, 160)));
-await browser.close();
-console.log(fails ? `${fails} FAIL` : 'ALL PASS');
-process.exit(fails ? 1 : 0);
+  for (const d of doors) {
+    await page.evaluate(({ tx, ty }) => {
+      const g = window.__frostbiteGame;
+      const town = g.scene.getScene('Town');
+      town.playerTx = tx; town.playerTy = Math.min(town.tiles.length - 1, ty + 1);
+      town.dispatchInteract(town.tiles[ty][tx], tx, ty);
+    }, d);
+    await page.waitForSelector('[data-testid="hub-overlay"] iframe', { timeout: 8000 });
+    const src = await page.getAttribute('[data-testid="hub-overlay"] iframe', 'src') || '';
+    ok(src.startsWith('/avalanche') && src.includes('embed=1'), `${d.id}: overlay açıldı, src=${src}`);
+
+    // İçerik-render kontrolü: frame handle'ı bayatlayabilir (overlay geçişiyle
+    // yeniden navigate/detach olur), bu yüzden her denemede taze çözümlenir.
+    // 250ms aralıklarla 20s'ye kadar poll edilir.
+    let rendered = false;
+    const deadline = Date.now() + 20000;
+    while (!rendered && Date.now() < deadline) {
+      try {
+        const fr = page.frames().find(f => f.url().includes('embed=1'));
+        if (fr) {
+          rendered = await fr.evaluate(() =>
+            !!document.body && document.body.children.length > 0 && document.body.innerText.trim().length > 0
+          );
+        }
+      } catch { /* frame detached olabilir — not-ready say, poll'a devam et */ }
+      if (!rendered) await page.waitForTimeout(250);
+    }
+    ok(rendered, `${d.id}: iframe içerik render`);
+
+    const paused = await page.evaluate(() => window.__frostbiteGame.scene.getScene('Town').scene.isPaused());
+    ok(paused, `${d.id}: sahne pause`);
+    await page.click('[data-testid="hub-close"]');
+    await page.waitForTimeout(500);
+    const resumed = await page.evaluate(() => {
+      const t = window.__frostbiteGame.scene.getScene('Town');
+      return !t.scene.isPaused() && !t.frozen;
+    });
+    ok(resumed, `${d.id}: kapatınca resume + unfreeze`);
+  }
+
+  const real = errs.filter(e => !/net::ERR|Failed to fetch|walletconnect|favicon|status of 40/i.test(e));
+  ok(real.length === 0, `konsol hatasız (${real.length})`);
+  real.slice(0, 5).forEach(e => console.log('   ', e.slice(0, 160)));
+} catch (e) {
+  console.log(`  ✗ beklenmedik hata: ${e && e.stack ? e.stack : e}`);
+  fails++;
+} finally {
+  await browser.close();
+  console.log(fails ? `${fails} FAIL` : 'ALL PASS');
+  process.exit(fails ? 1 : 0);
+}
