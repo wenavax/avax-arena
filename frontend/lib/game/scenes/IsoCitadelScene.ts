@@ -433,8 +433,12 @@ export class IsoCitadelScene extends IsoBaseScene {
     const pos = toScreen(m.tx, m.ty, 1);
     const container = this.add.container(pos.x, pos.y);
 
-    const body = this.add.circle(0, -8, 6, m.color, 1);
-    container.add(body);
+    // Gövde: sprite eşlemesi varsa sprite, yoksa eski renkli daire
+    const spr = this.createMonsterVisual(container, m.type);
+    if (!spr) {
+      const body = this.add.circle(0, -8, 6, m.color, 1);
+      container.add(body);
+    }
 
     const label = this.add.text(0, -22, `Lv${m.level}`, {
       fontSize: '8px', fontFamily: 'monospace', color: '#ffffff',
@@ -450,11 +454,13 @@ export class IsoCitadelScene extends IsoBaseScene {
 
     container.setDepth((m.tx + m.ty) * 10 + m.ty + 5);
 
-    this.tweens.add({
-      targets: container, y: pos.y - 3,
-      duration: 1200 + Math.random() * 400,
-      yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
-    });
+    if (!spr) {
+      this.tweens.add({
+        targets: container, y: pos.y - 3,
+        duration: 1200 + Math.random() * 400,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      });
+    }
 
     this.monsterSprites.push({ sprite: container, data: m, alive: true });
   }
