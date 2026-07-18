@@ -11,6 +11,7 @@ import { RemotePlayer, RemotePlayerData } from '../multiplayer/RemotePlayer';
 import { music, ZoneMusic } from '../musicSystem';
 import { generateHeroTraits, drawHero, ELEMENTS, type DrawHeroOptions } from '../nft/heroGenerator';
 import { HUB_INTERACT_PREFIX } from '../hub/hubGames';
+import { getMonsterVisual } from './monsterSprites';
 
 // ---------------------------------------------------------------------------
 // Direction helpers
@@ -2084,6 +2085,60 @@ export class IsoBaseScene extends Phaser.Scene {
   }
 
   // -----------------------------------------------------------------------
+  // Helper: monster body visual (sprite path, shared by all scenes)
+  // -----------------------------------------------------------------------
+  /**
+   * Monster gövde görseli: eşleme varsa sprite (NEAREST, ölçekli, gölgeli),
+   * yoksa null döner — çağıran mevcut prosedürel çizimini kullanır.
+   * Dönen sprite'ta yön için setFlipX kullanılabilir.
+   */
+  protected createMonsterVisual(
+    container: Phaser.GameObjects.Container,
+    type: string,
+  ): Phaser.GameObjects.Sprite | null {
+    const v = getMonsterVisual(type);
+    if (!v || !this.textures.exists(v.sheet)) return null;
+
+    // Gölge (sprite'ın altına)
+    const shadow = this.add.graphics();
+    shadow.fillStyle(0x000000, 0.28);
+    shadow.fillEllipse(0, 2, 26, 9);
+    container.add(shadow);
+
+    const spr = this.add.sprite(0, -10, v.sheet, v.frame);
+    spr.setScale(v.scale);
+    if (v.tint !== undefined) spr.setTint(v.tint);
+    container.add(spr);
+
+    if (v.frame2 !== undefined) {
+      // 2-frame idle — anim tanımını tekilleştir
+      const animKey = `mon_${v.sheet}_${v.frame}`;
+      if (!this.anims.exists(animKey)) {
+        this.anims.create({
+          key: animKey,
+          frames: [
+            { key: v.sheet, frame: v.frame },
+            { key: v.sheet, frame: v.frame2 },
+          ],
+          frameRate: 3,
+          repeat: -1,
+        });
+      }
+      spr.play(animKey);
+    } else {
+      // Frame yoksa yumuşak bob (container'ı değil sprite'ı oynat —
+      // container tween'leri (gezinme) ile çakışmasın)
+      this.tweens.add({
+        targets: spr,
+        y: -13,
+        duration: 900 + Math.random() * 300,
+        yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      });
+    }
+    return spr;
+  }
+
+  // -----------------------------------------------------------------------
   // Helper: add monster at tile with wandering AI
   // -----------------------------------------------------------------------
   protected addMonsterAt(tx: number, ty: number, _tileIndex: number, type: string, level: number): Phaser.GameObjects.Container {
@@ -2091,20 +2146,23 @@ export class IsoBaseScene extends Phaser.Scene {
     const screen = toScreen(tx, ty, tileH);
     const container = this.add.container(screen.x, screen.y);
 
-    // Monster body (red-tinted oval)
-    const monGfx = this.add.graphics();
-    monGfx.fillStyle(0x000000, 0.2);
-    monGfx.fillEllipse(0, 4, 24, 10);
-    monGfx.fillStyle(0xcc3333, 1);
-    monGfx.fillEllipse(0, -8, 20, 16);
-    // Eyes
-    monGfx.fillStyle(0xffff00, 1);
-    monGfx.fillCircle(-4, -10, 2.5);
-    monGfx.fillCircle(4, -10, 2.5);
-    monGfx.fillStyle(0x000000, 1);
-    monGfx.fillCircle(-4, -10, 1);
-    monGfx.fillCircle(4, -10, 1);
-    container.add(monGfx);
+    // Monster body: sprite eşlemesi varsa sprite, yoksa eski prosedürel oval
+    const spr = this.createMonsterVisual(container, type);
+    if (!spr) {
+      const monGfx = this.add.graphics();
+      monGfx.fillStyle(0x000000, 0.2);
+      monGfx.fillEllipse(0, 4, 24, 10);
+      monGfx.fillStyle(0xcc3333, 1);
+      monGfx.fillEllipse(0, -8, 20, 16);
+      // Eyes
+      monGfx.fillStyle(0xffff00, 1);
+      monGfx.fillCircle(-4, -10, 2.5);
+      monGfx.fillCircle(4, -10, 2.5);
+      monGfx.fillStyle(0x000000, 1);
+      monGfx.fillCircle(-4, -10, 1);
+      monGfx.fillCircle(4, -10, 1);
+      container.add(monGfx);
+    }
 
     // Level + type label
     const label = this.add.text(0, 12, `Lv${level} ${type}`, {
@@ -2142,6 +2200,7 @@ export class IsoBaseScene extends Phaser.Scene {
           if (this.inBounds(ntx, nty) && !this.tiles[nty][ntx].collision) {
             const nh = this.getTileHeight(ntx, nty);
             const ns = toScreen(ntx, nty, nh);
+            if (spr) spr.setFlipX(d.dx < 0);
             this.tweens.add({
               targets: container,
               x: ns.x,

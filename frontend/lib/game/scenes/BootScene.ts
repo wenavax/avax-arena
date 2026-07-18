@@ -56,6 +56,15 @@ export class BootScene extends Phaser.Scene {
       frameWidth: 16, frameHeight: 16, spacing: 0, margin: 0,
     });
 
+    // Monster/prop sprite sheets (visual upgrade). Non-critical: eşlemesiz
+    // tipler prosedürel fallback'e düşer, dünya sprite'sız da render olur.
+    this.load.spritesheet('tiny-dungeon', '/avalanche/sprites/tiny-dungeon.png', {
+      frameWidth: 16, frameHeight: 16, spacing: 0, margin: 0,
+    });
+    this.load.spritesheet('tiny-battle', '/avalanche/sprites/tiny-battle.png', {
+      frameWidth: 16, frameHeight: 16, spacing: 0, margin: 0,
+    });
+
     // Load SFX
     const sfxFiles = [
       'slash1', 'slash2', 'slice1', 'slice2', 'chop', 'coins',
@@ -85,6 +94,14 @@ export class BootScene extends Phaser.Scene {
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
       retry.on('pointerdown', () => window.location.reload());
       return;
+    }
+
+    // Pixel keskinliği: global antialias açık ama sprite'lar büyütülünce
+    // bulanıklaşmasın — texture bazında nearest.
+    for (const key of ['tiles', 'tiny-dungeon', 'tiny-battle']) {
+      if (this.textures.exists(key)) {
+        this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
     }
 
     // F key — fullscreen toggle (works from splash/boot screen)
