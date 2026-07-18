@@ -562,6 +562,9 @@ export class IsoSanctumScene extends IsoBaseScene {
 
     trackZoneVisit('Sanctum');
 
+    // Kutsal sunak/portal ışığı — ejder tapınağının odağına altın-turuncu ışık
+    // (torch/lava'dan önce eklenir, bütçe dolsa da düşmez).
+    this.priorityLights = [{ tx: 25, ty: 2, color: 0xff8822, radius: 90 }];
     this.initZone(buildSanctumTiles(), 25, 47);
 
     // Boss indicator (if not yet defeated)

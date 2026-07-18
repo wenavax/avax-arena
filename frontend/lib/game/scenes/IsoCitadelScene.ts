@@ -378,6 +378,12 @@ export class IsoCitadelScene extends IsoBaseScene {
 
     trackZoneVisit('Citadel');
 
+    // Gök kalesi buz ışığı — kristal dekorlarına öncelikli mavi ışık
+    // (torch bütçesine yenik düşmesin; buz-mavisi kimliği korunur).
+    this.priorityLights = [
+      { tx: 26, ty: 32, color: 0x66ccff, radius: 60 },
+      { tx: 37, ty: 36, color: 0x66ccff, radius: 60 },
+    ];
     this.initZone(buildCitadelTiles(), 14, 37);
 
     if (!state.flags.has('citadel_boss_defeated')) {

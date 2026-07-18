@@ -107,6 +107,10 @@ export class IsoBaseScene extends Phaser.Scene {
   private terrainChunks: { gfx: Phaser.GameObjects.Graphics; bounds: Phaser.Geom.Rectangle }[] = [];
   private static readonly TERRAIN_CHUNK = 16;
   protected lightPool!: LightPool;
+  // Öncelikli ışıklar (portal/gate gibi tematik odaklar). Sahne, initZone'dan
+  // ÖNCE bunları doldurur; initZone bunları terrain torch/lava'sından ÖNCE
+  // havuza ekler, böylece bütçe dolsa bile bu ışıklar düşmez.
+  protected priorityLights: { tx: number; ty: number; z?: number; color: number; radius: number }[] = [];
 
   // Input listener tracking (prevent leaks)
   private inputSetup: boolean = false;
@@ -192,6 +196,13 @@ export class IsoBaseScene extends Phaser.Scene {
 
     // Light pool must exist before renderTerrain (torch/lava cases use it)
     this.lightPool = new LightPool(this, this.isMobile ? 3 : 6);
+    // Öncelikli ışıklar (portal/gate) terrain torch/lava'sından ÖNCE eklenir —
+    // bütçe önceliği için (sahnenin priorityLights'ı create() içinde initZone
+    // çağrısından önce doldurulur).
+    for (const pl of this.priorityLights) {
+      const s = toScreen(pl.tx, pl.ty, pl.z ?? 1);
+      this.lightPool.add(s.x, s.y - 8, pl.color, pl.radius);
+    }
     this.renderTerrain();
     this.createPlayer();
     this.setupCamera();
@@ -362,6 +373,12 @@ export class IsoBaseScene extends Phaser.Scene {
             // Lava glow — sparse light pools over lava biome
             if (tile.biome === 'lava' && ((tx * 7 + ty * 13) % 41) === 0) {
               this.lightPool.add(screen.x, screen.y - tile.height * ISO_BLOCK_H, 0xff5522, 90);
+            }
+
+            // Ice glow — sparse cold-blue pools over ice_crystal biome
+            // (IceCave / Abyss). Aynı seyreklik kalıbı, buz-mavisi ton.
+            if (tile.biome === 'ice_crystal' && ((tx * 7 + ty * 13) % 41) === 0) {
+              this.lightPool.add(screen.x, screen.y - tile.height * ISO_BLOCK_H, 0x66ccff, 60);
             }
 
             // Draw decoration objects (trees / rocks) indicated by tile data
@@ -628,6 +645,39 @@ export class IsoBaseScene extends Phaser.Scene {
         g.fillStyle(0xffdd66, 0.9);
         g.fillTriangle(bx, by + 6, bx - 1.5, by - 1, bx + 1.5, by - 1);
         this.objectGfxList.push(g);
+        break;
+      }
+      case 'ice_crystal': {
+        // Buz kristali dekoru (Citadel / Mines / FrostWastes) — parlayan mavi
+        // sivri buz + soğuk ışık havuzu.
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Glow halo behind the shard (pulsed via tween on alpha)
+        const glow = this.add.graphics();
+        glow.setDepth(depth - 1);
+        glow.fillStyle(0x99ddff, 0.26);
+        glow.fillCircle(bx, by - 12, 13);
+        glow.fillStyle(0x99ddff, 0.14);
+        glow.fillCircle(bx, by - 12, 19);
+        // Faceted ice shard body (cool blues)
+        g.fillStyle(0x5aa8e0, 1);
+        g.fillTriangle(bx, by - 24, bx - 6, by - 10, bx + 6, by - 10);
+        g.fillStyle(0x8fd0ff, 1);
+        g.fillTriangle(bx, by - 24, bx - 6, by - 10, bx, by - 10);
+        g.fillStyle(0xcbeeff, 0.95);
+        g.fillTriangle(bx, by - 22, bx - 2.5, by - 11, bx + 1, by - 11);
+        g.fillStyle(0x3f82c0, 1);
+        g.fillTriangle(bx - 6, by - 10, bx + 6, by - 10, bx, by - 3);
+        // Sparkle
+        g.fillStyle(0xffffff, 0.9);
+        g.fillCircle(bx - 1.5, by - 18, 1.1);
+        this.objectGfxList.push(g, glow);
+        this.tweens.add({
+          targets: glow, alpha: { from: 1, to: 0.45 }, duration: 1500,
+          yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+        });
+        this.lightPool.add(bx, by - 12, 0x66ccff, 55);
         break;
       }
       case 'crystal': {

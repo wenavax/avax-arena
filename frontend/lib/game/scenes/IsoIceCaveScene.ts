@@ -269,6 +269,12 @@ export class IsoIceCaveScene extends IsoBaseScene {
       spawnY = 8;
     }
 
+    // Buz mağarası soğuk ışığı — giriş salonundaki kristal tiplerine öncelikli
+    // mavi ışık (torch bütçesine yenik düşmesin; buz mağarasında ana ton bu).
+    this.priorityLights = [
+      { tx: 12, ty: 25, color: 0x66ccff, radius: 65 },
+      { tx: 18, ty: 25, color: 0x66ccff, radius: 65 },
+    ];
     this.initZone(buildIceCaveTiles(), spawnX, spawnY);
 
     // Boss indicator (if not yet defeated)

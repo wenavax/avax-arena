@@ -16,15 +16,23 @@ export const ZONE_ATMOSPHERE: Record<string, ZoneAtmo> = {
   Volcano:     { tint: 0xff6633, tintAlpha: 0.07, fogColor: 0x662211, fogAlpha: 0.18 },
   Crypt:       { tint: 0x554477, tintAlpha: 0.10, fogColor: 0x332244, fogAlpha: 0.20 },
   Abyss:       { tint: 0x2266aa, tintAlpha: 0.10, fogColor: 0x113355, fogAlpha: 0.22 },
-  Sanctum:     { tint: 0xff8844, tintAlpha: 0.08, fogColor: 0x883322, fogAlpha: 0.16 },
-  Swamp:       { tint: 0x557744, tintAlpha: 0.09, fogColor: 0x445533, fogAlpha: 0.20 },
+  // Sanctum: Volcano ile ayrışsın diye kızıl-turuncudan altın-amber'e kaydırıldı
+  // (kutsal ejder tapınağı hissi, ham lav değil).
+  Sanctum:     { tint: 0xffb84d, tintAlpha: 0.08, fogColor: 0x8a5a1e, fogAlpha: 0.15 },
+  // Swamp: Forest yeşilinden ayrışsın diye daha bulanık zeytin/sarı-yeşile çekildi.
+  Swamp:       { tint: 0x6b7a2e, tintAlpha: 0.10, fogColor: 0x3d4a1f, fogAlpha: 0.21 },
   Mines:       { tint: 0x8899bb, tintAlpha: 0.07, fogColor: 0x445566, fogAlpha: 0.16 },
-  Citadel:     { tint: 0xaaccff, tintAlpha: 0.06, fogColor: 0xcce0ff, fogAlpha: 0.14 },
+  // Citadel: buz üçlüsünde (IceCave/Citadel/FrostWastes) ortadaki ton —
+  // gökyüzü/lavanta-mavi, FrostWastes'in beyazından ve IceCave camgöbeğinden farklı.
+  Citadel:     { tint: 0xb0c4ff, tintAlpha: 0.06, fogColor: 0xd4defc, fogAlpha: 0.13 },
   Necropolis:  { tint: 0x443355, tintAlpha: 0.11, fogColor: 0x221133, fogAlpha: 0.22 },
-  FrostWastes: { tint: 0x99ccee, tintAlpha: 0.08, fogColor: 0xddeeff, fogAlpha: 0.18 },
+  // FrostWastes: buz üçlüsünün en beyaz/soğuk ucu (kar fırtınası), Abyss'in derin
+  // mavisinden ve Citadel'in lavantasından ayrık.
+  FrostWastes: { tint: 0xcfeaff, tintAlpha: 0.08, fogColor: 0xeef6ff, fogAlpha: 0.18 },
   DemonGate:   { tint: 0xcc2200, tintAlpha: 0.08, fogColor: 0x551100, fogAlpha: 0.18 },
   Ruins:       { tint: 0xbbaa77, tintAlpha: 0.06, fogColor: 0x887755, fogAlpha: 0.14 },
-  VoidRealm:   { tint: 0x442266, tintAlpha: 0.12, fogColor: 0x220044, fogAlpha: 0.24 },
+  // VoidRealm: Necropolis'in gri-morundan ayrışsın diye daha doygun menekşe.
+  VoidRealm:   { tint: 0x5a2e8f, tintAlpha: 0.12, fogColor: 0x1e0a3a, fogAlpha: 0.24 },
   Forge:       { tint: 0xdd6600, tintAlpha: 0.07, fogColor: 0x663300, fogAlpha: 0.16 },
   Eternal:     { tint: 0x330055, tintAlpha: 0.12, fogColor: 0x110022, fogAlpha: 0.24 },
 };

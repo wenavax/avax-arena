@@ -418,6 +418,9 @@ export class IsoDemonGateScene extends IsoBaseScene {
 
     trackZoneVisit('DemonGate');
 
+    // Cehennem kapısı ışığı — boss/gate odağına kırmızı-turuncu ışık havuzu
+    // (torch/lava'dan önce eklenir, bütçe dolsa da düşmez).
+    this.priorityLights = [{ tx: 14, ty: 5, color: 0xff4422, radius: 80 }];
     this.initZone(buildDemonGateTiles(), 15, 42);
 
     if (!state.flags.has('demon_boss_defeated')) {
