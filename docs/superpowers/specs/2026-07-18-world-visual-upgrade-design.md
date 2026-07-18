@@ -50,7 +50,7 @@ P1+P2'nin çekirdeği yalnız Town'a uygulanır: 5-6 monster/NPC sprite'a döner
 
 ### P2 — Zemin ışık + atmosfer (+ performans temeli)
 
-- **Mimari parça — terrain RenderTexture cache:** statik terrain zone girişinde bir kez RenderTexture'a basılır; frame döngüsünde Graphics yeniden çizimi biter. Tile değişimi (nadir) cache'i geçersiz kılar. Hem büyük perf kazancı (özellikle mobil) hem zengin detayın ön şartı.
+- **Mimari parça — terrain chunk'lama + viewport culling:** statik terrain 16×16 tile'lık chunk Graphics'lerine bölünür; kamera dışındaki chunk'lar `setVisible(false)` ile tamamen atlanır. (Plan aşamasında RenderTexture cache'in yerini aldı: 96×96 harita tek RT'de ~80MB texture belleği isterdi; chunk+cull aynı perf kazancını bellek maliyetsiz verir.) Hem büyük perf kazancı (özellikle mobil) hem zengin detayın ön şartı.
 - Güneş yönlü aydınlatma: KB (kuzey-batı) yüzler parlak, `(tx+ty)` gradyanı.
 - Kolonların GD (güney-doğu) yönüne cast shadow'ları (terrain pass içinde, ucuz).
 - Biome mikro-dokuları: taş çatlağı, kum dalgası, çim tutamı yoğunlaştırma — hepsi seeded (`tileHash`), deterministik.
