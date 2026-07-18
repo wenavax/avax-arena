@@ -75,7 +75,6 @@ export const MONSTER_VISUALS: Record<string, MonsterVisual | null> = {
 
   // ── Bataklık ──────────────────────────────────────────────────────
   poison_toad:         { arch: 'blob',     tint: 0x66bb33 },
-  swamp_hag:           { arch: 'mage',     tint: 0x557744 },
   swamp_wraith:        { arch: 'wraith',   tint: 0x448855 },
   witch_apprentice:    { arch: 'mage',     tint: 0xaa66cc },
   venomous_hydra:      { arch: 'snake',    tint: 0x44dd44 },
@@ -187,6 +186,8 @@ export const MONSTER_VISUALS: Record<string, MonsterVisual | null> = {
   // Gerçek dungeon boss'ları (sahnelerde BOSS const + interact:'boss'):
   // 13 boss imza AI/prosedürel görselleri korunur.
   boss_frost:          null,  // IsoDungeon
+  boss_frost_v2:       null,  // Frost Dungeon ikinci boss formu — prosedürel
+  swamp_hag:           null,  // Swamp boss'u — prosedürel imza görsel (BOSS_DATA IsoSwampScene:11)
   shadow_lord:         null,  // IsoCrypt
   storm_titan:         null,  // IsoCitadel
   titan_forgemaster:   null,  // IsoForge

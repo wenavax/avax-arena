@@ -17,7 +17,7 @@ const dir = join(__dirname, '../lib/game/scenes');
 const types = new Set<string>();
 for (const f of readdirSync(dir).filter(f => f.startsWith('Iso') && f.endsWith('.ts'))) {
   const src = readFileSync(join(dir, f), 'utf8');
-  for (const m of src.matchAll(/type: '([a-z_]+)'/g)) types.add(m[1]);
+  for (const m of src.matchAll(/type: '([a-z0-9_]+)'/g)) types.add(m[1]);
 }
 // pickup/item'lar monster değil ('armor' = IsoTownScene sandık eşyası)
 ['potion', 'xp', 'quest', 'armor'].forEach(t => types.delete(t));
