@@ -207,9 +207,13 @@ export const MONSTER_VISUALS: Record<string, MonsterVisual | null> = {
 const DEFAULT_SCALE = 3;
 
 export function getMonsterVisual(type: string): (ArchetypeDef & { tint?: number; scale: number }) | null {
-  const v = MONSTER_VISUALS[type];
+  // Elite'ler base tipin görselini alır — biraz daha iri (sahada ayırt edilsin)
+  const isElite = type.startsWith('elite_');
+  const baseType = isElite ? type.slice(6) : type;
+  const v = MONSTER_VISUALS[baseType];
   if (!v) return null;
   const a = ARCHETYPES[v.arch];
   if (!a) return null;
-  return { ...a, tint: v.tint, scale: a.scale ?? DEFAULT_SCALE };
+  const scale = (a.scale ?? DEFAULT_SCALE) * (isElite ? 1.25 : 1);
+  return { ...a, tint: v.tint, scale };
 }
