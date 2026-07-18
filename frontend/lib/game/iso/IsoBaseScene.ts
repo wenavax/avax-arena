@@ -14,6 +14,7 @@ import { HUB_INTERACT_PREFIX } from '../hub/hubGames';
 import { getMonsterVisual } from './monsterSprites';
 import { ZONE_ATMOSPHERE } from './zoneAtmosphere';
 import { LightPool } from './lightPool';
+import { ZONE_PROPS } from '../maps/zoneProps';
 
 // ---------------------------------------------------------------------------
 // Direction helpers
@@ -385,6 +386,22 @@ export class IsoBaseScene extends Phaser.Scene {
             // Draw decoration objects (trees / rocks) indicated by tile data
             if (tile.data?.deco) {
               this.drawDecoration(tx, ty, tile.data.deco, tile.height);
+            }
+
+            // Zone kimlik prop'ları — görsel katman, collision'a dokunmaz.
+            // Ayrı Graphics objelerine çizilir (drawDecoration), chunk gfx'ine değil.
+            const props = ZONE_PROPS[this.scene.key];
+            if (props && !tile.data?.deco && !tile.interact) {
+              const h = (tx * 374761393 + ty * 668265263) >>> 0;
+              for (const p of props) {
+                if (!p.biomes.includes(tile.biome)) continue;
+                // Yürünebilir (küçük zemin) prop yalnız açık tile'a; büyük prop yalnız collision tile'a
+                if (p.allowWalkable ? tile.collision : !tile.collision) continue;
+                if ((h % 1000) < p.density * 1000) {
+                  this.drawDecoration(tx, ty, p.deco, tile.height);
+                  break; // tile başına en fazla 1 prop
+                }
+              }
             }
 
             // Chunk bounding box (for culling) — wall + height padding
@@ -784,6 +801,308 @@ export class IsoBaseScene extends Phaser.Scene {
         g.fillCircle(bx + 2, by - 16, 1.3);
         g.fillStyle(0x333333, 1);
         g.fillTriangle(bx, by - 13, bx - 1, by - 14.5, bx + 1, by - 14.5);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'gravestone': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Base
+        g.fillStyle(0x555560, 1);
+        g.fillEllipse(bx, by - 1, 12, 4);
+        // Round-topped slab
+        g.fillStyle(0x888892, 1);
+        g.fillRect(bx - 5, by - 12, 10, 10);
+        g.fillCircle(bx, by - 12, 5);
+        // Shading
+        g.fillStyle(0x6a6a74, 1);
+        g.fillRect(bx + 2, by - 12, 3, 10);
+        // Cross engraving
+        g.lineStyle(1, 0x55555f, 0.9);
+        g.beginPath();
+        g.moveTo(bx, by - 13); g.lineTo(bx, by - 6);
+        g.moveTo(bx - 2.5, by - 11); g.lineTo(bx + 2.5, by - 11);
+        g.strokePath();
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'bones': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Two crossed bones (light grey)
+        g.lineStyle(2, 0xd8d8cc, 1);
+        g.beginPath();
+        g.moveTo(bx - 5, by - 1); g.lineTo(bx + 5, by - 5);
+        g.moveTo(bx - 5, by - 5); g.lineTo(bx + 5, by - 1);
+        g.strokePath();
+        // Bone knobs
+        g.fillStyle(0xe6e6da, 1);
+        g.fillCircle(bx - 5, by - 1, 1.4); g.fillCircle(bx + 5, by - 5, 1.4);
+        g.fillCircle(bx - 5, by - 5, 1.4); g.fillCircle(bx + 5, by - 1, 1.4);
+        // Small skull
+        g.fillStyle(0xe6e6da, 1);
+        g.fillCircle(bx - 1, by - 8, 3);
+        g.fillStyle(0x333333, 1);
+        g.fillCircle(bx - 2.2, by - 8.5, 0.8);
+        g.fillCircle(bx + 0.2, by - 8.5, 0.8);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'ice_shard': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Cluster of angular ice shards
+        g.fillStyle(0x66b8e8, 0.95);
+        g.fillTriangle(bx, by - 15, bx - 5, by - 1, bx + 5, by - 1);
+        g.fillStyle(0x9fdcff, 0.95);
+        g.fillTriangle(bx - 4, by - 9, bx - 8, by - 1, bx - 1, by - 1);
+        g.fillStyle(0x9fdcff, 0.95);
+        g.fillTriangle(bx + 4, by - 8, bx + 1, by - 1, bx + 8, by - 1);
+        // Highlight
+        g.fillStyle(0xe8f8ff, 0.85);
+        g.fillTriangle(bx, by - 15, bx - 1.5, by - 6, bx + 1, by - 6);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'lava_rock': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Dark rock
+        g.fillStyle(0x2a2420, 1);
+        g.fillEllipse(bx, by - 6, 18, 12);
+        g.fillStyle(0x3a322c, 1);
+        g.fillEllipse(bx - 2, by - 8, 13, 8);
+        // Glowing lava cracks
+        g.lineStyle(1.2, 0xff6622, 0.9);
+        g.beginPath();
+        g.moveTo(bx - 5, by - 5); g.lineTo(bx - 1, by - 8); g.lineTo(bx + 3, by - 5);
+        g.strokePath();
+        g.fillStyle(0xffaa33, 0.9);
+        g.fillCircle(bx - 1, by - 8, 1);
+        g.fillCircle(bx + 3, by - 5, 0.8);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'ember_vent': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Cracked vent mouth
+        g.fillStyle(0x1e1814, 1);
+        g.fillEllipse(bx, by - 2, 12, 5);
+        g.fillStyle(0xff5522, 0.8);
+        g.fillEllipse(bx, by - 2, 7, 3);
+        g.fillStyle(0xffcc44, 0.9);
+        g.fillEllipse(bx, by - 2, 3, 1.5);
+        // Rising ember glow
+        const glow = this.add.graphics();
+        glow.setDepth(depth - 1);
+        glow.fillStyle(0xff7733, 0.5);
+        glow.fillCircle(bx, by - 8, 4);
+        this.objectGfxList.push(g, glow);
+        this.tweens.add({
+          targets: glow, alpha: { from: 0.6, to: 0.2 }, y: -3, duration: 900,
+          yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+        });
+        break;
+      }
+      case 'mushroom_cluster': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        const caps = [
+          { ox: -4, oy: 0, s: 1.0, c: 0xcc3333 },
+          { ox: 3,  oy: -1, s: 0.8, c: 0x9a5a3a },
+          { ox: -1, oy: -3, s: 0.7, c: 0xbb4444 },
+        ];
+        for (const m of caps) {
+          const mx = bx + m.ox, my = by + m.oy;
+          g.fillStyle(0xeaddc8, 1);
+          g.fillRect(mx - 1.2, my - 5 * m.s, 2.4, 5 * m.s);
+          g.fillStyle(m.c, 1);
+          g.fillEllipse(mx, my - 6 * m.s, 8 * m.s, 5 * m.s);
+          g.fillStyle(0xffffff, 0.8);
+          g.fillCircle(mx - 1.5 * m.s, my - 7 * m.s, 0.9);
+          g.fillCircle(mx + 1.5 * m.s, my - 6 * m.s, 0.7);
+        }
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'fallen_log': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Horizontal log
+        g.fillStyle(0x5a3d24, 1);
+        g.fillEllipse(bx, by - 4, 22, 7);
+        g.fillStyle(0x6e4a2c, 1);
+        g.fillEllipse(bx, by - 5, 20, 5);
+        // End cap rings
+        g.fillStyle(0x8a6038, 1);
+        g.fillEllipse(bx - 10, by - 4, 4, 6);
+        g.lineStyle(0.8, 0x5a3d24, 0.9);
+        g.strokeEllipse(bx - 10, by - 4, 2.5, 4);
+        // Moss
+        g.fillStyle(0x4a8a3a, 0.7);
+        g.fillEllipse(bx + 3, by - 7, 6, 2);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'swamp_reed': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        const reeds = [-4, -1, 2, 5];
+        for (let i = 0; i < reeds.length; i++) {
+          const rx = bx + reeds[i];
+          const h = 10 + ((tx * 13 + ty * 7 + i * 5) % 5);
+          g.lineStyle(1.2, i % 2 === 0 ? 0x4a7a3a : 0x5c8c46, 0.95);
+          g.beginPath();
+          g.moveTo(rx, by);
+          g.lineTo(rx + (i % 2 === 0 ? 1 : -1), by - h);
+          g.strokePath();
+          // Seed head
+          g.fillStyle(0x6a4a2a, 0.9);
+          g.fillEllipse(rx + (i % 2 === 0 ? 1 : -1), by - h, 1.6, 3);
+        }
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'crystal_small': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Small purple crystal shard
+        g.fillStyle(0x8a4fd0, 1);
+        g.fillTriangle(bx, by - 12, bx - 4, by - 1, bx + 4, by - 1);
+        g.fillStyle(0xb47fe8, 1);
+        g.fillTriangle(bx, by - 12, bx - 4, by - 1, bx, by - 1);
+        g.fillStyle(0xd8b8ff, 0.9);
+        g.fillTriangle(bx, by - 10, bx - 1.5, by - 3, bx + 0.5, by - 3);
+        // Sparkle
+        g.fillStyle(0xffffff, 0.9);
+        g.fillCircle(bx - 1, by - 8, 0.9);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'pebbles': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        const pebs = [
+          { ox: -4, oy: 0, r: 2.2 },
+          { ox: 2,  oy: -1, r: 1.8 },
+          { ox: 5,  oy: 1, r: 1.4 },
+        ];
+        for (const p of pebs) {
+          g.fillStyle(0x555560, 1);
+          g.fillEllipse(bx + p.ox, by + p.oy, p.r * 2, p.r * 1.4);
+          g.fillStyle(0x6a6a74, 1);
+          g.fillEllipse(bx + p.ox - 0.5, by + p.oy - 0.5, p.r * 1.4, p.r);
+        }
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'ruin_pillar': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Base
+        g.fillStyle(0x777782, 1);
+        g.fillRect(bx - 6, by - 4, 12, 4);
+        g.fillStyle(0x8a8a95, 1);
+        g.fillEllipse(bx, by - 4, 12, 3);
+        // Broken column shaft (angled top break)
+        g.fillStyle(0x9a9aa4, 1);
+        g.beginPath();
+        g.moveTo(bx - 4, by - 4);
+        g.lineTo(bx + 4, by - 4);
+        g.lineTo(bx + 4, by - 16);
+        g.lineTo(bx - 4, by - 12);
+        g.closePath();
+        g.fillPath();
+        // Shading + fluting
+        g.lineStyle(0.8, 0x6a6a74, 0.7);
+        g.beginPath();
+        g.moveTo(bx - 1, by - 4); g.lineTo(bx - 1, by - 13);
+        g.moveTo(bx + 2, by - 4); g.lineTo(bx + 2, by - 14);
+        g.strokePath();
+        // Toppled capital piece on the ground
+        g.fillStyle(0x88888f, 1);
+        g.fillEllipse(bx + 8, by - 2, 8, 4);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'void_wisp': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Translucent purple orb
+        g.fillStyle(0xaa66ff, 0.4);
+        g.fillCircle(bx, by - 8, 6);
+        g.fillStyle(0xcc99ff, 0.5);
+        g.fillCircle(bx, by - 8, 3.5);
+        g.fillStyle(0xeeddff, 0.7);
+        g.fillCircle(bx, by - 8, 1.6);
+        this.objectGfxList.push(g);
+        this.tweens.add({
+          targets: g, alpha: { from: 0.9, to: 0.35 }, duration: 1600,
+          yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+        });
+        break;
+      }
+      case 'anvil_scrap': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Anvil silhouette
+        g.fillStyle(0x33333a, 1);
+        g.fillRect(bx - 3, by - 4, 6, 4);            // base
+        g.fillRect(bx - 5, by - 8, 10, 3);           // body
+        g.beginPath();                               // horn + top
+        g.moveTo(bx - 5, by - 11);
+        g.lineTo(bx + 5, by - 11);
+        g.lineTo(bx + 8, by - 9.5);
+        g.lineTo(bx + 5, by - 8);
+        g.lineTo(bx - 5, by - 8);
+        g.closePath();
+        g.fillPath();
+        g.fillStyle(0x4a4a52, 1);
+        g.fillRect(bx - 5, by - 11, 10, 1);
+        // Spark
+        g.fillStyle(0xffcc44, 0.95);
+        g.fillCircle(bx + 6, by - 12, 1);
+        g.fillStyle(0xff8822, 0.8);
+        g.fillCircle(bx + 4, by - 13, 0.7);
+        this.objectGfxList.push(g);
+        break;
+      }
+      case 'coral': {
+        const g = this.add.graphics();
+        g.setDepth(depth);
+        const bx = screen.x, by = screen.y;
+        // Branching coral
+        g.lineStyle(2, 0xe8734a, 0.95);
+        g.beginPath();
+        g.moveTo(bx, by); g.lineTo(bx, by - 8);
+        g.moveTo(bx, by - 5); g.lineTo(bx - 5, by - 10);
+        g.moveTo(bx, by - 6); g.lineTo(bx + 5, by - 11);
+        g.strokePath();
+        g.lineStyle(2, 0xf29ac0, 0.9);
+        g.beginPath();
+        g.moveTo(bx - 5, by - 10); g.lineTo(bx - 6, by - 14);
+        g.moveTo(bx + 5, by - 11); g.lineTo(bx + 6, by - 15);
+        g.moveTo(bx, by - 8); g.lineTo(bx, by - 13);
+        g.strokePath();
+        // Polyp tips
+        g.fillStyle(0xffc0d8, 0.95);
+        g.fillCircle(bx - 6, by - 14, 1.3);
+        g.fillCircle(bx + 6, by - 15, 1.3);
+        g.fillCircle(bx, by - 13, 1.3);
         this.objectGfxList.push(g);
         break;
       }
@@ -3189,6 +3508,20 @@ export class IsoBaseScene extends Phaser.Scene {
   private addAmbientParticles(): void {
     const key = this.scene.key;
 
+    // Zone-specific ambience: color + drift direction. Zones not listed fall
+    // back to the default white snow drifting downward (vy positive).
+    // dir: -1 = rises upward, 1 = settles downward.
+    const EMBER = new Set(['Volcano', 'DemonGate', 'Sanctum', 'Forge']);
+    const DUST = new Set(['Dungeon', 'Crypt', 'Necropolis']);
+    const VOID = new Set(['VoidRealm', 'Eternal']);
+    const ambient: { color: number; dir: number; slow: boolean } =
+      EMBER.has(key)         ? { color: 0xff7733, dir: -1, slow: false }
+      : key === 'Swamp'      ? { color: 0x88cc66, dir: 1,  slow: true }
+      : DUST.has(key)        ? { color: 0xaaaaaa, dir: -1, slow: false }
+      : VOID.has(key)        ? { color: 0xaa66ff, dir: -1, slow: false }
+      : key === 'Forest'     ? { color: 0x88cc44, dir: 1,  slow: false }
+      :                        { color: 0xffffff, dir: 1,  slow: false };
+
     const particles: { x: number; y: number; vx: number; vy: number; alpha: number; size: number; color: number }[] = [];
 
     const particleGfx = this.add.graphics();
@@ -3210,10 +3543,10 @@ export class IsoBaseScene extends Phaser.Scene {
             x: cx + (Math.random() - 0.5) * cam.width * 1.5,
             y: cy + (Math.random() - 0.5) * cam.height * 1.5,
             vx: (Math.random() - 0.5) * 0.3,
-            vy: key === 'Dungeon' ? -0.2 - Math.random() * 0.3 : 0.2 + Math.random() * 0.4,
+            vy: ambient.dir * ((ambient.slow ? 0.08 : 0.2) + Math.random() * (ambient.slow ? 0.15 : 0.4)),
             alpha: 0.2 + Math.random() * 0.4,
             size: 1 + Math.random() * 2,
-            color: key === 'Forest' ? 0x88cc44 : key === 'Dungeon' ? 0xaaaaaa : 0xffffff,
+            color: ambient.color,
           });
         }
 
