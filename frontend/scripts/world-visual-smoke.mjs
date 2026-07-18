@@ -7,30 +7,40 @@ import { mkdirSync } from 'fs';
 const args = process.argv.slice(2);
 const shotsIdx = args.indexOf('--shots');
 const shotsDir = shotsIdx >= 0 ? args[shotsIdx + 1] : null;
-const baseArgs = args.filter((a, i) => i !== shotsIdx && i !== shotsIdx + 1);
-const BASE = baseArgs[0] || 'http://localhost:3000';
+const BASE = (args[0] && args[0] !== '--shots' ? args[0] : null) || 'http://localhost:3000';
 const URLS = ['/world', '/world/mint', '/world/battle-royale', '/world/adventures'];
 if (shotsDir) mkdirSync(shotsDir, { recursive: true });
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 let fails = 0;
-for (const u of URLS) {
-  const page = await ctx.newPage();
-  const errs = [];
-  page.on('pageerror', e => errs.push(String(e)));
-  page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  await page.goto(`${BASE}/avalanche${u}`, { waitUntil: 'domcontentloaded', timeout: 45000 });
-  await page.waitForTimeout(u === '/world' ? 8000 : 4000);
-  const real = errs.filter(e => !/net::ERR|Failed to fetch|walletconnect|favicon|status of 40/i.test(e));
-  const pass = real.length === 0;
-  if (!pass) fails++;
-  console.log(`${pass ? '✓' : '✗'} ${u} err:${real.length}`);
-  real.slice(0, 3).forEach(e => console.log('   ', e.slice(0, 160)));
-  if (shotsDir) await page.screenshot({ path: `${shotsDir}/${u.replace(/\//g, '_')}.png` });
-  await page.close();
+try {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  for (const u of URLS) {
+    let page;
+    try {
+      page = await ctx.newPage();
+      const errs = [];
+      page.on('pageerror', e => errs.push(String(e)));
+      page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+      await page.goto(`${BASE}/avalanche${u}`, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      await page.waitForTimeout(u === '/world' ? 8000 : 4000);
+      const real = errs.filter(e => !/net::ERR|Failed to fetch|walletconnect|favicon|status of 40/i.test(e));
+      const pass = real.length === 0;
+      if (!pass) fails++;
+      console.log(`${pass ? '✓' : '✗'} ${u} err:${real.length}`);
+      real.slice(0, 3).forEach(e => console.log('   ', e.slice(0, 160)));
+      if (shotsDir) await page.screenshot({ path: `${shotsDir}/${u.replace(/\//g, '_')}.png` });
+    } catch (e) {
+      fails++;
+      console.log(`✗ ${u} ERROR`);
+      console.log('   ', String(e && e.message ? e.message : e).slice(0, 200));
+    } finally {
+      if (page) await page.close();
+    }
+  }
+  await ctx.close();
+} finally {
+  await browser.close();
 }
-await ctx.close();
-await browser.close();
 console.log(fails ? `${fails} FAIL` : 'ALL PASS');
 process.exit(fails ? 1 : 0);
