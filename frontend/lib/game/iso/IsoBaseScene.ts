@@ -70,7 +70,7 @@ export class IsoBaseScene extends Phaser.Scene {
   protected playerSprite!: Phaser.GameObjects.Container;
   protected playerMoving: boolean = false;
   protected playerFacing: string = 'down';
-  protected moveSpeed: number = 150;
+  protected moveSpeed: number = 140;
   private inputBufferMs: number = 0;
   private readonly INPUT_BUFFER_THRESHOLD: number = 16;
   private clickPath: { tx: number; ty: number }[] = [];
@@ -1262,13 +1262,13 @@ export class IsoBaseScene extends Phaser.Scene {
     // Idle breathing — while standing still, gentle sway (NFT sprite: scale, non-NFT: bodyBob)
     // Cleaned up by onSceneShutdown -> time.removeAllEvents()
     this.time.addEvent({
-      delay: 700,
+      delay: 900,
       loop: true,
       callback: () => {
         if (this.playerMoving || this.frozen) return;
         this.breathPhase = !this.breathPhase;
         if (this.nftSpriteImage) {
-          this.nftSpriteImage.setDisplaySize(56, this.breathPhase ? 55 : 56);
+          this.nftSpriteImage.setDisplaySize(56, this.breathPhase ? 55.4 : 56);
         } else {
           this.redrawPlayerBody();
         }
@@ -1363,17 +1363,33 @@ export class IsoBaseScene extends Phaser.Scene {
     const skinColor = ps.skinColor || 0xffddbb;
     const facingLeft = this.playerFacing.includes('left');
     const facingUp = this.playerFacing === 'up' || this.playerFacing === 'up_left' || this.playerFacing === 'up_right';
+    // True horizontal facing → side profile. Pure left/right and their
+    // vertical diagonals read most naturally as a side-on pose.
+    const facingSide =
+      this.playerFacing === 'left' || this.playerFacing === 'right' ||
+      this.playerFacing === 'up_left' || this.playerFacing === 'up_right' ||
+      this.playerFacing === 'down_left' || this.playerFacing === 'down_right';
     const fx = facingLeft ? -1 : 1;
 
     // --- Walk animation offsets (6-frame cycle) ---
+    // Smoother sinusoidal gait: opposed legs, opposed arms, gentle bob at 2x.
     const f = this.walkFrame % 6;
-    const legL = [0, -3, -5, 0, 3, 5][f];
-    const legR = [0, 3, 5, 0, -3, -5][f];
-    const armF = [0, -2, -4, 0, 2, 4][f];
-    const armB = [0, 2, 4, 0, -2, -4][f];
+    const gaitPhase = (f / 6) * Math.PI * 2;
+    const swing = Math.sin(gaitPhase);        // leg/arm swing
+    const legL = swing * 5;
+    const legR = -swing * 5;
+    const armF = -swing * 4;                    // front arm opposes near leg
+    const armB = swing * 4;
     // Idle breathing — when standing still, gentle whole-body rise/fall
-    const breathOffset = (!this.playerMoving && this.breathPhase) ? -0.6 : 0;
-    const bodyBob = [0, -1, -1.5, 0, -1, -1.5][f] + breathOffset;
+    const breathOffset = (!this.playerMoving && this.breathPhase) ? -0.4 : 0;
+    // Body bobs twice per stride (feet plant), subtle
+    const bodyBob = (this.playerMoving ? -Math.abs(Math.sin(gaitPhase)) * 1.4 : 0) + breathOffset;
+
+    // Route horizontal facing to the dedicated side-profile renderer.
+    if (facingSide) {
+      this.drawPlayerBodySide(gfx, ps, isNft, rarity, bodyColor, skinColor, fx, swing, bodyBob);
+      return;
+    }
 
     const legColor = darkenColor(bodyColor, 0.65);
     const armColor = darkenColor(bodyColor, 0.85);
@@ -1429,9 +1445,18 @@ export class IsoBaseScene extends Phaser.Scene {
     gfx.fillStyle(bodyColor, 1);
     gfx.fillRoundedRect(-9, -22 + bodyBob, 18, 20, 3);
 
-    // Body highlight
-    gfx.fillStyle(lightenColor(bodyColor, 1.3), 0.2);
-    gfx.fillRoundedRect(-8, -20 + bodyBob, 7, 14, 2);
+    if (facingUp) {
+      // Viewed from behind: shade the whole back + a central spine seam so the
+      // back reads distinctly from the lit front-facing pose.
+      gfx.fillStyle(darkenColor(bodyColor, 0.8), 0.35);
+      gfx.fillRoundedRect(-9, -22 + bodyBob, 18, 20, 3);
+      gfx.lineStyle(1, darkenColor(bodyColor, 0.6), 0.4);
+      gfx.beginPath(); gfx.moveTo(0, -20 + bodyBob); gfx.lineTo(0, -4 + bodyBob); gfx.strokePath();
+    } else {
+      // Body highlight (front only)
+      gfx.fillStyle(lightenColor(bodyColor, 1.3), 0.2);
+      gfx.fillRoundedRect(-8, -20 + bodyBob, 7, 14, 2);
+    }
 
     // ─── 5. ARMOR / NFT ELEMENT PATTERN ───
     if (isNft) {
@@ -1684,6 +1709,273 @@ export class IsoBaseScene extends Phaser.Scene {
     // ─── 12. NFT RARITY STARS (above head) ───
     if (isNft && rarityGlow.stars > 0) {
       const starY = (isNft ? -46 : -40) + bodyBob;
+      const totalW = (rarityGlow.stars - 1) * 6;
+      for (let i = 0; i < rarityGlow.stars; i++) {
+        const sx = -totalW / 2 + i * 6;
+        gfx.fillStyle(rarityGlow.color, 0.9);
+        gfx.fillCircle(sx, starY, 1.5);
+        gfx.fillStyle(0xffffff, 0.6);
+        gfx.fillCircle(sx, starY, 0.7);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Side-profile character body (left/right + diagonals).
+  // Torso is turned side-on: only one eye shows, arms swing fore/aft along
+  // the walk axis, legs stride fore/aft (not splayed sideways). `fx` mirrors
+  // the whole pose for right vs left. All 11 layers get a sensible profile
+  // form so element patterns / weapon / headgear still read.
+  // -----------------------------------------------------------------------
+  private drawPlayerBodySide(
+    gfx: Phaser.GameObjects.Graphics,
+    ps: ReturnType<typeof PlayerState.get>,
+    isNft: boolean,
+    rarity: number,
+    bodyColor: number,
+    skinColor: number,
+    fx: number,
+    swing: number,
+    bodyBob: number,
+  ): void {
+    const legColor = darkenColor(bodyColor, 0.65);
+    const armColor = darkenColor(bodyColor, 0.85);
+    const beltColor = darkenColor(bodyColor, 0.5);
+    const bootColor = darkenColor(bodyColor, 0.45);
+    const rarityGlow = IsoBaseScene.RARITY_GLOW[rarity];
+
+    // Fore/aft stride offsets along facing axis (in facing-space, +x = forward).
+    const legFwd = swing * 5;   // leading leg swings forward
+    const legBack = -swing * 5; // trailing leg
+    const armFwd = -swing * 4;  // arms oppose legs
+    const armBack = swing * 4;
+
+    // ─── 1. SHADOW ───
+    if (isNft && rarity >= 2) {
+      gfx.fillStyle(rarityGlow.color, 0.15);
+      gfx.fillEllipse(0, 8, 30, 13);
+    }
+    gfx.fillStyle(0x000000, 0.25);
+    gfx.fillEllipse(0, 8, 26, 11);
+
+    // ─── 2/3. BACK (trailing) ARM + LEG — drawn first, behind torso ───
+    // Trailing leg
+    gfx.fillStyle(darkenColor(legColor, 0.8), 1);
+    gfx.fillRoundedRect((-2 + legBack) * fx, -2, 4 * fx, 10, 1);
+    gfx.fillStyle(darkenColor(bootColor, 0.85), 1);
+    gfx.fillRect((-3 + legBack) * fx, 6, 5 * fx, 3);
+    // Trailing arm (behind torso, dimmer)
+    gfx.fillStyle(darkenColor(armColor, 0.8), 1);
+    gfx.fillRoundedRect((-1 + armBack) * fx, -20 + bodyBob, 4 * fx, 13, 2);
+    gfx.fillStyle(darkenColor(skinColor, 0.9), 1);
+    gfx.fillCircle((1 + armBack) * fx, -7 + bodyBob, 3);
+
+    // Shield sits on the back arm when equipped
+    const armorId = ps.equipped.armor?.id ?? '';
+    if (armorId === 'iron_shield') {
+      gfx.fillStyle(0x778899, 1);
+      gfx.fillRoundedRect((-4 + armBack) * fx, -18 + bodyBob, 6 * fx, 12, 2);
+      gfx.lineStyle(1, 0x556677, 0.8);
+      gfx.strokeRoundedRect((-4 + armBack) * fx, -18 + bodyBob, 6 * fx, 12, 2);
+    }
+
+    // ─── 4. TORSO (side-on: narrower, chest bulge toward facing) ───
+    gfx.fillStyle(bodyColor, 1);
+    gfx.fillRoundedRect(-6 * fx, -22 + bodyBob, 12 * fx, 20, 3);
+    // Chest highlight toward the front
+    gfx.fillStyle(lightenColor(bodyColor, 1.3), 0.22);
+    gfx.fillRoundedRect(2 * fx, -20 + bodyBob, 3 * fx, 14, 2);
+    // Back/spine shade
+    gfx.fillStyle(darkenColor(bodyColor, 0.75), 0.3);
+    gfx.fillRoundedRect(-6 * fx, -20 + bodyBob, 3 * fx, 14, 2);
+
+    // ─── 5. ELEMENT PATTERN / ARMOR (profile-simplified) ───
+    if (isNft) {
+      const elem = ps.nftElement;
+      const patC = lightenColor(bodyColor, 1.5);
+      if (elem === 0) {
+        gfx.lineStyle(1, 0xff6622, 0.5);
+        gfx.beginPath(); gfx.moveTo(0, -4 + bodyBob); gfx.lineTo(1 * fx, -10 + bodyBob); gfx.lineTo(2 * fx, -6 + bodyBob); gfx.strokePath();
+      } else if (elem === 1) {
+        gfx.lineStyle(1, 0x66bbff, 0.4);
+        for (let row = 0; row < 3; row++) {
+          const ly = -18 + bodyBob + row * 5;
+          gfx.beginPath(); gfx.moveTo(-4 * fx, ly); gfx.lineTo(4 * fx, ly + 1); gfx.strokePath();
+        }
+      } else if (elem === 2) {
+        gfx.lineStyle(0.8, 0x88ff88, 0.4);
+        gfx.beginPath(); gfx.arc(0, -12 + bodyBob, 4, 0, Math.PI * 1.5, false); gfx.strokePath();
+      } else if (elem === 3) {
+        gfx.fillStyle(0xaaeeff, 0.4);
+        gfx.fillTriangle(0, -8 + bodyBob, 2 * fx, -16 + bodyBob, 4 * fx, -8 + bodyBob);
+      } else if (elem === 4) {
+        gfx.fillStyle(patC, 0.4);
+        gfx.fillRoundedRect(-2 * fx, -20 + bodyBob, 5 * fx, 5, 1);
+        gfx.fillRoundedRect(-3 * fx, -12 + bodyBob, 5 * fx, 4, 1);
+      } else if (elem === 5) {
+        gfx.lineStyle(1.5, 0xffee44, 0.5);
+        gfx.beginPath(); gfx.moveTo(-2 * fx, -18 + bodyBob); gfx.lineTo(2 * fx, -12 + bodyBob); gfx.lineTo(-1 * fx, -12 + bodyBob); gfx.lineTo(3 * fx, -6 + bodyBob); gfx.strokePath();
+      } else if (elem === 6) {
+        gfx.fillStyle(0xaa44ff, 0.15);
+        gfx.fillEllipse(0, -12 + bodyBob, 8, 6);
+      } else if (elem === 7) {
+        gfx.lineStyle(1, 0xffffcc, 0.4);
+        gfx.beginPath(); gfx.moveTo(0, -18 + bodyBob); gfx.lineTo(0, -6 + bodyBob); gfx.strokePath();
+        gfx.fillStyle(0xffffdd, 0.3);
+        gfx.fillCircle(0, -12 + bodyBob, 2.5);
+      }
+      if (rarity >= 1) {
+        gfx.lineStyle(1, rarityGlow.color, 0.5 + rarity * 0.1);
+        gfx.strokeRoundedRect(-6 * fx, -22 + bodyBob, 12 * fx, 20, 3);
+      }
+    } else {
+      if (armorId === 'chain_armor') {
+        gfx.lineStyle(1, lightenColor(bodyColor, 1.4), 0.45);
+        for (let row = 0; row < 6; row++) {
+          const ly = -20 + bodyBob + row * 3;
+          gfx.beginPath(); gfx.moveTo(-4 * fx, ly); gfx.lineTo(5 * fx, ly); gfx.strokePath();
+        }
+      } else if (armorId === 'dragon_scale') {
+        gfx.lineStyle(1, 0x44aaaa, 0.4);
+        for (let row = 0; row < 6; row++) {
+          const ly = -21 + bodyBob + row * 3;
+          gfx.beginPath(); gfx.moveTo(-4 * fx, ly); gfx.lineTo(5 * fx, ly + 3); gfx.strokePath();
+        }
+      }
+    }
+
+    // ─── 6. BELT ───
+    gfx.fillStyle(beltColor, 1);
+    gfx.fillRect(-6 * fx, -4 + bodyBob, 12 * fx, 3);
+    gfx.fillStyle(isNft ? rarityGlow.color : 0xccaa44, 1);
+    gfx.fillRect(3 * fx, -4 + bodyBob, 3 * fx, 3);
+
+    // ─── NFT pauldron (single, shoulder facing camera) ───
+    if (isNft) {
+      const tierLevel = Math.min(Math.floor(ps.level / 10), 6);
+      if (tierLevel >= 1) {
+        const pSize = 3 + tierLevel;
+        gfx.fillStyle(darkenColor(bodyColor, 0.6), 1);
+        gfx.fillEllipse(-3 * fx, -20 + bodyBob, pSize, pSize * 0.6);
+        gfx.lineStyle(0.5, rarityGlow.color, 0.4);
+        gfx.strokeEllipse(-3 * fx, -20 + bodyBob, pSize, pSize * 0.6);
+      }
+    }
+
+    // ─── 3b. FRONT (leading) LEG — over torso ───
+    gfx.fillStyle(legColor, 1);
+    gfx.fillRoundedRect((0 + legFwd) * fx, -2, 4 * fx, 10, 1);
+    gfx.fillStyle(bootColor, 1);
+    gfx.fillRect((-1 + legFwd) * fx, 6, 6 * fx, 3);
+    if (isNft && rarity >= 2) {
+      gfx.fillStyle(rarityGlow.color, 0.6);
+      gfx.fillRect((-1 + legFwd) * fx, 5.5, 6 * fx, 1);
+    }
+
+    // ─── 7. FRONT ARM + WEAPON ───
+    gfx.fillStyle(armColor, 1);
+    gfx.fillRoundedRect((3 + armFwd) * fx, -20 + bodyBob, 4 * fx, 13, 2);
+    gfx.fillStyle(skinColor, 1);
+    gfx.fillCircle((5 + armFwd) * fx, -7 + bodyBob, 3);
+
+    const weaponId = ps.equipped.weapon?.id ?? '';
+    if (weaponId) {
+      const wx = (6 + armFwd) * fx;
+      const wy = -8 + bodyBob;
+      this.drawWeapon(gfx, weaponId, wx, wy, false);
+    }
+
+    // ─── 8. HEAD (profile — shifted slightly toward facing) ───
+    gfx.fillStyle(skinColor, 1);
+    gfx.fillCircle(1 * fx, -28 + bodyBob, 8);
+    // Nose bump toward facing direction to sell the profile
+    gfx.fillStyle(skinColor, 1);
+    gfx.fillCircle(8 * fx, -28 + bodyBob, 2);
+
+    // ─── 9. HAIR (covers back of head + crown) ───
+    const defaultHairC: Record<string, number> = { knight: 0x443322, mage: 0xccccdd, archer: 0x668833 };
+    gfx.fillStyle(ps.hairColor || defaultHairC[ps.playerClass] || 0x553322, 1);
+    gfx.beginPath();
+    gfx.arc(1 * fx, -30 + bodyBob, 8, Math.PI, 0, false);
+    gfx.closePath();
+    gfx.fillPath();
+    // Back-of-head hair mass
+    gfx.fillEllipse(-4 * fx, -28 + bodyBob, 6, 9);
+
+    // ─── 10. FACE (single eye, side) ───
+    gfx.fillStyle(0xffffff, 1);
+    gfx.fillCircle(4 * fx, -29 + bodyBob, 2);
+    gfx.fillStyle(isNft ? bodyColor : 0x222222, 1);
+    gfx.fillCircle(5 * fx, -29 + bodyBob, 1);
+    gfx.lineStyle(0.8, 0xcc9988, 1);
+    gfx.beginPath();
+    gfx.arc(5 * fx, -25 + bodyBob, 1.5, -0.2, Math.PI * 0.6, false);
+    gfx.strokePath();
+
+    // ─── 11. HEADGEAR (profile forms) ───
+    if (isNft) {
+      const elem = ps.nftElement;
+      if (elem === 0) {
+        gfx.fillStyle(0xff4400, 0.8);
+        gfx.fillTriangle(-2 * fx, -36 + bodyBob, 0, -44 + bodyBob, 3 * fx, -36 + bodyBob);
+        gfx.fillStyle(0xffaa00, 0.5);
+        gfx.fillTriangle(-1 * fx, -36 + bodyBob, 0, -40 + bodyBob, 2 * fx, -36 + bodyBob);
+      } else if (elem === 1) {
+        gfx.fillStyle(0x2288ff, 0.7);
+        gfx.fillEllipse(0, -36 + bodyBob, 12, 4);
+      } else if (elem === 2) {
+        gfx.fillStyle(0x44cc44, 0.7);
+        gfx.fillRoundedRect(-5 * fx, -36 + bodyBob, 11 * fx, 3, 1);
+        gfx.fillStyle(0x88ff88, 0.5);
+        gfx.fillTriangle(-5 * fx, -36 + bodyBob, -9 * fx, -42 + bodyBob, -6 * fx, -34 + bodyBob);
+      } else if (elem === 3) {
+        gfx.fillStyle(0x88ddff, 0.7);
+        gfx.fillRoundedRect(-4 * fx, -36 + bodyBob, 9 * fx, 3, 1);
+        gfx.fillStyle(0xaaeeff, 0.8);
+        gfx.fillTriangle(0, -36 + bodyBob, 1 * fx, -42 + bodyBob, 2 * fx, -36 + bodyBob);
+      } else if (elem === 4) {
+        gfx.fillStyle(0x997733, 0.8);
+        gfx.fillRoundedRect(-6 * fx, -36 + bodyBob, 13 * fx, 5, 2);
+      } else if (elem === 5) {
+        gfx.fillStyle(0xffdd00, 0.7);
+        gfx.fillRoundedRect(-5 * fx, -36 + bodyBob, 11 * fx, 3, 1);
+        gfx.lineStyle(1.5, 0xffee44, 0.8);
+        gfx.beginPath(); gfx.moveTo(-2 * fx, -36 + bodyBob); gfx.lineTo(0, -42 + bodyBob); gfx.lineTo(2 * fx, -38 + bodyBob); gfx.strokePath();
+      } else if (elem === 6) {
+        gfx.fillStyle(0x221133, 0.9);
+        gfx.beginPath();
+        gfx.arc(0, -30 + bodyBob, 10, Math.PI + 0.3, -0.3, false);
+        gfx.closePath();
+        gfx.fillPath();
+      } else if (elem === 7) {
+        gfx.lineStyle(1.5, 0xffffaa, 0.6);
+        gfx.strokeEllipse(0, -38 + bodyBob, 14, 5);
+      }
+    } else {
+      if (ps.playerClass === 'knight') {
+        gfx.fillStyle(0x88aacc, 1);
+        gfx.fillRoundedRect(-5 * fx, -36 + bodyBob, 12 * fx, 4, 1);
+        gfx.fillStyle(0x334455, 1);
+        gfx.fillRect(3 * fx, -35 + bodyBob, 5 * fx, 1.5);
+      } else if (ps.playerClass === 'mage') {
+        gfx.fillStyle(bodyColor, 1);
+        gfx.fillTriangle(-2 * fx, -48 + bodyBob, -8 * fx, -32 + bodyBob, 6 * fx, -32 + bodyBob);
+        gfx.fillStyle(darkenColor(bodyColor, 0.7), 1);
+        gfx.fillEllipse(0, -32 + bodyBob, 18, 6);
+        gfx.fillStyle(0xffdd44, 0.8);
+        gfx.fillCircle(-2 * fx, -47 + bodyBob, 2);
+      } else if (ps.playerClass === 'archer') {
+        gfx.fillStyle(darkenColor(bodyColor, 0.75), 1);
+        gfx.beginPath();
+        gfx.arc(0, -30 + bodyBob, 9, Math.PI + 0.2, -0.2, false);
+        gfx.closePath();
+        gfx.fillPath();
+      }
+    }
+
+    // ─── 12. NFT RARITY STARS ───
+    if (isNft && rarityGlow.stars > 0) {
+      const starY = -46 + bodyBob;
       const totalW = (rarityGlow.stars - 1) * 6;
       for (let i = 0; i < rarityGlow.stars; i++) {
         const sx = -totalW / 2 + i * 6;
@@ -2050,9 +2342,11 @@ export class IsoBaseScene extends Phaser.Scene {
     const ps = PlayerState.get();
     const hasNftSprite = ps.nftTokenId > 0 && ps.nftElement >= 0;
     if (!hasNftSprite) {
+      // ~6 sub-steps across the tile so the sinusoidal gait reads smoothly.
+      const stepDelay = 45;
       this.walkAnim = this.time.addEvent({
-        delay: 80,
-        repeat: Math.ceil(this.moveSpeed / 80),
+        delay: stepDelay,
+        repeat: Math.ceil(this.moveSpeed / stepDelay),
         callback: () => {
           this.walkFrame = (this.walkFrame + 1) % 6;
           this.redrawPlayerBody();
@@ -2063,6 +2357,10 @@ export class IsoBaseScene extends Phaser.Scene {
     // NFT hero walk effects: bob, dust particles, body sway
     if (hasNftSprite && this.nftSpriteImage) {
       const nftImg = this.nftSpriteImage;
+      // Face the travel direction (single-image sprite → mirror only, up/down
+      // keep prior facing since a flat sprite can't turn back-to-camera).
+      if (this.playerFacing.includes('left')) nftImg.setFlipX(true);
+      else if (this.playerFacing.includes('right')) nftImg.setFlipX(false);
       const originalY = nftImg.y;
 
       // Stop any previous walk tweens
@@ -2118,12 +2416,16 @@ export class IsoBaseScene extends Phaser.Scene {
       }
     }
 
+    // Continuous-path smoothing: when more tiles are queued we glide with a
+    // linear ease so tile boundaries don't hitch; a lone hop eases in/out for
+    // a soft start/stop.
+    const moreQueued = this.clickPath.length > 0;
     this.tweens.add({
       targets: this.playerSprite,
       x: target.x,
       y: target.y,
       duration: this.moveSpeed,
-      ease: 'Power1',
+      ease: moreQueued ? 'Linear' : 'Sine.easeInOut',
       onComplete: () => {
         this.playerMoving = false;
         this.playerSprite.setDepth(isoDepth(tx, ty) + 5);
