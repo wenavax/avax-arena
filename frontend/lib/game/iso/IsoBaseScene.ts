@@ -100,6 +100,12 @@ export class IsoBaseScene extends Phaser.Scene {
   private minimapVisible: boolean = true;
   private minimapSize: number = 140;
   private minimapPad: number = 14;
+  // Dedicated zoom-independent UI camera for the minimap. The main camera uses
+  // setZoom(1.2), which also scales scrollFactor(0) objects (zoom cancels pan,
+  // not scale) — that pushed the minimap partly off-screen. This camera renders
+  // ONLY the minimap objects at zoom=1 so they stay pinned to the true corner.
+  private minimapCam: Phaser.Cameras.Scene2D.Camera | null = null;
+  private minimapObjects: Phaser.GameObjects.GameObject[] = [];
 
   // Objects created on the map (for cleanup)
   private objectGfxList: Phaser.GameObjects.GameObject[] = [];
@@ -312,6 +318,13 @@ export class IsoBaseScene extends Phaser.Scene {
 
     // Drop terrain chunk refs so cullTerrain won't touch destroyed gfx
     this.terrainChunks = [];
+
+    // Remove the dedicated minimap UI camera so it doesn't accumulate.
+    if (this.minimapCam) {
+      this.cameras.remove(this.minimapCam, true);
+      this.minimapCam = null;
+    }
+    this.minimapObjects = [];
   }
 
   private cleanupInputListeners(): void {
@@ -3635,6 +3648,9 @@ export class IsoBaseScene extends Phaser.Scene {
     const size = this.minimapSize;
     const pad = this.minimapPad;
 
+    // Reset object tracking (createMinimap can run again on zone re-entry)
+    this.minimapObjects = [];
+
     // Minimap position: top-right corner (below HUD buttons)
     const mx = W - size - pad;
     const my = 46; // below HUD top bar
@@ -3708,6 +3724,13 @@ export class IsoBaseScene extends Phaser.Scene {
     this.minimapGfx.setScrollFactor(0);
     this.minimapGfx.setDepth(4503);
 
+    // Collect every minimap object so the camera split can be wired up.
+    this.minimapObjects = [this.minimapBg, terrainGfx, frame, title, this.minimapGfx];
+    // Tag them so the future-object listener (below) never re-ignores them.
+    for (const o of this.minimapObjects) (o as any).setData?.('minimap', true);
+
+    this.setupMinimapCamera(mx, my, size);
+
     this.updateMinimapPlayer();
 
     // Toggle key: Tab
@@ -3720,7 +3743,50 @@ export class IsoBaseScene extends Phaser.Scene {
       terrainGfx.setVisible(vis);
       title.setVisible(vis);
       frame.setVisible(vis);
+      // The dedicated UI camera can be toggled wholesale too.
+      this.minimapCam?.setVisible(vis);
     });
+  }
+
+  /**
+   * Wire up a dedicated, zoom-independent UI camera that renders ONLY the
+   * minimap objects. The main camera (zoom 1.2) ignores those objects, and this
+   * camera ignores everything else. Because this camera has zoom=1, the minimap
+   * stays pinned to the true top-right corner at its intended size instead of
+   * being scaled up and pushed off-screen by the main camera's zoom.
+   */
+  private setupMinimapCamera(mx: number, my: number, size: number): void {
+    // Reuse an existing camera if createMinimap ran again (zone re-entry).
+    if (this.minimapCam) {
+      this.cameras.remove(this.minimapCam, true);
+      this.minimapCam = null;
+    }
+
+    const uiCam = this.cameras.add(0, 0, this.cameras.main.width, this.cameras.main.height);
+    uiCam.setName('minimap');
+    uiCam.setZoom(1);
+    uiCam.setScroll(0, 0);
+    uiCam.transparent = true;
+    this.minimapCam = uiCam;
+
+    const minimapSet = new Set<Phaser.GameObjects.GameObject>(this.minimapObjects);
+
+    // Main camera: hide the minimap objects (they belong to the UI camera).
+    this.cameras.main.ignore(this.minimapObjects);
+
+    // UI camera: hide everything currently in the scene except minimap objects.
+    const others = this.children.list.filter((o) => !minimapSet.has(o));
+    if (others.length) uiCam.ignore(others);
+
+    // UI camera: hide any object added later (monsters, dialogs, particles, …)
+    // so it never leaks non-minimap content. Minimap objects are pre-tagged.
+    const onAdded = (obj: Phaser.GameObjects.GameObject) => {
+      if ((obj as any).getData?.('minimap')) return;
+      uiCam.ignore(obj);
+    };
+    this.events.on(Phaser.Scenes.Events.ADDED_TO_SCENE, onAdded);
+    this.events.once('shutdown', () => this.events.off(Phaser.Scenes.Events.ADDED_TO_SCENE, onAdded));
+    this.events.once('destroy', () => this.events.off(Phaser.Scenes.Events.ADDED_TO_SCENE, onAdded));
   }
 
   private updateMinimapPlayer(): void {
