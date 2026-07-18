@@ -89,6 +89,7 @@ export class IsoBaseScene extends Phaser.Scene {
   private auraTimer: Phaser.Time.TimerEvent | null = null;
   private auraPhase: number = 0;
   private nftSpriteImage: Phaser.GameObjects.Image | null = null;
+  private breathPhase: boolean = false;
   private nftWalkBobTween: Phaser.Tweens.Tween | null = null;
   private nftWalkSwayTween: Phaser.Tweens.Tween | null = null;
 
@@ -925,6 +926,22 @@ export class IsoBaseScene extends Phaser.Scene {
 
     container.setDepth(isoDepth(this.playerTx, this.playerTy) + 5);
     this.playerSprite = container;
+
+    // Idle breathing — while standing still, gentle sway (NFT sprite: scale, non-NFT: bodyBob)
+    // Cleaned up by onSceneShutdown -> time.removeAllEvents()
+    this.time.addEvent({
+      delay: 700,
+      loop: true,
+      callback: () => {
+        if (this.playerMoving || this.frozen) return;
+        this.breathPhase = !this.breathPhase;
+        if (this.nftSpriteImage) {
+          this.nftSpriteImage.setDisplaySize(56, this.breathPhase ? 55 : 56);
+        } else {
+          this.redrawPlayerBody();
+        }
+      },
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -1016,13 +1033,15 @@ export class IsoBaseScene extends Phaser.Scene {
     const facingUp = this.playerFacing === 'up' || this.playerFacing === 'up_left' || this.playerFacing === 'up_right';
     const fx = facingLeft ? -1 : 1;
 
-    // --- Walk animation offsets ---
-    const f = this.walkFrame % 4;
-    const legL = [0, -4, 0, 4][f];
-    const legR = [0, 4, 0, -4][f];
-    const armF = [0, -3, 0, 3][f];
-    const armB = [0, 3, 0, -3][f];
-    const bodyBob = [0, -1, 0, -1][f];
+    // --- Walk animation offsets (6-frame cycle) ---
+    const f = this.walkFrame % 6;
+    const legL = [0, -3, -5, 0, 3, 5][f];
+    const legR = [0, 3, 5, 0, -3, -5][f];
+    const armF = [0, -2, -4, 0, 2, 4][f];
+    const armB = [0, 2, 4, 0, -2, -4][f];
+    // Idle breathing — when standing still, gentle whole-body rise/fall
+    const breathOffset = (!this.playerMoving && this.breathPhase) ? -0.6 : 0;
+    const bodyBob = [0, -1, -1.5, 0, -1, -1.5][f] + breathOffset;
 
     const legColor = darkenColor(bodyColor, 0.65);
     const armColor = darkenColor(bodyColor, 0.85);
@@ -1406,6 +1425,17 @@ export class IsoBaseScene extends Phaser.Scene {
     // Handle
     gfx.fillStyle(0x664422, 1);
     gfx.fillRect(wx - 1, wy + 2, 3, 4);
+
+    // Hilt wrap band (darker grip detail)
+    gfx.fillStyle(0x3a2612, 1);
+    gfx.fillRect(wx - 1, wy + 3.5, 3, 1);
+
+    // Magic/enchanted weapons — pulsing point of light at the blade tip
+    if (glowAlpha > 0) {
+      const tipPulse = 0.4 + Math.abs(Math.sin(this.walkFrame * Math.PI / 6)) * 0.4; // 0.4..0.8
+      gfx.fillStyle(0xffffff, tipPulse);
+      gfx.fillCircle(wx, wy - bladeLength, 1.2);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -1692,7 +1722,7 @@ export class IsoBaseScene extends Phaser.Scene {
         delay: 80,
         repeat: Math.ceil(this.moveSpeed / 80),
         callback: () => {
-          this.walkFrame = (this.walkFrame + 1) % 4;
+          this.walkFrame = (this.walkFrame + 1) % 6;
           this.redrawPlayerBody();
         },
       });
