@@ -3704,12 +3704,13 @@ export class IsoBaseScene extends Phaser.Scene {
     }
 
     // Cyan çerçeve + köşe aksan tikleri (stats-panel stiliyle uyumlu)
+    // Bg panelle hizalı: (mx-4, my-14, size+8, size+22) — MAP başlığını da sarar.
     const frame = this.add.graphics().setScrollFactor(0).setDepth(4502);
     frame.lineStyle(1.5, 0x00e5ff, 0.35);
-    frame.strokeRoundedRect(mx - 4, my - 4, size + 8, size + 8, 6);
+    frame.strokeRoundedRect(mx - 4, my - 14, size + 8, size + 22, 6);
     frame.lineStyle(2, 0x00e5ff, 0.7);
     const tick = 8;
-    const fx = mx - 4, fy = my - 4, fw = size + 8, fh = size + 8;
+    const fx = mx - 4, fy = my - 14, fw = size + 8, fh = size + 22;
     // Sol-üst
     frame.beginPath(); frame.moveTo(fx, fy + tick); frame.lineTo(fx, fy); frame.lineTo(fx + tick, fy); frame.strokePath();
     // Sağ-üst
