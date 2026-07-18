@@ -3687,6 +3687,22 @@ export class IsoBaseScene extends Phaser.Scene {
       }
     }
 
+    // Cyan çerçeve + köşe aksan tikleri (stats-panel stiliyle uyumlu)
+    const frame = this.add.graphics().setScrollFactor(0).setDepth(4502);
+    frame.lineStyle(1.5, 0x00e5ff, 0.35);
+    frame.strokeRoundedRect(mx - 4, my - 4, size + 8, size + 8, 6);
+    frame.lineStyle(2, 0x00e5ff, 0.7);
+    const tick = 8;
+    const fx = mx - 4, fy = my - 4, fw = size + 8, fh = size + 8;
+    // Sol-üst
+    frame.beginPath(); frame.moveTo(fx, fy + tick); frame.lineTo(fx, fy); frame.lineTo(fx + tick, fy); frame.strokePath();
+    // Sağ-üst
+    frame.beginPath(); frame.moveTo(fx + fw - tick, fy); frame.lineTo(fx + fw, fy); frame.lineTo(fx + fw, fy + tick); frame.strokePath();
+    // Sol-alt
+    frame.beginPath(); frame.moveTo(fx, fy + fh - tick); frame.lineTo(fx, fy + fh); frame.lineTo(fx + tick, fy + fh); frame.strokePath();
+    // Sağ-alt
+    frame.beginPath(); frame.moveTo(fx + fw - tick, fy + fh); frame.lineTo(fx + fw, fy + fh); frame.lineTo(fx + fw, fy + fh - tick); frame.strokePath();
+
     // Player dot overlay (updated each move)
     this.minimapGfx = this.add.graphics();
     this.minimapGfx.setScrollFactor(0);
@@ -3703,6 +3719,7 @@ export class IsoBaseScene extends Phaser.Scene {
       this.minimapGfx?.setVisible(vis);
       terrainGfx.setVisible(vis);
       title.setVisible(vis);
+      frame.setVisible(vis);
     });
   }
 

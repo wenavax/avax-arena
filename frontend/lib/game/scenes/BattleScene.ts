@@ -10,6 +10,7 @@ import { music } from '../musicSystem';
 import { mp } from '../multiplayer/socket';
 import { incrementStat } from '../achievements';
 import { getRandomMobLine } from '../lore';
+import { drawBattleBackdrop } from '../battleBackdrop';
 
 interface BattleData { monster: MonsterData; returnScene: string; }
 
@@ -252,13 +253,18 @@ export class BattleScene extends Phaser.Scene {
     const state = PlayerState.get();
 
     // ── Background ──
+    // Zone-temalı katmanlı arka plan (depth -10). Çağıran zone'un scene key'i
+    // returnScene'de taşınıyor; onu palet anahtarı olarak kullan.
+    drawBattleBackdrop(this, this.returnScene, W, H);
+
     const bg = this.add.graphics();
-    bg.fillStyle(0x0a0e18, 0.97);
+    // Backdrop görünsün diye ekran-dolusu koyu banyo yarı-saydam (eskiden 0.97 opaktı).
+    bg.fillStyle(0x0a0e18, 0.55);
     bg.fillRect(0, 0, W, H);
     // Subtle gradient overlay: darker top to slightly lighter middle
-    bg.fillStyle(0x000000, 0.3);
+    bg.fillStyle(0x000000, 0.22);
     bg.fillRect(0, 0, W, H * 0.15);
-    bg.fillStyle(0x000000, 0.15);
+    bg.fillStyle(0x000000, 0.1);
     bg.fillRect(0, H * 0.15, W, H * 0.15);
     // Scatter star dots in top 30%
     for (let i = 0; i < 35; i++) {
@@ -268,6 +274,7 @@ export class BattleScene extends Phaser.Scene {
       bg.fillStyle(0xffffff, sa);
       bg.fillRect(sx, sy, 1, 1);
     }
+    // Aren zemini — okunabilirlik için opak elipsler (karakterler bunun üstünde durur)
     bg.fillStyle(0x141a28, 1);
     bg.fillEllipse(W / 2, H * 0.42, W * 0.75, H * 0.25);
     bg.fillStyle(0x0f1420, 1);
@@ -1020,6 +1027,118 @@ export class BattleScene extends Phaser.Scene {
     gfx.strokeCircle(cx, cy - 2 * S * sc, 20 * S * sc);
     gfx.lineStyle(1 * S * sc, 0xffffff, 0.06);
     gfx.strokeCircle(cx, cy - 2 * S * sc, 24 * S * sc);
+
+    // ── Boss imza aksanları (tip-bazlı) ──
+    this.drawBossSignature(gfx, cx, cy, S, color, sc);
+  }
+
+  // Her boss'a kimlik veren 2-3 vurgu. Jenerik ejder+taç tabanın üstüne katmanlanır;
+  // eşleşmeyen boss tipi jenerik kalır.
+  private drawBossSignature(gfx: Phaser.GameObjects.Graphics, cx: number, cy: number, S: number, color: number, sc: number): void {
+    const type = this.monster.type.startsWith('elite_') ? this.monster.type.slice(6) : this.monster.type;
+    switch (type) {
+      case 'titan_forgemaster': {
+        // Örs-çekiç silüeti + turuncu damar çizgileri
+        gfx.fillStyle(0x33261a, 1);
+        gfx.fillRect(cx + 8 * S * sc, cy - 2 * S * sc, 10 * S * sc, 3 * S * sc); // örs gövdesi
+        gfx.fillRect(cx + 11 * S * sc, cy + 1 * S * sc, 4 * S * sc, 4 * S * sc); // örs ayağı
+        gfx.fillStyle(0x4a3524, 1);
+        gfx.fillRect(cx + 12 * S * sc, cy - 10 * S * sc, 2 * S * sc, 8 * S * sc); // çekiç sapı
+        gfx.fillRect(cx + 9 * S * sc, cy - 12 * S * sc, 8 * S * sc, 3 * S * sc); // çekiç başı
+        gfx.lineStyle(1.2 * S * sc, 0xff7722, 0.85); // turuncu ergimiş damarlar
+        gfx.lineBetween(cx - 5 * S * sc, cy - 6 * S * sc, cx - 2 * S * sc, cy + 2 * S * sc);
+        gfx.lineBetween(cx + 1 * S * sc, cy - 4 * S * sc, cx + 4 * S * sc, cy + 4 * S * sc);
+        break;
+      }
+      case 'void_sovereign':
+      case 'abyssal_overlord': {
+        // Etrafında dönen 3 mor parça (orbit deseni)
+        const orbitColor = type === 'void_sovereign' ? 0x9b3cff : 0x3c7bff;
+        for (let i = 0; i < 3; i++) {
+          const ang = (i / 3) * Math.PI * 2;
+          const ox = cx + Math.cos(ang) * 22 * S * sc;
+          const oy = cy - 4 * S * sc + Math.sin(ang) * 12 * S * sc;
+          gfx.fillStyle(orbitColor, 0.9);
+          gfx.fillTriangle(ox, oy - 2.5 * S * sc, ox - 2 * S * sc, oy + 2 * S * sc, ox + 2 * S * sc, oy + 2 * S * sc);
+          gfx.fillStyle(0xffffff, 0.4);
+          gfx.fillCircle(ox, oy, 0.9 * S * sc);
+        }
+        break;
+      }
+      case 'lich_king': {
+        // Soluk taç yerine buz-mor iskelet halesi + göz alevi
+        gfx.fillStyle(0x66ffcc, 0.9);
+        gfx.fillCircle(cx - 2 * S * sc, cy - 16 * S * sc, 1.6 * S * sc);
+        gfx.fillCircle(cx + 2 * S * sc, cy - 16 * S * sc, 1.6 * S * sc);
+        gfx.lineStyle(1.5 * S * sc, 0x88ffdd, 0.5);
+        gfx.strokeCircle(cx, cy - 2 * S * sc, 27 * S * sc); // hayaletsi hale
+        break;
+      }
+      case 'frost_emperor':
+      case 'boss_frost':
+      case 'boss_frost_v2': {
+        // Buz kristal dikenleri (omuzlarda) + soğuk göz parıltısı
+        const spikeColor = type === 'boss_frost_v2' ? 0xff88aa : 0xaadfff;
+        gfx.fillStyle(spikeColor, 0.9);
+        for (const dir of [-1, 1]) {
+          gfx.fillTriangle(
+            cx + dir * 7 * S * sc, cy - 8 * S * sc,
+            cx + dir * 10 * S * sc, cy - 18 * S * sc,
+            cx + dir * 4 * S * sc, cy - 8 * S * sc,
+          );
+        }
+        gfx.fillStyle(0xffffff, 0.8);
+        gfx.fillCircle(cx - 2 * S * sc, cy - 16 * S * sc, 1.2 * S * sc);
+        gfx.fillCircle(cx + 2 * S * sc, cy - 16 * S * sc, 1.2 * S * sc);
+        break;
+      }
+      case 'storm_titan':
+      case 'sky_sentinel': {
+        // Şimşek çentikleri + sarı göz kıvılcımı
+        gfx.lineStyle(1.6 * S * sc, 0xffee44, 0.9);
+        gfx.beginPath();
+        gfx.moveTo(cx - 14 * S * sc, cy - 20 * S * sc);
+        gfx.lineTo(cx - 10 * S * sc, cy - 12 * S * sc);
+        gfx.lineTo(cx - 13 * S * sc, cy - 11 * S * sc);
+        gfx.lineTo(cx - 8 * S * sc, cy - 2 * S * sc);
+        gfx.strokePath();
+        gfx.fillStyle(0xffff88, 0.9);
+        gfx.fillCircle(cx - 2 * S * sc, cy - 16 * S * sc, 1.3 * S * sc);
+        gfx.fillCircle(cx + 2 * S * sc, cy - 16 * S * sc, 1.3 * S * sc);
+        break;
+      }
+      case 'abyssal_leviathan':
+      case 'abyssal_terror': {
+        // Deniz dokunaçları (alt gövdeden kıvrılan) + biyolüminesan noktalar
+        gfx.lineStyle(2.5 * S * sc, darken(color, 0.7), 0.9);
+        for (const dir of [-1, 1]) {
+          gfx.beginPath();
+          gfx.arc(cx + dir * 8 * S * sc, cy + 8 * S * sc, 6 * S * sc, 0, Math.PI, dir < 0);
+          gfx.strokePath();
+        }
+        gfx.fillStyle(0x44ffee, 0.85);
+        gfx.fillCircle(cx - 6 * S * sc, cy + 2 * S * sc, 0.9 * S * sc);
+        gfx.fillCircle(cx + 6 * S * sc, cy + 4 * S * sc, 0.9 * S * sc);
+        gfx.fillCircle(cx, cy - 6 * S * sc, 0.9 * S * sc);
+        break;
+      }
+      case 'ancient_guardian': {
+        // Taş kalkan + kadim rün parıltısı
+        gfx.fillStyle(darken(color, 0.5), 1);
+        gfx.fillRoundedRect(cx - 20 * S * sc, cy - 6 * S * sc, 6 * S * sc, 12 * S * sc, 2 * S * sc);
+        gfx.lineStyle(1 * S * sc, 0x66ddff, 0.8);
+        gfx.strokeCircle(cx - 17 * S * sc, cy, 2 * S * sc); // rün
+        break;
+      }
+      case 'swamp_hag': {
+        // Yeşil pençe + kaynayan kazan buharı (nokta bulut)
+        gfx.fillStyle(0x88cc44, 0.8);
+        for (let i = 0; i < 5; i++) {
+          gfx.fillCircle(cx + (i - 2) * 3 * S * sc, cy - 22 * S * sc - (i % 2) * 2 * S * sc, 1.4 * S * sc);
+        }
+        break;
+      }
+    }
   }
 
   // ── Buttons ──
