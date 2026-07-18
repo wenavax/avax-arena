@@ -12,6 +12,8 @@ import { music, ZoneMusic } from '../musicSystem';
 import { generateHeroTraits, drawHero, ELEMENTS, type DrawHeroOptions } from '../nft/heroGenerator';
 import { HUB_INTERACT_PREFIX } from '../hub/hubGames';
 import { getMonsterVisual } from './monsterSprites';
+import { ZONE_ATMOSPHERE } from './zoneAtmosphere';
+import { LightPool } from './lightPool';
 
 // ---------------------------------------------------------------------------
 // Direction helpers
@@ -101,6 +103,11 @@ export class IsoBaseScene extends Phaser.Scene {
   private objectGfxList: Phaser.GameObjects.GameObject[] = [];
   private npcContainers: Phaser.GameObjects.Container[] = [];
 
+  // Terrain chunking + culling (world visual upgrade Task 4)
+  private terrainChunks: { gfx: Phaser.GameObjects.Graphics; bounds: Phaser.Geom.Rectangle }[] = [];
+  private static readonly TERRAIN_CHUNK = 16;
+  protected lightPool!: LightPool;
+
   // Input listener tracking (prevent leaks)
   private inputSetup: boolean = false;
   private clickSetup: boolean = false;
@@ -183,12 +190,15 @@ export class IsoBaseScene extends Phaser.Scene {
     // Clean up previous listeners before setting up new ones
     this.cleanupInputListeners();
 
+    // Light pool must exist before renderTerrain (torch/lava cases use it)
+    this.lightPool = new LightPool(this, this.isMobile ? 3 : 6);
     this.renderTerrain();
     this.createPlayer();
     this.setupCamera();
     this.setupInput();
     this.setupClickToMove();
     this.addAmbientParticles();
+    this.applyZoneAtmosphere();
 
     // Mobile: add virtual joystick + action buttons
     if (this.isMobile) {
@@ -286,6 +296,9 @@ export class IsoBaseScene extends Phaser.Scene {
     this.clickPath = [];
     this.playerMoving = false;
     this.frozen = false;
+
+    // Drop terrain chunk refs so cullTerrain won't touch destroyed gfx
+    this.terrainChunks = [];
   }
 
   private cleanupInputListeners(): void {
@@ -308,28 +321,92 @@ export class IsoBaseScene extends Phaser.Scene {
   // Terrain rendering
   // -----------------------------------------------------------------------
   private renderTerrain(): void {
-    const gfx = this.add.graphics();
-    gfx.setDepth(0);
+    this.terrainChunks = [];
+    const C = IsoBaseScene.TERRAIN_CHUNK;
 
-    // Draw back-to-front for correct overlap
-    for (let ty = 0; ty < this.mapH; ty++) {
-      for (let tx = 0; tx < this.mapW; tx++) {
-        const tile = this.tiles[ty][tx];
-        const colors = ZONE_BIOME_COLORS[tile.biome] || ZONE_BIOME_COLORS['grass'];
-        const screen = toScreen(tx, ty);
+    // Draw back-to-front for correct overlap; one Graphics per chunk for culling
+    for (let cy = 0; cy < this.mapH; cy += C) {
+      for (let cx = 0; cx < this.mapW; cx += C) {
+        const gfx = this.add.graphics();
+        gfx.setDepth(0);
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-        // Neighbor heights for wall visibility
-        const neighborLeft = ty + 1 < this.mapH ? this.tiles[ty + 1][tx].height : 0;
-        const neighborRight = tx + 1 < this.mapW ? this.tiles[ty][tx + 1].height : 0;
+        for (let ty = cy; ty < Math.min(cy + C, this.mapH); ty++) {
+          for (let tx = cx; tx < Math.min(cx + C, this.mapW); tx++) {
+            const tile = this.tiles[ty][tx];
+            const colors = ZONE_BIOME_COLORS[tile.biome] || ZONE_BIOME_COLORS['grass'];
+            const screen = toScreen(tx, ty);
 
-        drawColumn(gfx, screen.x, screen.y, colors, tile.height, neighborLeft, neighborRight, tx, ty);
+            // Neighbor heights for wall visibility
+            const neighborLeft = ty + 1 < this.mapH ? this.tiles[ty + 1][tx].height : 0;
+            const neighborRight = tx + 1 < this.mapW ? this.tiles[ty][tx + 1].height : 0;
 
-        // Draw decoration objects (trees / rocks) indicated by tile data
-        if (tile.data?.deco) {
-          this.drawDecoration(tx, ty, tile.data.deco, tile.height);
+            drawColumn(gfx, screen.x, screen.y, colors, tile.height, neighborLeft, neighborRight, tx, ty);
+
+            // Cast shadow: sun from NW — if west neighbor (tx-1) is taller,
+            // drop a shadow wedge onto the west edge of this tile's top face
+            const hW = tx > 0 ? this.tiles[ty][tx - 1].height : tile.height;
+            if (hW > tile.height) {
+              const sy = screen.y - tile.height * ISO_BLOCK_H;
+              const hw = ISO_TILE_W / 2, hh = ISO_TILE_H / 2;
+              gfx.fillStyle(0x000015, Math.min(0.22, 0.11 * (hW - tile.height)));
+              gfx.beginPath();
+              gfx.moveTo(screen.x - hw, sy);
+              gfx.lineTo(screen.x, sy - hh);
+              gfx.lineTo(screen.x, sy - hh + 7);
+              gfx.lineTo(screen.x - hw + 11, sy + 5);
+              gfx.closePath();
+              gfx.fillPath();
+            }
+
+            // Lava glow — sparse light pools over lava biome
+            if (tile.biome === 'lava' && ((tx * 7 + ty * 13) % 41) === 0) {
+              this.lightPool.add(screen.x, screen.y - tile.height * ISO_BLOCK_H, 0xff5522, 90);
+            }
+
+            // Draw decoration objects (trees / rocks) indicated by tile data
+            if (tile.data?.deco) {
+              this.drawDecoration(tx, ty, tile.data.deco, tile.height);
+            }
+
+            // Chunk bounding box (for culling) — wall + height padding
+            minX = Math.min(minX, screen.x - ISO_TILE_W / 2);
+            maxX = Math.max(maxX, screen.x + ISO_TILE_W / 2);
+            minY = Math.min(minY, screen.y - tile.height * ISO_BLOCK_H - ISO_TILE_H);
+            maxY = Math.max(maxY, screen.y + ISO_TILE_H + tile.height * ISO_BLOCK_H);
+          }
+        }
+        if (minX !== Infinity) {
+          this.terrainChunks.push({
+            gfx,
+            bounds: new Phaser.Geom.Rectangle(minX, minY, maxX - minX, maxY - minY),
+          });
         }
       }
     }
+  }
+
+  /** Hide terrain chunks whose bounds are off-screen (viewport culling). */
+  private cullTerrain(): void {
+    const view = this.cameras.main.worldView;
+    for (const ch of this.terrainChunks) {
+      ch.gfx.setVisible(Phaser.Geom.Intersects.RectangleToRectangle(ch.bounds, view));
+    }
+  }
+
+  /** Screen-space color wash + bottom fog band keyed to the current zone. */
+  private applyZoneAtmosphere(): void {
+    const atmo = ZONE_ATMOSPHERE[this.scene.key];
+    if (!atmo) return;
+    const w = this.scale.width, h = this.scale.height;
+    const wash = this.add.graphics().setScrollFactor(0).setDepth(1500);
+    wash.fillGradientStyle(atmo.tint, atmo.tint, atmo.fogColor, atmo.fogColor,
+      atmo.tintAlpha, atmo.tintAlpha, 0, 0);
+    wash.fillRect(0, 0, w, h);
+    const fog = this.add.graphics().setScrollFactor(0).setDepth(1501);
+    fog.fillGradientStyle(atmo.fogColor, atmo.fogColor, atmo.fogColor, atmo.fogColor,
+      0, 0, atmo.fogAlpha, atmo.fogAlpha);
+    fog.fillRect(0, h * 0.62, w, h * 0.38);
   }
 
   /** Draw a decoration (tree, rock, etc.) as a separate Graphics object with correct depth. */
@@ -431,6 +508,7 @@ export class IsoBaseScene extends Phaser.Scene {
         g.fillStyle(0xffdd44, 0.8);
         g.fillTriangle(screen.x, screen.y - 18, screen.x - 1.5, screen.y - 14, screen.x + 1.5, screen.y - 14);
         this.objectGfxList.push(g);
+        this.lightPool.add(screen.x, screen.y - 18, 0xffaa44, 70);
         break;
       }
       case 'skull': {
@@ -1430,6 +1508,8 @@ export class IsoBaseScene extends Phaser.Scene {
   // Update loop
   // -----------------------------------------------------------------------
   update(_time: number, _delta: number): void {
+    this.cullTerrain();
+
     // Safety: if playerMoving is stuck (tween was destroyed), force reset
     if (this.playerMoving && this.playerSprite && !this.tweens.isTweening(this.playerSprite)) {
       this.playerMoving = false;
