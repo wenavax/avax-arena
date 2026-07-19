@@ -11,7 +11,7 @@
  * skipped while hidden) — the captured (round, tick) timeline is unaffected.
  */
 import {
-  initMatch, startRound, stepTick, roundDone, scoreRound, finalRanking, speed, evaluate, fxClass,
+  initMatch, startRound, stepTick, roundDone, scoreRound, finalRanking, speed, evaluate, fxClass, isCompletePlay,
   CFG, type MatchState, type MatchInput, type PlayEvent, type Pid,
 } from './engine';
 import { ABILITIES } from './abilities';
@@ -173,7 +173,9 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     // cooldown bar + button state update every tick (not only on hand change)
     const cd = Math.max(0, p1.cdUntil - s.t);
     ($('eng-cd')).style.width = (cd / CFG.COOLDOWN_TICKS * 100) + '%';
-    ($('eng-play') as HTMLButtonElement).disabled = cd > 0 || selected.size === 0 || p1.fin;
+    const selCards = [...selected].map((i) => p1.hand[i]);
+    const illegalSel = selCards.length >= 2 && !isCompletePlay(selCards);
+    ($('eng-play') as HTMLButtonElement).disabled = cd > 0 || selected.size === 0 || p1.fin || illegalSel;
     const h = $('eng-hand');
     const sig = p1.hand.map((c) => c.id).join(',') + '|' + [...selected].sort((a, b) => a - b).join(',');
     if (h.dataset.sig === sig) return;
@@ -203,6 +205,10 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     const pv = $('eng-note');
     const cards = [...selected].map((i) => p1.hand[i]);
     if (!cards.length) { pv.textContent = 'select 1–8 cards'; return; }
+    if (cards.length >= 2 && !isCompletePlay(cards)) {
+      pv.textContent = 'Invalid combo — cards must form one combination';
+      return;
+    }
     const r = evaluate(cards);
     const abKeys = [...new Set(cards.filter((c) => c.type === 'NORMAL').map((c) => c.value))]
       .sort((a, b) => a - b).map((v) => ABILITIES[v].icon + ABILITIES[v].key);
@@ -225,6 +231,8 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
   ($('eng-play')).onclick = () => {
     const p1 = s.players[0];
     if (s.t < p1.cdUntil || selected.size === 0) return;
+    const selCards = [...selected].map((i) => p1.hand[i]);
+    if (selCards.length >= 2 && !isCompletePlay(selCards)) return; // illegal — the engine would reject it anyway
     pendingPlay = [...selected].sort((a, b) => a - b).map((i) => p1.hand[i].id); // cardIds
     selected.clear(); bestNote = '';
     renderHand();

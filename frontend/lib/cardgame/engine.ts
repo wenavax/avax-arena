@@ -125,7 +125,53 @@ export function bestCombo(cards: Card[]): { name: string; bonus: number } | null
   const s = longestStraight(vals); if (s >= 3) add('STRAIGHT_' + Math.min(s, 8));
   if (!cand.length) return null; cand.sort((a, b) => b.bonus - a.bonus); return cand[0];
 }
-export interface PlayEval { kind: string; combo: string | null; mult: number; raw: number; magic: { type: string; m: number; t: string }[]; sum: number; abilities?: string[] }
+/**
+ * Is this a LEGAL multi-card play? A play of 2+ cards is only valid when the
+ * ENTIRE set forms exactly one canonical combination — no extra/unrelated cards.
+ * Single cards are always legal; the empty set is not a play.
+ *
+ * This is stricter than `bestCombo`, which ignores leftover cards (it would call
+ * 2-2-6 a PAIR, silently dropping the 6). Here 2-2-6 is ILLEGAL: the 6 doesn't
+ * belong. Magic cards count by their `value` like any card (a magic can be half
+ * of a pair, part of a straight, etc.).
+ *
+ * Canonical combos (must consume ALL cards):
+ *  - N-of-a-kind (2/3/4): every card the same value.
+ *  - K pairs (K≥2): every distinct value appears exactly twice (two/three/four pairs).
+ *  - Full house (5): one value ×3 + a different value ×2.
+ *  - Two trios (6): two distinct values, each ×3.
+ *  - Straight (3+): all distinct AND consecutive values (each value exactly once).
+ */
+export function isCompletePlay(cards: Card[]): boolean {
+  const n = cards.length;
+  if (n <= 1) return true; // single card (or, defensively, empty) — always fine
+  const cnt = new Map<number, number>();
+  for (const c of cards) cnt.set(c.value, (cnt.get(c.value) || 0) + 1);
+  const counts = [...cnt.values()];
+  const distinct = cnt.size;
+
+  // N-of-a-kind: one distinct value, 2..4 copies
+  if (distinct === 1) return n >= 2 && n <= 4;
+
+  // K pairs: every distinct value appears exactly twice (n = 2K, K = 2,3,4)
+  if (counts.every((c) => c === 2)) return distinct >= 2 && distinct <= 4;
+
+  // Full house: exactly 5 cards = one value ×3 + one value ×2
+  if (n === 5 && distinct === 2 && counts.includes(3) && counts.includes(2)) return true;
+
+  // Two trios: exactly 6 cards = two distinct values each ×3
+  if (n === 6 && distinct === 2 && counts.every((c) => c === 3)) return true;
+
+  // Straight: all distinct AND consecutive (3+ cards)
+  if (distinct === n && n >= 3) {
+    const vals = [...cnt.keys()].sort((a, b) => a - b);
+    for (let i = 1; i < vals.length; i++) if (vals[i] !== vals[i - 1] + 1) return false;
+    return true;
+  }
+  return false;
+}
+
+export interface PlayEval { kind: string; combo: string | null; mult: number; raw: number; magic: { type: string; m: number; t: string }[]; sum: number; legal: boolean; abilities?: string[] }
 export function evaluate(cards: Card[]): PlayEval {
   const sum = cards.reduce((s, c) => s + c.value, 0);
   let mult: number, kind: string, combo: { name: string; bonus: number } | null = null;
@@ -133,7 +179,7 @@ export function evaluate(cards: Card[]): PlayEval {
   else { combo = bestCombo(cards); const cb = combo ? combo.bonus : 0; mult = 1 + (cb + sum * 0.20) / 100; kind = combo ? 'COMBO' : 'VALUE'; }
   const capped = Math.min(mult, CFG.CAP);
   const magic = cards.filter((c) => c.type === 'MAGIC').map((c) => ({ type: c.magic as string, ...CFG.MAGIC[c.magic as string] }));
-  return { kind, combo: combo ? combo.name : null, mult: capped, raw: mult, magic, sum };
+  return { kind, combo: combo ? combo.name : null, mult: capped, raw: mult, magic, sum, legal: isCompletePlay(cards) };
 }
 export function fxClass(r: PlayEval): string {
   if (r.magic.some((m) => m.type === 'NITRO')) return 'fx-nitro';
@@ -235,6 +281,10 @@ export function applyPlay(s: MatchState, p: PlayerState, cardIds: number[]): Pla
     usedIdx.add(i); idxs.push(i);
   }
   const cards = idxs.map((i) => p.hand[i]);
+  // server-authoritative anti-cheat: a multi-card play must be ONE complete
+  // canonical combination (no extra/unrelated cards). Rejecting here also makes
+  // a settle-time replay of an illegal recorded play return valid=false.
+  if (cards.length >= 2 && !isCompletePlay(cards)) return null;
   const r = evaluate(cards);
   p.nm = { mult: r.mult, endsAt: s.t + CFG.DUR_TICKS };
   p.fx = fxClass(r); p.fxUntil = s.t + CFG.DUR_TICKS;

@@ -65,6 +65,10 @@ export function bestPlan(hand: Card[], opts?: { endgame?: boolean }): Plan {
     for (let i = 0; i < n; i++) if (mask & (1 << i)) pick.push(cards[i]);
     const r = evaluate(pick);
     evals[mask] = r;
+    // only legal picks are playable: a 2+ card play must be one complete combo
+    // (single cards are always legal). Illegal subsets stay at -Infinity so the
+    // partition DP never proposes them.
+    if (!r.legal) continue;
     gains[mask] = playGain(pick, r, holdCost);
   }
 

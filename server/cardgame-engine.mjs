@@ -250,6 +250,24 @@ function bestCombo(cards) {
   cand.sort((a, b) => b.bonus - a.bonus);
   return cand[0];
 }
+function isCompletePlay(cards) {
+  const n = cards.length;
+  if (n <= 1) return true;
+  const cnt = /* @__PURE__ */ new Map();
+  for (const c of cards) cnt.set(c.value, (cnt.get(c.value) || 0) + 1);
+  const counts = [...cnt.values()];
+  const distinct = cnt.size;
+  if (distinct === 1) return n >= 2 && n <= 4;
+  if (counts.every((c) => c === 2)) return distinct >= 2 && distinct <= 4;
+  if (n === 5 && distinct === 2 && counts.includes(3) && counts.includes(2)) return true;
+  if (n === 6 && distinct === 2 && counts.every((c) => c === 3)) return true;
+  if (distinct === n && n >= 3) {
+    const vals = [...cnt.keys()].sort((a, b) => a - b);
+    for (let i = 1; i < vals.length; i++) if (vals[i] !== vals[i - 1] + 1) return false;
+    return true;
+  }
+  return false;
+}
 function evaluate(cards) {
   const sum = cards.reduce((s, c) => s + c.value, 0);
   let mult, kind, combo = null;
@@ -264,7 +282,7 @@ function evaluate(cards) {
   }
   const capped = Math.min(mult, CFG.CAP);
   const magic = cards.filter((c) => c.type === "MAGIC").map((c) => ({ type: c.magic, ...CFG.MAGIC[c.magic] }));
-  return { kind, combo: combo ? combo.name : null, mult: capped, raw: mult, magic, sum };
+  return { kind, combo: combo ? combo.name : null, mult: capped, raw: mult, magic, sum, legal: isCompletePlay(cards) };
 }
 function fxClass(r) {
   if (r.magic.some((m) => m.type === "NITRO")) return "fx-nitro";
@@ -386,6 +404,7 @@ function applyPlay(s, p, cardIds) {
     idxs.push(i);
   }
   const cards = idxs.map((i) => p.hand[i]);
+  if (cards.length >= 2 && !isCompletePlay(cards)) return null;
   const r = evaluate(cards);
   p.nm = { mult: r.mult, endsAt: s.t + CFG.DUR_TICKS };
   p.fx = fxClass(r);
@@ -603,6 +622,7 @@ export {
   finalRanking,
   fxClass,
   initMatch,
+  isCompletePlay,
   makeRng,
   roundDone,
   scoreRound,

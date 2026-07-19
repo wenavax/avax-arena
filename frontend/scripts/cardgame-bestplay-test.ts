@@ -50,11 +50,14 @@ console.log('bestPlan — hand economy (junk held mid-match, dumped in endgame)'
 
 console.log('bestPlan — NITRO attaches to the strongest play');
 {
-  const hand = [N(6), N(6), N(6), N(3), N(3), M('NITRO', 5)];
+  // NITRO's value must complete a legal combo to ride a play: value 6 turns the
+  // 6-6-6 trio into a four-of-a-kind (the strongest legal play in the hand).
+  const hand = [N(6), N(6), N(6), N(3), N(3), M('NITRO', 6)];
   const plan = bestPlan(hand, { endgame: true });
   const withNitro = plan.plays.find((p) => p.cards.some((c) => c.magic === 'NITRO'));
   ok(!!withNitro, 'nitro is played, not held');
   ok(withNitro === plan.plays[0], 'nitro rides the biggest play');
+  ok(withNitro!.eval.legal && withNitro!.eval.combo === 'FOUR_OF_A_KIND', 'nitro completes a legal quad');
 }
 
 console.log('bestPlan — NAIL/OIL fired instead of hoarded');
@@ -102,6 +105,25 @@ console.log('bestPlan — plays are disjoint (a card fires once)');
     if (new Set(all.map((c) => c.id)).size !== hand.length || all.length !== hand.length) disjoint = false;
   }
   ok(disjoint, '100 hands: plays + held exactly partition the hand');
+}
+
+console.log('bestPlan — never proposes an illegal (incomplete) play');
+{
+  // 2-2-6-8-10: the ONLY legal multi-card play is the pair 2-2. Best must never
+  // suggest 6-8-10 (not consecutive) or any set with an unrelated extra card.
+  const hand = [N(2), N(2), N(6), N(8), N(10)];
+  const plan = bestPlan(hand, { endgame: true });
+  const allLegal = plan.plays.every((p) => p.eval.legal);
+  ok(allLegal, 'every planned play is legal (complete combo or single)');
+  const pick = bestPlay(hand, { endgame: true });
+  ok(pick.length === 1 || (pick.length === 2 && pick.every((c) => c.value === 2)),
+    `Best picks the pair or a single, not 6-8-10 (got ${pick.map((c) => c.value).join('-')})`);
+  // explicitly: no play equals the illegal {6,8,10}
+  const has6810 = plan.plays.some((p) => {
+    const vs = p.cards.map((c) => c.value).sort((a, b) => a - b).join(',');
+    return vs === '6,8,10';
+  });
+  ok(!has6810, 'no plan play is the illegal 6-8-10 set');
 }
 
 console.log('bestPlan — determinism + note');

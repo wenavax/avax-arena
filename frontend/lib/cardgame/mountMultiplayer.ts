@@ -9,7 +9,7 @@
  * the match, a hidden tab or a dropped connection never stops the race — this
  * view simply resumes drawing from the next snapshot (see `cardgame:resumed`).
  */
-import { CFG, COMBO, evaluate, fxClass, type Card, type PlayEval } from './engine';
+import { CFG, COMBO, evaluate, fxClass, isCompletePlay, type Card, type PlayEval } from './engine';
 import { ABILITIES } from './abilities';
 import { vehicleSelector, vehAbbr } from './vehicles';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
@@ -319,12 +319,15 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   function updatePlayBtn() {
     ($('eng-cd')).style.width = (Math.max(0, myCd) / CFG.COOLDOWN_TICKS * 100) + '%';
-    ($('eng-play') as HTMLButtonElement).disabled = myCd > 0 || selected.size === 0 || myFin;
+    const selCards = hand.filter((c) => selected.has(c.id));
+    const illegalSel = selCards.length >= 2 && !isCompletePlay(selCards);
+    ($('eng-play') as HTMLButtonElement).disabled = myCd > 0 || selected.size === 0 || myFin || illegalSel;
     const hint = $('eng-hint');
     if (myFin) { hint.textContent = 'finished this round'; return; }
     if (selected.size) {
       // live preview via the shared engine — the hand cards are Card-shaped
       const cards = hand.filter((c) => selected.has(c.id));
+      if (illegalSel) { hint.textContent = 'Invalid combo — cards must form one combination'; return; }
       const r = evaluate(cards);
       const abKeys = [...new Set(cards.filter((c) => c.type === 'NORMAL').map((c) => c.value))]
         .sort((a, b) => a - b).map((v) => ABILITIES[v].icon + ABILITIES[v].key);
@@ -338,6 +341,8 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
 
   ($('eng-play')).onclick = () => {
     if (myCd > 0 || selected.size === 0 || myFin) return;
+    const selCards = hand.filter((c) => selected.has(c.id));
+    if (selCards.length >= 2 && !isCompletePlay(selCards)) return; // illegal — server would reject
     const cardIds = [...selected];
     // remember what we sent so the confirmed popup can colour by full fxClass
     // and the sequential reveal can show the actual cards

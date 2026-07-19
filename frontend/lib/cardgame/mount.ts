@@ -5,6 +5,7 @@
  * connected wallet address becomes P1's racer identity in the escrow panel,
  * lane tag and settlement rows.
  */
+import { isCompletePlay } from './engine';
 import { vehicleSelector, VEH_META } from './vehicles';
 import { attachStageHud, type StageHud } from './stageHud';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
@@ -287,7 +288,10 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
   }
   function applyPlay(p: Player, idxs: number[]) {
     if (p.fin || t < p.cdUntil || idxs.length < 1 || idxs.length > 8) return { ok: false as const };
-    const cards = idxs.map((i) => p.hand[i]); const r = evaluate(cards);
+    const cards = idxs.map((i) => p.hand[i]);
+    // multi-card plays must be one complete canonical combo (no extra cards)
+    if (cards.length >= 2 && !isCompletePlay(cards)) return { ok: false as const };
+    const r = evaluate(cards);
     p.nm = { mult: r.mult, endsAt: t + CFG.DUR };
     p.fx = { cls: fxClass(r), until: t + CFG.DUR };
     r.magic.forEach((m) => {
@@ -462,7 +466,9 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     }
     const cd = Math.max(0, p1.cdUntil - t);
     ($('cdbar')).style.width = (cd / CFG.COOLDOWN * 100) + '%';
-    ($('playBtn') as HTMLButtonElement).disabled = cd > 0 || selected.size === 0 || p1.fin;
+    const selCards = [...selected].map((i) => p1.hand[i]);
+    const illegalSel = selCards.length >= 2 && !isCompletePlay(selCards);
+    ($('playBtn') as HTMLButtonElement).disabled = cd > 0 || selected.size === 0 || p1.fin || illegalSel;
     // onboarding ghost hints: pulse the suggested play on the cards themselves
     // (contextual coach marks beat tutorial screens). Recomputed only when the
     // hand changes; shown only when the player could actually play right now.
@@ -485,6 +491,10 @@ export function mountCardGame(root: HTMLElement, opts: CardGameOptions = {}): ()
     const p1 = players[0]; const cards = [...selected].map((i) => p1.hand[i]);
     const pv = $('playPreview');
     if (!cards.length) { pv.textContent = 'select 1–8 cards'; return; }
+    if (cards.length >= 2 && !isCompletePlay(cards)) {
+      pv.textContent = 'Invalid combo — cards must form one combination';
+      return;
+    }
     const r = evaluate(cards);
     const abKeys = [...new Set(cards.filter((c) => c.type === 'NORMAL').map((c) => c.value))]
       .sort((a, b) => a - b).map((v) => ABILITIES[v].icon + ABILITIES[v].key);

@@ -9,7 +9,7 @@
  */
 import {
   initMatch, startRound, stepTick, roundDone, scoreRound, finalRanking,
-  simulateMatch, applyPlay, CFG, VEHICLES, type MatchInput, type PlayEvent, type Pid,
+  simulateMatch, applyPlay, isCompletePlay, CFG, VEHICLES, type MatchInput, type PlayEvent, type Pid, type Card,
 } from '../lib/cardgame/engine';
 
 let pass = 0;
@@ -54,6 +54,18 @@ function livePlaythrough(seed: string): { input: MatchInput; ranking: Pid[] } {
     scoreRound(s);
   }
   return { input: { vehicles, plays }, ranking: finalRanking(s) };
+}
+
+/** Find 3 cards from a hand that do NOT form a complete combo (for the illegal
+ *  replay test). Returns their cardIds, or null if the hand can't produce one. */
+function pickIllegalTriple(hand: Card[]): number[] | null {
+  for (let a = 0; a < hand.length; a++)
+    for (let b = a + 1; b < hand.length; b++)
+      for (let c = b + 1; c < hand.length; c++) {
+        const trip = [hand[a], hand[b], hand[c]];
+        if (!isCompletePlay(trip)) return trip.map((x) => x.id);
+      }
+  return null;
 }
 
 function main() {
@@ -141,6 +153,61 @@ function main() {
     }
   }
 
-  console.log(`\n★ ${pass}/${pass} PASS — engine deterministic & capture-replay faithful (abilities included).`);
+  console.log('\n[5] complete-play rule — a multi-card play must be ONE canonical combo');
+  {
+    const C = (value: number, id: number): Card => ({ id, type: 'NORMAL', value, magic: null });
+    // isCompletePlay unit checks
+    ok('single card is legal', isCompletePlay([C(6, 1)]));
+    ok('pair (2-2) legal', isCompletePlay([C(2, 1), C(2, 2)]));
+    ok('trio (5-5-5) legal', isCompletePlay([C(5, 1), C(5, 2), C(5, 3)]));
+    ok('quad (8×4) legal', isCompletePlay([C(8, 1), C(8, 2), C(8, 3), C(8, 4)]));
+    ok('two pairs (2-2-8-8) legal', isCompletePlay([C(2, 1), C(2, 2), C(8, 3), C(8, 4)]));
+    ok('full house (5-5-5-8-8) legal', isCompletePlay([C(5, 1), C(5, 2), C(5, 3), C(8, 4), C(8, 5)]));
+    ok('two trios (3×3 + 7×3) legal', isCompletePlay([C(3, 1), C(3, 2), C(3, 3), C(7, 4), C(7, 5), C(7, 6)]));
+    ok('straight (6-7-8) legal', isCompletePlay([C(6, 1), C(7, 2), C(8, 3)]));
+    ok('extra card (2-2-6) illegal', !isCompletePlay([C(2, 1), C(2, 2), C(6, 3)]));
+    ok('trio + extra (2-2-2-6) illegal', !isCompletePlay([C(2, 1), C(2, 2), C(2, 3), C(6, 4)]));
+    ok('non-adjacent (6-8-10) illegal', !isCompletePlay([C(6, 1), C(8, 2), C(10, 3)]));
+    ok('mixed junk (2-2-6-8-10) illegal', !isCompletePlay([C(2, 1), C(2, 2), C(6, 3), C(8, 4), C(10, 5)]));
+    ok('pair+trio no full house at 4 cards (2-2-8-8-8) → wait full 5? 2-2-8 illegal', !isCompletePlay([C(2, 1), C(2, 2), C(8, 3)]));
+    ok('straight with repeat (6-6-7-8) illegal', !isCompletePlay([C(6, 1), C(6, 2), C(7, 3), C(8, 4)]));
+
+    // applyPlay rejects the illegal 6-8-10 pick out of a 2-2-6-8-10 hand, plays 2-2
+    const fresh = () => { const s = initMatch('complete-play-seed'); startRound(s, 'LEGENDARY'); return s; };
+    {
+      const s = fresh(); const p1 = s.players[0];
+      p1.hand = [C(2, 5001), C(2, 5002), C(6, 5003), C(8, 5004), C(10, 5005)];
+      ok('applyPlay(6-8-10) → null (illegal, extra/non-consec)', applyPlay(s, p1, [5003, 5004, 5005]) === null);
+      ok('applyPlay(6-8) → null (not a combo)', applyPlay(s, p1, [5003, 5004]) === null);
+      ok('hand untouched after rejected plays', p1.hand.length === 5);
+      const r = applyPlay(s, p1, [5001, 5002]);
+      ok('applyPlay(2-2) → legal pair', !!r && r.combo === 'PAIR' && r.legal && p1.hand.length === 3);
+    }
+    {
+      const s = fresh(); const p1 = s.players[0];
+      p1.hand = [C(6, 5101), C(7, 5102), C(8, 5103)];
+      const r = applyPlay(s, p1, [5101, 5102, 5103]);
+      ok('applyPlay straight(6-7-8) → legal', !!r && r.legal && r.combo!.startsWith('STRAIGHT'));
+    }
+    {
+      const s = fresh(); const p1 = s.players[0];
+      p1.hand = [C(5, 5201), C(5, 5202), C(5, 5203), C(8, 5204), C(8, 5205)];
+      const r = applyPlay(s, p1, [5201, 5202, 5203, 5204, 5205]);
+      ok('applyPlay full house → legal', !!r && r.legal && r.combo === 'FULL_HOUSE');
+    }
+    // a recorded illegal play makes the server replay flag valid=false
+    {
+      const seed = 'illegal-replay-seed';
+      const s0 = initMatch(seed); startRound(s0, 'LEGENDARY');
+      const p1 = s0.players[0];
+      // find three cards in P1's opening hand that do NOT form a complete combo
+      const junk = pickIllegalTriple(p1.hand as Card[]);
+      const tampered: MatchInput = { vehicles: ['LEGENDARY', 'EPIC', 'COMMON'], plays: junk ? [{ round: 0, tick: 5, cardIds: junk }] : [] };
+      const res = simulateMatch(seed, tampered);
+      ok('recorded illegal multi-card play → valid=false', junk ? res.valid === false : true, res.reason);
+    }
+  }
+
+  console.log(`\n★ ${pass}/${pass} PASS — engine deterministic, capture-replay faithful, complete-play enforced.`);
 }
 main();
