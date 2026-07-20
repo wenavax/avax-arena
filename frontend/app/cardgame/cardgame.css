@@ -631,7 +631,10 @@ body.cg-noscroll{overflow:hidden}
 .cgroot .toast{position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:9;
   background:rgba(22,22,28,.92);border:1px solid rgba(245,197,66,.45);color:var(--cg-gold);
   padding:9px 20px;border-radius:22px;font-weight:700;opacity:0;transition:opacity .3s;font-size:13px;
-  font-family:'Chakra Petch',sans-serif;backdrop-filter:blur(10px)}
+  font-family:'Chakra Petch',sans-serif;backdrop-filter:blur(10px);
+  /* Bilgi amaçlı bildirim — tıklama hedefi değil. pointer-events:none olmazsa
+     opacity:0 halinde bile altındaki butonları (ör. ENGINE) örtüp tıklamayı yutar. */
+  pointer-events:none}
 .cgroot .foot{margin-top:14px;font-size:11px;line-height:1.6;text-align:center}
 
 /* ── global leaderboard (watch mode) ──────────────────────────────────── */
