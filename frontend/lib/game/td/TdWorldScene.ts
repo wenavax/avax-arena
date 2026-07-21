@@ -2,10 +2,13 @@
 // ─── Açık dünya sahnesi: chunk streaming + chibi kahraman ───
 // Client-only (Phaser sahnesi). Su animasyonu yalnız su içeren chunk'ları tazeler.
 import * as Phaser from 'phaser';
-import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, depth } from './tdCore';
-import { getTile, TOWN_SPAWN } from './worldMap';
-import { renderChunk, chunkHasWater } from './tiles';
+import { TILE, CHUNK, MAP_W, MAP_H, VIEW_W, VIEW_H, chunksInView, depth } from './tdCore';
+import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
+import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H } from './sprites/chibi';
+import { propsForChunk, type TdProp } from './worldProps';
+import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor } from './sprites/props';
+import { atmoForRegion } from './atmosphere';
 
 const WALK_FRAMES = [0, 1, 0, 2] as const; // faz dizisi (spec §4)
 
@@ -20,6 +23,17 @@ export class TdWorldScene extends Phaser.Scene {
   private hasWaterCache = new Map<string, boolean>();             // chunk su önbelleği (statik dünya)
   private waterFrame: 0 | 1 | 2 = 0; private waterT = 0;
   private perf = { chunkMs: 0, visible: 0 }; private perfText?: Phaser.GameObjects.Text;
+  // ── Faz 2: prop render/collision + etkileşim + atmosfer + minimap ──
+  private propMeta = new Map<string, { ox: number; oy: number }>();
+  private chunkProps = new Map<string, { objs: Phaser.GameObjects.GameObject[]; solids: NonNullable<TdProp['solid']>[]; interactives: TdProp[] }>();
+  private fires: { img: Phaser.GameObjects.Image; x: number; y: number }[] = [];
+  private nearProp: TdProp | null = null;
+  private hintText!: Phaser.GameObjects.Text;
+  private tintRect!: Phaser.GameObjects.Rectangle;
+  private fogRect!: Phaser.GameObjects.Rectangle;
+  private minimapImg?: Phaser.GameObjects.Image;
+  private minimapDot?: Phaser.GameObjects.Rectangle;
+  private minimapX = VIEW_W - 100; private minimapY = 4;
 
   constructor() { super({ key: 'TdWorld' }); }
 
@@ -42,13 +56,72 @@ export class TdWorldScene extends Phaser.Scene {
       else this.perfText = this.add.text(4, 4, '', { fontSize: '10px', color: '#9fe8ff', backgroundColor: '#000000aa' })
         .setScrollFactor(0).setDepth(1e9);
     });
+
+    // prop texture'ları (bir kez)
+    const reg = (key: string, m: { img: HTMLCanvasElement }) => { if (!this.textures.exists(key)) this.textures.addCanvas(key, m.img); };
+    for (let v = 0; v < 4; v++) { const m = mkTree(v); reg(`td-tree-${v}`, m); this.propMeta.set(`tree-${v}`, { ox: m.ox, oy: m.oy }); }
+    for (let v = 0; v < 2; v++) { const m = mkRock(v); reg(`td-rock-${v}`, m); this.propMeta.set(`rock-${v}`, { ox: m.ox, oy: m.oy }); }
+    for (let v = 0; v < 2; v++) { const m = mkBush(v); reg(`td-bush-${v}`, m); this.propMeta.set(`bush-${v}`, { ox: m.ox, oy: m.oy }); }
+    mkFireFrames().forEach((c, f) => { if (!this.textures.exists(`td-fire-${f}`)) this.textures.addCanvas(`td-fire-${f}`, c); });
+    const dd = mkDungeonDoor(); reg('td-door-dungeon', dd); this.propMeta.set('door', { ox: dd.ox, oy: dd.oy });
+
+    // etkileşim ipucu (alt-orta, HUD)
+    this.hintText = this.add.text(VIEW_W / 2, VIEW_H - 14, '', {
+      fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
+    }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
+
+    // atmosfer: tam-ekran tint + alt fog bandı (scrollFactor 0, düşük alpha, lerp update()'te)
+    this.tintRect = this.add.rectangle(VIEW_W / 2, VIEW_H / 2, VIEW_W, VIEW_H, 0x88bbff, 0.04)
+      .setScrollFactor(0).setDepth(1500);
+    this.fogRect = this.add.rectangle(VIEW_W / 2, VIEW_H - 24, VIEW_W, 48, 0xbbddff, 0.10)
+      .setScrollFactor(0).setDepth(1501);
+
+    // E: en yakın hub binasına gir (dünya değişimi Faz 5'te — şimdilik CustomEvent + toast)
+    kb.on('keydown-E', () => {
+      const p = this.nearProp;
+      if (p?.kind === 'building') {
+        window.dispatchEvent(new CustomEvent('td-hub-open', { detail: { url: p.data!.url, name: p.data!.name, accent: p.data!.accent } }));
+      }
+    });
+    // M: minimap toggle
+    kb.on('keydown-M', () => this.toggleMinimap());
+
     this.streamChunks();
+  }
+
+  /** Minimap: ilk çağrıda 96×96 canvas üretir (4 tile/px, biyom üst rengi), sonrakiler visible toggle. */
+  private toggleMinimap(): void {
+    if (this.minimapImg) {
+      const vis = !this.minimapImg.visible;
+      this.minimapImg.setVisible(vis);
+      this.minimapDot?.setVisible(vis);
+      return;
+    }
+    const SIZE = 96, STEP = Math.floor(MAP_W / SIZE);
+    const c = document.createElement('canvas');
+    c.width = SIZE; c.height = SIZE;
+    const g = c.getContext('2d')!;
+    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
+      const t = getTile(x * STEP, y * STEP);
+      g.fillStyle = biomeTopColor(t.biome);
+      g.fillRect(x, y, 1, 1);
+    }
+    this.textures.addCanvas('td-minimap', c);
+    this.minimapImg = this.add.image(this.minimapX, this.minimapY, 'td-minimap')
+      .setOrigin(0, 0).setScrollFactor(0).setDepth(1e9).setAlpha(0.92);
+    this.minimapDot = this.add.rectangle(this.minimapX, this.minimapY, 2, 2, 0xff3b3b)
+      .setOrigin(0, 0).setScrollFactor(0).setDepth(1e9 + 1);
   }
 
   private canMove(nx: number, ny: number): boolean {
     for (const [ox, oy] of [[-4, 0], [4, 0], [-4, 3], [4, 3], [0, 3]] as const) {
       const t = getTile(Math.floor((nx + ox) / TILE), Math.floor((ny + oy) / TILE));
       if (t.collision) return false;
+    }
+    for (const cp of this.chunkProps.values()) {
+      for (const s of cp.solids) {
+        if (nx + 4 > s.x && nx - 4 < s.x + s.w && ny + 3 > s.y && ny < s.y + s.h) return false;
+      }
     }
     return true;
   }
@@ -65,6 +138,12 @@ export class TdWorldScene extends Phaser.Scene {
     this.chunks.get(key)?.destroy();
     this.chunks.delete(key);
     for (let f = 0; f < 3; f++) if (this.textures.exists(`td-chunk-${key}-${f}`)) this.textures.remove(`td-chunk-${key}-${f}`);
+    const cp = this.chunkProps.get(key);
+    if (cp) {
+      cp.objs.forEach(o => o.destroy());
+      this.chunkProps.delete(key);
+      this.fires = this.fires.filter(f => f.img.active);
+    }
   }
 
   /** refreshWater: true → görünür SU chunk'larını aktif frame ile yeniden bas. */
@@ -82,6 +161,41 @@ export class TdWorldScene extends Phaser.Scene {
       if (!this.textures.exists(texKey)) this.textures.addCanvas(texKey, renderChunk(c.cx, c.cy, this.waterFrame));
       const img = this.add.image(c.cx * CHUNK * TILE, c.cy * CHUNK * TILE, texKey).setOrigin(0, 0).setDepth(-1000);
       this.chunks.set(key, img);
+      // NOT: su-tazeleme yolunda chunkProps'a DOKUNMA (statik dünya, prop'lar chunk başına bir kez kurulur)
+      if (!this.chunkProps.has(key)) {
+        const list = propsForChunk(c.cx, c.cy);
+        const objs: Phaser.GameObjects.GameObject[] = [];
+        const solids: NonNullable<TdProp['solid']>[] = [];
+        const interactives: TdProp[] = [];
+        for (const p of list) {
+          if (p.solid) solids.push(p.solid);
+          if (p.kind === 'building' || p.kind === 'door_dungeon') interactives.push(p);
+          let texKey2 = '', meta = { ox: 8, oy: 14 };
+          if (p.kind === 'tree') { texKey2 = `td-tree-${p.v ?? 0}`; meta = this.propMeta.get(`tree-${p.v ?? 0}`)!; }
+          else if (p.kind === 'rock') { texKey2 = `td-rock-${p.v ?? 0}`; meta = this.propMeta.get(`rock-${p.v ?? 0}`)!; }
+          else if (p.kind === 'bush') { texKey2 = `td-bush-${p.v ?? 0}`; meta = this.propMeta.get(`bush-${p.v ?? 0}`)!; }
+          else if (p.kind === 'door_dungeon') { texKey2 = 'td-door-dungeon'; meta = this.propMeta.get('door')!; }
+          else if (p.kind === 'campfire') {
+            const fimg = this.add.image(p.x, p.y, 'td-fire-0').setOrigin(0.5, 0.9).setDepth(depth(p.x, p.y));
+            this.fires.push({ img: fimg, x: p.x, y: p.y }); objs.push(fimg); continue;
+          } else if (p.kind === 'building') {
+            const bk = `td-bld-${p.data!.id}`;
+            if (!this.textures.exists(bk)) {
+              const bm = mkBuilding(p.data!.wTiles!, p.data!.hTiles!, p.data!.accent!, p.data!.icon!);
+              this.textures.addCanvas(bk, bm.img);
+            }
+            const bimg = this.add.image(p.x, p.y, bk).setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
+            const label = this.add.text(p.x, p.y - p.data!.hTiles! * 16 - 18, p.data!.name!, {
+              fontSize: '8px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
+            }).setOrigin(0.5, 1).setDepth(depth(p.x, p.y) + 1);
+            objs.push(bimg, label); continue;
+          }
+          void meta; // (ox/oy şu an yalnız gölge-hizalama notu; origin(0.5,1) çizim tabanlıdır)
+          const pimg = this.add.image(p.x, p.y, texKey2).setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
+          objs.push(pimg);
+        }
+        this.chunkProps.set(key, { objs, solids, interactives });
+      }
     }
     this.perf.chunkMs = performance.now() - t0;
     this.perf.visible = this.chunks.size;
@@ -122,5 +236,27 @@ export class TdWorldScene extends Phaser.Scene {
     }
     if (this.perfText) this.perfText.setText(
       `chunks:${this.perf.visible} stream:${this.perf.chunkMs.toFixed(1)}ms fps:${this.game.loop.actualFps | 0}`);
+
+    // kamp ateşi 4-kare (130ms)
+    const ff = Math.floor(t / 130) % 4;
+    for (const f of this.fires) f.img.setTexture(`td-fire-${ff}`);
+    // etkileşim: en yakın interaktif ≤ 28px
+    let near: TdProp | null = null; let nd = 28;
+    for (const cp of this.chunkProps.values()) for (const p of cp.interactives) {
+      const d = Math.hypot(this.heroPos.x - p.x, this.heroPos.y - p.y);
+      if (d < nd) { nd = d; near = p; }
+    }
+    if (near !== this.nearProp) {
+      this.nearProp = near;
+      this.hintText.setText(near
+        ? (near.kind === 'building' ? `E — ${near.data!.name}` : `⛓ ${near.data!.name} — sealed (Phase 3)`)
+        : '').setVisible(!!near);
+    }
+    // atmosfer lerp
+    const atmo = atmoForRegion(regionAt(Math.floor(this.heroPos.x / 16), Math.floor(this.heroPos.y / 16)).key);
+    this.tintRect.fillColor = atmo.tint; this.tintRect.fillAlpha += (atmo.tintAlpha - this.tintRect.fillAlpha) * 0.05;
+    this.fogRect.fillColor = atmo.fogColor; this.fogRect.fillAlpha += (atmo.fogAlpha - this.fogRect.fillAlpha) * 0.05;
+    // minimap hero noktası
+    if (this.minimapDot?.visible) this.minimapDot.setPosition(this.minimapX + this.heroPos.x / (MAP_W * TILE) * 96, this.minimapY + this.heroPos.y / (MAP_H * TILE) * 96);
   }
 }

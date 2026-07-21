@@ -30,6 +30,9 @@ const BIOME_PAL: Record<Biome, [string, string, string]> = {
 
 const FLOE = '#e8f3f6', GLINT = '#8ed2e8', SHALLOW = '#66bad6';
 
+/** Minimap için biyomun "açık dama" rengi (BIOME_PAL[0]). */
+export function biomeTopColor(b: Biome): string { return BIOME_PAL[b][0]; }
+
 /** Chunk'ın herhangi bir tile'ında su var mı? (su animasyon tazelemesi bunu kullanır) */
 export function chunkHasWater(cx: number, cy: number): boolean {
   const baseX = cx * CHUNK, baseY = cy * CHUNK;
