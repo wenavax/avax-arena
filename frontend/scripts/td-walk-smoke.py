@@ -30,6 +30,15 @@ with sync_playwright() as p:
     print('stats', json.dumps(stats))
     check('props-loaded', stats['chunks'] >= 4 and stats['solids'] > 20)
     check('town-interactives', stats['inter'] >= 9)  # 9 hub binası (+ yakın kapılar)
+    # canavarlar: kahraman kasabada spawn olur (canavarsız); komşu chunk'larda olmalı.
+    # Yeterli sayıda yoksa doğuya biraz daha yürüyüp komşu bölge chunk'larına gir.
+    mons = pg.evaluate(S % "([...s.chunkMonsters.values()].reduce((n,c)=>n+c.length,0))")
+    print('monsters', mons)
+    if mons == 0:
+        pg.keyboard.down('d'); time.sleep(3); pg.keyboard.up('d')
+        mons = pg.evaluate(S % "([...s.chunkMonsters.values()].reduce((n,c)=>n+c.length,0))")
+        print('monsters (after walk)', mons)
+    check('monsters-spawned', mons > 0)
     # fps
     time.sleep(1)
     fps = pg.evaluate("() => window.__tdGame.loop.actualFps")
