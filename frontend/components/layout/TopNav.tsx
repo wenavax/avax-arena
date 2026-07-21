@@ -102,7 +102,7 @@ function GroupPanel({ links, pathname, onNavigate }: { links: typeof NAV_LINKS; 
   return (
     <div
       role="menu"
-      className="absolute left-0 top-full mt-1 w-[540px] max-w-[80vw] p-2 rounded-2xl bg-[rgb(var(--frost-bg))]/98 backdrop-blur-xl border border-white/[0.08] shadow-2xl grid grid-cols-2 gap-1 z-50"
+      className="absolute left-0 top-full mt-1 w-[540px] max-w-[80vw] p-2 rounded-2xl bg-[rgb(var(--frost-bg))] backdrop-blur-xl border border-white/[0.08] shadow-[0_20px_60px_rgba(0,0,0,0.6)] grid grid-cols-2 gap-1 z-50"
     >
       {links.map(link => {
         const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
