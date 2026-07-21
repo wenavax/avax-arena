@@ -35,8 +35,8 @@ export function chunksInView(camCenterX: number, camCenterY: number): { cx: numb
   return out;
 }
 /** Deterministik 2B hash — harita/deko üretiminin tek rastgelelik kaynağı. */
-export function hash2d(x: number, y: number): number {
-  let h = (x * 374761393 + y * 668265263) | 0;
+export function hash2d(x: number, y: number, salt = 0): number {
+  let h = (x * 374761393 + y * 668265263 + salt * 1442695041) | 0;
   h = ((h ^ (h >> 13)) * 1274126177) | 0;
   return (h ^ (h >> 16)) >>> 0;
 }

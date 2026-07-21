@@ -17,6 +17,8 @@ eq('chunksInView-center', chunksInView(3072, 3072).length, 9); // harita ortası
 eq('chunksInView-corner', chunksInView(100, 100).length, 4);   // köşe chunk (0,0) → 2×2 kırpılır
 eq('hash2d-det', hash2d(12, 34) === hash2d(12, 34), true);
 eq('hash2d-diff', hash2d(12, 34) !== hash2d(34, 12), true);
+eq('hash2d-salt-differs', hash2d(12, 34, 1) !== hash2d(12, 34), true);
+eq('hash2d-salt-det', hash2d(12, 34, 7) === hash2d(12, 34, 7), true);
 
 console.log(`td-core: ${pass} pass, ${fail} fail`);
 if (fail) process.exit(1);
