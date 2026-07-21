@@ -35,8 +35,10 @@ export function ActivityTicker() {
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    document.documentElement.style.setProperty('--feed-w', collapsed ? '48px' : '280px');
-  }, [collapsed]);
+    // No live activity → don't reserve the feed column (content reclaims full width).
+    const w = events.length === 0 ? '0px' : collapsed ? '48px' : '280px';
+    document.documentElement.style.setProperty('--feed-w', w);
+  }, [collapsed, events.length]);
 
   const toggle = useCallback(() => {
     setCollapsed((c) => {
