@@ -65,12 +65,12 @@ export function renderChunk(cx: number, cy: number, frame: 0 | 1 | 2): HTMLCanva
       if (land(0, 1)) g.fillRect(px, py + TILE - 2, TILE, 2);
       if (land(-1, 0)) g.fillRect(px, py, 2, TILE);
       if (land(1, 0)) g.fillRect(px + TILE - 2, py, 2, TILE);
-      // köşe yumuşatma (merdiven kırıcı) — kıyı tarafının kara tonuyla kapat
-      g.fillStyle = '#dce5e9';
-      if (land(0, -1) && land(-1, 0)) { g.fillRect(px, py, 6, 3); g.fillRect(px, py, 3, 6); }
-      if (land(0, -1) && land(1, 0)) { g.fillRect(px + TILE - 6, py, 6, 3); g.fillRect(px + TILE - 3, py, 3, 6); }
-      if (land(0, 1) && land(-1, 0)) { g.fillRect(px, py + TILE - 3, 6, 3); g.fillRect(px, py + TILE - 6, 3, 6); }
-      if (land(0, 1) && land(1, 0)) { g.fillRect(px + TILE - 6, py + TILE - 3, 6, 3); g.fillRect(px + TILE - 3, py + TILE - 6, 3, 6); }
+      // köşe yumuşatma (merdiven kırıcı) — komşu KARA biyomunun koyu dama tonuyla kapat
+      const landPal = (dx: number, dy: number) => BIOME_PAL[getTile(tx + dx, ty + dy).biome][1];
+      if (land(0, -1) && land(-1, 0)) { g.fillStyle = landPal(0, -1); g.fillRect(px, py, 6, 3); g.fillRect(px, py, 3, 6); }
+      if (land(0, -1) && land(1, 0)) { g.fillStyle = landPal(0, -1); g.fillRect(px + TILE - 6, py, 6, 3); g.fillRect(px + TILE - 3, py, 3, 6); }
+      if (land(0, 1) && land(-1, 0)) { g.fillStyle = landPal(0, 1); g.fillRect(px, py + TILE - 3, 6, 3); g.fillRect(px, py + TILE - 6, 3, 6); }
+      if (land(0, 1) && land(1, 0)) { g.fillStyle = landPal(0, 1); g.fillRect(px + TILE - 6, py + TILE - 3, 6, 3); g.fillRect(px + TILE - 3, py + TILE - 6, 3, 6); }
     } else {
       // benekli yama — dama sertliğini kırar
       if (h % 7 < 2) { g.fillStyle = pal[2]; g.fillRect(px + (h % 7) + 1, py + ((h >> 4) % 7) + 2, 8, 5); }
