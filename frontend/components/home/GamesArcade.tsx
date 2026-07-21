@@ -10,7 +10,7 @@
 import Link from 'next/link';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
-  Swords, Car, Map, Compass, Dices, Rocket, Gem, ArrowLeftRight, Store, ArrowRight, AlertTriangle,
+  Swords, Car, Map, Compass, Dices, Rocket, Gem, ArrowLeftRight, Store, ArrowRight, AlertTriangle, Snowflake,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -88,6 +88,45 @@ function GameCard({ g, i }: { g: Game; i: number }) {
   );
 }
 
+/** Mysterious full-width teaser — hints at the upcoming World transformation
+ *  without revealing it. Not a link on purpose: the mystery IS the card. */
+function TeaserCard() {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      className="col-span-2 lg:col-span-4"
+      initial={reduce ? false : { opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-60px' }}
+      transition={{ duration: 0.5, delay: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+    >
+      <div className="arcade-card arcade-card--feat group cursor-default select-none" style={{ '--acc': '#7dd3fc' } as React.CSSProperties}>
+        <span className="arcade-pat arcade-pat--dots" aria-hidden />
+        <span className="arcade-mark" aria-hidden>
+          <Snowflake className="h-36 w-36 animate-[spin_24s_linear_infinite]" strokeWidth={1.2} />
+        </span>
+        <span className="arcade-glow" aria-hidden />
+        <span className="arcade-shine" aria-hidden />
+        <div className="relative z-10 flex items-start justify-between gap-3">
+          <span className="arcade-ico h-14 w-14"><Snowflake className="h-7 w-7" strokeWidth={2} /></span>
+          <span className="arcade-chip" style={{ '--dot': '#7dd3fc', '--ctext': '#a5e3fc' } as React.CSSProperties}>
+            <i className="arcade-dot" /> SOON
+          </span>
+        </div>
+        <div className="relative z-10 mt-auto pt-6">
+          <h3 className="arcade-title font-display text-2xl font-bold text-white sm:text-[28px]">
+            Something is growing beneath the snow…
+          </h3>
+          <p className="mt-1.5 max-w-md text-sm leading-relaxed text-white/50">
+            Bigger. Warmer. Alive. A whole new world is taking shape under the frost — keep your axe close.
+          </p>
+          <span className="arcade-cta mt-4 opacity-70">❄ stay tuned</span>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function GamesArcade() {
   const reduce = useReducedMotion();
   return (
@@ -110,6 +149,7 @@ export default function GamesArcade() {
 
         <div className="grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-4">
           {GAMES.map((g, i) => <GameCard key={g.title} g={g} i={i} />)}
+          <TeaserCard />
         </div>
       </div>
     </section>
