@@ -1,6 +1,6 @@
-// frontend/app/world/td-dev/layout.tsx
+// frontend/app/worldtestnet/layout.tsx
 import type { Metadata } from 'next';
 export const metadata: Metadata = { robots: { index: false, follow: false } };
-export default function TdDevLayout({ children }: { children: React.ReactNode }) {
+export default function WorldTestnetLayout({ children }: { children: React.ReactNode }) {
   return children;
 }
