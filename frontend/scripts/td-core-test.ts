@@ -19,6 +19,8 @@ eq('hash2d-det', hash2d(12, 34) === hash2d(12, 34), true);
 eq('hash2d-diff', hash2d(12, 34) !== hash2d(34, 12), true);
 eq('hash2d-salt-differs', hash2d(12, 34, 1) !== hash2d(12, 34), true);
 eq('hash2d-salt-det', hash2d(12, 34, 7) === hash2d(12, 34, 7), true);
+eq('depth-x-tiebreak', depth(3, 100) !== depth(7, 100), true);
+eq('depth-y-dominates', depth(9, 101) > depth(0, 100), true);
 
 console.log(`td-core: ${pass} pass, ${fail} fail`);
 if (fail) process.exit(1);

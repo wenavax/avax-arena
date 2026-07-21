@@ -2,7 +2,7 @@
 // ─── Açık dünya sahnesi: chunk streaming + chibi kahraman ───
 // Client-only (Phaser sahnesi). Su animasyonu yalnız su içeren chunk'ları tazeler.
 import * as Phaser from 'phaser';
-import { TILE, CHUNK, MAP_W, MAP_H, chunksInView } from './tdCore';
+import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, depth } from './tdCore';
 import { getTile, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater } from './tiles';
 import { chibiHumanoid, CHIBI_H } from './sprites/chibi';
@@ -105,13 +105,13 @@ export class TdWorldScene extends Phaser.Scene {
       else this.heroDir = dy < 0 ? 1 : 0;
       this.walkT += dt;
       if (this.walkT > 0.13) { this.walkT = 0; this.walkIdx = (this.walkIdx + 1) % 4; }
-    } else this.walkIdx = 0;
+    } else { this.walkIdx = 0; this.walkT = 0; }
     const phase = moving ? WALK_FRAMES[this.walkIdx] : 0;
     const bob = moving ? (this.walkIdx % 2) : (Math.floor(t / 520) % 2); // adım dalması / idle nefes
     this.hero.setTexture(`td-hero-${this.heroDir}-${phase}`);
     this.hero.setFlipX(this.heroFlip);
     this.hero.setPosition(Math.round(this.heroPos.x), Math.round(this.heroPos.y) + bob);
-    this.hero.setDepth(this.heroPos.y);
+    this.hero.setDepth(depth(this.heroPos.x, this.heroPos.y));
     // su animasyonu: 400ms'de bir yalnız su içeren chunk'lar tazelenir
     this.waterT += dt;
     if (this.waterT > 0.4) {
