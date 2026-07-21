@@ -2,6 +2,8 @@
 // ─── Prosedürel chibi sprite fabrikası ───
 // Reçete (spec §4): 1px koyu kontur, px-rect çizim, palet parametreli.
 
+// Client-only: document.createElement + 2D canvas kullanır — SSR sırasında ÇAĞIRMA (import güvenli).
+
 export type Px = (x: number, y: number, w: number, h: number, color: string) => void;
 
 /** w×h canvas üret, fn'e 1px-rect çizici ver. */
@@ -31,6 +33,11 @@ export const DEFAULT_PALETTE: ChibiPalette = {
   skin: '#f2c99a', hair: '#5b3a24', top: '#4e6e8e', topShade: '#3d5872',
   accent: '#e84142', leg: '#2c3540', boot: '#1d242c',
 };
+
+/** chibiHumanoid çıktı boyutu (kontur DAHİL) — yerleşim matematiği bunları kullanmalı. */
+export const CHIBI_W = 14;
+export const CHIBI_H = 20;
+
 const EYE = '#20242c', BLUSH = '#f0a8a0';
 
 /**
