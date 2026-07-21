@@ -28,12 +28,12 @@ export default function TdDevPage() {
           ['wolf', 'beast'],
           ['treant', 'blob'],
           ['ghost', 'flying'],
-          ['snake', 'serpent'],
+          ['venomous_hydra', 'serpent'], // gerçek snake-arch tipi ('snake' top-level key değil)
           ['__boss__', 'boss'],
         ];
         const sampleTypes = Object.keys(MONSTER_VISUALS).slice(0, 12);
 
-        const PAD = 8, CELL_W = 64, CELL_H = 56, COLS = 6;
+        const PAD = 8, CELL_W = 64, CELL_H = 88, COLS = 6; // 88: big boss (~54px) + label sığar
         const repRows = Math.ceil(reps.length / COLS);
         const sampleRows = Math.ceil(sampleTypes.length / COLS);
         const canvasW = PAD * 2 + COLS * CELL_W;
@@ -81,7 +81,7 @@ export default function TdDevPage() {
           ctx.drawImage(small.frames[0], x, y);
           ctx.fillStyle = '#e8eef4';
           ctx.font = '6px monospace';
-          ctx.fillText(type.slice(0, 10), x, y + CELL_H - 32);
+          ctx.fillText(type.slice(0, 10), x, y + 30);
         });
 
         console.log('monsterChibi grid: reps=', reps.length, 'samples=', sampleTypes.length);
