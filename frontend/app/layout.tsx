@@ -3,7 +3,8 @@ import { Inter, Space_Grotesk, JetBrains_Mono, Silkscreen, Anton } from 'next/fo
 import { ThemeProvider } from '@/providers/ThemeProvider';
 import { Web3Provider } from '@/providers/Web3Provider';
 import { EventProvider } from '@/providers/EventProvider';
-import { Sidebar, MobileTopBar } from '@/components/layout/Sidebar';
+import { MobileTopBar } from '@/components/layout/Sidebar';
+import { TopNav } from '@/components/layout/TopNav';
 import { Footer } from '@/components/layout/Footer';
 import { ActivityTicker } from '@/components/layout/ActivityTicker';
 import { ChainGuard } from '@/components/ChainGuard';
@@ -179,8 +180,8 @@ export default function RootLayout({
 
             {/* App shell: sidebar + main + activity ticker */}
             <div className="mx-auto max-w-[1560px] w-full flex min-h-screen relative">
-              <Sidebar />
               <div data-content-wrap="" className="flex-1 min-w-0 flex flex-col min-h-screen xl:[margin-right:var(--feed-w,280px)] transition-[margin] duration-300">
+                <TopNav />
                 <MobileTopBar />
                 <ChainGuard />
                 <main data-app-main="" className="relative flex-1 pb-4 px-3 sm:px-6 lg:px-8">{children}</main>
