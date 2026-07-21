@@ -51,19 +51,22 @@ function townProps(): TdProp[] {
   });
   return out;
 }
+// Modül-seviye cache güvenli: girdiler (HUB_GAMES/REGIONS) statik sabit.
 let TOWN_CACHE: TdProp[] | null = null;
 export function allTownProps(): TdProp[] { return TOWN_CACHE ?? (TOWN_CACHE = townProps()); }
 
+// Modül-seviye cache güvenli: girdiler (HUB_GAMES/REGIONS) statik sabit.
+let DOORS_CACHE: TdProp[] | null = null;
 /** Kasaba/çayır/orman DIŞI 14 bölgenin merkezine zindan kapısı. */
 export function dungeonDoors(): TdProp[] {
-  return REGIONS.filter(r => !['town', 'forest', 'grassE', 'grassS'].includes(r.key)).map(r => ({
+  return DOORS_CACHE ?? (DOORS_CACHE = REGIONS.filter(r => !['town', 'forest', 'grassE', 'grassS'].includes(r.key)).map(r => ({
     kind: 'door_dungeon' as const, x: r.cx * 16 + 8, y: r.cy * 16 + 14,
     solid: { x: r.cx * 16 - 8, y: r.cy * 16 - 2, w: 32, h: 14 },
     data: { id: r.key, name: r.key.toUpperCase(), region: r.key },
-  }));
+  })));
 }
 
-// otomatik yerleşime kapalı alanlar: bina rect'leri (+1 tile pay), kapı önleri, spawn ±3, zindan kapısı ±2
+// otomatik yerleşime kapalı: bina rect'leri (x ±1 tile, üst 1 / alt 2 tile pay — kapı önü), spawn ±3, kapı ±2 tile
 function reserved(tx: number, ty: number): boolean {
   if (Math.abs(tx - TOWN_SPAWN.tx) <= 3 && Math.abs(ty - TOWN_SPAWN.ty) <= 3) return true;
   for (const p of allTownProps()) {

@@ -28,5 +28,14 @@ const doors = dungeonDoors();
 ok('doors-14', doors.length === 14);
 ok('doors-have-data', doors.every(d => !!d.data?.id && !!d.solid));
 console.log('TOWN_ORIGIN', TOWN_ORIGIN);
+// çapraz-chunk determinizm (cache ısındıktan sonra)
+const m1 = propsForChunk(5, 4), m2 = propsForChunk(5, 4);
+ok('deterministic-second-chunk', JSON.stringify(m1) === JSON.stringify(m2));
+// kaya/çalı üretimi gerçekten var (yoğunluk tabloları canlı)
+const rocks = m1.filter(p => p.kind === 'rock').length, bushes = m1.filter(p => p.kind === 'bush').length;
+console.log('chunk(5,4) rocks:', rocks, 'bushes:', bushes);
+ok('rocks-exist', rocks > 0);
+ok('bushes-exist', bushes > 0);
+ok('doors-cached-ref', dungeonDoors() === dungeonDoors());
 console.log(`td-props: ${pass} pass, ${fail} fail`);
 if (fail) process.exit(1);
