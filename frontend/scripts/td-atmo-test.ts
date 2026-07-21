@@ -1,0 +1,10 @@
+import { atmoForRegion } from '../lib/game/td/atmosphere';
+import { REGIONS } from '../lib/game/td/worldMap';
+let pass = 0, fail = 0;
+const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.error('FAIL ' + n); } };
+ok('all-regions-mapped', REGIONS.every(r => !!atmoForRegion(r.key)));
+const t = atmoForRegion('town');
+ok('sane-alphas', t.tintAlpha > 0 && t.tintAlpha <= 0.15 && t.fogAlpha > 0 && t.fogAlpha <= 0.3);
+ok('distinct-volcano-town', atmoForRegion('volcano').tint !== atmoForRegion('town').tint);
+console.log(`td-atmo: ${pass} pass, ${fail} fail`);
+if (fail) process.exit(1);
