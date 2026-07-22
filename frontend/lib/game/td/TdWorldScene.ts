@@ -425,6 +425,7 @@ export class TdWorldScene extends Phaser.Scene {
       },
       region: region.key,
       returnScene: 'TdWorld',
+      sandbox: true,
     });
     this.scene.pause();
     this.scene.get('TdBattle').events.once('battle-end', (result: { won: boolean }) => {

@@ -18,7 +18,7 @@ import { mkMonsterChibi } from './sprites/monsterChibi';
 import { VIEW_W, VIEW_H } from './tdCore';
 import type { Biome } from './worldMap';
 
-interface BattleData { monster: MonsterData; returnScene: string; region?: string; }
+interface BattleData { monster: MonsterData; returnScene: string; region?: string; sandbox?: boolean; }
 
 // Bölge anahtarı (worldMap REGIONS `.key`) → Biome (tiles.ts paleti). 'town'/'grassE'/'grassS'
 // hariç REGIONS key'leri zaten Biome literalleriyle birebir eşleşiyor.
@@ -137,8 +137,9 @@ interface StatusEffect {
 
 export class TdBattleScene extends Phaser.Scene {
   private monster!: MonsterData;
-  private returnScene!: string;
   private region = 'forest';
+  // Testnet önizleme koruması: canlı frostbite_save/achievements/on-chain XP'ye YAZMAZ (Faz 4 save-v2 gelene dek).
+  private sandbox = true;
   // TD reskin: canavar Graphics yerine mkMonsterChibi 2-kare Image + flip tween'i.
   private monsterImg?: Phaser.GameObjects.Image;
   private monsterFlipTimer?: Phaser.Time.TimerEvent;
@@ -226,7 +227,7 @@ export class TdBattleScene extends Phaser.Scene {
       this.monster.goldReward = 2 + Math.floor(Math.random() * lvl * 3) + (this.monster.isElite ? lvl : 0);
     }
     if (this.monster.spd == null) this.monster.spd = 5 + Math.floor(lvl / 2);
-    this.returnScene = data.returnScene;
+    this.sandbox = data.sandbox !== false;
     const s = PlayerState.get();
     this.playerHp = s.hp;
     this.playerMaxHp = s.maxHp;
@@ -631,6 +632,7 @@ export class TdBattleScene extends Phaser.Scene {
       delay: 600, loop: true,
       callback: () => { frame = frame === 0 ? 1 : 0; img.setTexture(frame === 0 ? keyA : keyB); },
     });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.monsterFlipTimer?.remove());
     return img;
   }
 
@@ -2658,30 +2660,32 @@ export class TdBattleScene extends Phaser.Scene {
     const leveled = state.addXp(this.monster.xpReward);
     state.gold += this.monster.goldReward;
 
-    // ── Achievement stat tracking ──
-    incrementStat('totalKills');
-    incrementStat('totalGoldEarned', this.monster.goldReward);
-    if (this.battleCrits > 0) incrementStat('critCount', this.battleCrits);
-    if (this.battleDodges > 0) incrementStat('dodgeCount', this.battleDodges);
-    if (this.battleDamageTaken === 0) incrementStat('perfectWins');
+    // ── Achievement stat tracking ── (sandbox: testnet önizleme canlı achievements'e yazmaz)
+    if (!this.sandbox) {
+      incrementStat('totalKills');
+      incrementStat('totalGoldEarned', this.monster.goldReward);
+      if (this.battleCrits > 0) incrementStat('critCount', this.battleCrits);
+      if (this.battleDodges > 0) incrementStat('dodgeCount', this.battleDodges);
+      if (this.battleDamageTaken === 0) incrementStat('perfectWins');
 
-    // Boss kills
-    const mType = this.monster.type;
-    const isBoss = mType.includes('boss') || mType === 'crystal_wyrm' || mType === 'infernal_dragon' || mType === 'dragon';
-    if (isBoss) incrementStat('bossKills');
+      // Boss kills
+      const mType = this.monster.type;
+      const isBoss = mType.includes('boss') || mType === 'crystal_wyrm' || mType === 'infernal_dragon' || mType === 'dragon';
+      if (isBoss) incrementStat('bossKills');
 
-    // Monster type kills
-    if (mType === 'skeleton') incrementStat('skeletonKills');
-    if (mType === 'spider') incrementStat('spiderKills');
-    if (mType === 'ghost') incrementStat('ghostKills');
-    if (mType === 'dragon' || mType === 'frost_dragon' || mType === 'crystal_wyrm' || mType === 'infernal_dragon') {
-      incrementStat('dragonKills');
-    }
+      // Monster type kills
+      if (mType === 'skeleton') incrementStat('skeletonKills');
+      if (mType === 'spider') incrementStat('spiderKills');
+      if (mType === 'ghost') incrementStat('ghostKills');
+      if (mType === 'dragon' || mType === 'frost_dragon' || mType === 'crystal_wyrm' || mType === 'infernal_dragon') {
+        incrementStat('dragonKills');
+      }
 
-    // Trigger achievement check via HUD
-    const hudScene = this.scene.get('HUD') as any;
-    if (hudScene?.runAchievementCheck) {
-      this.time.delayedCall(500, () => hudScene.runAchievementCheck());
+      // Trigger achievement check via HUD
+      const hudScene = this.scene.get('HUD') as any;
+      if (hudScene?.runAchievementCheck) {
+        this.time.delayedCall(500, () => hudScene.runAchievementCheck());
+      }
     }
 
     // Loot drops
@@ -2710,16 +2714,18 @@ export class TdBattleScene extends Phaser.Scene {
     if (leveled) msg += `\n⬆ LEVEL UP! Now level ${state.level}!`;
     if (lootMsg) msg += lootMsg;
     this.log(msg);
-    state.save();
+    if (!this.sandbox) {
+      state.save();
 
-    // Sync XP to on-chain hero NFT via multiplayer server
-    if (mp.connected && state.nftTokenId > 0) {
-      (mp as any).socket?.emit('battle-result', {
-        won: true,
-        heroTokenId: state.nftTokenId,
-        xpEarned: this.monster.xpReward,
-        killScore: 1,
-      });
+      // Sync XP to on-chain hero NFT via multiplayer server
+      if (mp.connected && state.nftTokenId > 0) {
+        (mp as any).socket?.emit('battle-result', {
+          won: true,
+          heroTokenId: state.nftTokenId,
+          xpEarned: this.monster.xpReward,
+          killScore: 1,
+        });
+      }
     }
 
     const flash = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xffdd00, 0.15).setDepth(50);
@@ -2734,14 +2740,14 @@ export class TdBattleScene extends Phaser.Scene {
     // one death — a second run would double the death stat and gold penalty.
     if (this.battleOver) return;
     this.battleOver = true;
-    incrementStat('deaths');
+    if (!this.sandbox) incrementStat('deaths');
     const state = PlayerState.get();
     state.hp = Math.floor(state.maxHp * 0.3);
     state.mp = Math.floor(state.maxMp * 0.5);
     state.gold = Math.max(0, state.gold - Math.floor(state.gold * 0.1));
     this.turnIndicator.setText('').setColor('#cc4444');
     this.setButtonsEnabled(false);
-    state.save();
+    if (!this.sandbox) state.save();
 
     // ── Death Animation ──
     const W = GAME_WIDTH;
