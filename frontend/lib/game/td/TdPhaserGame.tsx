@@ -159,8 +159,10 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
   };
 
   return (
-    <div className="relative w-full max-w-5xl">
-      <div ref={ref} className="aspect-[3/2] w-full [image-rendering:pixelated]" />
+    // live: tam viewport (world layout takeover'ı ile bütün ekran; Scale.FIT letterbox'lar)
+    // preview: worldtestnet'in ortalanmış 3:2 kutusu
+    <div className={mode === 'live' ? 'fixed inset-0 bg-[#0d1319]' : 'relative w-full max-w-5xl'}>
+      <div ref={ref} className={mode === 'live' ? 'h-full w-full [image-rendering:pixelated]' : 'aspect-[3/2] w-full [image-rendering:pixelated]'} />
 
       {isTouch && (
         <>
