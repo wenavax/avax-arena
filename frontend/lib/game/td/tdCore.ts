@@ -37,7 +37,7 @@ export function chunksInView(camCenterX: number, camCenterY: number): { cx: numb
 /**
  * Deterministik 2B hash — harita/deko üretiminin tek rastgelelik kaynağı.
  * SALT SÖZLÜĞÜ (çakışma yasak): 0=serbest, 1=bölge blend (worldMap),
- * 2=tile deko (tiles), 3=prop yerleşim, 4=prop varyant, 5=kaya, 6=çalı, 7=canavar yerleşim.
+ * 2=tile deko (tiles), 3=prop yerleşim, 4=prop varyant, 5=kaya, 6=çalı, 7=canavar yerleşim, 8=zindan üretimi.
  * Yeni tüketici buraya kayıt düşmeden salt alamaz.
  */
 export function hash2d(x: number, y: number, salt = 0): number {

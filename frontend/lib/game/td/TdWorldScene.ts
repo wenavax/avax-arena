@@ -96,10 +96,15 @@ export class TdWorldScene extends Phaser.Scene {
       .setScrollFactor(0).setDepth(1501);
 
     // E: en yakın hub binasına gir (dünya değişimi Faz 5'te — şimdilik CustomEvent + toast)
+    // veya en yakın zindan kapısına gir (TdDungeon launch+pause — battle akışıyla simetrik).
     kb.on('keydown-E', () => {
       const p = this.nearProp;
+      if (this.battleActive) return;
       if (p?.kind === 'building') {
         window.dispatchEvent(new CustomEvent('td-hub-open', { detail: { url: p.data!.url, name: p.data!.name, accent: p.data!.accent } }));
+      } else if (p?.kind === 'door_dungeon') {
+        this.scene.pause();
+        this.scene.launch('TdDungeon', { dungeonId: p.data!.id, exitPos: { x: this.heroPos.x, y: this.heroPos.y } });
       }
     });
     // M: minimap toggle
@@ -381,7 +386,7 @@ export class TdWorldScene extends Phaser.Scene {
     if (near !== this.nearProp) {
       this.nearProp = near;
       this.hintText.setText(near
-        ? (near.kind === 'building' ? `E — ${near.data!.name}` : `⛓ ${near.data!.name} — sealed (Phase 3)`)
+        ? (near.kind === 'building' ? `E — ${near.data!.name}` : `E — enter ${near.data!.name}`)
         : '').setVisible(!!near);
     }
     // atmosfer lerp
