@@ -234,6 +234,7 @@ export class TdDungeonScene extends Phaser.Scene {
   /** Zindandan çıkış: TdDungeon durur, TdWorld devam eder (kapı akışıyla simetrik). */
   private leave(): void {
     if (this.leaving) return;
+    if (this.battleActive) return; // savaş sırasında ESC → çift-aktif-sahne kilidini önle
     this.leaving = true;
     this.scene.stop();
     this.scene.resume('TdWorld');

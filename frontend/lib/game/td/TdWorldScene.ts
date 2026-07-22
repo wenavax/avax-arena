@@ -100,6 +100,8 @@ export class TdWorldScene extends Phaser.Scene {
     kb.on('keydown-E', () => {
       const p = this.nearProp;
       if (this.battleActive) return;
+      // paused-input sızıntısına karşı savunma: alt sahne aktifken yeniden-launch yok
+      if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
       if (p?.kind === 'building') {
         window.dispatchEvent(new CustomEvent('td-hub-open', { detail: { url: p.data!.url, name: p.data!.name, accent: p.data!.accent } }));
       } else if (p?.kind === 'door_dungeon') {
