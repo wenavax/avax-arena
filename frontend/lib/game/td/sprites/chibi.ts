@@ -34,6 +34,32 @@ export const DEFAULT_PALETTE: ChibiPalette = {
   accent: '#e84142', leg: '#2c3540', boot: '#1d242c',
 };
 
+/**
+ * MP presence (Faz 5 Task 2): uzak oyuncular için küçük bir palet çeşitleme havuzu.
+ * DEFAULT_PALETTE'in hair/top/topShade alanları hue-rotate edilmiş 6 varyant — herkesin
+ * aynı renk olmasını önler, deterministik (id hash'i % N) seçim yapılır.
+ */
+export const REMOTE_PALETTE_VARIANTS: ChibiPalette[] = [
+  DEFAULT_PALETTE,
+  { ...DEFAULT_PALETTE, hair: '#8a5a2c', top: '#6e8e4e', topShade: '#54703d' }, // yeşil üst
+  { ...DEFAULT_PALETTE, hair: '#2c3a5b', top: '#8e4e6e', topShade: '#703d54' }, // mor/pembe üst
+  { ...DEFAULT_PALETTE, hair: '#5b2c3a', top: '#8e7a4e', topShade: '#705f3d' }, // hardal üst
+  { ...DEFAULT_PALETTE, hair: '#2c5b4e', top: '#4e6e8e', topShade: '#3d5872', accent: '#42a8e8' }, // mavi atkı
+  { ...DEFAULT_PALETTE, hair: '#5b4a2c', top: '#8e6e4e', topShade: '#70573d' }, // kahve üst
+];
+
+/** id/soket-id'sinden deterministik küçük hash (32-bit, işaretsiz). */
+export function hashId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/** id'ye göre deterministik palet varyantı seç (aynı id her zaman aynı paleti alır). */
+export function paletteForId(id: string): ChibiPalette {
+  return REMOTE_PALETTE_VARIANTS[hashId(id) % REMOTE_PALETTE_VARIANTS.length];
+}
+
 /** chibiHumanoid çıktı boyutu (kontur DAHİL) — yerleşim matematiği bunları kullanmalı. */
 export const CHIBI_W = 14;
 export const CHIBI_H = 20;

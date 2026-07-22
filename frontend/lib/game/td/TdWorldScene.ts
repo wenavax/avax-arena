@@ -5,7 +5,7 @@ import * as Phaser from 'phaser';
 import { TILE, CHUNK, MAP_W, MAP_H, VIEW_W, VIEW_H, chunksInView, depth, hash2d } from './tdCore';
 import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
-import { chibiHumanoid, CHIBI_H } from './sprites/chibi';
+import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
 import { propsForChunk, type TdProp } from './worldProps';
 import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump, mkFarmPlot } from './sprites/props';
 import { atmoForRegion } from './atmosphere';
@@ -13,6 +13,7 @@ import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
 import { mkMonsterChibi } from './sprites/monsterChibi';
 import { TdState, migrateV1 } from './tdState';
 import { COSTS, PER_HIT } from './cozy/rules';
+import { mp } from '../multiplayer/socket';
 
 /** Faz 5: TdPhaserGame registry'ye yazdığı basit dokunmatik input state'i (bkz. TdPhaserGame.tsx). */
 interface TdTouchInput { dx: number; dy: number; e: boolean; space: boolean }
@@ -43,6 +44,53 @@ interface Gatherable {
   respawnAt: number;            // this.time.now bazlı; alive=false iken geçerli
   origTexKey: string;           // respawn'da geri dönülecek texture
   bushVariant?: number;         // bush ise orijinal v (0/1)
+}
+
+/** MP presence (Faz 5 Task 2): iso'daki RemotePlayer'ın TD-sadeleştirilmiş karşılığı —
+ *  chibi sprite + isim etiketi, hedefe lerp (tween yerine basit per-frame lerp — TD update()
+ *  zaten her karede pozisyon/derinlik güncelliyor, aynı desene uyar). */
+class TdRemotePlayer {
+  x: number; y: number;
+  targetX: number; targetY: number;
+  img: Phaser.GameObjects.Image;
+  label: Phaser.GameObjects.Text;
+
+  constructor(scene: Phaser.Scene, id: string, name: string, x: number, y: number) {
+    this.x = x; this.y = y; this.targetX = x; this.targetY = y;
+    const palette = paletteForId(id);
+    const key = remoteTexKey(id);
+    if (!scene.textures.exists(key)) scene.textures.addCanvas(key, chibiHumanoid(0, 0, palette));
+    this.img = scene.add.image(x, y, key).setOrigin(0.5, (CHIBI_H - 3) / CHIBI_H).setDepth(depth(x, y));
+    this.label = scene.add.text(x, y - CHIBI_H - 2, name || 'traveler', {
+      fontSize: '8px', fontFamily: 'monospace', color: '#aaddff',
+      backgroundColor: '#141c24cc', padding: { x: 2, y: 1 },
+    }).setOrigin(0.5, 1).setDepth(depth(x, y) + 1);
+  }
+
+  setTarget(x: number, y: number): void {
+    this.targetX = x; this.targetY = y;
+  }
+
+  /** Per-frame lerp doğru hedefe — tween yerine (TD update() zaten her kare depth/pozisyon basıyor). */
+  update(dt: number): void {
+    const rate = Math.min(1, dt * 8); // ~8/s yaklaşma — hafif gecikme, snap yok
+    this.x += (this.targetX - this.x) * rate;
+    this.y += (this.targetY - this.y) * rate;
+    this.img.setPosition(Math.round(this.x), Math.round(this.y));
+    this.img.setDepth(depth(this.x, this.y));
+    this.label.setPosition(Math.round(this.x), Math.round(this.y) - CHIBI_H - 2);
+    this.label.setDepth(depth(this.x, this.y) + 1);
+  }
+
+  destroy(): void {
+    this.img.destroy();
+    this.label.destroy();
+  }
+}
+
+/** id başına sabit texture key (palet id'den deterministik türediği için id yeterli — cache-friendly). */
+function remoteTexKey(id: string): string {
+  return `td-remote-${hashId(id) % 6}`;
 }
 
 export class TdWorldScene extends Phaser.Scene {
@@ -87,6 +135,13 @@ export class TdWorldScene extends Phaser.Scene {
   private tdMode: 'preview' | 'live' = 'preview';
   // one-shot tüketim: dokunmatik E/SPACE'in bir önceki karede zaten işlenmiş olup olmadığını izler
   private touchEPrev = false; private touchSpacePrev = false;
+
+  // ── Faz 5 Task 2: MP presence (yalnız LIVE) — tek düzlem 'td' zone, graceful skip ──
+  private mpEnabled = false; // socket kurulumu başarılıysa true; her yerde try/catch korumalı
+  private remoteTd = new Map<string, TdRemotePlayer>();
+  /** [event, handler] — cleanup'ta mp.off için (offAll kullanma: HUD/diğer sahneler etkilenmesin) */
+  private mpTdHandlers: Array<[string, (data?: any) => void]> = [];
+  private mpMoveT = 0; // pozisyon yayını biriktiricisi (spam önleyici)
 
   constructor() { super({ key: 'TdWorld' }); }
 
@@ -180,6 +235,11 @@ export class TdWorldScene extends Phaser.Scene {
     kb.on('keydown-SPACE', () => this.onSpaceGather());
 
     this.streamChunks();
+
+    // MP presence: yalnız LIVE modda, tamamen izole+graceful (bkz. setupMultiplayerTd doc).
+    if (this.tdMode === 'live') this.setupMultiplayerTd();
+    this.events.once('shutdown', () => this.cleanupMultiplayerTd());
+    this.events.once('destroy', () => this.cleanupMultiplayerTd());
   }
 
   /** E etkileşimi: en yakın interaktif prop'a göre dallanır (klavye + dokunmatik ortak yol). */
@@ -578,6 +638,13 @@ export class TdWorldScene extends Phaser.Scene {
       if (img.texture.key !== key) img.setTexture(key);
     }
 
+    // MP presence: uzak oyuncu lerp'i her kare + pozisyon yayını ~150ms'de bir (spam önleyici).
+    if (this.mpEnabled) {
+      for (const rp of this.remoteTd.values()) rp.update(dt);
+      this.mpMoveT += dt;
+      if (this.mpMoveT >= 0.15) { this.mpMoveT = 0; this.broadcastTdMove(); }
+    }
+
     // periyodik kaydet (per-frame yazma yerine ≤5sn'de bir — tick kaynaklı sürekli enerji değişimi için)
     // LIVE modda hero konumu da bu biriktiriciyle yazılır (aynı 5sn penceresi paylaşılır).
     this.saveT += dt;
@@ -755,5 +822,105 @@ export class TdWorldScene extends Phaser.Scene {
   private readTouchInput(): TdTouchInput {
     const t = this.registry.get('tdTouch') as TdTouchInput | undefined;
     return t ?? { dx: 0, dy: 0, e: false, space: false };
+  }
+
+  // -----------------------------------------------------------------------
+  // Faz 5 Task 2: MP presence — tek düzlem 'td' zone, graceful skip
+  // -----------------------------------------------------------------------
+  /** izo'nun IsoBaseScene.setupMultiplayer() ile AYNI sözleşme: mp.connect/register/joinZone,
+   *  event adları (zone-players/player-joined/player-left/player-moved) birebir. Tek fark:
+   *  zone SABİT 'td' (bölgeden türetilmez) — TD oyuncuları tek ortak odada, izo bölgelerinden ayrı.
+   *  Socket modülü/sunucu yoksa/hata verirse tamamen sessiz devre dışı kalır — oyunu ASLA bozmaz. */
+  private setupMultiplayerTd(): void {
+    try {
+      if (!mp.connected) {
+        mp.connect();
+        this.mpTdOn('_connected', () => this.mpRegisterAndJoinTd());
+      } else {
+        this.mpRegisterAndJoinTd();
+      }
+
+      this.mpTdOn('zone-players', (players: Array<{ id: string; name: string; tx: number; ty: number }>) => {
+        try {
+          for (const p of players ?? []) {
+            if (p.id === mp.id || this.remoteTd.has(p.id)) continue;
+            const rp = new TdRemotePlayer(this, p.id, p.name, p.tx * TILE + 8, p.ty * TILE + 8);
+            this.remoteTd.set(p.id, rp);
+          }
+        } catch { /* graceful: render hatası MP'yi kapatmaz */ }
+      });
+
+      this.mpTdOn('player-joined', (p: { id: string; name: string; tx: number; ty: number }) => {
+        try {
+          if (!p || p.id === mp.id || this.remoteTd.has(p.id)) return;
+          const rp = new TdRemotePlayer(this, p.id, p.name, p.tx * TILE + 8, p.ty * TILE + 8);
+          this.remoteTd.set(p.id, rp);
+        } catch { /* no-op */ }
+      });
+
+      this.mpTdOn('player-left', (data: { id: string }) => {
+        try {
+          const rp = this.remoteTd.get(data?.id);
+          if (rp) { rp.destroy(); this.remoteTd.delete(data.id); }
+        } catch { /* no-op */ }
+      });
+
+      this.mpTdOn('player-moved', (data: { id: string; tx: number; ty: number }) => {
+        try {
+          const rp = this.remoteTd.get(data?.id);
+          if (rp) rp.setTarget(data.tx * TILE + 8, data.ty * TILE + 8);
+        } catch { /* no-op */ }
+      });
+
+      this.mpEnabled = true;
+    } catch {
+      // Socket modülü yok/başlatılamadı — MP presence sessizce kapalı, oyun normal devam eder.
+      this.mpEnabled = false;
+    }
+  }
+
+  private mpRegisterAndJoinTd(): void {
+    try {
+      const s = this.tdState;
+      const wallet = (window as any).__frostbiteWallet?.address || `guest_${Date.now()}`;
+      mp.register({
+        wallet, name: wallet.slice(0, 10), playerClass: 'td', level: 1,
+        skinColor: 0xf2c99a, hairColor: 0x5b3a24,
+      });
+      // zone 'td' SABİT — TdWorld oyuncuları tek ortak odada, izo bölgelerinden bağımsız.
+      const tx = Math.floor(this.heroPos.x / TILE), ty = Math.floor(this.heroPos.y / TILE);
+      mp.joinZone('td', tx, ty);
+      void s;
+    } catch { /* graceful: register/join başarısız olsa da oyun akışı bozulmaz */ }
+  }
+
+  private mpTdOn(event: string, fn: (data?: any) => void): void {
+    this.mpTdHandlers.push([event, fn]);
+    mp.on(event, fn);
+  }
+
+  /** Oyuncu hareketini yayınla (LIVE + mp bağlıysa). Update() içinden ~150ms'de bir çağrılır. */
+  private broadcastTdMove(): void {
+    if (!this.mpEnabled) return;
+    try {
+      if (!mp.connected) return;
+      const tx = Math.floor(this.heroPos.x / TILE), ty = Math.floor(this.heroPos.y / TILE);
+      mp.sendMove(tx, ty, this.heroDir === 2 ? (this.heroFlip ? 'right' : 'left') : this.heroDir === 1 ? 'up' : 'down');
+    } catch { /* no-op — MP yayın hatası oyunu etkilemez */ }
+  }
+
+  /** Sahne shutdown/destroy'da: tüm uzak oyuncuları yok et + bu sahnenin mp dinleyicilerini kaldır.
+   *  izo'daki gibi socket BAĞLANTISI kapatılmaz (başka sahne/HUD kullanıyor olabilir) — yalnız
+   *  bu sahnenin event handler'ları sökülür (mp.off), remoteTd map temizlenir. */
+  private cleanupMultiplayerTd(): void {
+    try {
+      for (const rp of this.remoteTd.values()) rp.destroy();
+    } catch { /* no-op */ }
+    this.remoteTd.clear();
+    try {
+      for (const [event, fn] of this.mpTdHandlers) mp.off(event, fn);
+    } catch { /* no-op */ }
+    this.mpTdHandlers = [];
+    this.mpEnabled = false;
   }
 }
