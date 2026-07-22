@@ -6,7 +6,6 @@ import { useReadContract, useReadContracts } from 'wagmi';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import GameStageBanner from '@/components/GameStageBanner';
-import { GameOverlay } from '@/components/game/GameOverlay';
 import { HERO_CONTRACT, HERO_ABI, ITEM_CONTRACT, ITEM_ABI } from '@/lib/game/nft/contracts';
 
 declare global {
@@ -37,8 +36,10 @@ declare global {
   }
 }
 
+// TD GEÇİŞİ (Faz 5): izo PhaserGame → TdPhaserGame. Rollback = bu import + aşağıdaki
+// mount'u eski haline döndür (git revert yeterli). İzo kodu +1 hafta repo'da kalır.
 const PhaserGame = dynamic(
-  () => import('@/lib/game/PhaserGame').then(m => m.PhaserGame),
+  () => import('@/lib/game/td/TdPhaserGame').then(m => m.TdPhaserGame),
   {
     ssr: false,
     loading: () => (
@@ -276,8 +277,8 @@ export function WorldLoginGate() {
   if (enterGame) {
     return (
       <>
-        <PhaserGame />
-        <GameOverlay />
+        {/* TdPhaserGame live modda kendi GameOverlay'ini render eder (çift overlay olmasın) */}
+        <PhaserGame mode="live" />
       </>
     );
   }

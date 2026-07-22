@@ -26,7 +26,7 @@ interface Game {
 const GAMES: Game[] = [
   { title: 'Arena', sub: 'Mint warriors, stake AVAX in 1v1 & 3v3 PvP — winner takes the pot. Element advantages add strategy.', href: '/battle', icon: Swords, acc: '#ed2f39', status: 'LIVE', pat: 'diag', feat: true },
   { title: 'CAR(D) GAME', sub: 'Card-combo racing — scheduled 4-player races every 5 minutes, settled by on-chain escrow. Cross-chain entries via Avalanche ICM: coming soon.', href: '/cardgame', icon: Car, acc: '#f5c542', status: 'TESTNET', pat: 'lines', feat: true, warn: 'Fuji testnet — test AVAX only, no real funds' },
-  { title: 'Avalanche World', sub: 'An isometric RPG — 18 zones, dungeons, multiplayer, NFT heroes.', href: '/world', icon: Map, acc: '#4dd0e1', status: 'TESTNET', pat: 'grid', feat: true, warn: 'Test phase — may change or reset' },
+  { title: 'Avalanche World', sub: 'A cozy top-down RPG — one huge open world, dungeons, battles, farming, NFT heroes.', href: '/world', icon: Map, acc: '#4dd0e1', status: 'TESTNET', pat: 'grid', feat: true, warn: 'Test phase — may change or reset' },
   { title: 'Adventures', sub: 'Idle NFT staking — stack Frost Shards.', href: '/world/adventures', icon: Compass, acc: '#6ee7a0', status: 'TESTNET', pat: 'dots', warn: 'Test phase — rewards not live yet' },
   { title: 'Expeditions', sub: 'Idle roguelike with AI-authored bosses.', href: '/expeditions', icon: Dices, acc: '#a78bfa', status: 'TESTNET', pat: 'rings', warn: 'Test phase — progress may reset' },
   { title: 'Launchpad', sub: 'Launch & trade tokens, pump-style.', href: '/launchpad', icon: Rocket, acc: '#f97316', status: 'LIVE', pat: 'dots' },
