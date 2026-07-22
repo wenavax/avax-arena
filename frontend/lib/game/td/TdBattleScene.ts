@@ -15,7 +15,7 @@ import { getRandomMobLine } from '../lore';
 import { biomeTopColor } from './tiles';
 import { atmoForRegion } from './atmosphere';
 import { mkMonsterChibi } from './sprites/monsterChibi';
-import { VIEW_W, VIEW_H } from './tdCore';
+import { computeTdView } from './tdCore';
 import type { Biome } from './worldMap';
 
 interface BattleData { monster: MonsterData; returnScene: string; region?: string; sandbox?: boolean; }
@@ -280,14 +280,28 @@ export class TdBattleScene extends Phaser.Scene {
 
     // TD reskin: BattleScene tüm düzenini GAME_WIDTH×GAME_HEIGHT (1280×720) mutlak
     // koordinatlarla çizer (screen-space HUD yok — setScrollFactor(0) hiç kullanılmıyor,
-    // her şey world-space). TdWorld'ün küçük VIEW_W×VIEW_H (384×256) canvas'ına sığdırmak
-    // için kamerayı bu mantıksal alana zoom'la — Game canvas'ı GAME_WIDTH/HEIGHT boyutunda
-    // kalır (page.tsx), yalnız bu sahnenin kamerası küçültülmüş bir pencereden gösterir.
-    // Tam ekran fix (22 Tem): 0.3× zoom sıkıştırması yerine savaş boyunca oyun
-    // tuvali native 1280×720'ye geçer (TdWorld pauselu — HUD'u render etmiyor);
-    // shutdown'da 384×256'ya geri döner. Metinler/oran artık native.
+    // her şey world-space). Tam ekran fix (22 Tem): savaş boyunca oyun tuvali native
+    // 1280×720'ye geçer; metinler/oran native.
+    // Faz 5.1 (Çözünürlük Paketi): dünya artık adaptif (Scale.NONE + tam-sayı zoom k,
+    // TdPhaserGame). Savaşta boyut native sabit + KESİRLİ fit-zoom ile viewport'a sığar
+    // (eski Scale.FIT muadili; savaş pixel-art-kritik değil). Shutdown'da sabit 384×256'ya
+    // DEĞİL, computeTdView'un k-tabanlı boyutuna dönülür — registry 'tdBattle' bayrağı
+    // TdPhaserGame'in ResizeObserver'ına hangi yolun aktif olduğunu söyler.
+    const parentDims = () => {
+      const el = this.scale.parent as HTMLElement | null;
+      return { pw: el?.clientWidth || window.innerWidth, ph: el?.clientHeight || window.innerHeight };
+    };
+    this.registry.set('tdBattle', true);
     this.scale.setGameSize(GAME_WIDTH, GAME_HEIGHT);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.setGameSize(VIEW_W, VIEW_H));
+    const { pw, ph } = parentDims();
+    this.scale.setZoom(Math.min(pw / GAME_WIDTH, ph / GAME_HEIGHT));
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.registry.set('tdBattle', false);
+      const d = parentDims();
+      const v = computeTdView(d.pw, d.ph);
+      this.scale.setZoom(v.k);
+      this.scale.setGameSize(v.w, v.h);
+    });
 
     // ── Background ──
     // TD reskin: izo'nun ZONE_ATMOSPHERE+silüet backdrop'u yerine bölge-paletli

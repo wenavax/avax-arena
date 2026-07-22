@@ -4,10 +4,25 @@
 
 export const TILE = 16;          // px / tile
 export const CHUNK = 48;         // tile / chunk kenarı (48×48 tile = 768×768 px canvas)
-export const VIEW_W = 384;       // iç çözünürlük (24 tile) — Larvy zoom ölçümü (spec §3)
+export const VIEW_W = 384;       // referans çözünürlük (24 tile) — Larvy zoom ölçümü (spec §3); gerçek boyut computeTdView
 export const VIEW_H = 256;       // 16 tile
 export const MAP_W = 384;        // dünya: 384×384 tile (spec §2)
 export const MAP_H = 384;
+
+/**
+ * Faz 5.1 (Çözünürlük Paketi, seçenek A): Larvy-usulü adaptif tam-doldurma.
+ * Viewport'tan TAM-SAYI zoom k seçer (Scale.FIT'in vereceği orana en yakın tam sayı,
+ * [2,8] aralığına kıstırılmış) ve mantıksal oyun boyutunu ceil(viewport/k) döndürür.
+ * Canvas CSS'te k× büyütülür (Phaser Scale.NONE + zoom) → bant yok, pikseller hep
+ * keskin, görüş alanı ekrana göre büyür. VIEW_W/H artık yalnız zoom referansı
+ * (Larvy ölçümü) + parent boyutu okunamadığındaki fallback.
+ */
+export function computeTdView(pw: number, ph: number): { k: number; w: number; h: number } {
+  if (!(pw > 0) || !(ph > 0)) return { k: 1, w: VIEW_W, h: VIEW_H };
+  const s = Math.min(pw / VIEW_W, ph / VIEW_H);
+  const k = Math.max(2, Math.min(8, Math.round(s)));
+  return { k, w: Math.ceil(pw / k), h: Math.ceil(ph / k) };
+}
 
 export function toScreen(tx: number, ty: number): { x: number; y: number } {
   return { x: tx * TILE, y: ty * TILE };

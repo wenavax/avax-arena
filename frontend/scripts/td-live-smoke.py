@@ -16,7 +16,8 @@
 import json, os, sys, time
 from playwright.sync_api import sync_playwright
 
-URL = os.environ.get('TD_URL', 'http://localhost:3000/avalanche/worldtestnet')
+# Faz 5.1: default hedef /tddev (dev-only gate'siz LIVE mount; worldtestnet → /world redirect)
+URL = os.environ.get('TD_URL', 'http://localhost:3000/avalanche/tddev')
 LIVE = os.environ.get('TD_LIVE', '').strip().lower() in ('1', 'true', 'yes')
 fails = []
 

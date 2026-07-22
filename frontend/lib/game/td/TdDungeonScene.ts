@@ -118,14 +118,20 @@ export class TdDungeonScene extends Phaser.Scene {
     this.cursors = kb.createCursorKeys();
     kb.on('keydown-ESC', () => this.leave());
 
-    this.hintText = this.add.text(160, 240, '', {
+    // Faz 5.1: HUD/tint konum+boyutları layoutHud()'da scale'den (adaptif çözünürlük)
+    this.hintText = this.add.text(0, 0, '', {
       fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
 
     // atmosfer: bölgenin atmo'su koyulaştırılmış (tintAlpha ×1.6)
     const atmo = atmoForRegion(this.dungeonId);
-    this.tintRect = this.add.rectangle(160, 128, 320, 256, atmo.tint, Math.min(0.9, atmo.tintAlpha * 1.6))
+    this.tintRect = this.add.rectangle(0, 0, 8, 8, atmo.tint, Math.min(0.9, atmo.tintAlpha * 1.6))
       .setScrollFactor(0).setDepth(1500);
+    this.layoutHud();
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.layoutHud, this);
+    // Zindan sahnesi stop edilir — global scale emitter'dan çıkmak ŞART (sızıntı/stale ref)
+    this.events.once('shutdown', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutHud, this));
+    this.events.once('destroy', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutHud, this));
 
     // ── canavarlar: roster havuzunu spawn noktalarına döngüsel dağıt ──
     const roster = DUNGEON_ROSTERS[this.dungeonId];
@@ -158,6 +164,13 @@ export class TdDungeonScene extends Phaser.Scene {
         tgtX: bx, tgtY: by, pause: 0, f: 0, ft: 0, downUntil: 0, isBoss: true,
       };
     }
+  }
+
+  /** Faz 5.1: viewport'a bağlı HUD/tint yerleşimi — create'te + her scale RESIZE'da (savaş dönüşü dahil). */
+  private layoutHud(): void {
+    const w = this.scale.width, h = this.scale.height;
+    this.hintText.setPosition(w / 2, h - 16);
+    this.tintRect.setPosition(w / 2, h / 2).setSize(w, h);
   }
 
   /** Canavar texture'larını bir kez üretir/kaydeder (2 kare, küçük boy — overworld ile aynı kalıp). */

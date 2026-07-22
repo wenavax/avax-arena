@@ -2,7 +2,7 @@
 // ─── Açık dünya sahnesi: chunk streaming + chibi kahraman ───
 // Client-only (Phaser sahnesi). Su animasyonu yalnız su içeren chunk'ları tazeler.
 import * as Phaser from 'phaser';
-import { TILE, CHUNK, MAP_W, MAP_H, VIEW_W, VIEW_H, chunksInView, depth, hash2d } from './tdCore';
+import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, depth, hash2d } from './tdCore';
 import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
@@ -114,7 +114,8 @@ export class TdWorldScene extends Phaser.Scene {
   private fogRect!: Phaser.GameObjects.Rectangle;
   private minimapImg?: Phaser.GameObjects.Image;
   private minimapDot?: Phaser.GameObjects.Rectangle;
-  private minimapX = VIEW_W - 100; private minimapY = 4;
+  // Faz 5.1: konum layoutHud()'da scale.width'ten hesaplanır (adaptif çözünürlük)
+  private minimapX = 0; private minimapY = 4;
   // ── Faz 3: overworld canavarları ──
   private chunkMonsters = new Map<string, MonRef[]>();
   private battleActive = false;
@@ -197,8 +198,8 @@ export class TdWorldScene extends Phaser.Scene {
     const stump = mkStump(); reg('td-stump', stump); this.propMeta.set('stump', { ox: stump.ox, oy: stump.oy });
     for (let s = 0; s < 4; s++) { const m = mkFarmPlot(s as 0 | 1 | 2 | 3); reg(`td-farm-${s}`, m); this.propMeta.set(`farm-${s}`, { ox: m.ox, oy: m.oy }); }
 
-    // etkileşim ipucu (alt-orta, HUD)
-    this.hintText = this.add.text(VIEW_W / 2, VIEW_H - 14, '', {
+    // etkileşim ipucu (alt-orta, HUD) — konumlar layoutHud()'da (adaptif çözünürlük)
+    this.hintText = this.add.text(0, 0, '', {
       fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
 
@@ -214,15 +215,22 @@ export class TdWorldScene extends Phaser.Scene {
     this.goldText = this.add.text(6, 24, '', {
       fontSize: '10px', fontFamily: 'monospace', color: '#ffd23f', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
     }).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9);
-    this.gatherHint = this.add.text(VIEW_W / 2, VIEW_H - 26, '', {
+    this.gatherHint = this.add.text(0, 0, '', {
       fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
 
     // atmosfer: tam-ekran tint + alt fog bandı (scrollFactor 0, düşük alpha, lerp update()'te)
-    this.tintRect = this.add.rectangle(VIEW_W / 2, VIEW_H / 2, VIEW_W, VIEW_H, 0x88bbff, 0.04)
+    this.tintRect = this.add.rectangle(0, 0, 8, 8, 0x88bbff, 0.04)
       .setScrollFactor(0).setDepth(1500);
-    this.fogRect = this.add.rectangle(VIEW_W / 2, VIEW_H - 24, VIEW_W, 48, 0xbbddff, 0.10)
+    this.fogRect = this.add.rectangle(0, 0, 8, 48, 0xbbddff, 0.10)
       .setScrollFactor(0).setDepth(1501);
+
+    // Faz 5.1: HUD yerleşimi mevcut oyun boyutundan; resize'da (k/boyut değişimi,
+    // savaş dönüşü dahil) yeniden. Scale global emitter — shutdown/destroy'da off ŞART.
+    this.layoutHud();
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.layoutHud, this);
+    this.events.once('shutdown', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutHud, this));
+    this.events.once('destroy', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutHud, this));
 
     // E: en yakın hub binasına gir (LIVE: gerçek overlay / PREVIEW: toast) veya en yakın
     // zindan kapısına gir (TdDungeon launch+pause — battle akışıyla simetrik).
@@ -240,6 +248,21 @@ export class TdWorldScene extends Phaser.Scene {
     if (this.tdMode === 'live') this.setupMultiplayerTd();
     this.events.once('shutdown', () => this.cleanupMultiplayerTd());
     this.events.once('destroy', () => this.cleanupMultiplayerTd());
+  }
+
+  /**
+   * Faz 5.1: viewport'a bağlı HUD konumları — create'te + her scale RESIZE'da.
+   * (Savaş sırasında 1280×720 ile de çağrılır; battle backdrop'u alta çizilen dünyayı
+   * örttüğünden zararsız, savaş dönüşü resize'ı doğru yerleşimi geri getirir.)
+   */
+  private layoutHud(): void {
+    const w = this.scale.width, h = this.scale.height;
+    this.minimapX = w - 100;
+    this.hintText.setPosition(w / 2, h - 14);
+    this.gatherHint.setPosition(w / 2, h - 26);
+    this.tintRect.setPosition(w / 2, h / 2).setSize(w, h);
+    this.fogRect.setPosition(w / 2, h - 24).setSize(w, 48);
+    this.minimapImg?.setPosition(this.minimapX, this.minimapY);
   }
 
   /** E etkileşimi: en yakın interaktif prop'a göre dallanır (klavye + dokunmatik ortak yol). */

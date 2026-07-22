@@ -1,9 +1,11 @@
 # frontend/scripts/td-walk-smoke.py — TD world headless smoke (dev server gerekli)
 # Kullanım: python3 scripts/td-walk-smoke.py  (önce: npm run dev)
+# Faz 5.1: hedef /tddev (dev-only gate'siz mount — worldtestnet artık /world'e redirect,
+# /world ise cüzdanlı WorldLoginGate arkasında).
 import json, os, sys, time
 from playwright.sync_api import sync_playwright
 
-URL = os.environ.get('TD_URL', 'http://localhost:3000/avalanche/worldtestnet')
+URL = os.environ.get('TD_URL', 'http://localhost:3000/avalanche/tddev')
 fails = []
 def check(name, cond):
     print(('PASS ' if cond else 'FAIL ') + name)
@@ -61,6 +63,43 @@ with sync_playwright() as p:
         print('wood', wood, 'energy0', energy0, 'energy1', energy1)
         check('gather-wood', wood >= 1)
         check('energy-spent', energy1 < energy0)
+    # ── Faz 5.1: adaptif çözünürlük — tam-sayı zoom, viewport tam-doldurma, HUD konumu ──
+    res = pg.evaluate("""() => {
+        const sc = window.__tdGame.scale;
+        const parent = window.__tdGame.canvas.parentElement;
+        return { k: sc.zoom, w: sc.width, h: sc.height,
+                 pw: parent.clientWidth, ph: parent.clientHeight };
+    }""")
+    print('view', json.dumps(res))
+    check('zoom-integer', res['k'] == int(res['k']) and res['k'] >= 2)
+    check('view-fills', res['w'] * res['k'] >= res['pw'] and res['h'] * res['k'] >= res['ph'])
+    check('view-crop-max', res['w'] * res['k'] - res['pw'] < res['k'] and res['h'] * res['k'] - res['ph'] < res['k'])
+    hud = pg.evaluate(S % "({hx: s.hintText.x, hy: s.hintText.y, fw: s.fogRect.width, mmx: s.minimapX})")
+    check('hud-adaptive', abs(hud['hx'] - res['w'] / 2) < 1 and abs(hud['hy'] - (res['h'] - 14)) < 1
+          and hud['fw'] == res['w'] and hud['mmx'] == res['w'] - 100)
+    # savaşa gir/çık: native 1280×720'ye geçmeli, dönüşte k-tabanlı boyuta RESTORE etmeli
+    mon = pg.evaluate(S % """((() => {
+        for (const arr of s.chunkMonsters.values()) if (arr.length) return { x: arr[0].x, y: arr[0].y };
+        return null;
+    })())""")
+    check('battle-mon-found', mon is not None)
+    if mon:
+        pg.evaluate(S % f"((s.heroPos.x = {mon['x']}, s.heroPos.y = {mon['y']}, true))")
+        pg.wait_for_function("() => window.__tdGame.registry.get('tdBattle') === true", timeout=8000)
+        bres = pg.evaluate("() => ({w: window.__tdGame.scale.width, h: window.__tdGame.scale.height, k: window.__tdGame.scale.zoom})")
+        print('battle-view', json.dumps(bres))
+        check('battle-native', bres['w'] == 1280 and bres['h'] == 720)
+        check('battle-fit-zoom', abs(bres['k'] - min(res['pw'] / 1280, res['ph'] / 720)) < 0.01)
+        pg.evaluate("""() => {
+            const g = window.__tdGame;
+            g.scene.keys.TdBattle.scene.stop();      // SHUTDOWN → çözünürlük restore
+            g.scene.keys.TdWorld.scene.resume();
+            g.scene.keys.TdWorld.battleActive = false;
+        }""")
+        time.sleep(0.5)
+        rres = pg.evaluate("() => ({w: window.__tdGame.scale.width, h: window.__tdGame.scale.height, k: window.__tdGame.scale.zoom})")
+        print('restored-view', json.dumps(rres))
+        check('battle-restore-k', rres['k'] == res['k'] and rres['w'] == res['w'] and rres['h'] == res['h'])
     # fps
     time.sleep(1)
     fps = pg.evaluate("() => window.__tdGame.loop.actualFps")
