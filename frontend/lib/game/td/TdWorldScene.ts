@@ -537,7 +537,10 @@ export class TdWorldScene extends Phaser.Scene {
     const bob = moving ? (this.walkIdx % 2) : (Math.floor(t / 520) % 2); // adım dalması / idle nefes
     this.hero.setTexture(`td-hero-${this.heroDir}-${phase}`);
     this.hero.setFlipX(this.heroFlip);
-    this.hero.setPosition(Math.round(this.heroPos.x), Math.round(this.heroPos.y) + bob);
+    // bob görsel origin'e uygulanır (pozisyona DEĞİL) — kamera follow hedefi sabit kalır,
+    // aksi halde tam ekranda tüm sahne 1px aşağı-yukarı titrer (22 Tem canlı bulgusu).
+    this.hero.setPosition(Math.round(this.heroPos.x), Math.round(this.heroPos.y));
+    this.hero.setDisplayOrigin(this.hero.displayOriginX, this.hero.height - 3 + bob);
     this.hero.setDepth(depth(this.heroPos.x, this.heroPos.y));
     // su animasyonu: 400ms'de bir yalnız su içeren chunk'lar tazelenir
     this.waterT += dt;
