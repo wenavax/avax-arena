@@ -101,6 +101,7 @@ function remoteTexKey(id: string): string {
 
 export class TdWorldScene extends Phaser.Scene {
   private hero!: Phaser.GameObjects.Image;
+  private heroShadow!: Phaser.GameObjects.Ellipse;
   private heroPos = { x: TOWN_SPAWN.tx * TILE + 8, y: TOWN_SPAWN.ty * TILE + 8 };
   private heroDir: 0 | 1 | 2 = 0; private heroFlip = false;
   private walkIdx = 0; private walkT = 0;
@@ -198,6 +199,8 @@ export class TdWorldScene extends Phaser.Scene {
       const key = `td-hero-${d}-${p}`;
       if (!this.textures.exists(key)) this.textures.addCanvas(key, chibiHumanoid(d as 0 | 1 | 2, p as 0 | 1 | 2));
     }
+    // Faz 5.9: zemin gölgesi — karakteri yere oturtur (bob'dan bağımsız, heroPos takip eder)
+    this.heroShadow = this.add.ellipse(this.heroPos.x, this.heroPos.y + 1, 14, 4, 0x000000, 0.22);
     this.hero = this.add.image(this.heroPos.x, this.heroPos.y, 'td-hero-0-0').setOrigin(0.5, (CHIBI_H - 3) / CHIBI_H);
     this.cameras.main.setBounds(0, 0, MAP_W * TILE, MAP_H * TILE);
     this.cameras.main.startFollow(this.hero, true, 1, 1);
@@ -768,6 +771,8 @@ export class TdWorldScene extends Phaser.Scene {
     // aksi halde tam ekranda tüm sahne 1px aşağı-yukarı titrer (22 Tem canlı bulgusu).
     this.hero.setPosition(Math.round(this.heroPos.x), Math.round(this.heroPos.y));
     this.hero.setDisplayOrigin(this.hero.displayOriginX, this.hero.height - 3 + bob);
+    this.heroShadow.setPosition(Math.round(this.heroPos.x), Math.round(this.heroPos.y) + 1)
+      .setDepth(depth(this.heroPos.x, this.heroPos.y) - 1);
     this.hero.setDepth(depth(this.heroPos.x, this.heroPos.y));
     // su animasyonu: 400ms'de bir yalnız su içeren chunk'lar tazelenir
     this.waterT += dt;

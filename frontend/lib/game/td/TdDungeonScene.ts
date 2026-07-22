@@ -43,6 +43,7 @@ export class TdDungeonScene extends Phaser.Scene {
   private exitPos = { x: 0, y: 0 };
   private gen!: DungeonGen;
   private hero!: Phaser.GameObjects.Image;
+  private heroShadow!: Phaser.GameObjects.Ellipse;
   private heroPos = { x: 0, y: 0 };
   private heroDir: 0 | 1 | 2 = 0; private heroFlip = false;
   private walkIdx = 0; private walkT = 0;
@@ -125,6 +126,7 @@ export class TdDungeonScene extends Phaser.Scene {
 
     // ── hero spawn: giriş tile merkezi ──
     this.heroPos = { x: entry.x * TILE + 8, y: entry.y * TILE + 8 };
+    this.heroShadow = this.add.ellipse(this.heroPos.x, this.heroPos.y + 1, 14, 4, 0x000000, 0.28);
     this.hero = this.add.image(this.heroPos.x, this.heroPos.y, 'td-hero-0-0').setOrigin(0.5, (CHIBI_H - 3) / CHIBI_H);
     this.cameras.main.startFollow(this.hero, true, 1, 1);
 
@@ -455,6 +457,8 @@ export class TdDungeonScene extends Phaser.Scene {
     // aksi halde tam ekranda tüm sahne 1px aşağı-yukarı titrer (22 Tem canlı bulgusu).
     this.hero.setPosition(Math.round(this.heroPos.x), Math.round(this.heroPos.y));
     this.hero.setDisplayOrigin(this.hero.displayOriginX, this.hero.height - 3 + bob);
+    this.heroShadow.setPosition(Math.round(this.heroPos.x), Math.round(this.heroPos.y) + 1)
+      .setDepth(depth(this.heroPos.x, this.heroPos.y) - 1);
     this.hero.setDepth(depth(this.heroPos.x, this.heroPos.y));
 
     // canavar gezinme + temas — Faz 5.7: trash HARİTADA dövüşülür (aggro/kovalama +
