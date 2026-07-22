@@ -11,6 +11,7 @@ interface HubToast { name: string; accent: string }
 export default function TdDevPage() {
   const ref = useRef<HTMLDivElement>(null);
   const [toast, setToast] = useState<HubToast | null>(null);
+  const [sellToast, setSellToast] = useState<number | null>(null);
 
   useEffect(() => {
     let game: import('phaser').Game | null = null;
@@ -125,6 +126,22 @@ export default function TdDevPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onSell = (e: Event) => {
+      const detail = (e as CustomEvent<{ gold?: number; total?: number }>).detail;
+      if (!detail || typeof detail.gold !== 'number') return;
+      setSellToast(detail.gold);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setSellToast(null), 2500);
+    };
+    window.addEventListener('td-sell', onSell);
+    return () => {
+      window.removeEventListener('td-sell', onSell);
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
   return (
     <div className="flex min-h-[80vh] items-center justify-center">
       <div className="w-full max-w-5xl">
@@ -139,6 +156,14 @@ export default function TdDevPage() {
           style={{ borderLeft: `3px solid ${toast.accent}` }}
         >
           {toast.name} — opens after the World switch (Phase 5)
+        </div>
+      )}
+      {sellToast !== null && (
+        <div
+          className="fixed bottom-6 right-6 z-50 rounded bg-[#141c24] px-4 py-3 text-sm text-white shadow-lg"
+          style={{ borderLeft: '3px solid #ffd23f' }}
+        >
+          Sold for {sellToast}g 💰
         </div>
       )}
     </div>

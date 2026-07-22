@@ -37,5 +37,12 @@ console.log('chunk(5,4) rocks:', rocks, 'bushes:', bushes);
 ok('rocks-exist', rocks > 0);
 ok('bushes-exist', bushes > 0);
 ok('doors-cached-ref', dungeonDoors() === dungeonDoors());
+// tarla: 12 parsel, hepsi kasaba chunk'ında (4,4)
+const farms = c44.filter(p => p.kind === 'farm_plot');
+ok('farm-plot-count', farms.length === 12);
+ok('farm-plots-in-town-chunk', farms.every(p => {
+  const cx = Math.floor(p.x / 16 / 48), cy = Math.floor(p.y / 16 / 48);
+  return cx === 4 && cy === 4;
+}));
 console.log(`td-props: ${pass} pass, ${fail} fail`);
 if (fail) process.exit(1);

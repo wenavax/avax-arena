@@ -7,7 +7,7 @@ import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H } from './sprites/chibi';
 import { propsForChunk, type TdProp } from './worldProps';
-import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump } from './sprites/props';
+import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump, mkFarmPlot } from './sprites/props';
 import { atmoForRegion } from './atmosphere';
 import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
 import { mkMonsterChibi } from './sprites/monsterChibi';
@@ -78,6 +78,8 @@ export class TdWorldScene extends Phaser.Scene {
   private fireBoostText!: Phaser.GameObjects.Text;
   private gatherHint!: Phaser.GameObjects.Text;
   private fishing = false; private fishT = 0;
+  private farmImgs = new Map<number, Phaser.GameObjects.Image>(); // plotIndex → img (kalıcı: kasaba her zaman yüklü chunk'ta)
+  private goldText!: Phaser.GameObjects.Text;
 
   constructor() { super({ key: 'TdWorld' }); }
 
@@ -110,6 +112,7 @@ export class TdWorldScene extends Phaser.Scene {
     mkFireFrames().forEach((c, f) => { if (!this.textures.exists(`td-fire-${f}`)) this.textures.addCanvas(`td-fire-${f}`, c); });
     const dd = mkDungeonDoor(); reg('td-door-dungeon', dd); this.propMeta.set('door', { ox: dd.ox, oy: dd.oy });
     const stump = mkStump(); reg('td-stump', stump); this.propMeta.set('stump', { ox: stump.ox, oy: stump.oy });
+    for (let s = 0; s < 4; s++) { const m = mkFarmPlot(s as 0 | 1 | 2 | 3); reg(`td-farm-${s}`, m); this.propMeta.set(`farm-${s}`, { ox: m.ox, oy: m.oy }); }
 
     // etkileşim ipucu (alt-orta, HUD)
     this.hintText = this.add.text(VIEW_W / 2, VIEW_H - 14, '', {
@@ -125,6 +128,9 @@ export class TdWorldScene extends Phaser.Scene {
     this.fireBoostText = this.add.text(6, 14, '', {
       fontSize: '9px', fontFamily: 'monospace', color: '#ff9d3f',
     }).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9).setVisible(false);
+    this.goldText = this.add.text(6, 24, '', {
+      fontSize: '10px', fontFamily: 'monospace', color: '#ffd23f', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
+    }).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9);
     this.gatherHint = this.add.text(VIEW_W / 2, VIEW_H - 26, '', {
       fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
@@ -142,11 +148,32 @@ export class TdWorldScene extends Phaser.Scene {
       if (this.battleActive) return;
       // paused-input sızıntısına karşı savunma: alt sahne aktifken yeniden-launch yok
       if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
-      if (p?.kind === 'building') {
+      if (p?.kind === 'building' && p.data!.id === 'marketplace') {
+        const gold = this.tdState.sellAll();
+        this.tdState.save();
+        if (gold > 0) {
+          window.dispatchEvent(new CustomEvent('td-sell', { detail: { gold, total: gold } }));
+          this.floatText(this.heroPos.x, this.heroPos.y - 16, `+${gold}g 💰`, '#ffd23f');
+        } else {
+          this.showRedHint('nothing to sell');
+        }
+      } else if (p?.kind === 'building') {
         window.dispatchEvent(new CustomEvent('td-hub-open', { detail: { url: p.data!.url, name: p.data!.name, accent: p.data!.accent } }));
       } else if (p?.kind === 'door_dungeon') {
         this.scene.pause();
         this.scene.launch('TdDungeon', { dungeonId: p.data!.id, exitPos: { x: this.heroPos.x, y: this.heroPos.y } });
+      } else if (p?.kind === 'farm_plot') {
+        const i = p.data!.plotIndex!;
+        const plot = this.tdState.farm[i];
+        if (plot?.stage === 0) {
+          if (this.tdState.plant(i)) { this.tdState.save(); this.floatText(p.x, p.y - 14, 'planted 🌱', '#5aa06a'); }
+          else this.showRedHint('Not enough energy ⚡');
+        } else if (plot?.stage === 3) {
+          if (this.tdState.harvest(i)) { this.tdState.save(); this.floatText(p.x, p.y - 14, '+1 🍒'); }
+          else this.showRedHint('Not enough energy ⚡');
+        } else {
+          this.showRedHint('growing…');
+        }
       }
     });
     // M: minimap toggle
@@ -211,6 +238,7 @@ export class TdWorldScene extends Phaser.Scene {
       cp.objs.forEach(o => o.destroy());
       this.chunkProps.delete(key);
       this.fires = this.fires.filter(f => f.img.active);
+      for (const [idx, img] of this.farmImgs) if (!img.active) this.farmImgs.delete(idx);
     }
     this.chunkGatherables.delete(key); // node'lar chunk-yerel RAM'de; evict'te bilinçli tazelenir (determinizm bozulmaz)
     const mons = this.chunkMonsters.get(key);
@@ -244,7 +272,14 @@ export class TdWorldScene extends Phaser.Scene {
         const gatherables = new Map<string, Gatherable>();
         for (const p of list) {
           if (p.solid) solids.push(p.solid);
-          if (p.kind === 'building' || p.kind === 'door_dungeon') interactives.push(p);
+          if (p.kind === 'building' || p.kind === 'door_dungeon' || p.kind === 'farm_plot') interactives.push(p);
+          if (p.kind === 'farm_plot') {
+            const stage = this.tdState.farm[p.data!.plotIndex!]?.stage ?? 0;
+            const fimg = this.add.image(p.x, p.y, `td-farm-${stage}`).setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
+            this.farmImgs.set(p.data!.plotIndex!, fimg);
+            objs.push(fimg);
+            continue;
+          }
           let texKey2 = '', meta = { ox: 8, oy: 14 };
           if (p.kind === 'tree') { texKey2 = `td-tree-${p.v ?? 0}`; meta = this.propMeta.get(`tree-${p.v ?? 0}`)!; }
           else if (p.kind === 'rock') { texKey2 = `td-rock-${p.v ?? 0}`; meta = this.propMeta.get(`rock-${p.v ?? 0}`)!; }
@@ -446,7 +481,12 @@ export class TdWorldScene extends Phaser.Scene {
     if (near !== this.nearProp) {
       this.nearProp = near;
       this.hintText.setText(near
-        ? (near.kind === 'building' ? `E — ${near.data!.name}` : `E — enter ${near.data!.name}`)
+        ? (near.kind === 'building' ? `E — ${near.data!.name}`
+          : near.kind === 'farm_plot' ? (() => {
+              const st = this.tdState.farm[near!.data!.plotIndex!]?.stage ?? 0;
+              return `E — ${st === 0 ? 'plant' : st === 3 ? 'harvest' : 'growing…'}`;
+            })()
+          : `E — enter ${near.data!.name}`)
         : '').setVisible(!!near);
     }
     // atmosfer lerp
@@ -467,6 +507,14 @@ export class TdWorldScene extends Phaser.Scene {
     this.energyBarFill.width = 60 * pct;
     this.energyBarFill.fillColor = pct < 0.2 ? 0xe84142 : 0x57b8d8;
     this.energyText.setText(`⚡${Math.round(this.tdState.energy)}`);
+    this.goldText.setText(`💰${this.tdState.gold}`);
+
+    // tarla parsel görselleri: tdState.farm[i].stage ile senkron (texture swap)
+    for (const [idx, img] of this.farmImgs) {
+      const stage = this.tdState.farm[idx]?.stage ?? 0;
+      const key = `td-farm-${stage}`;
+      if (img.texture.key !== key) img.setTexture(key);
+    }
 
     // periyodik kaydet (per-frame yazma yerine ≤5sn'de bir — tick kaynaklı sürekli enerji değişimi için)
     this.saveT += dt;

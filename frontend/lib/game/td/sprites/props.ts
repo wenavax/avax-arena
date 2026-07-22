@@ -57,6 +57,27 @@ export function mkStump(): { img: HTMLCanvasElement; ox: number; oy: number } {
   return { img, ox: img.width >> 1, oy: img.height - 1 };
 }
 
+/** Tarla parseli — stage 0 boş toprak, 1 filiz, 2 yeşil demet, 3 olgun (kırmızı frostberry noktaları). 16×14. */
+export function mkFarmPlot(stage: 0 | 1 | 2 | 3): { img: HTMLCanvasElement; ox: number; oy: number } {
+  const img = outline(spr(16, 14, (px) => {
+    px(1, 5, 14, 8, '#5a4028'); px(1, 5, 14, 2, '#6b4c31');
+    for (const [rx, ry] of [[3, 6], [7, 6], [11, 6], [3, 10], [7, 10], [11, 10]] as const) px(rx, ry, 2, 1, '#4a3420');
+    if (stage === 1) {
+      for (const [sx, sy] of [[3, 4], [7, 4], [11, 4]] as const) { px(sx, sy, 1, 3, '#4a7a3a'); px(sx - 1, sy, 3, 1, '#5aa06a'); }
+    } else if (stage === 2) {
+      for (const [sx, sy] of [[3, 2], [7, 2], [11, 2]] as const) {
+        px(sx - 1, sy, 3, 5, '#3f8a56'); px(sx - 1, sy, 3, 2, '#5aa06a');
+      }
+    } else if (stage === 3) {
+      for (const [sx, sy] of [[3, 2], [7, 2], [11, 2]] as const) {
+        px(sx - 1, sy, 3, 5, '#2f6a44'); px(sx - 1, sy, 3, 2, '#3f8a56');
+        px(sx, sy + 1, 1, 1, '#e84142'); px(sx + 1, sy + 3, 1, 1, '#e84142');
+      }
+    }
+  }));
+  return { img, ox: img.width >> 1, oy: img.height - 1 };
+}
+
 /** 4-karelik kamp ateşi. */
 export function mkFireFrames(): HTMLCanvasElement[] {
   return [0, 1, 2, 3].map(f => outline(spr(14, 12, (px) => {

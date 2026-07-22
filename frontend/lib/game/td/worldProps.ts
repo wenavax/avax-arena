@@ -6,14 +6,38 @@ import { CHUNK, hash2d } from './tdCore';
 import { getTile, regionAt, REGIONS, TOWN_SPAWN } from './worldMap';
 import { HUB_GAMES, buildingRect } from '../hub/hubGames';
 
-export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon';
+export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot';
 export interface TdProp {
   kind: PropKind;
   x: number; y: number;                    // dünya px (taban/ayak noktası)
   v?: number;                              // sprite varyantı
   solid?: { x: number; y: number; w: number; h: number };
-  data?: { id?: string; name?: string; icon?: string; url?: string; accent?: string; wTiles?: number; hTiles?: number; region?: string };
+  data?: { id?: string; name?: string; icon?: string; url?: string; accent?: string; wTiles?: number; hTiles?: number; region?: string; plotIndex?: number };
 }
+
+/** Tarla parseli grid'i — kasaba güneybatısında, TOWN_SPAWN'ın ~6-11 tile güneyi.
+ * 4×3 = 12 parsel, 2-tile pitch (1 tile aralık); salt 9 = tarla yerleşimi (sabit grid, hash gerekmez). */
+const FARM_ORIGIN = { tx: 192, ty: 209 };
+const FARM_COLS = 4, FARM_ROWS = 3, FARM_PITCH = 2;
+
+function farmPlots(): TdProp[] {
+  const out: TdProp[] = [];
+  let i = 0;
+  for (let row = 0; row < FARM_ROWS; row++) {
+    for (let col = 0; col < FARM_COLS; col++) {
+      const tx = FARM_ORIGIN.tx + col * FARM_PITCH;
+      const ty = FARM_ORIGIN.ty + row * FARM_PITCH;
+      out.push({
+        kind: 'farm_plot', x: tx * 16 + 8, y: ty * 16 + 14,
+        data: { plotIndex: i },
+      });
+      i++;
+    }
+  }
+  return out;
+}
+let FARM_CACHE: TdProp[] | null = null;
+export function allFarmPlots(): TdProp[] { return FARM_CACHE ?? (FARM_CACHE = farmPlots()); }
 
 /** hubGames yerel tile koordinatlarının dünya ofseti — kasaba kuzeybatısı.
  * NOT: plan taslağındaki (174,168) HUB_GAMES döşemesini chunk (3,3)/(4,3)'e
@@ -49,6 +73,7 @@ function townProps(): TdProp[] {
     kind: 'campfire', x: TOWN_SPAWN.tx * 16 + 8, y: (TOWN_SPAWN.ty - 3) * 16 + 10,
     solid: { x: TOWN_SPAWN.tx * 16 + 2, y: (TOWN_SPAWN.ty - 3) * 16 + 4, w: 12, h: 6 },
   });
+  out.push(...allFarmPlots());
   return out;
 }
 // Modül-seviye cache güvenli: girdiler (HUB_GAMES/REGIONS) statik sabit.
@@ -77,6 +102,9 @@ function reserved(tx: number, ty: number): boolean {
   for (const d of dungeonDoors()) {
     if (Math.abs(tx * 16 + 8 - d.x) <= 32 && Math.abs(ty * 16 + 8 - d.y) <= 32) return true;
   }
+  // tarla grid alanı: otomatik ağaç/kaya/çalı yerleşmesin (parseller üstünde yürünür ama boş kalmalı)
+  if (tx >= FARM_ORIGIN.tx - 1 && tx <= FARM_ORIGIN.tx + (FARM_COLS - 1) * FARM_PITCH + 1 &&
+      ty >= FARM_ORIGIN.ty - 1 && ty <= FARM_ORIGIN.ty + (FARM_ROWS - 1) * FARM_PITCH + 1) return true;
   return false;
 }
 
