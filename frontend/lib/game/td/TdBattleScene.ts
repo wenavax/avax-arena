@@ -14,7 +14,8 @@ import { getRandomMobLine } from '../lore';
 // bölge-paletli prosedürel backdrop (td/tiles + td/atmosphere).
 import { biomeTopColor } from './tiles';
 import { atmoForRegion } from './atmosphere';
-import { mkMonsterChibi } from './sprites/monsterChibi';
+import { mkMonsterChibi, monsterPlanFor } from './sprites/monsterChibi';
+import { mkBattleHero } from './sprites/battleHero';
 import type { Biome } from './worldMap';
 
 interface BattleData { monster: MonsterData; returnScene: string; region?: string; sandbox?: boolean; }
@@ -184,7 +185,10 @@ export class TdBattleScene extends Phaser.Scene {
   private enemyTurnCount = 0;
 
   // UI refs
-  private playerGfx!: Phaser.GameObjects.Graphics;
+  // Faz 5.3: oyuncu da Graphics vektör değil, mkBattleHero 2-kare pixel-art Image
+  // (canavarla aynı dil; tween'ler .x/.y taşıdığından Image birebir uyumlu).
+  private playerGfx!: Phaser.GameObjects.Image;
+  private playerFlipTimer?: Phaser.Time.TimerEvent;
   // TD reskin: canavar artık Graphics silüeti değil, mkMonsterChibi 2-kare Image.
   private monsterGfx!: Phaser.GameObjects.Image;
   private playerHpBar!: Phaser.GameObjects.Rectangle;
@@ -228,6 +232,8 @@ export class TdBattleScene extends Phaser.Scene {
     this.monsterImg = undefined;
     this.monsterFlipTimer?.remove();
     this.monsterFlipTimer = undefined;
+    this.playerFlipTimer?.remove();
+    this.playerFlipTimer = undefined;
     // Iso zone scenes hand-build monster payloads without reward/spd fields.
     // Without these defaults victory() does xp += undefined → NaN, which
     // serializes as null and wipes gold/xp on the next load.
@@ -336,6 +342,21 @@ export class TdBattleScene extends Phaser.Scene {
     for (let i = 0; i < 6; i++) {
       bg.lineBetween(W * 0.15, H * 0.32 + i * 16, W * 0.85, H * 0.32 + i * 16);
     }
+    // ── Faz 5.3: arena detayı — bölge-paletli kenar halkaları + zemin benekleri + dövüşçü padleri ──
+    const arenaTint = Phaser.Display.Color.HexStringToColor(biomeTopColor(REGION_TO_BIOME[this.region] ?? 'forest')).color;
+    bg.lineStyle(2, arenaTint, 0.20);
+    bg.strokeEllipse(W / 2, H * 0.42, W * 0.65, H * 0.18);
+    bg.lineStyle(1, 0xffffff, 0.05);
+    bg.strokeEllipse(W / 2, H * 0.42, W * 0.55, H * 0.14);
+    bg.fillStyle(arenaTint, 0.09);
+    for (let i = 0; i < 26; i++) {                     // deterministik çakıl benekleri
+      const a = ((i * 137) % 360) * Math.PI / 180;
+      const rr = ((i * 71) % 100) / 100;
+      bg.fillRect(W / 2 + Math.cos(a) * rr * W * 0.29, H * 0.42 + Math.sin(a) * rr * H * 0.075, 3, 2);
+    }
+    bg.fillStyle(arenaTint, 0.10);                     // dövüşçü ışık padleri
+    bg.fillEllipse(W * 0.25, H * 0.38 + 46, 150, 34);
+    bg.fillEllipse(W * 0.75, H * 0.38 + 46, 150, 34);
 
     // ── Title ──
     this.add.text(W / 2, 24, '⚔  BATTLE  ⚔', {
@@ -349,10 +370,12 @@ export class TdBattleScene extends Phaser.Scene {
     this.stageY = H * 0.38;
 
     // ── Draw characters ──
-    this.playerGfx = this.add.graphics().setDepth(10);
-    this.drawPlayerChar(this.playerGfx, this.playerBaseX, this.stageY, state);
+    // Faz 5.3: iki dövüşçü de pixel-art chibi, tutarlı ölçek + zemin gölgesi.
+    this.add.ellipse(this.playerBaseX, this.stageY + 46, 108, 26, 0x000000, 0.32).setDepth(9);
+    this.add.ellipse(this.monsterBaseX, this.stageY + 46, 108, 26, 0x000000, 0.32).setDepth(9);
+    this.playerGfx = this.spawnPlayerChibi(this.playerBaseX, this.stageY + 46, state);
     // TD reskin: chibi canavar (2-kare flip) — izo'nun kategori-Graphics silüeti yerine.
-    this.monsterGfx = this.spawnMonsterChibi(this.monsterBaseX, this.stageY);
+    this.monsterGfx = this.spawnMonsterChibi(this.monsterBaseX, this.stageY + 46);
 
     // ── VS badge ──
     const vsBg = this.add.circle(W / 2, this.stageY - 10, 24, 0xcc2222, 1).setDepth(11);
@@ -531,6 +554,7 @@ export class TdBattleScene extends Phaser.Scene {
   }
 
   // ── Draw player character ──
+  // ── Vektör oyuncu çizimi — TD'de KULLANILMIYOR (Faz 5.3: spawnPlayerChibi/mkBattleHero'ya taşındı) ──
   private drawPlayerChar(gfx: Phaser.GameObjects.Graphics, cx: number, cy: number, ps: PlayerState): void {
     const S = 2.5;
     const bodyColor = { knight: 0x4488cc, mage: 0x9944cc, archer: 0x44aa44 }[ps.playerClass] || 0x4488cc;
@@ -596,12 +620,14 @@ export class TdBattleScene extends Phaser.Scene {
     }
   }
 
-  // ── TD reskin: bölge-paletli prosedürel backdrop (gökyüzü + vinyet) ──
+  // ── TD reskin: bölge-paletli prosedürel backdrop ──
   // İzo'nun ZONE_ATMOSPHERE+silüet backdrop'unun yerini alır. data.region yoksa 'forest'.
+  // Faz 5.3 detay katmanları: sis bantları + çift silüet (uzak tepe/yakın sırt) + biyom
+  // dekoru (çam/kristal/sütun/diken/kıymık) + dövüşçü ışık hüzmeleri + süzülen mote'lar.
   private drawTdBackdrop(w: number, h: number): void {
     const atmo = atmoForRegion(this.region);
-    const topHex = biomeTopColor(REGION_TO_BIOME[this.region] ?? 'forest');
-    const topColor = Phaser.Display.Color.HexStringToColor(topHex).color;
+    const biome = REGION_TO_BIOME[this.region] ?? 'forest';
+    const topColor = Phaser.Display.Color.HexStringToColor(biomeTopColor(biome)).color;
     const horizon = h * 0.62;
     const g = this.add.graphics().setDepth(-10);
 
@@ -609,7 +635,22 @@ export class TdBattleScene extends Phaser.Scene {
     g.fillGradientStyle(topColor, topColor, atmo.fogColor, atmo.fogColor, 0.5, 0.5, 0.9, 0.9);
     g.fillRect(0, 0, w, horizon);
 
-    // ── Basit tepe silüeti (bölge tonuna göre koyulaştırılmış) ──
+    // ── Sis bantları (yatay haze) ──
+    for (let i = 0; i < 4; i++) {
+      g.fillStyle(atmo.fogColor, 0.06 + (i % 2) * 0.03);
+      g.fillRect(0, horizon * 0.3 + i * horizon * 0.15 + ((i * 29) % 14), w, 8 + ((i * 13) % 12));
+    }
+
+    // ── Uzak silüet: yumuşak tepeler (düşük alpha) ──
+    g.fillStyle(atmo.fogColor, 0.3);
+    for (let i = 0; i < 9; i++) {
+      const bx = (i / 9) * w + ((i * 61) % 40) - 20;
+      const bw = w / 6 + ((i * 37) % 70);
+      const bh = horizon * 0.10 + ((i * 23) % 26);
+      g.fillEllipse(bx + bw / 2, horizon - 4, bw, bh * 2);
+    }
+
+    // ── Yakın silüet: sırtlar (mevcut üçgen dili) ──
     g.fillStyle(atmo.fogColor, 0.55);
     for (let i = 0; i < 7; i++) {
       const bx = (i / 7) * w + ((i * 97) % 60) - 30;
@@ -617,10 +658,20 @@ export class TdBattleScene extends Phaser.Scene {
       const bh = horizon * 0.22 + ((i * 31) % 45);
       g.fillTriangle(bx, horizon, bx + bw / 2, horizon - bh * 1.3, bx + bw, horizon);
     }
+    this.drawBiomeDeco(g, w, horizon, atmo.fogColor);
 
     // ── Zemin: atmo fog → siyaha gradyan ──
     g.fillGradientStyle(atmo.fogColor, atmo.fogColor, 0x0a0e1a, 0x0a0e1a, 0.7, 0.7, 0.95, 0.95);
     g.fillRect(0, horizon, w, h - horizon);
+
+    // ── Dövüşçü arkalarına soluk ışık hüzmeleri ──
+    const shaft = this.add.graphics().setDepth(-9);
+    for (const x of [w * 0.25, w * 0.75]) {
+      shaft.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0.055, 0.055, 0, 0);
+      shaft.fillRect(x - 78, h * 0.05, 156, h * 0.4);
+      shaft.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0.035, 0.035, 0, 0);
+      shaft.fillRect(x - 110, h * 0.05, 220, h * 0.34);
+    }
 
     // ── Vinyet (kenar koyulaştırma) ──
     const vg = this.add.graphics().setDepth(-9);
@@ -630,9 +681,95 @@ export class TdBattleScene extends Phaser.Scene {
     vg.fillStyle(0x000000, atmo.tintAlpha * 1.6);
     vg.fillRect(0, 0, w * 0.06, h);
     vg.fillRect(w - w * 0.06, 0, w * 0.06, h);
+
+    this.spawnAmbientMotes(w, h, atmo.tint);
+  }
+
+  /** Faz 5.3: ufuk çizgisine biyom-imzalı silüet dekoru (deterministik, alpha-katmanlı). */
+  private drawBiomeDeco(g: Phaser.GameObjects.Graphics, w: number, horizon: number, fog: number): void {
+    const biome = REGION_TO_BIOME[this.region] ?? 'forest';
+    g.fillStyle(fog, 0.7);
+    if (['forest', 'grass', 'town', 'swamp'].includes(biome)) {
+      for (let i = 0; i < 12; i++) {                   // çam sırası
+        const x = (i / 12) * w + ((i * 47) % 46);
+        const th = 26 + ((i * 19) % 30);
+        g.fillTriangle(x, horizon, x + 11, horizon - th, x + 22, horizon);
+        g.fillRect(x + 9, horizon - 4, 4, 4);
+      }
+    } else if (['frostwastes', 'citadel', 'sanctum', 'eternal'].includes(biome)) {
+      for (let i = 0; i < 9; i++) {                    // buz/ışık kristalleri
+        const x = (i / 9) * w + ((i * 83) % 60);
+        const th = 30 + ((i * 41) % 44);
+        g.fillTriangle(x, horizon, x + 6, horizon - th, x + 12, horizon);
+      }
+      g.fillStyle(0xffffff, 0.18);
+      for (let i = 0; i < 9; i++) {
+        const x = (i / 9) * w + ((i * 83) % 60);
+        const th = 30 + ((i * 41) % 44);
+        g.fillTriangle(x + 4, horizon - th + 8, x + 6, horizon - th, x + 8, horizon - th + 8);
+      }
+    } else if (['mines', 'crypt', 'ruins', 'necropolis'].includes(biome)) {
+      for (let i = 0; i < 8; i++) {                    // kırık sütunlar
+        const x = (i / 8) * w + ((i * 73) % 70) + 10;
+        const th = 24 + ((i * 29) % 34);
+        g.fillRect(x, horizon - th, 12, th);
+        g.fillRect(x - 2, horizon - th, 16, 4);
+        if (i % 3 !== 0) g.fillRect(x + 2, horizon - th - 6, 8, 6); // kimi sütun kırık
+      }
+    } else if (['volcano', 'demongate', 'forge', 'abyss', 'voidrealm'].includes(biome)) {
+      for (let i = 0; i < 10; i++) {                   // sivri diken kayalar
+        const x = (i / 10) * w + ((i * 59) % 56);
+        const th = 28 + ((i * 43) % 48);
+        g.fillTriangle(x, horizon, x + 7 + ((i * 11) % 6), horizon - th, x + 18, horizon);
+      }
+      g.fillStyle(this.region === 'abyss' || this.region === 'voidrealm' ? 0x66aaff : 0xff6633, 0.25);
+      for (let i = 0; i < 7; i++) {                    // kor/dip parıltı noktaları
+        g.fillRect((i / 7) * w + ((i * 101) % 80), horizon - 6 - ((i * 17) % 24), 3, 3);
+      }
+    }
+  }
+
+  /** Faz 5.3: bölge-tonlu süzülen ambient mote'lar (tween loop; deterministik yerleşim). */
+  private spawnAmbientMotes(w: number, h: number, tint: number): void {
+    for (let i = 0; i < 14; i++) {
+      const x = ((i * 173 + 40) % w);
+      const y = h * 0.15 + ((i * 97) % Math.floor(h * 0.55));
+      const size = 2 + (i % 3);
+      const m = this.add.rectangle(x, y, size, size, tint, 0.28).setDepth(-8);
+      this.tweens.add({
+        targets: m, y: y - 34 - (i % 4) * 8, alpha: 0.05,
+        duration: 2600 + i * 217, repeat: -1, yoyo: true, ease: 'Sine.easeInOut',
+        delay: i * 130,
+      });
+    }
+  }
+
+  // ── Faz 5.3: detaylı pixel-art kahraman (mkBattleHero) — 2-kare idle nefes, ×4 ──
+  private spawnPlayerChibi(cx: number, footY: number, ps: PlayerState): Phaser.GameObjects.Image {
+    const bodyColor = { knight: 0x4488cc, mage: 0x9944cc, archer: 0x44aa44 }[ps.playerClass] || 0x4488cc;
+    const wid = ps.equipped.weapon?.id || '';
+    const weaponTint = wid
+      ? (wid.includes('flame') ? 0xff6622 : wid.includes('ice') ? 0x66ddff : wid.includes('shadow') ? 0x9944cc : wid.includes('steel') ? 0xddeeff : 0xaabbcc)
+      : undefined;
+    const key = `td-bhero-${ps.playerClass}-${ps.skinColor}-${ps.hairColor}-${weaponTint ?? 'x'}`;
+    if (!this.textures.exists(`${key}-0`)) {
+      const { frames } = mkBattleHero({ cls: ps.playerClass, skin: ps.skinColor, hair: ps.hairColor, body: bodyColor, weaponTint });
+      this.textures.addCanvas(`${key}-0`, frames[0]);
+      this.textures.addCanvas(`${key}-1`, frames[1]);
+    }
+    const img = this.add.image(cx, footY, `${key}-0`).setOrigin(0.5, 1).setScale(4).setDepth(10);
+    let frame = 0;
+    this.playerFlipTimer = this.time.addEvent({
+      delay: 600, startAt: 300, loop: true, // canavarla yarım-faz kaymalı — sahne daha canlı
+      callback: () => { frame = frame === 0 ? 1 : 0; img.setTexture(frame === 0 ? `${key}-0` : `${key}-1`); },
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.playerFlipTimer?.remove());
+    return img;
   }
 
   // ── TD reskin: chibi canavar — mkMonsterChibi(type, big=true) 2-kare Image + 600ms flip ──
+  // Faz 5.3: ×3 ölçek (boss ×2.6) — eski doğal boy 720p sahnede ~36px kalıyordu,
+  // dövüşçüler arası ölçek dengesi için oyuncu (×4, 144px) ile aynı banda çekildi.
   private spawnMonsterChibi(cx: number, cy: number): Phaser.GameObjects.Image {
     const baseType = this.monster.type.startsWith('elite_') ? this.monster.type.slice(6) : this.monster.type;
     const keyA = `td-bmon-${baseType}-0`;
@@ -642,7 +779,9 @@ export class TdBattleScene extends Phaser.Scene {
       this.textures.addCanvas(keyA, frames[0]);
       this.textures.addCanvas(keyB, frames[1]);
     }
-    const img = this.add.image(cx, cy, keyA).setOrigin(0.5, 0.92).setDepth(10);
+    const scale = monsterPlanFor(baseType) === 'boss' ? 2.6 : 3;
+    // flipX: beast/serpent planları başı SAĞDA çizer — sağ köşedeki canavar oyuncuya baksın.
+    const img = this.add.image(cx, cy, keyA).setOrigin(0.5, 0.96).setScale(scale).setDepth(10).setFlipX(true);
     let frame = 0;
     this.monsterFlipTimer = this.time.addEvent({
       delay: 600, loop: true,
