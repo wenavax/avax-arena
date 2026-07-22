@@ -15,6 +15,7 @@ import { TdState, migrateV1 } from './tdState';
 import { COSTS, PER_HIT } from './cozy/rules';
 import { mp } from '../multiplayer/socket';
 import { PlayerState } from '../PlayerState';
+import { heroHit, mobHit, killRewards, ATTACK_RANGE, ATTACK_CD_MS, AGGRO_RANGE, CHASE_SPEED, CONTACT_RANGE, HERO_IFRAME_MS } from './combat';
 
 /** Faz 5: TdPhaserGame registry'ye yazdığı basit dokunmatik input state'i (bkz. TdPhaserGame.tsx). */
 interface TdTouchInput { dx: number; dy: number; e: boolean; space: boolean }
@@ -32,6 +33,9 @@ interface MonRef {
   f: number; ft: number;         // 2-kare anim + zamanlayıcı
   isElite: boolean;
   downUntil: number;             // knockback/stun süresi (ms, this.time.now bazlı)
+  // Faz 5.7: haritada gerçek-zamanlı savaş
+  hp: number; maxHp: number;
+  hpBg?: Phaser.GameObjects.Rectangle; hpFill?: Phaser.GameObjects.Rectangle;
 }
 
 /** Toplanabilir kaynak node'u (chunk-yerel RAM'de; kalıcı değil — chunk yeniden yüklenince tazelenir). */
@@ -126,6 +130,9 @@ export class TdWorldScene extends Phaser.Scene {
   // ── Faz 3: overworld canavarları ──
   private chunkMonsters = new Map<string, MonRef[]>();
   private battleActive = false;
+  // Faz 5.7: gerçek-zamanlı savaş durumu
+  private atkCdUntil = 0;
+  private heroInvulnUntil = 0;
   private monTexCache = new Set<string>();
   // ── Faz 4: cozy toplama (SPACE) + enerji HUD ──
   tdState = new TdState();
@@ -717,6 +724,7 @@ export class TdWorldScene extends Phaser.Scene {
       const ref: MonRef = {
         entry: finalEntry, img, x: px, y: py, tx0: px, ty0: py,
         tgtX: px, tgtY: py, pause: Math.random() * 2, f: 0, ft: 0, isElite, downUntil: 0,
+        hp: finalEntry.hp, maxHp: finalEntry.hp, // Faz 5.7: haritada gerçek-zamanlı savaş
       };
       list.push(ref);
     }
@@ -779,12 +787,19 @@ export class TdWorldScene extends Phaser.Scene {
     // kamp ateşi 4-kare (130ms)
     const ff = Math.floor(t / 130) % 4;
     for (const f of this.fires) f.img.setTexture(`td-fire-${ff}`);
-    // canavar gezinme + temas
+    // canavar gezinme + AGGRO/kovalama + temas HASARI (Faz 5.7: TdBattle'a geçiş yok —
+    // savaş haritada; canavar 70px'te kovalar, 12px temas vuruşu, kahraman 800ms i-frame)
     const WANDER_SPEED = 18; // px/s
     for (const list of this.chunkMonsters.values()) {
       for (const m of list) {
-        if (m.downUntil > t) { continue; } // knockback/stun süresi
-        if (m.pause > 0) {
+        if (m.downUntil > t) { this.updateMobHpBar(m); continue; } // knockback/stun süresi
+        const hd = Math.hypot(this.heroPos.x - m.x, this.heroPos.y - m.y);
+        if (hd < AGGRO_RANGE && hd > CONTACT_RANGE - 4) {
+          // kovalama: gezinmeyi ez, kahramana yönel
+          const cxm = (this.heroPos.x - m.x) / hd, cym = (this.heroPos.y - m.y) / hd;
+          m.x += cxm * CHASE_SPEED * dt; m.y += cym * CHASE_SPEED * dt;
+          m.img.setFlipX(cxm < 0);
+        } else if (m.pause > 0) {
           m.pause -= dt;
         } else {
           const dmx = m.tgtX - m.x, dmy = m.tgtY - m.y;
@@ -809,11 +824,9 @@ export class TdWorldScene extends Phaser.Scene {
         m.img.setTexture(m.f === 0 ? baseKey : `${baseKey}-1`);
         m.img.setPosition(Math.round(m.x), Math.round(m.y));
         m.img.setDepth(depth(m.x, m.y));
-        // temas
-        if (!this.battleActive && m.downUntil <= t) {
-          const hd = Math.hypot(this.heroPos.x - m.x, this.heroPos.y - m.y);
-          if (hd < 12) this.startBattle(m);
-        }
+        this.updateMobHpBar(m);
+        // temas hasarı
+        if (hd < CONTACT_RANGE && t > this.heroInvulnUntil) this.mobHitsHero(m);
       }
     }
     // etkileşim: en yakın interaktif ≤ 28px
@@ -838,6 +851,10 @@ export class TdWorldScene extends Phaser.Scene {
     // Tarama hero chunk'ı ±1 ile sınırlı (cila notu: tam-harita per-frame loop'undan kaçın);
     // kırmızı uyarı/zoom-toast kilidi (redHintUntil) ve balıkçılık istemi ezilmez.
     if (!this.fishing && this.time.now > this.redHintUntil) {
+      // Faz 5.7: savaş istemi öncelikli (SPACE davranışıyla aynı sıra)
+      if (this.nearestMob(ATTACK_RANGE)) {
+        this.gatherHint.setText('[SPACE] attack ⚔️').setColor('#ff9d9d').setVisible(true);
+      } else {
       let ng: Gatherable | null = null; let ngd = 26;
       const hcx = Math.floor(this.heroPos.x / (CHUNK * TILE)), hcy = Math.floor(this.heroPos.y / (CHUNK * TILE));
       for (let dy2 = -1; dy2 <= 1; dy2++) for (let dx2 = -1; dx2 <= 1; dx2++) {
@@ -854,6 +871,7 @@ export class TdWorldScene extends Phaser.Scene {
           .setColor('#cfe3f2').setVisible(true);
       } else if (this.gatherHint.visible) {
         this.gatherHint.setVisible(false);
+      }
       }
     }
     // atmosfer lerp
@@ -963,6 +981,10 @@ export class TdWorldScene extends Phaser.Scene {
     if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
     if (this.fishing) return;
 
+    // Faz 5.7: SPACE önceliği SAVAŞ — menzilde canavar varsa saldır (toplama ikincil)
+    const mob = this.nearestMob(ATTACK_RANGE);
+    if (mob) { this.heroAttack(mob); return; }
+
     // Faz 5.5: menzil 22→26 (kaya solid'i yandan yaklaşmada 18px'e bırakıyor — pay)
     let nearest: Gatherable | null = null; let nd = 26;
     for (const g of this.chunkGatherables.values()) for (const gv of g.values()) {
@@ -1038,42 +1060,110 @@ export class TdWorldScene extends Phaser.Scene {
     m.img.destroy();
   }
 
-  /**
-   * Temas encounter'ı: TdBattle'ı launch edip TdWorld'ü duraklatır (IsoNecropolis
-   * kalıbıyla birebir — launch→pause→battle-end once→resume). Kazanılırsa canavar
-   * kalıcı despawn olur; kaybedilirse ışınlama YOK — yalnız 3sn grace (downUntil).
-   */
-  private startBattle(m: MonRef): void {
-    if (this.battleActive) return;
-    this.battleActive = true;
-    m.downUntil = this.time.now + 1e9; // savaş boyunca donuk (gezinme/temas durur)
-    const region = regionAt(Math.floor(m.x / TILE), Math.floor(m.y / TILE));
-    this.scene.launch('TdBattle', {
-      monster: {
-        type: m.entry.type,
-        tile: 0,
-        name: m.entry.name,
-        level: m.entry.level,
-        hp: m.entry.hp,
-        maxHp: m.entry.hp,
-        atk: m.entry.atk,
-        def: m.entry.def,
-        isElite: m.isElite,
-      },
-      region: region.key,
-      returnScene: 'TdWorld',
-      sandbox: this.tdMode !== 'live',
-    });
-    this.scene.pause();
-    this.scene.get('TdBattle').events.once('battle-end', (result: { won: boolean }) => {
-      this.scene.resume();
-      this.battleActive = false;
-      if (result?.won) {
-        this.despawnMonster(m);
-      } else {
-        m.downUntil = this.time.now + 3000; // yenilgi: ışınlama yok, kısa dokunulmazlık
-      }
-    });
+  // -----------------------------------------------------------------------
+  // Faz 5.7: haritada gerçek-zamanlı savaş (eski startBattle/TdBattle geçişi kalktı —
+  // TdBattle yalnız zindan boss'larında; formüller combat.ts'te, TdBattle-parite)
+  // -----------------------------------------------------------------------
+  /** En yakın canlı canavar (menzil px) — SPACE önceliği + istem için. */
+  private nearestMob(range: number): MonRef | null {
+    let best: MonRef | null = null; let bd = range;
+    for (const list of this.chunkMonsters.values()) for (const m of list) {
+      const d = Math.hypot(this.heroPos.x - m.x, this.heroPos.y - m.y);
+      if (d < bd) { bd = d; best = m; }
+    }
+    return best;
+  }
+
+  /** SPACE saldırısı: hasar + beyaz flaş + knockback + hasar sayısı; ölümde ödül. */
+  private heroAttack(m: MonRef): void {
+    if (this.time.now < this.atkCdUntil) return;
+    this.atkCdUntil = this.time.now + ATTACK_CD_MS;
+    const ps = PlayerState.get();
+    const { dmg, crit } = heroHit(ps.atk, m.entry.def ?? 0);
+    m.hp -= dmg;
+    const ddx = m.x - this.heroPos.x, ddy = m.y - this.heroPos.y;
+    const len = Math.hypot(ddx, ddy) || 1;
+    // slash juice: kahraman-canavar arasında kısa beyaz çizik
+    const slash = this.add.rectangle(this.heroPos.x + (ddx / len) * 12, this.heroPos.y - 6 + (ddy / len) * 12,
+      14, 3, 0xffffff, 0.9).setRotation(Math.atan2(ddy, ddx)).setDepth(1e7);
+    this.tweens.add({ targets: slash, alpha: 0, scaleX: 1.5, duration: 110, onComplete: () => slash.destroy() });
+    m.img.setTintFill(0xffffff);
+    this.time.delayedCall(70, () => { if (m.img.active) m.img.clearTint(); });
+    // knockback (canavar kısa süre donar — anında karşı-temas olmasın)
+    m.x += (ddx / len) * 10; m.y += (ddy / len) * 10;
+    m.downUntil = this.time.now + 200;
+    this.floatText(m.x, m.y - 18, crit ? `💥${dmg}` : `${dmg}`, crit ? '#ffd23f' : '#ffffff');
+    this.ensureMobHpBar(m);
+    if (m.hp <= 0) this.killMob(m);
+  }
+
+  /** Ölüm: ödül (TdBattle formül paritesi) + poof; live modda PlayerState kaydedilir. */
+  private killMob(m: MonRef): void {
+    const ps = PlayerState.get();
+    const { xp, gold } = killRewards(m.entry.level ?? 1, m.isElite);
+    ps.addXp(xp); ps.gold += gold;
+    if (this.tdMode === 'live') ps.save();
+    this.floatText(m.x, m.y - 24, `+${xp} XP`, '#7f7fff');
+    this.floatText(m.x, m.y - 12, `+${gold}g 💰`, '#ffd23f');
+    m.hpBg?.destroy(); m.hpFill?.destroy(); m.hpBg = undefined; m.hpFill = undefined;
+    // poof: asıl img despawn'da yok edilir — hayalet kopya üstünde büyü/soldur
+    const ghost = this.add.image(m.x, m.y, m.img.texture.key).setOrigin(0.5, 1)
+      .setFlipX(m.img.flipX).setScale(m.img.scaleX).setDepth(depth(m.x, m.y));
+    this.tweens.add({ targets: ghost, alpha: 0, scale: m.img.scaleX * 1.5, duration: 200, onComplete: () => ghost.destroy() });
+    this.despawnMonster(m);
+  }
+
+  /** Canavarın temas vuruşu: kahraman hasarı + i-frame + geri tepme + kırmızı flaş. */
+  private mobHitsHero(m: MonRef): void {
+    const ps = PlayerState.get();
+    const dmg = mobHit(m.entry.atk ?? 5, ps.def);
+    ps.hp = Math.max(0, ps.hp - dmg);
+    this.heroInvulnUntil = this.time.now + HERO_IFRAME_MS;
+    const ddx = this.heroPos.x - m.x, ddy = this.heroPos.y - m.y;
+    const len = Math.hypot(ddx, ddy) || 1;
+    const kx = this.heroPos.x + (ddx / len) * 12, ky = this.heroPos.y + (ddy / len) * 12;
+    if (this.canMove(kx, ky)) { this.heroPos.x = kx; this.heroPos.y = ky; } // solid içine itme
+    this.hero.setTintFill(0xff5c5c);
+    this.time.delayedCall(120, () => this.hero.clearTint());
+    this.cameras.main.shake(70, 0.004);
+    this.floatText(this.heroPos.x, this.heroPos.y - 20, `-${dmg}`, '#ff5c5c');
+    if (this.tdMode === 'live') ps.save();
+    if (ps.hp <= 0) this.heroDown();
+  }
+
+  /** Kahraman düştü: kasabaya dön, yarım canla uyan (ceza hafif — cozy ton). */
+  private heroDown(): void {
+    const ps = PlayerState.get();
+    ps.hp = Math.ceil(ps.maxHp / 2);
+    if (this.tdMode === 'live') ps.save();
+    this.respawnAtTown();
+  }
+
+  /** Kasabaya dönüş (ölüm/zindan-düşüşü ortak yolu — TdDungeonScene de çağırır). */
+  respawnAtTown(): void {
+    this.heroPos = { x: TOWN_SPAWN.tx * 16 + 8, y: TOWN_SPAWN.ty * 16 + 8 };
+    if (this.tdMode === 'live') { this.tdState.worldPos = { x: this.heroPos.x, y: this.heroPos.y }; this.tdState.save(); }
+    this.heroInvulnUntil = this.time.now + 1500;
+    this.streamChunks();
+    this.cameras.main.flash(300, 20, 0, 0);
+    this.showRedHint('You were knocked out — back in town 💤');
+  }
+
+  /** Canavar HP barı: ilk hasarda doğar, canavarla gezer; tam canda gizli. */
+  private ensureMobHpBar(m: MonRef): void {
+    if (!m.hpBg) {
+      m.hpBg = this.add.rectangle(m.x, m.y, 18, 3, 0x1a2028, 0.9).setOrigin(0.5, 1).setDepth(1e7);
+      m.hpFill = this.add.rectangle(m.x, m.y, 16, 1.6, 0xe84142, 1).setOrigin(0.5, 1).setDepth(1e7 + 1);
+    }
+    this.updateMobHpBar(m);
+  }
+
+  private updateMobHpBar(m: MonRef): void {
+    if (!m.hpBg || !m.hpFill) return;
+    const yy = m.y - m.img.displayHeight - 3;
+    m.hpBg.setPosition(m.x, yy);
+    m.hpFill.setOrigin(0, 1).setPosition(m.x - 8, yy - 0.7);
+    m.hpFill.width = 16 * Phaser.Math.Clamp(m.hp / m.maxHp, 0, 1);
   }
 
   /** Faz 5: registry'deki 'tdTouch' input state'ini okur (yoksa nötr). E/SPACE one-shot tüketilir. */

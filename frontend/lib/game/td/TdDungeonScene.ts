@@ -15,6 +15,8 @@ import { DUNGEON_ROSTERS, type MonsterEntry } from './monsterData';
 import { genDungeon, type DungeonGen } from './dungeonGen';
 import { PER_HIT } from './cozy/rules';
 import type { TdWorldScene } from './TdWorldScene';
+import { PlayerState } from '../PlayerState';
+import { heroHit, mobHit, killRewards, ATTACK_RANGE, ATTACK_CD_MS, AGGRO_RANGE, CHASE_SPEED, CONTACT_RANGE, HERO_IFRAME_MS } from './combat';
 
 const WALK_FRAMES = [0, 1, 0, 2] as const;
 
@@ -31,6 +33,9 @@ interface DMonRef {
   f: number; ft: number;
   downUntil: number;
   isBoss: boolean;
+  // Faz 5.7: trash moblar haritada dövüşülür (boss TdBattle'da kalır)
+  hp: number; maxHp: number;
+  hpBg?: Phaser.GameObjects.Rectangle; hpFill?: Phaser.GameObjects.Rectangle;
 }
 
 export class TdDungeonScene extends Phaser.Scene {
@@ -127,8 +132,8 @@ export class TdDungeonScene extends Phaser.Scene {
     this.keys = kb.addKeys('W,A,S,D') as typeof this.keys;
     this.cursors = kb.createCursorKeys();
     kb.on('keydown-ESC', () => this.leave());
-    // Faz 5.6: SPACE cevher kazma (dokunmatik eşleniği update()'te one-shot)
-    kb.on('keydown-SPACE', () => this.mineNearestVein());
+    // Faz 5.6/5.7: SPACE — önce savaş (trash mob), yoksa cevher kazma
+    kb.on('keydown-SPACE', () => this.onSpaceAction());
 
     // Faz 5.2: HUD/tint konum+boyutları layoutHud()'da (kamera-zoom dönüşümü)
     this.hintText = this.add.text(0, 0, '', {
@@ -156,6 +161,7 @@ export class TdDungeonScene extends Phaser.Scene {
         this.mons.push({
           entry: entryMon, img, x: px, y: py, tx0: px, ty0: py,
           tgtX: px, tgtY: py, pause: Math.random() * 2, f: 0, ft: 0, downUntil: 0, isBoss: false,
+          hp: entryMon.hp, maxHp: entryMon.hp,
         });
       });
     }
@@ -192,6 +198,7 @@ export class TdDungeonScene extends Phaser.Scene {
       this.boss = {
         entry: roster.boss, img: bimg, x: bx, y: by, tx0: bx, ty0: by,
         tgtX: bx, tgtY: by, pause: 0, f: 0, ft: 0, downUntil: 0, isBoss: true,
+        hp: roster.boss.hp, maxHp: roster.boss.hp, // boss HARİTADA dövüşülmez — TdBattle açılır
       };
     }
   }
@@ -234,6 +241,87 @@ export class TdDungeonScene extends Phaser.Scene {
       if (tiles[ty * w + tx] === 0) return false;
     }
     return true;
+  }
+
+  // ── Faz 5.7: zindan trash savaşı (boss hariç — o TdBattle'da) ──
+  private atkCdUntil = 0;
+  private heroInvulnUntil = 0;
+
+  /** SPACE: önce menzildeki trash moba saldır, yoksa cevher kaz. */
+  private onSpaceAction(): void {
+    if (this.battleActive || this.leaving) return;
+    let best: DMonRef | null = null; let bd = ATTACK_RANGE;
+    for (const m of this.mons) {
+      const d = Math.hypot(this.heroPos.x - m.x, this.heroPos.y - m.y);
+      if (d < bd) { bd = d; best = m; }
+    }
+    if (best) { this.heroAttackMob(best); return; }
+    this.mineNearestVein();
+  }
+
+  private heroAttackMob(m: DMonRef): void {
+    if (this.time.now < this.atkCdUntil) return;
+    this.atkCdUntil = this.time.now + ATTACK_CD_MS;
+    const ps = PlayerState.get();
+    const { dmg, crit } = heroHit(ps.atk, m.entry.def ?? 0);
+    m.hp -= dmg;
+    const ddx = m.x - this.heroPos.x, ddy = m.y - this.heroPos.y;
+    const len = Math.hypot(ddx, ddy) || 1;
+    const slash = this.add.rectangle(this.heroPos.x + (ddx / len) * 12, this.heroPos.y - 6 + (ddy / len) * 12,
+      14, 3, 0xffffff, 0.9).setRotation(Math.atan2(ddy, ddx)).setDepth(1e7);
+    this.tweens.add({ targets: slash, alpha: 0, scaleX: 1.5, duration: 110, onComplete: () => slash.destroy() });
+    m.img.setTintFill(0xffffff);
+    this.time.delayedCall(70, () => { if (m.img.active) m.img.clearTint(); });
+    m.x += (ddx / len) * 10; m.y += (ddy / len) * 10;
+    m.downUntil = this.time.now + 200;
+    this.veinFloat(m.x, m.y - 4, crit ? `💥${dmg}` : `${dmg}`, crit ? '#ffd23f' : '#ffffff');
+    if (!m.hpBg) {
+      m.hpBg = this.add.rectangle(m.x, m.y, 18, 3, 0x1a2028, 0.9).setOrigin(0.5, 1).setDepth(1e7);
+      m.hpFill = this.add.rectangle(m.x, m.y, 16, 1.6, 0xe84142, 1).setOrigin(0, 1).setDepth(1e7 + 1);
+    }
+    this.updateMobHpBar(m);
+    if (m.hp <= 0) {
+      const { xp, gold } = killRewards(m.entry.level ?? 1, false);
+      ps.addXp(xp); ps.gold += gold;
+      if ((this.registry.get('tdMode') as string) === 'live') ps.save();
+      this.veinFloat(m.x, m.y - 16, `+${xp} XP`, '#7f7fff');
+      this.veinFloat(m.x, m.y - 6, `+${gold}g 💰`, '#ffd23f');
+      m.hpBg?.destroy(); m.hpFill?.destroy(); m.hpBg = undefined; m.hpFill = undefined;
+      this.despawnMonster(m);
+    }
+  }
+
+  private updateMobHpBar(m: DMonRef): void {
+    if (!m.hpBg || !m.hpFill) return;
+    const yy = m.y - m.img.displayHeight - 3;
+    m.hpBg.setPosition(m.x, yy);
+    m.hpFill.setPosition(m.x - 8, yy - 0.7);
+    m.hpFill.width = 16 * Phaser.Math.Clamp(m.hp / m.maxHp, 0, 1);
+  }
+
+  private mobHitsHero(m: DMonRef): void {
+    const ps = PlayerState.get();
+    const dmg = mobHit(m.entry.atk ?? 5, ps.def);
+    ps.hp = Math.max(0, ps.hp - dmg);
+    this.heroInvulnUntil = this.time.now + HERO_IFRAME_MS;
+    const ddx = this.heroPos.x - m.x, ddy = this.heroPos.y - m.y;
+    const len = Math.hypot(ddx, ddy) || 1;
+    const kx = this.heroPos.x + (ddx / len) * 12, ky = this.heroPos.y + (ddy / len) * 12;
+    if (this.canMove(kx, ky)) { this.heroPos.x = kx; this.heroPos.y = ky; }
+    this.hero.setTintFill(0xff5c5c);
+    this.time.delayedCall(120, () => this.hero.clearTint());
+    this.cameras.main.shake(70, 0.004);
+    this.veinFloat(this.heroPos.x, this.heroPos.y - 8, `-${dmg}`, '#ff5c5c');
+    if ((this.registry.get('tdMode') as string) === 'live') ps.save();
+    if (ps.hp <= 0) {
+      // düşüş: zindandan çık, kasabada yarım canla uyan (dünya sahnesi toparlar)
+      ps.hp = Math.ceil(ps.maxHp / 2);
+      const world = this.scene.get('TdWorld') as TdWorldScene | null;
+      if (world) world.respawnAtTown();
+      this.leaving = true;
+      this.scene.stop();
+      this.scene.resume('TdWorld');
+    }
   }
 
   /** Faz 5.6: en yakın canlı damarı kaz (≤26px) — enerji/kaynak dünya tdState'inde. */
@@ -343,8 +431,8 @@ export class TdDungeonScene extends Phaser.Scene {
     if (touch) {
       if (dx === 0 && touch.dx) dx = touch.dx;
       if (dy === 0 && touch.dy) dy = touch.dy;
-      // Faz 5.6: dokunmatik SPACE one-shot → cevher kazma
-      if (touch.space && !this.touchSpacePrev) this.mineNearestVein();
+      // Faz 5.6/5.7: dokunmatik SPACE one-shot → savaş/kazma
+      if (touch.space && !this.touchSpacePrev) this.onSpaceAction();
       this.touchSpacePrev = !!touch.space;
     }
     const moving = !!(dx || dy);
@@ -369,13 +457,19 @@ export class TdDungeonScene extends Phaser.Scene {
     this.hero.setDisplayOrigin(this.hero.displayOriginX, this.hero.height - 3 + bob);
     this.hero.setDepth(depth(this.heroPos.x, this.heroPos.y));
 
-    // canavar gezinme + temas (overworld ile aynı kalıp, dar yarıçap)
+    // canavar gezinme + temas — Faz 5.7: trash HARİTADA dövüşülür (aggro/kovalama +
+    // temas hasarı); BOSS teması TdBattle'ı açar (dramatik dövüş korunur)
     const WANDER_SPEED = 10, WANDER_R = 24;
     const allMons = this.boss ? [...this.mons, this.boss] : this.mons;
     for (const m of allMons) {
-      if (m.downUntil > t) continue;
+      if (m.downUntil > t) { this.updateMobHpBar(m); continue; }
+      const hd = Math.hypot(this.heroPos.x - m.x, this.heroPos.y - m.y);
       if (!m.isBoss) {
-        if (m.pause > 0) {
+        if (hd < AGGRO_RANGE && hd > CONTACT_RANGE - 4) {
+          const cxm = (this.heroPos.x - m.x) / hd, cym = (this.heroPos.y - m.y) / hd;
+          m.x += cxm * CHASE_SPEED * dt; m.y += cym * CHASE_SPEED * dt;
+          m.img.setFlipX(cxm < 0);
+        } else if (m.pause > 0) {
           m.pause -= dt;
         } else {
           const dmx = m.tgtX - m.x, dmy = m.tgtY - m.y;
@@ -400,21 +494,29 @@ export class TdDungeonScene extends Phaser.Scene {
       }
       m.img.setPosition(Math.round(m.x), Math.round(m.y));
       m.img.setDepth(depth(m.x, m.y));
+      this.updateMobHpBar(m);
       if (!this.battleActive && m.downUntil <= t) {
-        const hd = Math.hypot(this.heroPos.x - m.x, this.heroPos.y - m.y);
-        const contactR = m.isBoss ? 16 : 12;
-        if (hd < contactR) this.startBattle(m);
+        if (m.isBoss) {
+          if (hd < 16) this.startBattle(m);
+        } else if (hd < CONTACT_RANGE && t > this.heroInvulnUntil) {
+          this.mobHitsHero(m);
+        }
       }
     }
 
-    // Faz 5.6: kazı istemi — yakın canlı damar varsa affordance göster (kilitli mesajı ezme)
+    // Faz 5.6/5.7: istem — önce savaş (menzilde trash), sonra kazı (kilitli mesajı ezme)
     if (!this.battleActive && t > this.hintLockUntil) {
+      let nearMob = false;
+      for (const m of this.mons) {
+        if (Math.hypot(this.heroPos.x - m.x, this.heroPos.y - m.y) < ATTACK_RANGE) { nearMob = true; break; }
+      }
       let nearVein = false;
-      for (const v of this.veins) {
+      if (!nearMob) for (const v of this.veins) {
         if (v.alive && Math.hypot(this.heroPos.x - v.x, this.heroPos.y - v.y) < 26) { nearVein = true; break; }
       }
-      if (nearVein) this.hintText.setText('[SPACE] mine ⛏️').setVisible(true);
-      else if (this.hintText.text === '[SPACE] mine ⛏️') this.hintText.setVisible(false);
+      if (nearMob) this.hintText.setText('[SPACE] attack ⚔️').setVisible(true);
+      else if (nearVein) this.hintText.setText('[SPACE] mine ⛏️').setVisible(true);
+      else if (this.hintText.text === '[SPACE] mine ⛏️' || this.hintText.text === '[SPACE] attack ⚔️') this.hintText.setVisible(false);
     }
 
     // atmosfer lerp

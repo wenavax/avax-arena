@@ -84,33 +84,62 @@ with sync_playwright() as p:
     check('hud-adaptive', abs(hud['hx'] - sw / 2) < 1 and abs(hud['hy'] - (sh / 2 + sh / (2 * k) - 14)) < 1
           and abs(hud['fw'] - sw / k) < 1 and abs(hud['mmx'] - (sw / 2 + sw / (2 * k) - 68)) < 1)
     check('hud-text-native-res', hud['tres'] == k)
-    # savaşa gir/çık: battle KENDİ kamerasını 1280×720'ye fit'ler; ScaleManager'a dokunmaz;
-    # çıkışta dünya kamerası k'da kalmış olmalı (restore dansı yok)
+    # ── Faz 5.7: HARİTADA savaş — temas TdBattle AÇMAZ; SPACE saldırısı mobu öldürür ──
     mon = pg.evaluate(S % """((() => {
-        for (const arr of s.chunkMonsters.values()) if (arr.length) return { x: arr[0].x, y: arr[0].y };
+        for (const arr of s.chunkMonsters.values()) if (arr.length) return { x: arr[0].x, y: arr[0].y, hp: arr[0].hp };
         return null;
     })())""")
     check('battle-mon-found', mon is not None)
     if mon:
-        pg.evaluate(S % f"((s.heroPos.x = {mon['x']}, s.heroPos.y = {mon['y']}, true))")
-        pg.wait_for_function("() => window.__tdGame.scene.keys.TdBattle.scene.isActive()", timeout=8000)
-        time.sleep(0.5)
-        bres = pg.evaluate("""() => { const g = window.__tdGame; return {
-            sw: g.scale.width, sh: g.scale.height,
-            bz: g.scene.keys.TdBattle.cameras.main.zoom }; }""")
-        print('battle-view', json.dumps(bres))
-        check('battle-canvas-untouched', bres['sw'] == sw and bres['sh'] == sh)
-        check('battle-cam-fit', abs(bres['bz'] - min(sw / 1280, sh / 720)) < 0.02)
-        pg.evaluate("""() => {
-            const g = window.__tdGame;
-            g.scene.keys.TdBattle.scene.stop();
-            g.scene.keys.TdWorld.scene.resume();
-            g.scene.keys.TdWorld.battleActive = false;
-        }""")
-        time.sleep(0.5)
+        pg.evaluate(S % f"((s.heroPos.x = {mon['x']} - 18, s.heroPos.y = {mon['y']}, true))")
+        time.sleep(0.6)
+        check('no-battle-scene-on-contact', not pg.evaluate("() => window.__tdGame.scene.keys.TdBattle.scene.isActive()"))
+        check('attack-prompt', pg.evaluate(S % "(s.gatherHint.visible ? s.gatherHint.text : '')").startswith('[SPACE] attack'))
+        killed = False
+        for _ in range(30):
+            pg.keyboard.press('Space'); time.sleep(0.38)
+            alive = pg.evaluate(S % f"""((() => {{
+                for (const arr of s.chunkMonsters.values()) for (const m of arr)
+                  if (Math.abs(m.x - {mon['x']}) < 70 && Math.abs(m.y - {mon['y']}) < 70) return m.hp;
+                return null;
+            }})())""")
+            if alive is None: killed = True; break
+        check('map-combat-kill', killed)
         rres = pg.evaluate(S % "({k: s.cameras.main.zoom, sw: s.scale.width})")
-        print('restored-view', json.dumps(rres))
         check('world-zoom-stable', rres['k'] == k and rres['sw'] == sw)
+    # ── TdBattle regresyonu (yalnız zindan BOSS'u açar): mines'a ışınlan → boss → fit-zoom ──
+    pg.evaluate(S % "((s.heroPos.x = 280*16, s.heroPos.y = 230*16, true))")
+    time.sleep(1.2)  # chunk stream + kapı yüklensin
+    door = pg.evaluate(S % """((() => {
+        for (const cp of s.chunkProps.values())
+          for (const p of cp.interactives) if (p.kind === 'door_dungeon') return {x: p.x, y: p.y};
+        return null;
+    })())""")
+    check('dungeon-door-found', door is not None)
+    if door:
+        pg.evaluate(S % f"((s.heroPos.x = {door['x']}, s.heroPos.y = {door['y']} + 12, true))")
+        time.sleep(0.4)
+        pg.keyboard.press('e')
+        pg.wait_for_function("() => window.__tdGame.scene.keys.TdDungeon.scene.isActive()", timeout=8000)
+        time.sleep(1.0)
+        boss = pg.evaluate("() => { const d = window.__tdGame.scene.keys.TdDungeon; return d.boss ? {x: d.boss.x, y: d.boss.y} : null; }")
+        check('dungeon-boss-exists', boss is not None)
+        if boss:
+            pg.evaluate(f"() => {{ const d = window.__tdGame.scene.keys.TdDungeon; d.heroPos.x = {boss['x']}; d.heroPos.y = {boss['y']}; }}")
+            pg.wait_for_function("() => window.__tdGame.scene.keys.TdBattle.scene.isActive()", timeout=8000)
+            time.sleep(0.5)
+            bres = pg.evaluate("""() => { const g = window.__tdGame; return {
+                sw: g.scale.width, bz: g.scene.keys.TdBattle.cameras.main.zoom }; }""")
+            print('boss-battle-view', json.dumps(bres))
+            check('battle-canvas-untouched', bres['sw'] == sw)
+            check('battle-cam-fit', abs(bres['bz'] - min(sw / 1280, sh / 720)) < 0.02)
+            pg.evaluate("""() => {
+                const g = window.__tdGame;
+                g.scene.keys.TdBattle.scene.stop();
+                g.scene.keys.TdDungeon.scene.stop();
+                g.scene.keys.TdWorld.scene.resume();
+            }""")
+            time.sleep(0.5)
     # fps
     time.sleep(1)
     fps = pg.evaluate("() => window.__tdGame.loop.actualFps")
