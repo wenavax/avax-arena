@@ -11,8 +11,11 @@ import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStum
 import { atmoForRegion } from './atmosphere';
 import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
 import { mkMonsterChibi } from './sprites/monsterChibi';
-import { TdState } from './tdState';
+import { TdState, migrateV1 } from './tdState';
 import { COSTS, PER_HIT } from './cozy/rules';
+
+/** Faz 5: TdPhaserGame registry'ye yazdığı basit dokunmatik input state'i (bkz. TdPhaserGame.tsx). */
+interface TdTouchInput { dx: number; dy: number; e: boolean; space: boolean }
 
 const WALK_FRAMES = [0, 1, 0, 2] as const; // faz dizisi (spec §4)
 
@@ -81,10 +84,35 @@ export class TdWorldScene extends Phaser.Scene {
   private farmImgs = new Map<number, Phaser.GameObjects.Image>(); // plotIndex → img (kalıcı: kasaba her zaman yüklü chunk'ta)
   private goldText!: Phaser.GameObjects.Text;
 
+  private tdMode: 'preview' | 'live' = 'preview';
+  // one-shot tüketim: dokunmatik E/SPACE'in bir önceki karede zaten işlenmiş olup olmadığını izler
+  private touchEPrev = false; private touchSpacePrev = false;
+
   constructor() { super({ key: 'TdWorld' }); }
 
   create(): void {
+    this.tdMode = (this.registry.get('tdMode') as 'preview' | 'live' | undefined) ?? 'preview';
     this.tdState.load();
+    // LIVE mod: tdState'te kayıtlı TD pozisyonu öncelikli; yoksa canlı v1 (izo) save'inden
+    // migrateV1 ile TÜRETİLEN worldPos (salt okuma — frostbite_save'e asla yazılmaz);
+    // o da yoksa TOWN_SPAWN (heroPos zaten TOWN_SPAWN ile başlatıldı, dokunma).
+    if (this.tdMode === 'live') {
+      if (this.tdState.worldPos) {
+        this.heroPos = { x: this.tdState.worldPos.x, y: this.tdState.worldPos.y };
+      } else if (typeof localStorage !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('frostbite_save');
+          if (raw) {
+            const v1 = JSON.parse(raw);
+            if (v1 && typeof v1 === 'object') {
+              const migrated = migrateV1(v1 as Record<string, unknown>);
+              const wp = migrated.worldPos as { x: number; y: number } | undefined;
+              if (wp) this.heroPos = { x: wp.x, y: wp.y };
+            }
+          }
+        } catch { /* malformed v1 save — TOWN_SPAWN kalır */ }
+      }
+    }
     // kahraman kareleri: 3 yön × 3 faz → texture'lar
     for (let d = 0; d < 3; d++) for (let p = 0; p < 3; p++) {
       const key = `td-hero-${d}-${p}`;
@@ -141,47 +169,73 @@ export class TdWorldScene extends Phaser.Scene {
     this.fogRect = this.add.rectangle(VIEW_W / 2, VIEW_H - 24, VIEW_W, 48, 0xbbddff, 0.10)
       .setScrollFactor(0).setDepth(1501);
 
-    // E: en yakın hub binasına gir (dünya değişimi Faz 5'te — şimdilik CustomEvent + toast)
-    // veya en yakın zindan kapısına gir (TdDungeon launch+pause — battle akışıyla simetrik).
-    kb.on('keydown-E', () => {
-      const p = this.nearProp;
-      if (this.battleActive) return;
-      // paused-input sızıntısına karşı savunma: alt sahne aktifken yeniden-launch yok
-      if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
-      if (p?.kind === 'building' && p.data!.id === 'marketplace') {
-        const gold = this.tdState.sellAll();
-        this.tdState.save();
-        if (gold > 0) {
-          window.dispatchEvent(new CustomEvent('td-sell', { detail: { gold, total: gold } }));
-          this.floatText(this.heroPos.x, this.heroPos.y - 16, `+${gold}g 💰`, '#ffd23f');
-        } else {
-          this.showRedHint('nothing to sell');
-        }
-      } else if (p?.kind === 'building') {
-        window.dispatchEvent(new CustomEvent('td-hub-open', { detail: { url: p.data!.url, name: p.data!.name, accent: p.data!.accent } }));
-      } else if (p?.kind === 'door_dungeon') {
-        this.scene.pause();
-        this.scene.launch('TdDungeon', { dungeonId: p.data!.id, exitPos: { x: this.heroPos.x, y: this.heroPos.y } });
-      } else if (p?.kind === 'farm_plot') {
-        const i = p.data!.plotIndex!;
-        const plot = this.tdState.farm[i];
-        if (plot?.stage === 0) {
-          if (this.tdState.plant(i)) { this.tdState.save(); this.floatText(p.x, p.y - 14, 'planted 🌱', '#5aa06a'); }
-          else this.showRedHint('Not enough energy ⚡');
-        } else if (plot?.stage === 3) {
-          if (this.tdState.harvest(i)) { this.tdState.save(); this.floatText(p.x, p.y - 14, '+1 🍒'); }
-          else this.showRedHint('Not enough energy ⚡');
-        } else {
-          this.showRedHint('growing…');
-        }
-      }
-    });
+    // E: en yakın hub binasına gir (LIVE: gerçek overlay / PREVIEW: toast) veya en yakın
+    // zindan kapısına gir (TdDungeon launch+pause — battle akışıyla simetrik).
+    // Klavye VE dokunmatik (td-touch-e, update()'te one-shot emit) aynı metodu çağırır.
+    kb.on('keydown-E', () => this.handleInteract());
+    this.events.on('td-touch-e', () => this.handleInteract());
     // M: minimap toggle
     kb.on('keydown-M', () => this.toggleMinimap());
     // SPACE: en yakın toplanabilir kes/kaz/topla, yoksa kıyıda balık tut
     kb.on('keydown-SPACE', () => this.onSpaceGather());
 
     this.streamChunks();
+  }
+
+  /** E etkileşimi: en yakın interaktif prop'a göre dallanır (klavye + dokunmatik ortak yol). */
+  private handleInteract(): void {
+    const p = this.nearProp;
+    if (this.battleActive) return;
+    // paused-input sızıntısına karşı savunma: alt sahne aktifken yeniden-launch yok
+    if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
+    if (p?.kind === 'building' && p.data!.id === 'marketplace') {
+      const gold = this.tdState.sellAll();
+      this.tdState.save();
+      if (gold > 0) {
+        window.dispatchEvent(new CustomEvent('td-sell', { detail: { gold, total: gold } }));
+        this.floatText(this.heroPos.x, this.heroPos.y - 16, `+${gold}g 💰`, '#ffd23f');
+      } else {
+        this.showRedHint('nothing to sell');
+      }
+    } else if (p?.kind === 'building') {
+      if (this.tdMode === 'live') {
+        // Gerçek same-origin iframe overlay (GameOverlay.tsx) — izo'nun 'hub_' akışıyla
+        // birebir aynı sözleşme: HUB_GAMES id'si + hub-overlay-opened/closed ack çifti.
+        this.scene.pause();
+        let acked = false;
+        const onAck = () => { acked = true; };
+        window.addEventListener('hub-overlay-opened', onAck, { once: true });
+        window.dispatchEvent(new CustomEvent('hub-open-game', { detail: { gameId: p.data!.id } }));
+        const onClosed = () => {
+          window.removeEventListener('hub-overlay-closed', onClosed);
+          clearTimeout(rollbackTimer);
+          this.scene.resume();
+        };
+        window.addEventListener('hub-overlay-closed', onClosed);
+        const rollbackTimer = window.setTimeout(() => {
+          if (acked) return;
+          window.removeEventListener('hub-overlay-closed', onClosed);
+          if (this.scene.isPaused()) this.scene.resume();
+        }, 1500);
+      } else {
+        window.dispatchEvent(new CustomEvent('td-hub-open', { detail: { url: p.data!.url, name: p.data!.name, accent: p.data!.accent } }));
+      }
+    } else if (p?.kind === 'door_dungeon') {
+      this.scene.pause();
+      this.scene.launch('TdDungeon', { dungeonId: p.data!.id, exitPos: { x: this.heroPos.x, y: this.heroPos.y } });
+    } else if (p?.kind === 'farm_plot') {
+      const i = p.data!.plotIndex!;
+      const plot = this.tdState.farm[i];
+      if (plot?.stage === 0) {
+        if (this.tdState.plant(i)) { this.tdState.save(); this.floatText(p.x, p.y - 14, 'planted 🌱', '#5aa06a'); }
+        else this.showRedHint('Not enough energy ⚡');
+      } else if (plot?.stage === 3) {
+        if (this.tdState.harvest(i)) { this.tdState.save(); this.floatText(p.x, p.y - 14, '+1 🍒'); }
+        else this.showRedHint('Not enough energy ⚡');
+      } else {
+        this.showRedHint('growing…');
+      }
+    }
   }
 
   /** Minimap: ilk çağrıda 96×96 canvas üretir (4 tile/px, biyom üst rengi), sonrakiler visible toggle. */
@@ -391,13 +445,21 @@ export class TdWorldScene extends Phaser.Scene {
 
   update(t: number, dtMs: number): void {
     const dt = Math.min(dtMs, 50) / 1000;
+    const touch = this.readTouchInput();
     let dx = 0, dy = 0;
     if (!this.fishing) {
       if (this.keys.W.isDown || this.cursors.up.isDown) dy -= 1;
       if (this.keys.S.isDown || this.cursors.down.isDown) dy += 1;
       if (this.keys.A.isDown || this.cursors.left.isDown) dx -= 1;
       if (this.keys.D.isDown || this.cursors.right.isDown) dx += 1;
+      // Mobil sanal joystick: klavye zaten bir eksende hareket vermediyse dokunmatik ekleyerek birleştir.
+      if (dx === 0 && touch.dx) dx = touch.dx;
+      if (dy === 0 && touch.dy) dy = touch.dy;
     }
+    // Dokunmatik E/SPACE: one-shot (kenar-tetikli — basılı tutmak spam etmez).
+    if (touch.e && !this.touchEPrev) this.events.emit('td-touch-e');
+    if (touch.space && !this.touchSpacePrev) this.onSpaceGather();
+    this.touchEPrev = touch.e; this.touchSpacePrev = touch.space;
     const moving = !!(dx || dy);
     if (moving && this.fishing) { this.fishing = false; this.gatherHint.setVisible(false); } // hareket iptal eder
     if (moving) {
@@ -517,8 +579,13 @@ export class TdWorldScene extends Phaser.Scene {
     }
 
     // periyodik kaydet (per-frame yazma yerine ≤5sn'de bir — tick kaynaklı sürekli enerji değişimi için)
+    // LIVE modda hero konumu da bu biriktiriciyle yazılır (aynı 5sn penceresi paylaşılır).
     this.saveT += dt;
-    if (this.saveT >= 5) { this.saveT = 0; this.tdState.save(); }
+    if (this.saveT >= 5) {
+      this.saveT = 0;
+      if (this.tdMode === 'live') this.tdState.worldPos = { x: this.heroPos.x, y: this.heroPos.y };
+      this.tdState.save();
+    }
 
     // toplanabilir respawn: süresi geçmişleri geri getir
     for (const g of this.chunkGatherables.values()) for (const gv of g.values()) {
@@ -670,7 +737,7 @@ export class TdWorldScene extends Phaser.Scene {
       },
       region: region.key,
       returnScene: 'TdWorld',
-      sandbox: true,
+      sandbox: this.tdMode !== 'live',
     });
     this.scene.pause();
     this.scene.get('TdBattle').events.once('battle-end', (result: { won: boolean }) => {
@@ -682,5 +749,11 @@ export class TdWorldScene extends Phaser.Scene {
         m.downUntil = this.time.now + 3000; // yenilgi: ışınlama yok, kısa dokunulmazlık
       }
     });
+  }
+
+  /** Faz 5: registry'deki 'tdTouch' input state'ini okur (yoksa nötr). E/SPACE one-shot tüketilir. */
+  private readTouchInput(): TdTouchInput {
+    const t = this.registry.get('tdTouch') as TdTouchInput | undefined;
+    return t ?? { dx: 0, dy: 0, e: false, space: false };
   }
 }

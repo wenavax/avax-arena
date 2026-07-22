@@ -220,7 +220,7 @@ export class TdDungeonScene extends Phaser.Scene {
       },
       region: this.dungeonId,
       returnScene: 'TdDungeon',
-      sandbox: true,
+      sandbox: (this.registry.get('tdMode') as 'preview' | 'live' | undefined) !== 'live',
     });
     this.scene.pause();
     this.scene.get('TdBattle').events.once('battle-end', (result: { won: boolean }) => {
@@ -243,11 +243,17 @@ export class TdDungeonScene extends Phaser.Scene {
   update(t: number, dtMs: number): void {
     const dt = Math.min(dtMs, 50) / 1000;
     this.timeInDungeon += dt;
+    const touch = this.registry.get('tdTouch') as { dx: number; dy: number; e: boolean; space: boolean } | undefined;
     let dx = 0, dy = 0;
     if (this.keys.W.isDown || this.cursors.up.isDown) dy -= 1;
     if (this.keys.S.isDown || this.cursors.down.isDown) dy += 1;
     if (this.keys.A.isDown || this.cursors.left.isDown) dx -= 1;
     if (this.keys.D.isDown || this.cursors.right.isDown) dx += 1;
+    // Mobil sanal joystick: klavye o eksende sessizse dokunmatik ekleyerek birleştir.
+    if (touch) {
+      if (dx === 0 && touch.dx) dx = touch.dx;
+      if (dy === 0 && touch.dy) dy = touch.dy;
+    }
     const moving = !!(dx || dy);
     if (moving) {
       const len = Math.hypot(dx, dy); dx /= len; dy /= len;

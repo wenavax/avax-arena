@@ -22,6 +22,8 @@ export class TdState {
   gold = 0;
   resources: TdResources = { wood: 0, stone: 0, ore: 0, fish: 0, frostberry: 0 };
   farm: FarmPlot[] = Array.from({ length: FARM.plotCount }, () => ({ stage: 0 as const, t: 0 }));
+  /** Canlı modda dünyada kaldığı son konum (px). Preview modda/hiç kaydedilmemişse null. */
+  worldPos: { x: number; y: number } | null = null;
 
   private storage?: Pick<Storage, 'getItem' | 'setItem'>;
 
@@ -98,6 +100,7 @@ export class TdState {
         gold: this.gold,
         resources: this.resources,
         farm: this.farm,
+        worldPos: this.worldPos,
         savedAt: Date.now(),
       };
       this.storage.setItem(TD_SAVE_KEY, JSON.stringify(data));
@@ -115,6 +118,7 @@ export class TdState {
       this.gold = d.gold ?? 0;
       this.resources = d.resources ?? { wood: 0, stone: 0, ore: 0, fish: 0, frostberry: 0 };
       this.farm = d.farm ?? Array.from({ length: FARM.plotCount }, () => ({ stage: 0 as const, t: 0 }));
+      this.worldPos = (d.worldPos && typeof d.worldPos.x === 'number' && typeof d.worldPos.y === 'number') ? d.worldPos : null;
       return true;
     } catch {
       return false;

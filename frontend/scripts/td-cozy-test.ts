@@ -136,6 +136,7 @@ eq('farm-growth-stages', FARM.growthStages, 2);
   s.gather('wood');
   s.gold = 42;
   s.plant(2);
+  s.worldPos = { x: 321, y: 654 };
   s.save();
 
   ok('save-uses-td-key', storage.getItem('frostbite_td_save') !== null);
@@ -148,10 +149,12 @@ eq('farm-growth-stages', FARM.growthStages, 2);
   eq('load-gold-roundtrip', s2.gold, 42);
   eq('load-farm-roundtrip', s2.farm[2].stage, 1);
   eq('load-energy-roundtrip', s2.energy, s.energy);
+  eq('load-worldpos-roundtrip', s2.worldPos, { x: 321, y: 654 });
 
-  // load on empty storage returns false
+  // load on empty storage returns false, worldPos stays null (never set)
   const s3 = new TdState(makeStorage());
   ok('load-empty-false', s3.load() === false);
+  eq('worldpos-default-null', s3.worldPos, null);
 }
 
 // ─── (g) migrateV1: v1 fixture -> v2 obje ───
