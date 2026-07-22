@@ -392,25 +392,49 @@ export class TdWorldScene extends Phaser.Scene {
     if (this.minimapDot?.visible) this.minimapDot.setPosition(this.minimapX + this.heroPos.x / (MAP_W * TILE) * 96, this.minimapY + this.heroPos.y / (MAP_H * TILE) * 96);
   }
 
+  /** Bir MonRef'i chunkMonsters'ta bulup listesinden çıkarır + görüntüsünü yok eder (kazanılan savaş). */
+  private despawnMonster(m: MonRef): void {
+    for (const list of this.chunkMonsters.values()) {
+      const i = list.indexOf(m);
+      if (i >= 0) { list.splice(i, 1); break; }
+    }
+    m.img.destroy();
+  }
+
   /**
-   * Temas encounter'ı. GEÇİCİ (Task 4'te gerçek TdBattle launch'a dönüşecek):
-   * canavarı kahramandan 24px iter (knockback + 1.5s stun) + hint metninde yanıp söner.
+   * Temas encounter'ı: TdBattle'ı launch edip TdWorld'ü duraklatır (IsoNecropolis
+   * kalıbıyla birebir — launch→pause→battle-end once→resume). Kazanılırsa canavar
+   * kalıcı despawn olur; kaybedilirse ışınlama YOK — yalnız 3sn grace (downUntil).
    */
   private startBattle(m: MonRef): void {
-    const now = this.time.now;
-    m.downUntil = now + 1500;
-    const dx = m.x - this.heroPos.x, dy = m.y - this.heroPos.y;
-    const dist = Math.hypot(dx, dy) || 1;
-    let nx = m.x + (dx / dist) * 24, ny = m.y + (dy / dist) * 24;
-    if (getTile(Math.floor(nx / TILE), Math.floor(ny / TILE)).collision) { nx = m.x; ny = m.y; }
-    m.x = nx; m.y = ny;
-    m.img.setPosition(Math.round(nx), Math.round(ny));
-    const label = `⚔ ${m.entry.name} Lv${m.entry.level}`;
-    const prevVisible = this.hintText.visible;
-    const prevText = this.hintText.text;
-    this.hintText.setText(label).setVisible(true);
-    this.time.delayedCall(1500, () => {
-      if (this.hintText.text === label) this.hintText.setText(prevVisible ? prevText : '').setVisible(prevVisible);
+    if (this.battleActive) return;
+    this.battleActive = true;
+    m.downUntil = this.time.now + 1e9; // savaş boyunca donuk (gezinme/temas durur)
+    const region = regionAt(Math.floor(m.x / TILE), Math.floor(m.y / TILE));
+    this.scene.launch('TdBattle', {
+      monster: {
+        type: m.entry.type,
+        tile: 0,
+        name: m.entry.name,
+        level: m.entry.level,
+        hp: m.entry.hp,
+        maxHp: m.entry.hp,
+        atk: m.entry.atk,
+        def: m.entry.def,
+        isElite: m.isElite,
+      },
+      region: region.key,
+      returnScene: 'TdWorld',
+    });
+    this.scene.pause();
+    this.scene.get('TdBattle').events.once('battle-end', (result: { won: boolean }) => {
+      this.scene.resume();
+      this.battleActive = false;
+      if (result?.won) {
+        this.despawnMonster(m);
+      } else {
+        m.downUntil = this.time.now + 3000; // yenilgi: ışınlama yok, kısa dokunulmazlık
+      }
     });
   }
 }

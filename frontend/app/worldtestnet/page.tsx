@@ -90,6 +90,7 @@ export default function TdDevPage() {
 
       const Phaser = await import('phaser');
       const { TdWorldScene } = await import('@/lib/game/td/TdWorldScene');
+      const { TdBattleScene } = await import('@/lib/game/td/TdBattleScene');
       const { VIEW_W, VIEW_H } = await import('@/lib/game/td/tdCore');
       if (cancelled || !ref.current) return;
       game = new Phaser.Game({
@@ -99,7 +100,7 @@ export default function TdDevPage() {
         pixelArt: true, roundPixels: true,
         backgroundColor: '#0d1319',
         scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-        scene: [TdWorldScene],
+        scene: [TdWorldScene, TdBattleScene],
       });
       // dev-only: konsoldan sahne durumunu incelemek için
       if (process.env.NODE_ENV !== 'production') (window as unknown as { __tdGame?: unknown }).__tdGame = game;
