@@ -196,6 +196,19 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
               className="pointer-events-none absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30 transition-transform duration-75"
             />
           </div>
+          {/* sağ-üst 🎒 çanta / 🗺 minimap (Faz 5.4 — one-shot window event, sahne dinler) */}
+          <div className="absolute right-4 top-4 z-40 flex gap-2">
+            <button
+              onPointerDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('td-ui-bag')); }}
+              className="h-11 w-11 touch-none rounded-full border border-white/20 bg-black/30 text-lg active:bg-white/20"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >🎒</button>
+            <button
+              onPointerDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('td-ui-map')); }}
+              className="h-11 w-11 touch-none rounded-full border border-white/20 bg-black/30 text-lg active:bg-white/20"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >🗺</button>
+          </div>
           {/* sağ-alt E / SPACE */}
           <div className="absolute bottom-4 right-4 z-40 flex gap-3">
             <button

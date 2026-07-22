@@ -14,6 +14,7 @@ import { mkMonsterChibi } from './sprites/monsterChibi';
 import { TdState, migrateV1 } from './tdState';
 import { COSTS, PER_HIT } from './cozy/rules';
 import { mp } from '../multiplayer/socket';
+import { PlayerState } from '../PlayerState';
 
 /** Faz 5: TdPhaserGame registry'ye yazdığı basit dokunmatik input state'i (bkz. TdPhaserGame.tsx). */
 interface TdTouchInput { dx: number; dy: number; e: boolean; space: boolean }
@@ -130,6 +131,16 @@ export class TdWorldScene extends Phaser.Scene {
   private energyBarFill!: Phaser.GameObjects.Rectangle;
   private energyText!: Phaser.GameObjects.Text;
   private fireBoostText!: Phaser.GameObjects.Text;
+  // ── Faz 5.4: stat paneli + çanta + tuş ipucu ──
+  private statsPanel!: Phaser.GameObjects.Container;
+  private levelText!: Phaser.GameObjects.Text;
+  private hpBarBg!: Phaser.GameObjects.Rectangle;
+  private hpBarFill!: Phaser.GameObjects.Rectangle;
+  private hpText!: Phaser.GameObjects.Text;
+  private xpBarBg!: Phaser.GameObjects.Rectangle;
+  private xpBarFill!: Phaser.GameObjects.Rectangle;
+  private bagPanel!: Phaser.GameObjects.Container;
+  private keysHint!: Phaser.GameObjects.Text;
   private gatherHint!: Phaser.GameObjects.Text;
   private fishing = false; private fishT = 0;
   private farmImgs = new Map<number, Phaser.GameObjects.Image>(); // plotIndex → img (kalıcı: kasaba her zaman yüklü chunk'ta)
@@ -208,18 +219,27 @@ export class TdWorldScene extends Phaser.Scene {
       fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
 
-    // enerji HUD: sol-üst 60×6 bar + ⚡sayı; kamp ateşi yakınında 🔥×4 rozeti
-    this.energyBarBg = this.add.rectangle(6, 6, 60, 6, 0x1a2028, 0.85).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9);
-    this.energyBarFill = this.add.rectangle(6, 6, 60, 6, 0x57b8d8, 1).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9);
-    this.energyText = this.add.text(70, 3, '', {
-      fontSize: '10px', fontFamily: 'monospace', color: '#9fe8ff', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
-    }).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9);
-    this.fireBoostText = this.add.text(6, 14, '', {
-      fontSize: '9px', fontFamily: 'monospace', color: '#ff9d3f',
-    }).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9).setVisible(false);
-    this.goldText = this.add.text(6, 24, '', {
-      fontSize: '10px', fontFamily: 'monospace', color: '#ffd23f', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
-    }).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9);
+    // ── Faz 5.4: sol-üst STAT PANELİ (izo HUDScene paritesi, cozy) — tek container:
+    // Lv + HP bar + XP bar + enerji bar + altın + 🔥×4. Container scrollFactor(0),
+    // çocuklar LOKAL koordinatta; layoutHud yalnız container'ı taşır. ──
+    this.statsPanel = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9);
+    const pBg = this.add.rectangle(0, 0, 128, 48, 0x141c24, 0.82).setOrigin(0, 0)
+      .setStrokeStyle(1, 0x2a3a4c, 0.9);
+    this.levelText = this.add.text(5, 4, 'Lv.1', { fontSize: '9px', fontFamily: 'monospace', color: '#ffd23f' }).setOrigin(0, 0);
+    this.hpBarBg = this.add.rectangle(38, 5, 84, 8, 0x1a2028, 1).setOrigin(0, 0);
+    this.hpBarFill = this.add.rectangle(39, 6, 82, 6, 0x44cc66, 1).setOrigin(0, 0);
+    this.hpText = this.add.text(80, 5, '', { fontSize: '7px', fontFamily: 'monospace', color: '#eaffef' }).setOrigin(0.5, 0);
+    this.xpBarBg = this.add.rectangle(38, 15, 84, 3, 0x1a2028, 1).setOrigin(0, 0);
+    this.xpBarFill = this.add.rectangle(38, 15, 0, 3, 0x7f7fff, 1).setOrigin(0, 0);
+    this.energyBarBg = this.add.rectangle(38, 21, 84, 7, 0x1a2028, 1).setOrigin(0, 0);
+    this.energyBarFill = this.add.rectangle(39, 22, 82, 5, 0x57b8d8, 1).setOrigin(0, 0);
+    this.energyText = this.add.text(5, 20, '⚡', { fontSize: '9px', fontFamily: 'monospace', color: '#9fe8ff' }).setOrigin(0, 0);
+    this.goldText = this.add.text(5, 33, '', { fontSize: '9px', fontFamily: 'monospace', color: '#ffd23f' }).setOrigin(0, 0);
+    this.fireBoostText = this.add.text(70, 33, '', { fontSize: '9px', fontFamily: 'monospace', color: '#ff9d3f' })
+      .setOrigin(0, 0).setVisible(false);
+    this.statsPanel.add([pBg, this.levelText, this.hpBarBg, this.hpBarFill, this.hpText,
+      this.xpBarBg, this.xpBarFill, this.energyBarBg, this.energyBarFill, this.energyText,
+      this.goldText, this.fireBoostText]);
     this.gatherHint = this.add.text(0, 0, '', {
       fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
@@ -246,6 +266,27 @@ export class TdWorldScene extends Phaser.Scene {
     kb.on('keydown-M', () => this.toggleMinimap());
     // SPACE: en yakın toplanabilir kes/kaz/topla, yoksa kıyıda balık tut
     kb.on('keydown-SPACE', () => this.onSpaceGather());
+    // Faz 5.4: B çanta; mobil 🎒/🗺 butonları window event'iyle gelir (TdPhaserGame)
+    kb.on('keydown-B', () => this.toggleBag());
+    const onUiBag = () => this.toggleBag();
+    const onUiMap = () => this.toggleMinimap();
+    window.addEventListener('td-ui-bag', onUiBag);
+    window.addEventListener('td-ui-map', onUiMap);
+    const offUi = () => { window.removeEventListener('td-ui-bag', onUiBag); window.removeEventListener('td-ui-map', onUiMap); };
+    this.events.once('shutdown', offUi);
+    this.events.once('destroy', offUi);
+
+    // Faz 5.4: çanta paneli (kapalı başlar; içerik her açılışta tazelenir) + tuş ipucu
+    this.bagPanel = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9 + 2).setVisible(false);
+    const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true;
+    this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [B] bag · [M] map', {
+      fontSize: '8px', fontFamily: 'monospace', color: '#cfe3f2',
+    }).setOrigin(1, 1).setScrollFactor(0).setDepth(1e9).setAlpha(0.55).setVisible(!isTouch);
+
+    // Faz 5.4: minimap keşfedilebilir olsun — masaüstünde default AÇIK (M yine kapatır);
+    // dokunmatikte kapalı başlar (sağ-üst 🗺 butonu açar — DOM butonlarıyla çakışmasın)
+    if (!isTouch) this.toggleMinimap();
+    this.layoutHud(); // bagPanel/keysHint applyZoom'dan SONRA yaratıldı — konumlarını bas
 
     this.streamChunks();
 
@@ -275,19 +316,19 @@ export class TdWorldScene extends Phaser.Scene {
     const x0 = cx - cx / k, y0 = cy - cy / k;      // mantıksal görünür rect'in sol-üstü
     const w = sw / k, h = sh / k;                   // mantıksal görünür boyut
     this.minimapX = x0 + w - 100; this.minimapY = y0 + 4;
-    this.energyBarBg.setPosition(x0 + 6, y0 + 6);
-    this.energyBarFill.setPosition(x0 + 6, y0 + 6);
-    this.energyText.setPosition(x0 + 70, y0 + 3);
-    this.fireBoostText.setPosition(x0 + 6, y0 + 14);
-    this.goldText.setPosition(x0 + 6, y0 + 24);
+    this.statsPanel.setPosition(x0 + 6, y0 + 6);
+    this.bagPanel?.setPosition(x0 + w / 2, y0 + h / 2);   // create'te applyZoom'dan sonra doğar
+    this.keysHint?.setPosition(x0 + w - 4, y0 + h - 4);
     this.hintText.setPosition(x0 + w / 2, y0 + h - 14);
     this.gatherHint.setPosition(x0 + w / 2, y0 + h - 26);
     this.tintRect.setPosition(x0 + w / 2, y0 + h / 2).setSize(w, h);
     this.fogRect.setPosition(x0 + w / 2, y0 + h - 24).setSize(w, 48);
     this.minimapImg?.setPosition(this.minimapX, this.minimapY);
     this.perfText?.setPosition(x0 + 4, y0 + 4);
-    for (const t of [this.hintText, this.gatherHint, this.energyText, this.fireBoostText, this.goldText])
-      if (t.style.resolution !== k) t.setResolution(k);
+    const texts = [this.hintText, this.gatherHint, this.energyText, this.fireBoostText, this.goldText,
+      this.levelText, this.hpText];
+    if (this.keysHint) texts.push(this.keysHint);
+    for (const t of texts) if (t.style.resolution !== k) t.setResolution(k);
   }
 
   /** E etkileşimi: en yakın interaktif prop'a göre dallanır (klavye + dokunmatik ortak yol). */
@@ -344,6 +385,43 @@ export class TdWorldScene extends Phaser.Scene {
         this.showRedHint('growing…');
       }
     }
+  }
+
+  /**
+   * Faz 5.4: çanta paneli — cozy kaynaklar (tdState) + kahraman özeti (PlayerState).
+   * İçerik her açılışta yeniden kurulur (removeAll(true)) — değerler hep taze,
+   * state-senkron derdi yok. B / mobil 🎒 / ✕ toggle'lar.
+   */
+  private toggleBag(): void {
+    if (this.bagPanel.visible) { this.bagPanel.setVisible(false); return; }
+    const k = this.uiZoom;
+    const ps = PlayerState.get();
+    const res = this.tdState.resources;
+    this.bagPanel.removeAll(true);
+    const W2 = 208, H2 = 148;
+    const T = (x: number, y: number, msg: string, color: string, size = 9, originX = 0) =>
+      this.add.text(x, y, msg, { fontSize: `${size}px`, fontFamily: 'monospace', color })
+        .setOrigin(originX, 0).setResolution(k);
+    const bg = this.add.rectangle(0, 0, W2, H2, 0x141c24, 0.94).setOrigin(0.5).setStrokeStyle(1, 0x3a4e63, 1);
+    const x0 = -W2 / 2 + 10, y0 = -H2 / 2 + 8;
+    const title = T(0, y0, 'BAG', '#9fe8ff', 11, 0.5);
+    const close = T(W2 / 2 - 14, y0, '✕', '#8fa6bd', 11)
+      .setInteractive({ useHandCursor: true }).on('pointerdown', () => this.toggleBag());
+    const potions = ps.inventory.filter(i => i.type === 'potion').reduce((n, i) => n + (i.count || 1), 0);
+    const rows: Phaser.GameObjects.GameObject[] = [
+      bg, title, close,
+      T(x0, y0 + 18, 'Satchel', '#7fd0a0', 8),
+      T(x0, y0 + 30, `🪵 ${res.wood}   🪨 ${res.stone}   ⛏ ${res.ore}`, '#e8eef4'),
+      T(x0, y0 + 43, `🐟 ${res.fish}   🍒 ${res.frostberry}   💰 ${this.tdState.gold}g`, '#e8eef4'),
+      T(x0, y0 + 60, 'Hero', '#7fd0a0', 8),
+      T(x0, y0 + 72, `Lv.${ps.level}  HP ${Math.round(ps.hp)}/${ps.maxHp}  🧪 ×${potions}`, '#e8eef4'),
+      T(x0, y0 + 85, `ATK ${ps.atk}  DEF ${ps.def}  SPD ${ps.spd}`, '#cfe3f2'),
+      T(x0, y0 + 98, `⚔ ${ps.equipped.weapon?.name || 'Fists'}`, '#cfe3f2'),
+      T(x0, y0 + 111, `🛡 ${ps.equipped.armor?.name || 'None'}`, '#cfe3f2'),
+      T(0, H2 / 2 - 16, 'sell at the Marketplace [E]', '#8fa6bd', 7, 0.5),
+    ];
+    this.bagPanel.add(rows);
+    this.bagPanel.setVisible(true);
   }
 
   /** Minimap: ilk çağrıda 96×96 canvas üretir (4 tile/px, biyom üst rengi), sonrakiler visible toggle. */
@@ -678,10 +756,17 @@ export class TdWorldScene extends Phaser.Scene {
     this.tdState.tick(dt, nearFire);
     this.fireBoostText.setVisible(nearFire).setText(nearFire ? '🔥×4' : '');
     const pct = Phaser.Math.Clamp(this.tdState.energy / TdState.ENERGY_MAX, 0, 1);
-    this.energyBarFill.width = 60 * pct;
+    this.energyBarFill.width = 82 * pct;
     this.energyBarFill.fillColor = pct < 0.2 ? 0xe84142 : 0x57b8d8;
     this.energyText.setText(`⚡${Math.round(this.tdState.energy)}`);
     this.goldText.setText(`💰${this.tdState.gold}`);
+    // Faz 5.4: stat paneli — Lv/HP/XP (PlayerState; live'da gerçek kayıt, preview'da default)
+    const ps = PlayerState.get();
+    this.levelText.setText(`Lv.${ps.level}`);
+    this.hpBarFill.width = 82 * Phaser.Math.Clamp(ps.hp / ps.maxHp, 0, 1);
+    this.hpBarFill.fillColor = ps.hp / ps.maxHp < 0.25 ? 0xe84142 : 0x44cc66;
+    this.hpText.setText(`${Math.round(ps.hp)}/${ps.maxHp}`);
+    this.xpBarFill.width = 84 * Phaser.Math.Clamp(ps.xp / ps.xpToNext, 0, 1);
 
     // tarla parsel görselleri: tdState.farm[i].stage ile senkron (texture swap)
     for (const [idx, img] of this.farmImgs) {
