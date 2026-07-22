@@ -283,8 +283,11 @@ export class TdBattleScene extends Phaser.Scene {
     // her şey world-space). TdWorld'ün küçük VIEW_W×VIEW_H (384×256) canvas'ına sığdırmak
     // için kamerayı bu mantıksal alana zoom'la — Game canvas'ı GAME_WIDTH/HEIGHT boyutunda
     // kalır (page.tsx), yalnız bu sahnenin kamerası küçültülmüş bir pencereden gösterir.
-    this.cameras.main.setZoom(VIEW_W / GAME_WIDTH);
-    this.cameras.main.centerOn(W / 2, H / 2);
+    // Tam ekran fix (22 Tem): 0.3× zoom sıkıştırması yerine savaş boyunca oyun
+    // tuvali native 1280×720'ye geçer (TdWorld pauselu — HUD'u render etmiyor);
+    // shutdown'da 384×256'ya geri döner. Metinler/oran artık native.
+    this.scale.setGameSize(GAME_WIDTH, GAME_HEIGHT);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.setGameSize(VIEW_W, VIEW_H));
 
     // ── Background ──
     // TD reskin: izo'nun ZONE_ATMOSPHERE+silüet backdrop'u yerine bölge-paletli
