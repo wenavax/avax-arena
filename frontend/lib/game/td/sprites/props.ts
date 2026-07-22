@@ -118,6 +118,33 @@ export function mkBuilding(wTiles: number, hTiles: number, accent: string, icon:
 }
 
 /** Zindan kapısı — taş kemer + bölge-accent parıltı noktası. */
+/** Faz 5.6: kasaba portalı — taş kaide + camgöbeği ışıyan halka (2 kare: iç parıltı oynar). */
+export function mkPortal(frame: 0 | 1 = 0): { img: HTMLCanvasElement; ox: number; oy: number } {
+  const img = outline(spr(22, 26, (px) => {
+    px(2, 22, 18, 4, '#6c7681'); px(4, 21, 14, 2, '#8b95a0');      // kaide
+    px(4, 2, 14, 20, '#3a4e63');                                    // dış halka gövdesi
+    px(6, 0, 10, 4, '#3a4e63');
+    px(6, 4, 10, 17, '#0d1319');                                    // iç boşluk
+    const g = frame === 0 ? '#57e8e0' : '#9ff5ef';
+    px(7, 6, 8, 14, g === '#57e8e0' ? '#1e5e66' : '#27737d');       // girdap zemini
+    px(8, 8 + frame, 3, 6, g); px(11, 12 - frame, 3, 5, g);         // girdap kolları
+    px(9, 6, 2, 2, '#d8fffb'); px(12, 17, 2, 2, '#d8fffb');         // kıvılcımlar
+    px(4, 2, 3, 2, SNOW); px(14, 0, 3, 2, SNOW);                    // kar
+  }));
+  return { img, ox: img.width >> 1, oy: img.height - 1 };
+}
+
+/** Faz 5.6: zindan cevher damarı — koyu kaya + parlak kristaller (SPACE ile kazılır). */
+export function mkOreVein(): { img: HTMLCanvasElement; ox: number; oy: number } {
+  const img = outline(spr(16, 12, (px) => {
+    px(1, 4, 14, 8, '#454e58'); px(3, 2, 10, 4, '#454e58'); px(2, 3, 4, 2, '#59636e');
+    px(1, 10, 14, 2, '#333b44');
+    px(4, 5, 3, 3, '#e8b23f'); px(9, 7, 3, 2, '#e8b23f'); px(7, 3, 2, 2, '#ffd884');
+    px(12, 4, 2, 2, '#e8b23f'); px(5, 9, 2, 1, '#ffd884');
+  }));
+  return { img, ox: img.width >> 1, oy: img.height - 1 };
+}
+
 export function mkDungeonDoor(): { img: HTMLCanvasElement; ox: number; oy: number } {
   const img = outline(spr(28, 22, (px) => {
     px(2, 6, 24, 16, '#6c7681'); px(4, 2, 20, 6, '#6c7681'); px(6, 0, 16, 3, '#8b95a0');

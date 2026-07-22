@@ -6,8 +6,8 @@ import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, computeTdView, userTdZoom, set
 import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
-import { propsForChunk, dungeonDoors, TOWN_ORIGIN, type TdProp } from './worldProps';
-import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump, mkFarmPlot } from './sprites/props';
+import { propsForChunk, dungeonDoors, townPortals, TOWN_ORIGIN, type TdProp } from './worldProps';
+import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump, mkFarmPlot, mkPortal } from './sprites/props';
 import { atmoForRegion } from './atmosphere';
 import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
 import { mkMonsterChibi } from './sprites/monsterChibi';
@@ -117,8 +117,8 @@ export class TdWorldScene extends Phaser.Scene {
   private minimapImg?: Phaser.GameObjects.Image;
   private minimapDot?: Phaser.GameObjects.Rectangle;
   private minimapBorder?: Phaser.GameObjects.Rectangle;
-  // Faz 5.5: yerel-pencere minimap (tür standardı) — M döngüsü local→world→off
-  private minimapMode: 'off' | 'local' | 'world' = 'off';
+  // Faz 5.5/5.6: yerel-pencere minimap — M aç/kapa, tıklama küçük↔büyük
+  private minimapOn = false;
   private redHintUntil = 0; // gatherHint'in kırmızı-uyarı/zoom-toast kilidi (istem yazmasın)
   // Faz 5.2: konumlar layoutHud()'da (kamera-zoom dönüşümü); uiZoom = aktif tam-sayı k
   private minimapX = 0; private minimapY = 4;
@@ -215,6 +215,7 @@ export class TdWorldScene extends Phaser.Scene {
     for (let v = 0; v < 2; v++) { const m = mkBush(v); reg(`td-bush-${v}`, m); this.propMeta.set(`bush-${v}`, { ox: m.ox, oy: m.oy }); }
     mkFireFrames().forEach((c, f) => { if (!this.textures.exists(`td-fire-${f}`)) this.textures.addCanvas(`td-fire-${f}`, c); });
     const dd = mkDungeonDoor(); reg('td-door-dungeon', dd); this.propMeta.set('door', { ox: dd.ox, oy: dd.oy });
+    reg('td-portal-0', mkPortal(0)); reg('td-portal-1', mkPortal(1)); // Faz 5.6
     const stump = mkStump(); reg('td-stump', stump); this.propMeta.set('stump', { ox: stump.ox, oy: stump.oy });
     for (let s = 0; s < 4; s++) { const m = mkFarmPlot(s as 0 | 1 | 2 | 3); reg(`td-farm-${s}`, m); this.propMeta.set(`farm-${s}`, { ox: m.ox, oy: m.oy }); }
 
@@ -335,7 +336,6 @@ export class TdWorldScene extends Phaser.Scene {
     const cx = sw / 2, cy = sh / 2;
     const x0 = cx - cx / k, y0 = cy - cy / k;      // mantıksal görünür rect'in sol-üstü
     const w = sw / k, h = sh / k;                   // mantıksal görünür boyut
-    this.minimapX = x0 + w - 100; this.minimapY = y0 + 4;
     this.statsPanel.setPosition(x0 + 6, y0 + 6);
     this.bagPanel?.setPosition(x0 + w / 2, y0 + h / 2);   // create'te applyZoom'dan sonra doğar
     this.keysHint?.setPosition(x0 + w - 4, y0 + h - 4);
@@ -392,6 +392,13 @@ export class TdWorldScene extends Phaser.Scene {
     } else if (p?.kind === 'door_dungeon') {
       this.scene.pause();
       this.scene.launch('TdDungeon', { dungeonId: p.data!.id, exitPos: { x: this.heroPos.x, y: this.heroPos.y } });
+    } else if (p?.kind === 'portal') {
+      // Faz 5.6: kasabaya ışınlan — pozisyonu hemen kaydet (yenilemede portalda doğmasın)
+      this.heroPos = { x: TOWN_SPAWN.tx * 16 + 8, y: TOWN_SPAWN.ty * 16 + 8 };
+      if (this.tdMode === 'live') this.tdState.worldPos = { x: this.heroPos.x, y: this.heroPos.y };
+      this.tdState.save();
+      this.streamChunks();
+      this.floatText(this.heroPos.x, this.heroPos.y - 18, '🌀 whoosh!', '#57e8e0');
     } else if (p?.kind === 'farm_plot') {
       const i = p.data!.plotIndex!;
       const plot = this.tdState.farm[i];
@@ -445,14 +452,17 @@ export class TdWorldScene extends Phaser.Scene {
   }
 
   /**
-   * Faz 5.5 minimap (araştırma: Larvy'de minimap yok; RPG tür standardı köşede
-   * YEREL-alan penceresi + tam harita toggle): M döngüsü local → world → off.
-   * local: 384×384 tam-res haritadan hero-merkezli 96×96 crop (1px = 1 tile) —
-   * nokta artık gerçekten hareket eder; world: tüm harita 0.25× (eski davranış).
-   * Taban canvas'a kasaba (altın) + zindan kapıları (kızıl) işaretleri basılır.
+   * Faz 5.5/5.6 minimap: default KÜÇÜK yerel pencere (64×64 tile, 1px=1tile,
+   * hero-merkezli crop); üstüne TIKLAYINCA büyür (tüm dünya haritası). M / mobil 🗺
+   * aç-kapa. Taban canvas işaretleri: kasaba (altın), zindan kapıları (kızıl),
+   * kasaba portalları (camgöbeği).
    */
+  private static MM_SMALL = 64;
+  private static MM_BIG = 176;
+  private minimapBig = false;
+
   private toggleMinimap(): void {
-    this.minimapMode = this.minimapMode === 'off' ? 'local' : this.minimapMode === 'local' ? 'world' : 'off';
+    this.minimapOn = !this.minimapOn;
     if (!this.minimapImg) {
       const c = document.createElement('canvas');
       c.width = MAP_W; c.height = MAP_H;
@@ -465,38 +475,58 @@ export class TdWorldScene extends Phaser.Scene {
       g.fillRect(TOWN_ORIGIN.tx - 3, TOWN_ORIGIN.ty - 3, 6, 6);
       g.fillStyle = '#c23b3b';                                   // zindan kapıları
       for (const d of dungeonDoors()) g.fillRect(Math.floor(d.x / TILE) - 1, Math.floor(d.y / TILE) - 1, 3, 3);
+      g.fillStyle = '#57e8e0';                                   // kasaba portalları (Faz 5.6)
+      for (const p of townPortals()) g.fillRect(Math.floor(p.x / TILE) - 1, Math.floor(p.y / TILE) - 1, 3, 3);
       this.textures.addCanvas('td-minimap-full', c);
-      this.minimapBorder = this.add.rectangle(0, 0, 100, 100, 0x0d1319, 0.35)
-        .setOrigin(0, 0).setScrollFactor(0).setDepth(1e9 - 1).setStrokeStyle(1, 0x3a4e63, 1);
+      // çerçeve = tıklama hedefi (crop'lu image'ın hit-area'sı tüm frame'i kapsardı)
+      this.minimapBorder = this.add.rectangle(0, 0, TdWorldScene.MM_SMALL + 4, TdWorldScene.MM_SMALL + 4, 0x0d1319, 0.35)
+        .setOrigin(0, 0).setScrollFactor(0).setDepth(1e9 - 1).setStrokeStyle(1, 0x3a4e63, 1)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.toggleMinimapSize());
       this.minimapImg = this.add.image(0, 0, 'td-minimap-full')
         .setOrigin(0, 0).setScrollFactor(0).setDepth(1e9).setAlpha(0.92);
       this.minimapDot = this.add.rectangle(0, 0, 3, 3, 0xff3b3b)
         .setOrigin(0.5).setScrollFactor(0).setDepth(1e9 + 1);
     }
-    const on = this.minimapMode !== 'off';
-    this.minimapImg.setVisible(on);
-    this.minimapDot?.setVisible(on);
-    this.minimapBorder?.setVisible(on);
-    if (this.minimapMode === 'world') { this.minimapImg.setCrop(); this.minimapImg.setScale(96 / MAP_W); }
-    else this.minimapImg.setScale(1);
-    this.updateMinimap(); // mod değişiminde konum/crop'u hemen bas (update beklemeden)
+    this.minimapImg.setVisible(this.minimapOn);
+    this.minimapDot?.setVisible(this.minimapOn);
+    this.minimapBorder?.setVisible(this.minimapOn);
+    this.updateMinimap();
   }
 
-  /** Minimap per-frame konum/crop/nokta — layoutHud'un minimapX/Y slotuna sabitlenir. */
+  /** Tıklama: küçük yerel pencere ↔ büyük dünya haritası (çerçeve hit-area yeniden kurulur). */
+  private toggleMinimapSize(): void {
+    this.minimapBig = !this.minimapBig;
+    const size = (this.minimapBig ? TdWorldScene.MM_BIG : TdWorldScene.MM_SMALL) + 4;
+    this.minimapBorder?.removeInteractive();
+    this.minimapBorder?.setSize(size, size);
+    this.minimapBorder?.setInteractive({ useHandCursor: true });
+    this.updateMinimap();
+  }
+
+  /** Minimap per-frame konum/crop/nokta — sağ-üst slota sabitlenir (boyut moda göre). */
   private updateMinimap(): void {
-    if (!this.minimapImg || this.minimapMode === 'off') return;
+    if (!this.minimapImg || !this.minimapOn) return;
+    const k = this.uiZoom, sw = this.scale.width, sh = this.scale.height;
+    const x0 = sw / 2 - sw / (2 * k), y0 = sh / 2 - sh / (2 * k), w = sw / k;
+    const size = this.minimapBig ? Math.min(TdWorldScene.MM_BIG, Math.floor(sh / k) - 24) : TdWorldScene.MM_SMALL;
+    this.minimapX = x0 + w - size - 4; this.minimapY = y0 + 4;
     const htx = this.heroPos.x / TILE, hty = this.heroPos.y / TILE;
     this.minimapBorder?.setPosition(this.minimapX - 2, this.minimapY - 2);
-    if (this.minimapMode === 'local') {
-      const cx = Phaser.Math.Clamp(Math.floor(htx) - 48, 0, MAP_W - 96);
-      const cy = Phaser.Math.Clamp(Math.floor(hty) - 48, 0, MAP_H - 96);
-      this.minimapImg.setCrop(cx, cy, 96, 96);
+    if (this.minimapBig) {
+      this.minimapImg.setCrop();
+      this.minimapImg.setScale(size / MAP_W);
+      this.minimapImg.setPosition(this.minimapX, this.minimapY);
+      this.minimapDot?.setPosition(this.minimapX + htx * size / MAP_W, this.minimapY + hty * size / MAP_H);
+    } else {
+      const half = TdWorldScene.MM_SMALL / 2;
+      const cx = Phaser.Math.Clamp(Math.floor(htx) - half, 0, MAP_W - TdWorldScene.MM_SMALL);
+      const cy = Phaser.Math.Clamp(Math.floor(hty) - half, 0, MAP_H - TdWorldScene.MM_SMALL);
+      this.minimapImg.setScale(1);
+      this.minimapImg.setCrop(cx, cy, TdWorldScene.MM_SMALL, TdWorldScene.MM_SMALL);
       // crop görüntüyü kendi frame konumunda bırakır — pencereyi slota kaydır
       this.minimapImg.setPosition(this.minimapX - cx, this.minimapY - cy);
       this.minimapDot?.setPosition(this.minimapX + (htx - cx), this.minimapY + (hty - cy));
-    } else {
-      this.minimapImg.setPosition(this.minimapX, this.minimapY);
-      this.minimapDot?.setPosition(this.minimapX + htx * 96 / MAP_W, this.minimapY + hty * 96 / MAP_H);
     }
   }
 
@@ -564,7 +594,7 @@ export class TdWorldScene extends Phaser.Scene {
         const gatherables = new Map<string, Gatherable>();
         for (const p of list) {
           if (p.solid) solids.push(p.solid);
-          if (p.kind === 'building' || p.kind === 'door_dungeon' || p.kind === 'farm_plot') interactives.push(p);
+          if (p.kind === 'building' || p.kind === 'door_dungeon' || p.kind === 'farm_plot' || p.kind === 'portal') interactives.push(p);
           if (p.kind === 'farm_plot') {
             const stage = this.tdState.farm[p.data!.plotIndex!]?.stage ?? 0;
             const fimg = this.add.image(p.x, p.y, `td-farm-${stage}`).setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
@@ -577,6 +607,16 @@ export class TdWorldScene extends Phaser.Scene {
           else if (p.kind === 'rock') { texKey2 = `td-rock-${p.v ?? 0}`; meta = this.propMeta.get(`rock-${p.v ?? 0}`)!; }
           else if (p.kind === 'bush') { texKey2 = `td-bush-${p.v ?? 0}`; meta = this.propMeta.get(`bush-${p.v ?? 0}`)!; }
           else if (p.kind === 'door_dungeon') { texKey2 = 'td-door-dungeon'; meta = this.propMeta.get('door')!; }
+          else if (p.kind === 'portal') {
+            // Faz 5.6: kasaba portalı — 2-kare parıltı (700ms flip; obj cull'da tween de ölür)
+            const pimg = this.add.image(p.x, p.y, 'td-portal-0').setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
+            const flip = this.time.addEvent({
+              delay: 700, loop: true,
+              callback: () => pimg.setTexture(pimg.texture.key === 'td-portal-0' ? 'td-portal-1' : 'td-portal-0'),
+            });
+            pimg.once(Phaser.GameObjects.Events.DESTROY, () => flip.remove());
+            objs.push(pimg); continue;
+          }
           else if (p.kind === 'campfire') {
             const fimg = this.add.image(p.x, p.y, 'td-fire-0').setOrigin(0.5, 0.9).setDepth(depth(p.x, p.y));
             this.fires.push({ img: fimg, x: p.x, y: p.y }); objs.push(fimg); continue;
@@ -786,6 +826,7 @@ export class TdWorldScene extends Phaser.Scene {
       this.nearProp = near;
       this.hintText.setText(near
         ? (near.kind === 'building' ? `E — ${near.data!.name}`
+          : near.kind === 'portal' ? 'E — Town Portal 🌀'
           : near.kind === 'farm_plot' ? (() => {
               const st = this.tdState.farm[near!.data!.plotIndex!]?.stage ?? 0;
               return `E — ${st === 0 ? 'plant' : st === 3 ? 'harvest' : 'growing…'}`;

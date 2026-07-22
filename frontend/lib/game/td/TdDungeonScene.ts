@@ -4,14 +4,17 @@
 // (chunk streaming gerekmez — zindan küçük). Kapı akışı: TdWorldScene pause+launch,
 // bu sahne stop+resume (battle akışıyla simetrik).
 import * as Phaser from 'phaser';
-import { TILE, computeTdView, userTdZoom, depth } from './tdCore';
+import { TILE, computeTdView, userTdZoom, depth, hash2d } from './tdCore';
 import { REGIONS } from './worldMap';
 import { biomeTopColor } from './tiles';
 import { atmoForRegion } from './atmosphere';
 import { chibiHumanoid, CHIBI_H } from './sprites/chibi';
 import { mkMonsterChibi } from './sprites/monsterChibi';
+import { mkOreVein } from './sprites/props';
 import { DUNGEON_ROSTERS, type MonsterEntry } from './monsterData';
 import { genDungeon, type DungeonGen } from './dungeonGen';
+import { PER_HIT } from './cozy/rules';
+import type { TdWorldScene } from './TdWorldScene';
 
 const WALK_FRAMES = [0, 1, 0, 2] as const;
 
@@ -49,6 +52,10 @@ export class TdDungeonScene extends Phaser.Scene {
   private timeInDungeon = 0;
   private leaving = false;
   private uiZoom = 3; // Faz 5.2: aktif tam-sayı kamera zoom'u (applyZoom)
+  // Faz 5.6: cevher damarları (SPACE ile kazılır; her girişte deterministik yeniden doğar)
+  private veins: { x: number; y: number; img: Phaser.GameObjects.Image; hits: number; alive: boolean }[] = [];
+  private touchSpacePrev = false;
+  private hintLockUntil = 0; // '👑 Dungeon cleared!' gibi mesajlar kazı istemiyle ezilmesin
 
   constructor() { super({ key: 'TdDungeon' }); }
 
@@ -60,6 +67,8 @@ export class TdDungeonScene extends Phaser.Scene {
     this.leaving = false;
     this.mons = [];
     this.boss = null;
+    this.veins = [];
+    this.touchSpacePrev = false;
   }
 
   create(): void {
@@ -118,6 +127,8 @@ export class TdDungeonScene extends Phaser.Scene {
     this.keys = kb.addKeys('W,A,S,D') as typeof this.keys;
     this.cursors = kb.createCursorKeys();
     kb.on('keydown-ESC', () => this.leave());
+    // Faz 5.6: SPACE cevher kazma (dokunmatik eşleniği update()'te one-shot)
+    kb.on('keydown-SPACE', () => this.mineNearestVein());
 
     // Faz 5.2: HUD/tint konum+boyutları layoutHud()'da (kamera-zoom dönüşümü)
     this.hintText = this.add.text(0, 0, '', {
@@ -147,6 +158,24 @@ export class TdDungeonScene extends Phaser.Scene {
           tgtX: px, tgtY: py, pause: Math.random() * 2, f: 0, ft: 0, downUntil: 0, isBoss: false,
         });
       });
+    }
+
+    // ── Faz 5.6: cevher damarları — zemin tile'larına deterministik (salt 10) serpilir;
+    // girişten uzak (>8 tile), 6-9 damar. Derin zindanlarda (bölge level ≥35) çift verim. ──
+    if (!this.textures.exists('td-orevein')) {
+      const m = mkOreVein();
+      this.textures.addCanvas('td-orevein', m.img);
+    }
+    const veinTarget = 6 + hash2d(w, h, 10) % 4;
+    for (let ty = 2; ty < h - 2 && this.veins.length < veinTarget; ty++) {
+      for (let tx = 2; tx < w - 2 && this.veins.length < veinTarget; tx++) {
+        if (tiles[ty * w + tx] !== 1) continue;
+        if (Math.hypot(tx - entry.x, ty - entry.y) < 8) continue;
+        if (hash2d(tx, ty, 10) % 1000 >= 14) continue;
+        const px2 = tx * TILE + 8, py2 = ty * TILE + 12;
+        const vimg = this.add.image(px2, py2, 'td-orevein').setOrigin(0.5, 1).setDepth(depth(px2, py2));
+        this.veins.push({ x: px2, y: py2, img: vimg, hits: 3, alive: true });
+      }
     }
 
     // ── boss: sabit, büyük chibi, boss noktasında ──
@@ -207,12 +236,48 @@ export class TdDungeonScene extends Phaser.Scene {
     return true;
   }
 
+  /** Faz 5.6: en yakın canlı damarı kaz (≤26px) — enerji/kaynak dünya tdState'inde. */
+  private mineNearestVein(): void {
+    if (this.battleActive || this.leaving) return;
+    const world = this.scene.get('TdWorld') as TdWorldScene | null;
+    const st = world?.tdState;
+    if (!st) return;
+    let nearest: typeof this.veins[number] | null = null; let nd = 26;
+    for (const v of this.veins) {
+      if (!v.alive) continue;
+      const d = Math.hypot(this.heroPos.x - v.x, this.heroPos.y - v.y);
+      if (d < nd) { nd = d; nearest = v; }
+    }
+    if (!nearest) return;
+    if (st.energy < PER_HIT.mine) { this.veinFloat(nearest.x, nearest.y, 'Not enough energy ⚡', '#ff5c5c'); return; }
+    st.energy -= PER_HIT.mine;
+    nearest.hits -= 1;
+    if (nearest.hits > 0) { this.veinFloat(nearest.x, nearest.y, '⛏️', '#cfd8df'); st.save(); return; }
+    // son vuruş: derin zindan (bölge level ≥35) çift cevher — risk = ödül
+    const region = REGIONS.find(r => r.key === this.dungeonId);
+    const yieldN = (region?.level[0] ?? 0) >= 35 ? 2 : 1;
+    st.resources.ore += yieldN;
+    nearest.alive = false;
+    nearest.img.setVisible(false);
+    this.veinFloat(nearest.x, nearest.y, `+${yieldN} ⛏️`, '#ffd884');
+    st.save();
+  }
+
+  /** Yükselen juice metni (TdWorldScene.floatText'in zindan eşleniği). */
+  private veinFloat(x: number, y: number, msg: string, color: string): void {
+    const t = this.add.text(x, y - 14, msg, {
+      fontSize: '10px', fontFamily: 'monospace', color, backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
+    }).setOrigin(0.5, 1).setDepth(1e8).setResolution(this.uiZoom);
+    this.tweens.add({ targets: t, y: y - 34, alpha: 0, duration: 900, onComplete: () => t.destroy() });
+  }
+
   /** Bir DMonRef'i listeden çıkarıp görüntüsünü yok eder (kazanılan savaş). */
   private despawnMonster(m: DMonRef): void {
     if (m.isBoss) {
       this.boss = null;
       this.openBossExitGlow(m.x, m.y);
       this.hintText.setText('👑 Dungeon cleared!').setVisible(true);
+      this.hintLockUntil = this.time.now + 2500;
       this.time.delayedCall(2500, () => { if (!this.leaving) this.hintText.setVisible(false); });
     } else {
       const i = this.mons.indexOf(m);
@@ -278,6 +343,9 @@ export class TdDungeonScene extends Phaser.Scene {
     if (touch) {
       if (dx === 0 && touch.dx) dx = touch.dx;
       if (dy === 0 && touch.dy) dy = touch.dy;
+      // Faz 5.6: dokunmatik SPACE one-shot → cevher kazma
+      if (touch.space && !this.touchSpacePrev) this.mineNearestVein();
+      this.touchSpacePrev = !!touch.space;
     }
     const moving = !!(dx || dy);
     if (moving) {
@@ -337,6 +405,16 @@ export class TdDungeonScene extends Phaser.Scene {
         const contactR = m.isBoss ? 16 : 12;
         if (hd < contactR) this.startBattle(m);
       }
+    }
+
+    // Faz 5.6: kazı istemi — yakın canlı damar varsa affordance göster (kilitli mesajı ezme)
+    if (!this.battleActive && t > this.hintLockUntil) {
+      let nearVein = false;
+      for (const v of this.veins) {
+        if (v.alive && Math.hypot(this.heroPos.x - v.x, this.heroPos.y - v.y) < 26) { nearVein = true; break; }
+      }
+      if (nearVein) this.hintText.setText('[SPACE] mine ⛏️').setVisible(true);
+      else if (this.hintText.text === '[SPACE] mine ⛏️') this.hintText.setVisible(false);
     }
 
     // atmosfer lerp

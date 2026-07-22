@@ -79,9 +79,10 @@ with sync_playwright() as p:
     check('canvas-full-res', res['sw'] == res['pw'] and res['sh'] == res['ph'] and res['attrW'] == res['pw'])
     check('cam-zoom-integer', res['k'] == int(res['k']) and res['k'] >= 2 and res['k'] == res['uiZoom'])
     k, sw, sh = res['k'], res['sw'], res['sh']
+    # Faz 5.6: minimap slotu küçük mod 64+4 → sağ kenardan 68 içeride
     hud = pg.evaluate(S % "({hx: s.hintText.x, hy: s.hintText.y, fw: s.fogRect.width, mmx: s.minimapX, tres: s.hintText.style.resolution})")
     check('hud-adaptive', abs(hud['hx'] - sw / 2) < 1 and abs(hud['hy'] - (sh / 2 + sh / (2 * k) - 14)) < 1
-          and abs(hud['fw'] - sw / k) < 1 and abs(hud['mmx'] - (sw / 2 + sw / (2 * k) - 100)) < 1)
+          and abs(hud['fw'] - sw / k) < 1 and abs(hud['mmx'] - (sw / 2 + sw / (2 * k) - 68)) < 1)
     check('hud-text-native-res', hud['tres'] == k)
     # savaşa gir/çık: battle KENDİ kamerasını 1280×720'ye fit'ler; ScaleManager'a dokunmaz;
     # çıkışta dünya kamerası k'da kalmış olmalı (restore dansı yok)

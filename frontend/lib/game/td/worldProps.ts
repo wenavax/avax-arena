@@ -1,12 +1,12 @@
 // frontend/lib/game/td/worldProps.ts
 // ─── Deterministik prop yerleşimi (saf; DOM yok) ───
 // Kasaba binaları HUB_GAMES'ten türetilir (tek doğruluk kaynağı korunur).
-// salt sözlüğü: 3=yerleşim(ağaç), 4=varyant, 5=kaya, 6=çalı (bkz tdCore.hash2d).
-import { CHUNK, hash2d } from './tdCore';
+// salt sözlüğü: 3=yerleşim(ağaç), 4=varyant, 5=kaya, 6=çalı, 11=portal (bkz tdCore.hash2d).
+import { CHUNK, MAP_W, MAP_H, hash2d } from './tdCore';
 import { getTile, regionAt, REGIONS, TOWN_SPAWN } from './worldMap';
 import { HUB_GAMES, buildingRect } from '../hub/hubGames';
 
-export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot';
+export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot' | 'portal';
 export interface TdProp {
   kind: PropKind;
   x: number; y: number;                    // dünya px (taban/ayak noktası)
@@ -46,9 +46,10 @@ export function allFarmPlots(): TdProp[] { return FARM_CACHE ?? (FARM_CACHE = fa
 export const TOWN_ORIGIN = { tx: 192, ty: 192 };
 
 // biome → ağaç yoğunluğu (‰, tile başına)
+// Faz 5.6: orman yoğunluğu artırıldı (kullanıcı isteği — "ormanlar daha sık")
 const TREE_DENS: Record<string, number> = {
-  forest: 90, grass: 25, town: 6, swamp: 45, frostwastes: 30, sanctum: 35,
-  necropolis: 18, ruins: 14, mines: 10, citadel: 12, volcano: 6, crypt: 12,
+  forest: 160, grass: 38, town: 6, swamp: 70, frostwastes: 45, sanctum: 50,
+  necropolis: 24, ruins: 16, mines: 10, citadel: 14, volcano: 6, crypt: 16,
   abyss: 8, forge: 6, demongate: 6, voidrealm: 5, eternal: 8, water: 0, path: 0,
 };
 const ROCK_DENS: Record<string, number> = {
@@ -91,7 +92,34 @@ export function dungeonDoors(): TdProp[] {
   })));
 }
 
-// otomatik yerleşime kapalı: bina rect'leri (x ±1 tile, üst 1 / alt 2 tile pay — kapı önü), spawn ±3, kapı ±2 tile
+// ── Faz 5.6: KASABA PORTALLARI — kasaba dışı her bölgeye 1 portal, merkezden
+// hash'li (salt 11) rastgele-görünümlü ofsette; collision'lı/su tile'ına denk gelirse
+// doğuya doğru ilk yürünebilir tile'a kaydırılır. E → TOWN_SPAWN ışınlaması (sahne).
+let PORTAL_CACHE: TdProp[] | null = null;
+export function townPortals(): TdProp[] {
+  if (PORTAL_CACHE) return PORTAL_CACHE;
+  const out: TdProp[] = [];
+  for (const rg of REGIONS) {
+    if (rg.key === 'town') continue;
+    const h = hash2d(rg.cx, rg.cy, 11);
+    const ang = (h % 360) * Math.PI / 180;
+    const rad = 10 + ((h >> 5) % Math.max(4, rg.r - 16));
+    let tx = Math.max(4, Math.min(MAP_W - 5, Math.round(rg.cx + Math.cos(ang) * rad)));
+    const ty = Math.max(4, Math.min(MAP_H - 5, Math.round(rg.cy + Math.sin(ang) * rad)));
+    for (let i = 0; i < 12; i++) {                     // yürünebilir tile ara (doğuya kaydır)
+      const t = getTile(tx, ty);
+      if (!t.collision && t.biome !== 'water') break;
+      tx = Math.min(MAP_W - 5, tx + 1);
+    }
+    out.push({
+      kind: 'portal', x: tx * 16 + 8, y: ty * 16 + 14,
+      data: { id: `portal-${rg.key}`, name: 'Town Portal', region: rg.key },
+    });
+  }
+  return (PORTAL_CACHE = out);
+}
+
+// otomatik yerleşime kapalı: bina rect'leri (x ±1 tile, üst 1 / alt 2 tile pay — kapı önü), spawn ±3, kapı ±2 tile, portal ±2 tile
 function reserved(tx: number, ty: number): boolean {
   if (Math.abs(tx - TOWN_SPAWN.tx) <= 3 && Math.abs(ty - TOWN_SPAWN.ty) <= 3) return true;
   for (const p of allTownProps()) {
@@ -101,6 +129,9 @@ function reserved(tx: number, ty: number): boolean {
   }
   for (const d of dungeonDoors()) {
     if (Math.abs(tx * 16 + 8 - d.x) <= 32 && Math.abs(ty * 16 + 8 - d.y) <= 32) return true;
+  }
+  for (const p of townPortals()) {
+    if (Math.abs(tx * 16 + 8 - p.x) <= 32 && Math.abs(ty * 16 + 8 - p.y) <= 32) return true;
   }
   // tarla grid alanı: otomatik ağaç/kaya/çalı yerleşmesin (parseller üstünde yürünür ama boş kalmalı)
   if (tx >= FARM_ORIGIN.tx - 1 && tx <= FARM_ORIGIN.tx + (FARM_COLS - 1) * FARM_PITCH + 1 &&
@@ -115,6 +146,7 @@ export function propsForChunk(cx: number, cy: number): TdProp[] {
   const inChunk = (p: TdProp) => p.x >= bx * 16 && p.x < (bx + CHUNK) * 16 && p.y >= by * 16 && p.y < (by + CHUNK) * 16;
   for (const p of allTownProps()) if (inChunk(p)) out.push(p);
   for (const d of dungeonDoors()) if (inChunk(d)) out.push(d);
+  for (const p of townPortals()) if (inChunk(p)) out.push(p);
   for (let ty = by; ty < by + CHUNK; ty++) for (let tx = bx; tx < bx + CHUNK; tx++) {
     const t = getTile(tx, ty);
     if (t.collision || t.biome === 'water') continue;
