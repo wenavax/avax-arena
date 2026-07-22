@@ -22,6 +22,33 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
     let cancelled = false;
     (async () => {
       const Phaser = await import('phaser');
+      // ── LIVE mod: GERÇEK kaydı singleton'a yükle + NFT sync (CharacterSelect paritesi).
+      // Bu olmadan ilk savaş default Lv.1 hero'yu frostbite_save üstüne yazar (pre-switch
+      // review CRITICAL bulgusu — Faz 3 sandbox Critical'inin canlı-mod eşleniği).
+      if (mode === 'live') {
+        const { PlayerState } = await import('../PlayerState');
+        const st = PlayerState.get();
+        const loaded = st.load();
+        const w = window as unknown as {
+          __frostbiteWallet?: { authenticated?: boolean };
+          __frostbiteHero?: { tokenId: number; element: number; rarity: number; level?: number; xp?: number; atk: number; def: number; spd: number };
+        };
+        const nft = w.__frostbiteWallet?.authenticated ? w.__frostbiteHero : undefined;
+        if (nft) {
+          // CharacterSelectScene continue-yolu NFT sync'i ile birebir (base statlar,
+          // recalcStats notu: atk/def/spd doğrudan atanmaz, base* atanır).
+          st.nftTokenId = nft.tokenId; st.nftElement = nft.element; st.nftRarity = nft.rarity;
+          st.useNftSprite = true;
+          st.baseAtk = nft.atk; st.baseDef = nft.def; st.baseSpd = nft.spd;
+          st.nftStatLevel = nft.level || 1;
+          st.level = Math.max(st.level, nft.level || 1);
+          st.xp = nft.xp || 0;
+          const rarityBonus = [0, 2, 5, 10, 20][nft.rarity] || 0;
+          st.maxHp = 120 + 15 * (st.level - 1) + rarityBonus;
+          if (!loaded) { st.hp = st.maxHp; st.gold = 50; } // kayıtsız NFT sahibi: taze başlangıç
+          else st.hp = Math.min(st.hp, st.maxHp);
+        }
+      }
       const { TdWorldScene } = await import('./TdWorldScene');
       const { TdBattleScene } = await import('./TdBattleScene');
       const { TdDungeonScene } = await import('./TdDungeonScene');
