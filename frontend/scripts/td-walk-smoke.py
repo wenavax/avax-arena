@@ -12,7 +12,7 @@ def check(name, cond):
 with sync_playwright() as p:
     b = p.chromium.launch(headless=True)
     pg = b.new_page(viewport={'width': 1200, 'height': 800})
-    pg.goto(URL, wait_until='networkidle')
+    pg.goto(URL, wait_until='domcontentloaded')  # networkidle dev-HMR'da flake yapiyor
     pg.wait_for_function('() => !!window.__tdGame', timeout=30000)
     time.sleep(2.5)
     S = "() => { const s = window.__tdGame.scene.keys.TdWorld; return %s; }"
