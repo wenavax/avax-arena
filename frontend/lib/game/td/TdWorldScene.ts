@@ -2,11 +2,11 @@
 // ─── Açık dünya sahnesi: chunk streaming + chibi kahraman ───
 // Client-only (Phaser sahnesi). Su animasyonu yalnız su içeren chunk'ları tazeler.
 import * as Phaser from 'phaser';
-import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, computeTdView, depth, hash2d } from './tdCore';
+import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, computeTdView, userTdZoom, setUserTdZoom, depth, hash2d } from './tdCore';
 import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
-import { propsForChunk, type TdProp } from './worldProps';
+import { propsForChunk, dungeonDoors, TOWN_ORIGIN, type TdProp } from './worldProps';
 import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump, mkFarmPlot } from './sprites/props';
 import { atmoForRegion } from './atmosphere';
 import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
@@ -116,6 +116,10 @@ export class TdWorldScene extends Phaser.Scene {
   private fogRect!: Phaser.GameObjects.Rectangle;
   private minimapImg?: Phaser.GameObjects.Image;
   private minimapDot?: Phaser.GameObjects.Rectangle;
+  private minimapBorder?: Phaser.GameObjects.Rectangle;
+  // Faz 5.5: yerel-pencere minimap (tür standardı) — M döngüsü local→world→off
+  private minimapMode: 'off' | 'local' | 'world' = 'off';
+  private redHintUntil = 0; // gatherHint'in kırmızı-uyarı/zoom-toast kilidi (istem yazmasın)
   // Faz 5.2: konumlar layoutHud()'da (kamera-zoom dönüşümü); uiZoom = aktif tam-sayı k
   private minimapX = 0; private minimapY = 4;
   uiZoom = 3; // MP remote label / prop label setResolution'ı da okur
@@ -268,6 +272,9 @@ export class TdWorldScene extends Phaser.Scene {
     kb.on('keydown-SPACE', () => this.onSpaceGather());
     // Faz 5.4: B çanta; mobil 🎒/🗺 butonları window event'iyle gelir (TdPhaserGame)
     kb.on('keydown-B', () => this.toggleBag());
+    // Faz 5.5: [-]/[+] kamera mesafesi (PLUS = ana sıra '=' tuşu, Phaser keycode 187)
+    kb.on('keydown-MINUS', () => this.nudgeZoom(-1));
+    kb.on('keydown-PLUS', () => this.nudgeZoom(1));
     const onUiBag = () => this.toggleBag();
     const onUiMap = () => this.toggleMinimap();
     window.addEventListener('td-ui-bag', onUiBag);
@@ -279,7 +286,7 @@ export class TdWorldScene extends Phaser.Scene {
     // Faz 5.4: çanta paneli (kapalı başlar; içerik her açılışta tazelenir) + tuş ipucu
     this.bagPanel = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9 + 2).setVisible(false);
     const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true;
-    this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [B] bag · [M] map', {
+    this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [B] bag · [M] map · [-/+] zoom', {
       fontSize: '8px', fontFamily: 'monospace', color: '#cfe3f2',
     }).setOrigin(1, 1).setScrollFactor(0).setDepth(1e9).setAlpha(0.55).setVisible(!isTouch);
 
@@ -296,11 +303,24 @@ export class TdWorldScene extends Phaser.Scene {
     this.events.once('destroy', () => this.cleanupMultiplayerTd());
   }
 
-  /** Faz 5.2: viewport'tan tam-sayı kamera zoom'u seç + HUD'u yeniden yerleştir (create + RESIZE). */
+  /**
+   * Faz 5.2/5.5: kamera zoom'u — kullanıcı tercihi ([-]/[+], kalıcı) varsa o,
+   * yoksa computeTdView default'u (masaüstü 3 = Larvy paritesi, dar ekran 2).
+   */
   private applyZoom(): void {
-    this.uiZoom = computeTdView(this.scale.width, this.scale.height).k;
+    this.uiZoom = userTdZoom() ?? computeTdView(this.scale.width, this.scale.height).k;
     this.cameras.main.setZoom(this.uiZoom);
     this.layoutHud();
+  }
+
+  /** Faz 5.5: [-]/[+] zoom ayarı (2..5, localStorage'a kalıcı; zindan girişte devralır). */
+  private nudgeZoom(d: number): void {
+    const next = Phaser.Math.Clamp(this.uiZoom + d, 2, 5);
+    if (next === this.uiZoom) return;
+    setUserTdZoom(next);
+    this.applyZoom();
+    this.gatherHint.setText(`🔍 zoom ${next}×`).setColor('#9fe8ff').setVisible(true);
+    this.redHintUntil = this.time.now + 900;
   }
 
   /**
@@ -323,7 +343,7 @@ export class TdWorldScene extends Phaser.Scene {
     this.gatherHint.setPosition(x0 + w / 2, y0 + h - 26);
     this.tintRect.setPosition(x0 + w / 2, y0 + h / 2).setSize(w, h);
     this.fogRect.setPosition(x0 + w / 2, y0 + h - 24).setSize(w, 48);
-    this.minimapImg?.setPosition(this.minimapX, this.minimapY);
+    this.updateMinimap();
     this.perfText?.setPosition(x0 + 4, y0 + 4);
     const texts = [this.hintText, this.gatherHint, this.energyText, this.fireBoostText, this.goldText,
       this.levelText, this.hpText];
@@ -424,28 +444,60 @@ export class TdWorldScene extends Phaser.Scene {
     this.bagPanel.setVisible(true);
   }
 
-  /** Minimap: ilk çağrıda 96×96 canvas üretir (4 tile/px, biyom üst rengi), sonrakiler visible toggle. */
+  /**
+   * Faz 5.5 minimap (araştırma: Larvy'de minimap yok; RPG tür standardı köşede
+   * YEREL-alan penceresi + tam harita toggle): M döngüsü local → world → off.
+   * local: 384×384 tam-res haritadan hero-merkezli 96×96 crop (1px = 1 tile) —
+   * nokta artık gerçekten hareket eder; world: tüm harita 0.25× (eski davranış).
+   * Taban canvas'a kasaba (altın) + zindan kapıları (kızıl) işaretleri basılır.
+   */
   private toggleMinimap(): void {
-    if (this.minimapImg) {
-      const vis = !this.minimapImg.visible;
-      this.minimapImg.setVisible(vis);
-      this.minimapDot?.setVisible(vis);
-      return;
+    this.minimapMode = this.minimapMode === 'off' ? 'local' : this.minimapMode === 'local' ? 'world' : 'off';
+    if (!this.minimapImg) {
+      const c = document.createElement('canvas');
+      c.width = MAP_W; c.height = MAP_H;
+      const g = c.getContext('2d')!;
+      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+        g.fillStyle = biomeTopColor(getTile(x, y).biome);
+        g.fillRect(x, y, 1, 1);
+      }
+      g.fillStyle = '#e8b23f';                                   // kasaba işareti
+      g.fillRect(TOWN_ORIGIN.tx - 3, TOWN_ORIGIN.ty - 3, 6, 6);
+      g.fillStyle = '#c23b3b';                                   // zindan kapıları
+      for (const d of dungeonDoors()) g.fillRect(Math.floor(d.x / TILE) - 1, Math.floor(d.y / TILE) - 1, 3, 3);
+      this.textures.addCanvas('td-minimap-full', c);
+      this.minimapBorder = this.add.rectangle(0, 0, 100, 100, 0x0d1319, 0.35)
+        .setOrigin(0, 0).setScrollFactor(0).setDepth(1e9 - 1).setStrokeStyle(1, 0x3a4e63, 1);
+      this.minimapImg = this.add.image(0, 0, 'td-minimap-full')
+        .setOrigin(0, 0).setScrollFactor(0).setDepth(1e9).setAlpha(0.92);
+      this.minimapDot = this.add.rectangle(0, 0, 3, 3, 0xff3b3b)
+        .setOrigin(0.5).setScrollFactor(0).setDepth(1e9 + 1);
     }
-    const SIZE = 96, STEP = Math.floor(MAP_W / SIZE);
-    const c = document.createElement('canvas');
-    c.width = SIZE; c.height = SIZE;
-    const g = c.getContext('2d')!;
-    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) {
-      const t = getTile(x * STEP, y * STEP);
-      g.fillStyle = biomeTopColor(t.biome);
-      g.fillRect(x, y, 1, 1);
+    const on = this.minimapMode !== 'off';
+    this.minimapImg.setVisible(on);
+    this.minimapDot?.setVisible(on);
+    this.minimapBorder?.setVisible(on);
+    if (this.minimapMode === 'world') { this.minimapImg.setCrop(); this.minimapImg.setScale(96 / MAP_W); }
+    else this.minimapImg.setScale(1);
+    this.updateMinimap(); // mod değişiminde konum/crop'u hemen bas (update beklemeden)
+  }
+
+  /** Minimap per-frame konum/crop/nokta — layoutHud'un minimapX/Y slotuna sabitlenir. */
+  private updateMinimap(): void {
+    if (!this.minimapImg || this.minimapMode === 'off') return;
+    const htx = this.heroPos.x / TILE, hty = this.heroPos.y / TILE;
+    this.minimapBorder?.setPosition(this.minimapX - 2, this.minimapY - 2);
+    if (this.minimapMode === 'local') {
+      const cx = Phaser.Math.Clamp(Math.floor(htx) - 48, 0, MAP_W - 96);
+      const cy = Phaser.Math.Clamp(Math.floor(hty) - 48, 0, MAP_H - 96);
+      this.minimapImg.setCrop(cx, cy, 96, 96);
+      // crop görüntüyü kendi frame konumunda bırakır — pencereyi slota kaydır
+      this.minimapImg.setPosition(this.minimapX - cx, this.minimapY - cy);
+      this.minimapDot?.setPosition(this.minimapX + (htx - cx), this.minimapY + (hty - cy));
+    } else {
+      this.minimapImg.setPosition(this.minimapX, this.minimapY);
+      this.minimapDot?.setPosition(this.minimapX + htx * 96 / MAP_W, this.minimapY + hty * 96 / MAP_H);
     }
-    this.textures.addCanvas('td-minimap', c);
-    this.minimapImg = this.add.image(this.minimapX, this.minimapY, 'td-minimap')
-      .setOrigin(0, 0).setScrollFactor(0).setDepth(1e9).setAlpha(0.92);
-    this.minimapDot = this.add.rectangle(this.minimapX, this.minimapY, 2, 2, 0xff3b3b)
-      .setOrigin(0, 0).setScrollFactor(0).setDepth(1e9 + 1);
   }
 
   private canMove(nx: number, ny: number): boolean {
@@ -741,12 +793,34 @@ export class TdWorldScene extends Phaser.Scene {
           : `E — enter ${near.data!.name}`)
         : '').setVisible(!!near);
     }
+    // Faz 5.5: SPACE affordance istemi — yakın toplanabilir varsa ne yapılacağını söyle.
+    // Tarama hero chunk'ı ±1 ile sınırlı (cila notu: tam-harita per-frame loop'undan kaçın);
+    // kırmızı uyarı/zoom-toast kilidi (redHintUntil) ve balıkçılık istemi ezilmez.
+    if (!this.fishing && this.time.now > this.redHintUntil) {
+      let ng: Gatherable | null = null; let ngd = 26;
+      const hcx = Math.floor(this.heroPos.x / (CHUNK * TILE)), hcy = Math.floor(this.heroPos.y / (CHUNK * TILE));
+      for (let dy2 = -1; dy2 <= 1; dy2++) for (let dx2 = -1; dx2 <= 1; dx2++) {
+        const gset = this.chunkGatherables.get(`${hcx + dx2},${hcy + dy2}`);
+        if (!gset) continue;
+        for (const gv of gset.values()) {
+          if (!gv.alive) continue;
+          const d = Math.hypot(this.heroPos.x - gv.x, this.heroPos.y - gv.y);
+          if (d < ngd) { ngd = d; ng = gv; }
+        }
+      }
+      if (ng) {
+        this.gatherHint.setText(ng.kind === 'tree' ? '[SPACE] chop 🪵' : ng.kind === 'rock' ? '[SPACE] mine ⛏️' : '[SPACE] pick 🍒')
+          .setColor('#cfe3f2').setVisible(true);
+      } else if (this.gatherHint.visible) {
+        this.gatherHint.setVisible(false);
+      }
+    }
     // atmosfer lerp
     const atmo = atmoForRegion(regionAt(Math.floor(this.heroPos.x / 16), Math.floor(this.heroPos.y / 16)).key);
     this.tintRect.fillColor = atmo.tint; this.tintRect.fillAlpha += (atmo.tintAlpha - this.tintRect.fillAlpha) * 0.05;
     this.fogRect.fillColor = atmo.fogColor; this.fogRect.fillAlpha += (atmo.fogAlpha - this.fogRect.fillAlpha) * 0.05;
-    // minimap hero noktası
-    if (this.minimapDot?.visible) this.minimapDot.setPosition(this.minimapX + this.heroPos.x / (MAP_W * TILE) * 96, this.minimapY + this.heroPos.y / (MAP_H * TILE) * 96);
+    // minimap: mod-farkındalıklı konum/crop/nokta (Faz 5.5)
+    this.updateMinimap();
 
     // ── Faz 4: kamp ateşi yakınlığı + enerji tick + HUD ──
     let nearFire = false;
@@ -826,10 +900,13 @@ export class TdWorldScene extends Phaser.Scene {
     this.tweens.add({ targets: t, y: y - 20, alpha: 0, duration: 900, onComplete: () => t.destroy() });
   }
 
-  /** Geçici kırmızı ipucu (ör. 'Not enough energy ⚡'), 1.2sn sonra gatherHint temizlenir. */
+  /**
+   * Geçici kırmızı ipucu (ör. 'Not enough energy ⚡') — 1.2sn kilit; süre dolunca
+   * update()'teki yakınlık istemi gatherHint'i devralır/gizler (Faz 5.5).
+   */
   private showRedHint(msg: string): void {
     this.gatherHint.setText(msg).setColor('#ff5c5c').setVisible(true);
-    this.time.delayedCall(1200, () => { if (this.gatherHint.text === msg) this.gatherHint.setVisible(false); });
+    this.redHintUntil = this.time.now + 1200;
   }
 
   /**
@@ -845,7 +922,8 @@ export class TdWorldScene extends Phaser.Scene {
     if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
     if (this.fishing) return;
 
-    let nearest: Gatherable | null = null; let nd = 22;
+    // Faz 5.5: menzil 22→26 (kaya solid'i yandan yaklaşmada 18px'e bırakıyor — pay)
+    let nearest: Gatherable | null = null; let nd = 26;
     for (const g of this.chunkGatherables.values()) for (const gv of g.values()) {
       if (!gv.alive) continue;
       const d = Math.hypot(this.heroPos.x - gv.x, this.heroPos.y - gv.y);
@@ -888,8 +966,10 @@ export class TdWorldScene extends Phaser.Scene {
       return;
     }
 
-    // toplanabilir yok: kıyı kontrolü → balık tutma
+    // toplanabilir yok: kıyı kontrolü → balık tutma; o da yoksa SESSİZ KALMA (Faz 5.5 —
+    // "madenleri kazamıyoruz" geri bildirimi: menzil dışı SPACE hiçbir şey söylemiyordu)
     if (this.isNearWater()) this.startFishing();
+    else this.showRedHint('nothing in reach — stand next to a tree/rock 🌲🪨');
   }
 
   /** 4 komşu tile'dan biri su mu? (kıyı testi) */

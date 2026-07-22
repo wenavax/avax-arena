@@ -22,15 +22,15 @@ eq('hash2d-salt-det', hash2d(12, 34, 7) === hash2d(12, 34, 7), true);
 eq('depth-x-tiebreak', depth(3, 100) !== depth(7, 100), true);
 eq('depth-y-dominates', depth(9, 101) > depth(0, 100), true);
 
-// ── Faz 5.1: computeTdView (adaptif tam-doldurma) ──
-eq('view-1080p', computeTdView(1920, 1080), { k: 4, w: 480, h: 270 });     // FIT oranı 4.21 → k=4
-eq('view-768p-laptop', computeTdView(1366, 768), { k: 3, w: 456, h: 256 }); // min oran 3.0
-eq('view-1440p', computeTdView(2560, 1440), { k: 6, w: 427, h: 240 });      // 5.625 → k=6
-eq('view-phone-portrait', computeTdView(390, 844), { k: 2, w: 195, h: 422 }); // oran ~1 → alt kıskaç 2
-eq('view-4k-cap', computeTdView(7680, 4320), { k: 8, w: 960, h: 540 });     // üst kıskaç 8
-eq('view-preview-box', computeTdView(1024, 683), { k: 3, w: 342, h: 228 }); // max-w-5xl 3:2 kutusu
+// ── Faz 5.5: computeTdView — Larvy paritesi sabit zoom (masaüstü 3 / dar ekran 2) ──
+eq('view-1080p', computeTdView(1920, 1080), { k: 3, w: 640, h: 360 });      // Larvy CAM_ZOOM=3, 48px/tile
+eq('view-768p-laptop', computeTdView(1366, 768), { k: 3, w: 456, h: 256 });
+eq('view-1440p', computeTdView(2560, 1440), { k: 3, w: 854, h: 480 });
+eq('view-phone-portrait', computeTdView(390, 844), { k: 2, w: 195, h: 422 }); // kısa kenar <640 → 2
+eq('view-phone-landscape', computeTdView(844, 390), { k: 2, w: 422, h: 195 });
+eq('view-preview-box', computeTdView(1024, 683), { k: 3, w: 342, h: 228 });
 eq('view-zero-fallback', computeTdView(0, 0), { k: 1, w: VIEW_W, h: VIEW_H });
-// mantıksal boyut × k viewport'u DOLDURMALI (bant yok) — tüm örneklerde w*k ≥ vw, h*k ≥ vh
+// mantıksal boyut × k viewport'u DOLDURMALI — tüm örneklerde w*k ≥ vw, h*k ≥ vh
 for (const [vw, vh] of [[1920, 1080], [1366, 768], [2560, 1440], [390, 844], [1024, 683]] as const) {
   const v = computeTdView(vw, vh);
   eq(`view-fills-${vw}x${vh}`, v.w * v.k >= vw && v.h * v.k >= vh, true);

@@ -10,18 +10,30 @@ export const MAP_W = 384;        // dünya: 384×384 tile (spec §2)
 export const MAP_H = 384;
 
 /**
- * Faz 5.1 (Çözünürlük Paketi, seçenek A): Larvy-usulü adaptif tam-doldurma.
- * Viewport'tan TAM-SAYI zoom k seçer (Scale.FIT'in vereceği orana en yakın tam sayı,
- * [2,8] aralığına kıstırılmış) ve mantıksal oyun boyutunu ceil(viewport/k) döndürür.
- * Canvas CSS'te k× büyütülür (Phaser Scale.NONE + zoom) → bant yok, pikseller hep
- * keskin, görüş alanı ekrana göre büyür. VIEW_W/H artık yalnız zoom referansı
- * (Larvy ölçümü) + parent boyutu okunamadığındaki fallback.
+ * Faz 5.5 (kamera-mesafesi araştırması): Larvy sabit CAM_ZOOM=3 kullanıyor —
+ * 48 CSS px/tile; CSS pikseli yoğunluk-normalize olduğundan bu her masaüstünde
+ * aynı FİZİKSEL boydur (adaptif oran türetme 5.1-5.2'de gereksiz yakınlık yaratti:
+ * 1080p'de k=4 → 64px/tile, Stardew-yakınlığı; kullanıcı "yakın" diye işaretledi).
+ * Karar: masaüstü SABİT 3 (Larvy paritesi), dar viewport (<640px kısa kenar,
+ * telefon) 2. Oyuncu tercihi [-]/[+] ile userTdZoom (2..5, kalıcı) — Stardew'un
+ * zoom-slider çözümünün klavye hali. w/h = ceil(viewport/k) (test/teşhis değeri;
+ * Scale.RESIZE'da runtime boyutu ScaleManager'dan gelir).
  */
 export function computeTdView(pw: number, ph: number): { k: number; w: number; h: number } {
   if (!(pw > 0) || !(ph > 0)) return { k: 1, w: VIEW_W, h: VIEW_H };
-  const s = Math.min(pw / VIEW_W, ph / VIEW_H);
-  const k = Math.max(2, Math.min(8, Math.round(s)));
+  const k = Math.min(pw, ph) < 640 ? 2 : 3;
   return { k, w: Math.ceil(pw / k), h: Math.ceil(ph / k) };
+}
+
+/** Kullanıcı zoom tercihi (2..5) — yoksa/geçersizse null. SSR/private-mode güvenli. */
+export function userTdZoom(): number | null {
+  try {
+    const v = parseInt(localStorage.getItem('frostbite_td_zoom') || '', 10);
+    return v >= 2 && v <= 5 ? v : null;
+  } catch { return null; }
+}
+export function setUserTdZoom(k: number): void {
+  try { localStorage.setItem('frostbite_td_zoom', String(k)); } catch { /* private mode */ }
 }
 
 export function toScreen(tx: number, ty: number): { x: number; y: number } {

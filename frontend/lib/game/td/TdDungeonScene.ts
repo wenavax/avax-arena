@@ -4,7 +4,7 @@
 // (chunk streaming gerekmez — zindan küçük). Kapı akışı: TdWorldScene pause+launch,
 // bu sahne stop+resume (battle akışıyla simetrik).
 import * as Phaser from 'phaser';
-import { TILE, computeTdView, depth } from './tdCore';
+import { TILE, computeTdView, userTdZoom, depth } from './tdCore';
 import { REGIONS } from './worldMap';
 import { biomeTopColor } from './tiles';
 import { atmoForRegion } from './atmosphere';
@@ -167,9 +167,9 @@ export class TdDungeonScene extends Phaser.Scene {
     }
   }
 
-  /** Faz 5.2: viewport'tan tam-sayı kamera zoom'u + HUD yerleşimi (create + RESIZE). */
+  /** Faz 5.2/5.5: kamera zoom'u — kullanıcı tercihi ([-]/[+], world'de ayarlanır) veya default. */
   private applyZoom(): void {
-    this.uiZoom = computeTdView(this.scale.width, this.scale.height).k;
+    this.uiZoom = userTdZoom() ?? computeTdView(this.scale.width, this.scale.height).k;
     this.cameras.main.setZoom(this.uiZoom);
     this.layoutHud();
   }
