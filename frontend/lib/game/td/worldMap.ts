@@ -66,27 +66,38 @@ export function regionAt(tx: number, ty: number): Region {
 // Kasaba çekirdeği (≤16 tile) yol almaz — meydan zemini bozulmasın.
 const ROAD_Y = 192;
 interface RoadSeg { x0: number; x1: number; y0: number; y1: number }
-const ROADS: RoadSeg[] = (() => {
+// Faz 5.8: yatay ana cadde ile dikey sapaklar AYRIŞTI — cadde köyün İÇİNDEN geçer
+// (kuzey bina sırasının kapı önü), dikey sapaklar köy çekirdeğinde (≤16 tile) kesilir.
+const ROADS_H: RoadSeg[] = (() => {
   const segs: RoadSeg[] = [];
   for (const rg of REGIONS) {
     if (rg.key === 'town') continue;
     const [hx0, hx1] = rg.cx < 192 ? [rg.cx, 192] : [192, rg.cx];
-    segs.push({ x0: hx0, x1: hx1, y0: ROAD_Y - 1, y1: ROAD_Y });          // yatay bacak
-    const [vy0, vy1] = rg.cy < ROAD_Y ? [rg.cy, ROAD_Y] : [ROAD_Y, rg.cy];
-    segs.push({ x0: rg.cx - 1, x1: rg.cx, y0: vy0, y1: vy1 });            // dikey sapak
+    segs.push({ x0: hx0, x1: hx1, y0: ROAD_Y - 1, y1: ROAD_Y });
   }
   return segs;
 })();
-function onRoad(tx: number, ty: number): boolean {
-  for (const s of ROADS) if (tx >= s.x0 && tx <= s.x1 && ty >= s.y0 && ty <= s.y1) return true;
+const ROADS_V: RoadSeg[] = (() => {
+  const segs: RoadSeg[] = [];
+  for (const rg of REGIONS) {
+    if (rg.key === 'town') continue;
+    const [vy0, vy1] = rg.cy < ROAD_Y ? [rg.cy, ROAD_Y] : [ROAD_Y, rg.cy];
+    segs.push({ x0: rg.cx - 1, x1: rg.cx, y0: vy0, y1: vy1 });
+  }
+  return segs;
+})();
+function inSegs(segs: RoadSeg[], tx: number, ty: number): boolean {
+  for (const s of segs) if (tx >= s.x0 && tx <= s.x1 && ty >= s.y0 && ty <= s.y1) return true;
   return false;
 }
 
 export function getTile(tx: number, ty: number): TdTile {
   // dünya kenarı: 2-tile collision bandı
   if (tx < 2 || ty < 2 || tx >= MAP_W - 2 || ty >= MAP_H - 2) return { biome: 'forest', collision: true };
-  // yol — göllerden ÖNCE (su üstünde köprü); kasaba çekirdeği hariç
-  if (onRoad(tx, ty) && Math.hypot(tx - 192, ty - 192) > 16) return { biome: 'path', collision: false };
+  // yol — göllerden ÖNCE (su üstünde köprü); ana cadde köy içinden, sapaklar çekirdek dışı
+  if (inSegs(ROADS_H, tx, ty) || (inSegs(ROADS_V, tx, ty) && Math.hypot(tx - 192, ty - 192) > 16)) {
+    return { biome: 'path', collision: false };
+  }
   // göller
   for (const L of LAKES) {
     if (((tx - L.cx) / L.rx) ** 2 + ((ty - L.cy) / L.ry) ** 2 <= 1) return { biome: 'water', collision: true };

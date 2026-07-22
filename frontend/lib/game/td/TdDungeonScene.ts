@@ -4,7 +4,7 @@
 // (chunk streaming gerekmez — zindan küçük). Kapı akışı: TdWorldScene pause+launch,
 // bu sahne stop+resume (battle akışıyla simetrik).
 import * as Phaser from 'phaser';
-import { TILE, computeTdView, userTdZoom, depth, hash2d } from './tdCore';
+import { TILE, computeTdView, userTdZoom, depth, hash2d, TD_FONT } from './tdCore';
 import { REGIONS } from './worldMap';
 import { biomeTopColor } from './tiles';
 import { atmoForRegion } from './atmosphere';
@@ -137,7 +137,7 @@ export class TdDungeonScene extends Phaser.Scene {
 
     // Faz 5.2: HUD/tint konum+boyutları layoutHud()'da (kamera-zoom dönüşümü)
     this.hintText = this.add.text(0, 0, '', {
-      fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
+      fontSize: '10px', fontFamily: TD_FONT, color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
 
     // atmosfer: bölgenin atmo'su koyulaştırılmış (tintAlpha ×1.6)
@@ -354,7 +354,7 @@ export class TdDungeonScene extends Phaser.Scene {
   /** Yükselen juice metni (TdWorldScene.floatText'in zindan eşleniği). */
   private veinFloat(x: number, y: number, msg: string, color: string): void {
     const t = this.add.text(x, y - 14, msg, {
-      fontSize: '10px', fontFamily: 'monospace', color, backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
+      fontSize: '10px', fontFamily: TD_FONT, color, backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
     }).setOrigin(0.5, 1).setDepth(1e8).setResolution(this.uiZoom);
     this.tweens.add({ targets: t, y: y - 34, alpha: 0, duration: 900, onComplete: () => t.destroy() });
   }

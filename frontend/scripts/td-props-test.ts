@@ -17,12 +17,18 @@ ok('no-props-on-collision', a.every(p => !getTile(Math.floor(p.x / 16), Math.flo
 // kasaba: bina sayısı = HUB_GAMES, hepsi kasaba chunk'ında (192/48=4)
 const town = allTownProps();
 ok('buildings-count', town.filter(p => p.kind === 'building').length === HUB_GAMES.length);
+// Faz 5.8 köy düzeni: TOWN_ORIGIN (192,192) chunk sınırında — kuzey sıra chunk (3,3)/(4,3)'e,
+// batı kanat (3,4)'e taşar; 4 komşu chunk'ın TOPLAMI tüm binaları içermeli (çift sayım yok:
+// inChunk filtresi her binayı tek chunk'a atar).
 const c44 = propsForChunk(4, 4);
-ok('town-buildings-in-chunk', c44.filter(p => p.kind === 'building').length === HUB_GAMES.length);
+const townChunks = [c44, propsForChunk(3, 4), propsForChunk(4, 3), propsForChunk(3, 3)];
+ok('town-buildings-in-chunk', townChunks.reduce((n, c) => n + c.filter(p => p.kind === 'building').length, 0) === HUB_GAMES.length);
 // bina rect'leri içinde otomatik ağaç yok
-const solids = town.filter(p => p.solid).map(p => p.solid!);
+// Faz 5.8: plaza süs ağaçlarının KENDİ gövde solid'leri listeye girmesin (ağaç
+// anchor'ı kendi solid'inin içinde — sahte çakışma); amaç bina/ateş içi ağaç yakalamak.
+const solids = town.filter(p => p.solid && p.kind !== 'tree').map(p => p.solid!);
 const inSolid = (x: number, y: number) => solids.some(s => x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h);
-ok('no-tree-in-buildings', c44.filter(p => p.kind === 'tree').every(p => !inSolid(p.x, p.y)));
+ok('no-tree-in-buildings', townChunks.flat().filter(p => p.kind === 'tree').every(p => !inSolid(p.x, p.y)));
 // zindan kapıları: 14 adet (town/forest/grassE/grassS hariç), koordinatlar bölge merkezinde
 const doors = dungeonDoors();
 ok('doors-14', doors.length === 14);

@@ -2,6 +2,10 @@
 // ─── TD çekirdeği: grid matematiği + determinizm ───
 // İzo core'un aksine projeksiyon birebir: ekran = tile × TILE.
 
+// Faz 5.8: oyunun tek yazı tipi — Comic Sans (kullanıcı isteği; cozy tona uygun).
+// Mac/iOS fallback Chalkboard SE, yoksa Comic Neue/cursive.
+export const TD_FONT = "'Comic Sans MS', 'Chalkboard SE', 'Comic Neue', cursive";
+
 export const TILE = 16;          // px / tile
 export const CHUNK = 48;         // tile / chunk kenarı (48×48 tile = 768×768 px canvas)
 export const VIEW_W = 384;       // referans çözünürlük (24 tile) — Larvy zoom ölçümü (spec §3); gerçek boyut computeTdView

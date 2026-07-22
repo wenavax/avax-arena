@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { TD_FONT } from './tdCore';
 import { GAME_WIDTH, GAME_HEIGHT, SCALE, tileIndex } from '../config';
 import { PlayerState } from '../PlayerState';
 import { MonsterData } from '../Monster';
@@ -360,7 +361,7 @@ export class TdBattleScene extends Phaser.Scene {
 
     // ── Title ──
     this.add.text(W / 2, 24, '⚔  BATTLE  ⚔', {
-      fontSize: '22px', color: '#cc3333', fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontSize: '22px', color: '#cc3333', fontFamily: TD_FONT, fontStyle: 'bold',
       stroke: '#000000', strokeThickness: 3,
     }).setOrigin(0.5);
 
@@ -380,7 +381,7 @@ export class TdBattleScene extends Phaser.Scene {
     // ── VS badge ──
     const vsBg = this.add.circle(W / 2, this.stageY - 10, 24, 0xcc2222, 1).setDepth(11);
     this.add.text(W / 2, this.stageY - 10, 'VS', {
-      fontSize: '16px', color: '#ffffff', fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontSize: '16px', color: '#ffffff', fontFamily: TD_FONT, fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(12);
     this.tweens.add({ targets: vsBg, scaleX: 1.15, scaleY: 1.15, duration: 600, yoyo: true, repeat: -1 });
 
@@ -390,11 +391,11 @@ export class TdBattleScene extends Phaser.Scene {
     const peColor = ELEMENT_COLORS[this.playerElement];
     const meColor = ELEMENT_COLORS[this.monsterElement];
     this.add.text(this.playerBaseX, this.stageY + 50, `${peIcon} ${this.playerElement.toUpperCase()}`, {
-      fontSize: '11px', color: `#${peColor.toString(16).padStart(6, '0')}`, fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontSize: '11px', color: `#${peColor.toString(16).padStart(6, '0')}`, fontFamily: TD_FONT, fontStyle: 'bold',
       stroke: '#000000', strokeThickness: 2,
     }).setOrigin(0.5).setDepth(11);
     this.add.text(this.monsterBaseX, this.stageY + 50, `${meIcon} ${this.monsterElement.toUpperCase()}`, {
-      fontSize: '11px', color: `#${meColor.toString(16).padStart(6, '0')}`, fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontSize: '11px', color: `#${meColor.toString(16).padStart(6, '0')}`, fontFamily: TD_FONT, fontStyle: 'bold',
       stroke: '#000000', strokeThickness: 2,
     }).setOrigin(0.5).setDepth(11);
 
@@ -414,7 +415,7 @@ export class TdBattleScene extends Phaser.Scene {
     pHpHighlight.fillStyle(0x44ffaa, 0.4);
     pHpHighlight.fillRect(W * 0.25 + 20 - 100, panelY + 68 - 7, 200, 1);
     this.playerHpText = this.add.text(W * 0.25 + 20, panelY + 68, '', {
-      fontSize: '10px', color: '#ffffff', fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontSize: '10px', color: '#ffffff', fontFamily: TD_FONT, fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(13);
 
     // Player MP bar
@@ -427,7 +428,7 @@ export class TdBattleScene extends Phaser.Scene {
     pMpHighlight.fillStyle(0x5588ff, 0.4);
     pMpHighlight.fillRect(W * 0.25 + 20 - 100, panelY + 88 - 5, 200, 1);
     this.playerMpText = this.add.text(W * 0.25 + 20, panelY + 88, '', {
-      fontSize: '9px', color: '#aaccff', fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontSize: '9px', color: '#aaccff', fontFamily: TD_FONT, fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(13);
     this.updatePlayerHp();
     this.updatePlayerMp();
@@ -448,13 +449,13 @@ export class TdBattleScene extends Phaser.Scene {
     mHpHighlight.fillStyle(0xff7766, 0.4);
     mHpHighlight.fillRect(W * 0.75 + 20 - 100, panelY + 68 - 7, 200, 1);
     this.monsterHpText = this.add.text(W * 0.75 + 20, panelY + 68, '', {
-      fontSize: '10px', color: '#ffffff', fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontSize: '10px', color: '#ffffff', fontFamily: TD_FONT, fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(13);
     this.updateMonsterHp();
 
     // ── Status effects display ──
     this.statusText = this.add.text(W / 2, H * 0.71, '', {
-      fontSize: '11px', color: '#aaaaaa', fontFamily: 'Arial, sans-serif', align: 'center',
+      fontSize: '11px', color: '#aaaaaa', fontFamily: TD_FONT, align: 'center',
     }).setOrigin(0.5).setDepth(11);
 
     // ── Battle log ──
@@ -464,7 +465,7 @@ export class TdBattleScene extends Phaser.Scene {
     logBg.lineStyle(1, 0x222840, 0.4);
     logBg.strokeRoundedRect(W / 2 - W * 0.4, H * 0.77 - 20, W * 0.8, 40, 8);
     this.logText = this.add.text(W / 2, H * 0.77, 'A wild enemy appears!', {
-      fontSize: '13px', color: '#aabbcc', fontFamily: 'Arial, sans-serif', align: 'center',
+      fontSize: '13px', color: '#aabbcc', fontFamily: TD_FONT, align: 'center',
     }).setOrigin(0.5).setDepth(11);
 
     // ── Turn indicator ──
@@ -476,7 +477,7 @@ export class TdBattleScene extends Phaser.Scene {
       targets: turnBg, alpha: 0.4, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
     });
     this.turnIndicator = this.add.text(W / 2, H * 0.84, '', {
-      fontSize: '13px', color: '#00ccee', fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontSize: '13px', color: '#00ccee', fontFamily: TD_FONT, fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(11);
 
     // ── Music ──
@@ -490,7 +491,7 @@ export class TdBattleScene extends Phaser.Scene {
       const bubbleX = this.monsterBaseX;
       const bubbleY = this.stageY - 80;
       const lineText = this.add.text(bubbleX, bubbleY, `"${mobLine}"`, {
-        fontSize: '11px', color: '#ddccaa', fontFamily: 'Arial, sans-serif', fontStyle: 'italic',
+        fontSize: '11px', color: '#ddccaa', fontFamily: TD_FONT, fontStyle: 'italic',
         wordWrap: { width: 200 }, align: 'center',
         stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5).setDepth(31);
@@ -541,14 +542,14 @@ export class TdBattleScene extends Phaser.Scene {
     nameBg.strokeRoundedRect(x + 8, y + 6, w - 16, 48, 6);
 
     this.add.text(x + 16, y + 10, name, {
-      fontSize: '16px', color: accent, fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontSize: '16px', color: accent, fontFamily: TD_FONT, fontStyle: 'bold',
     }).setDepth(11);
     this.add.text(x + 16, y + 32, stats, {
-      fontSize: '11px', color: '#667788', fontFamily: 'Arial, sans-serif',
+      fontSize: '11px', color: '#667788', fontFamily: TD_FONT,
     }).setDepth(11);
     if (weapon) {
       this.add.text(x + 16, y + 50, `⚔ ${weapon}   🛡 ${armor}`, {
-        fontSize: '10px', color: '#556677', fontFamily: 'Arial, sans-serif',
+        fontSize: '10px', color: '#556677', fontFamily: TD_FONT,
       }).setDepth(11);
     }
   }
@@ -1420,10 +1421,10 @@ export class TdBattleScene extends Phaser.Scene {
       btn.strokeRoundedRect(x - btnW / 2, btnY - btnH / 2, btnW, btnH, 8);
 
       this.add.text(x, btnY - 6, `${a.icon} ${a.label}`, {
-        fontSize: labelFontSize, color: '#ffffff', fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+        fontSize: labelFontSize, color: '#ffffff', fontFamily: TD_FONT, fontStyle: 'bold',
       }).setOrigin(0.5).setDepth(21);
       this.add.text(x, btnY + 12, `[${a.key}]`, {
-        fontSize: keyFontSize, color: 'rgba(255,255,255,0.5)', fontFamily: 'Arial, sans-serif',
+        fontSize: keyFontSize, color: 'rgba(255,255,255,0.5)', fontFamily: TD_FONT,
       }).setOrigin(0.5).setDepth(21);
 
       const hitArea = this.add.rectangle(x, btnY, btnW, btnH).setAlpha(0.001).setDepth(22)
@@ -1480,12 +1481,12 @@ export class TdBattleScene extends Phaser.Scene {
     this.skillMenuContainer.add(pg);
 
     const title = this.add.text(W / 2, panelY + 16, 'SKILLS', {
-      fontSize: '14px', color: '#cc8800', fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontSize: '14px', color: '#cc8800', fontFamily: TD_FONT, fontStyle: 'bold',
     }).setOrigin(0.5);
     this.skillMenuContainer.add(title);
 
     const mpInfo = this.add.text(W / 2, panelY + 34, `MP: ${this.playerMp}/${this.playerMaxMp}`, {
-      fontSize: '11px', color: '#6688cc', fontFamily: 'Arial, sans-serif',
+      fontSize: '11px', color: '#6688cc', fontFamily: TD_FONT,
     }).setOrigin(0.5);
     this.skillMenuContainer.add(mpInfo);
 
@@ -1506,10 +1507,10 @@ export class TdBattleScene extends Phaser.Scene {
       const nameColor = canUse ? '#ffffff' : '#555555';
       const costColor = skill.mpCost === 0 ? '#44aa44' : canUse ? '#6688cc' : '#553333';
       const sName = this.add.text(sx + 8, sy + 8, `${skill.icon} ${skill.name}`, {
-        fontSize: '12px', color: nameColor, fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+        fontSize: '12px', color: nameColor, fontFamily: TD_FONT, fontStyle: 'bold',
       });
       const sDesc = this.add.text(sx + 8, sy + 26, `${skill.description}  [${skill.mpCost} MP]`, {
-        fontSize: '9px', color: costColor, fontFamily: 'Arial, sans-serif',
+        fontSize: '9px', color: costColor, fontFamily: TD_FONT,
       });
       this.skillMenuContainer!.add(sName);
       this.skillMenuContainer!.add(sDesc);
@@ -2653,7 +2654,7 @@ export class TdBattleScene extends Phaser.Scene {
     // "CRITICAL!" text bounces
     const critText = this.add.text(x, y - 60, 'CRITICAL!', {
       fontSize: '26px', color: '#ffdd00',
-      fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontFamily: TD_FONT, fontStyle: 'bold',
       stroke: '#000000', strokeThickness: 5,
     }).setOrigin(0.5).setDepth(35).setScale(0.3);
 
@@ -2752,7 +2753,7 @@ export class TdBattleScene extends Phaser.Scene {
     const size = crit ? '30px' : '22px';
     const txt = this.add.text(x, y, `${crit ? 'CRIT ' : ''}${amount}`, {
       fontSize: size, color: crit ? '#ffdd00' : color,
-      fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontFamily: TD_FONT, fontStyle: 'bold',
       stroke: '#000000', strokeThickness: 4,
     }).setOrigin(0.5).setDepth(30).setScale(0.4).setAngle(crit ? Phaser.Math.Between(-8, 8) : 0);
 
@@ -2777,7 +2778,7 @@ export class TdBattleScene extends Phaser.Scene {
   private showBuff(x: number, y: number, text: string, color = '#44aaff'): void {
     const txt = this.add.text(x, y, text, {
       fontSize: '16px', color,
-      fontFamily: 'Arial, sans-serif', fontStyle: 'bold',
+      fontFamily: TD_FONT, fontStyle: 'bold',
       stroke: '#000000', strokeThickness: 3,
     }).setOrigin(0.5).setDepth(30);
 
@@ -2932,7 +2933,7 @@ export class TdBattleScene extends Phaser.Scene {
     // 4. "DEFEATED" text with dramatic entrance
     this.time.delayedCall(600, () => {
       const defeatText = this.add.text(W / 2, H * 0.35, 'DEFEATED', {
-        fontSize: '36px', color: '#cc2222', fontFamily: '"Press Start 2P", Arial, sans-serif',
+        fontSize: '36px', color: '#cc2222', fontFamily: TD_FONT,
         fontStyle: 'bold', stroke: '#000000', strokeThickness: 6,
       }).setOrigin(0.5).setDepth(60).setScale(0);
 
@@ -2946,7 +2947,7 @@ export class TdBattleScene extends Phaser.Scene {
       // 5. "You retreat to town" subtitle
       this.time.delayedCall(500, () => {
         const subText = this.add.text(W / 2, H * 0.45, 'Retreating to town...  -10% Gold', {
-          fontSize: '14px', color: '#884444', fontFamily: 'Arial, sans-serif',
+          fontSize: '14px', color: '#884444', fontFamily: TD_FONT,
           stroke: '#000000', strokeThickness: 3,
         }).setOrigin(0.5).setDepth(60).setAlpha(0);
 

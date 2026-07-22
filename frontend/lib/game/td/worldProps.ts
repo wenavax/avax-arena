@@ -4,7 +4,7 @@
 // salt sözlüğü: 3=yerleşim(ağaç), 4=varyant, 5=kaya, 6=çalı, 11=portal (bkz tdCore.hash2d).
 import { CHUNK, MAP_W, MAP_H, hash2d } from './tdCore';
 import { getTile, regionAt, REGIONS, TOWN_SPAWN } from './worldMap';
-import { HUB_GAMES, buildingRect } from '../hub/hubGames';
+import { HUB_GAMES } from '../hub/hubGames';
 
 export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot' | 'portal';
 export interface TdProp {
@@ -46,26 +46,41 @@ export function allFarmPlots(): TdProp[] { return FARM_CACHE ?? (FARM_CACHE = fa
 export const TOWN_ORIGIN = { tx: 192, ty: 192 };
 
 // biome → ağaç yoğunluğu (‰, tile başına)
-// Faz 5.6: orman yoğunluğu artırıldı (kullanıcı isteği — "ormanlar daha sık")
+// Faz 5.6: orman yoğunluğu artırıldı; Faz 5.8: kasaba İÇİ rastgele yerleşim SIFIR
+// (düzenli köy — süs ağaçları townProps'ta sabit ve simetrik)
 const TREE_DENS: Record<string, number> = {
-  forest: 160, grass: 38, town: 6, swamp: 70, frostwastes: 45, sanctum: 50,
+  forest: 160, grass: 38, town: 0, swamp: 70, frostwastes: 45, sanctum: 50,
   necropolis: 24, ruins: 16, mines: 10, citadel: 14, volcano: 6, crypt: 16,
   abyss: 8, forge: 6, demongate: 6, voidrealm: 5, eternal: 8, water: 0, path: 0,
 };
 const ROCK_DENS: Record<string, number> = {
   mines: 30, volcano: 26, forge: 20, ruins: 18, frostwastes: 14, abyss: 14,
-  town: 2, water: 0, path: 0,
+  town: 0, water: 0, path: 0,
 };
-const BUSH_DENS: Record<string, number> = { forest: 14, grass: 12, town: 6, swamp: 10, water: 0, path: 0 };
+const BUSH_DENS: Record<string, number> = { forest: 14, grass: 12, town: 2, swamp: 10, water: 0, path: 0 };
+
+// ── Faz 5.8: DÜZENLİ KÖY — HUB_GAMES liste/kimlik tek kaynak kalır (id/isim/url/accent),
+// GEOMETRİ TD'ye ait: ana caddenin (ROAD_Y=192, rel ty -1..0) kuzeyinde 5 bina sırası
+// (kapılar caddeye bakar), merkez plaza (kamp ateşi + spawn), güneyinde 4 bina sırası,
+// altta tarla. hubGames.ts'teki izo koordinatları KULLANILMAZ (izo/testleri bozmamak
+// için dosyasına dokunulmadı; izo silinince orası da sadeleşir).
+// Kapı = bina alt-orta tile'ı (TOWN_ORIGIN'e göre rel).
+const TD_TOWN_DOORS: Record<string, { tx: number; ty: number }> = {
+  arena: { tx: -12, ty: -2 }, cardgame: { tx: -6, ty: -2 }, swap: { tx: 0, ty: -2 },
+  marketplace: { tx: 6, ty: -2 }, nftscore: { tx: 12, ty: -2 },
+  battleroyale: { tx: -9, ty: 10 }, expeditions: { tx: -3, ty: 10 },
+  adventures: { tx: 3, ty: 10 }, launchpad: { tx: 9, ty: 10 },
+};
 
 function townProps(): TdProp[] {
   const out: TdProp[] = [];
   for (const g of HUB_GAMES) {
-    const r = buildingRect(g);
-    const doorTx = TOWN_ORIGIN.tx + g.door.tx, doorTy = TOWN_ORIGIN.ty + g.door.ty;
+    const d = TD_TOWN_DOORS[g.id] ?? g.door;
+    const doorTx = TOWN_ORIGIN.tx + d.tx, doorTy = TOWN_ORIGIN.ty + d.ty;
+    const c0 = doorTx - Math.floor(g.size.w / 2), r0 = doorTy - g.size.h + 1;
     out.push({
       kind: 'building', x: doorTx * 16 + 8, y: doorTy * 16 + 15,
-      solid: { x: (TOWN_ORIGIN.tx + r.c0) * 16, y: (TOWN_ORIGIN.ty + r.r0) * 16, w: g.size.w * 16, h: g.size.h * 16 - 6 },
+      solid: { x: c0 * 16, y: r0 * 16, w: g.size.w * 16, h: g.size.h * 16 - 6 },
       data: { id: g.id, name: g.name, icon: g.icon, url: g.url, accent: g.accent, wTiles: g.size.w, hTiles: g.size.h },
     });
   }
@@ -74,6 +89,15 @@ function townProps(): TdProp[] {
     kind: 'campfire', x: TOWN_SPAWN.tx * 16 + 8, y: (TOWN_SPAWN.ty - 3) * 16 + 10,
     solid: { x: TOWN_SPAWN.tx * 16 + 2, y: (TOWN_SPAWN.ty - 3) * 16 + 4, w: 12, h: 6 },
   });
+  // plaza köşelerine 4 simetrik süs ağacı (kasaba içi rastgele ağaç artık YOK — düzen);
+  // ±5: güney sıra binaları (rel tx -4..4 bandında) ile çakışmasın
+  for (const [rtx, rty] of [[-5, 2], [5, 2], [-5, 8], [5, 8]] as const) {
+    const ttx = TOWN_ORIGIN.tx + rtx, tty = TOWN_ORIGIN.ty + rty;
+    out.push({
+      kind: 'tree', x: ttx * 16 + 8, y: tty * 16 + 14, v: 0,
+      solid: { x: ttx * 16 + 3, y: tty * 16 + 10, w: 10, h: 6 },
+    });
+  }
   out.push(...allFarmPlots());
   return out;
 }

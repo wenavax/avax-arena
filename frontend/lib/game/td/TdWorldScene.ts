@@ -2,7 +2,7 @@
 // ─── Açık dünya sahnesi: chunk streaming + chibi kahraman ───
 // Client-only (Phaser sahnesi). Su animasyonu yalnız su içeren chunk'ları tazeler.
 import * as Phaser from 'phaser';
-import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, computeTdView, userTdZoom, setUserTdZoom, depth, hash2d } from './tdCore';
+import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, computeTdView, userTdZoom, setUserTdZoom, depth, hash2d, TD_FONT } from './tdCore';
 import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
@@ -67,7 +67,7 @@ class TdRemotePlayer {
     if (!scene.textures.exists(key)) scene.textures.addCanvas(key, chibiHumanoid(0, 0, palette));
     this.img = scene.add.image(x, y, key).setOrigin(0.5, (CHIBI_H - 3) / CHIBI_H).setDepth(depth(x, y));
     this.label = scene.add.text(x, y - CHIBI_H - 2, name || 'traveler', {
-      fontSize: '8px', fontFamily: 'monospace', color: '#aaddff',
+      fontSize: '8px', fontFamily: TD_FONT, color: '#aaddff',
       backgroundColor: '#141c24cc', padding: { x: 2, y: 1 },
     }).setOrigin(0.5, 1).setDepth(depth(x, y) + 1)
       .setResolution((scene as TdWorldScene).uiZoom); // Faz 5.2: kamera zoom altında net metin
@@ -228,7 +228,7 @@ export class TdWorldScene extends Phaser.Scene {
 
     // etkileşim ipucu (alt-orta, HUD) — konumlar layoutHud()'da (adaptif çözünürlük)
     this.hintText = this.add.text(0, 0, '', {
-      fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
+      fontSize: '10px', fontFamily: TD_FONT, color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
 
     // ── Faz 5.4: sol-üst STAT PANELİ (izo HUDScene paritesi, cozy) — tek container:
@@ -237,23 +237,23 @@ export class TdWorldScene extends Phaser.Scene {
     this.statsPanel = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9);
     const pBg = this.add.rectangle(0, 0, 128, 48, 0x141c24, 0.82).setOrigin(0, 0)
       .setStrokeStyle(1, 0x2a3a4c, 0.9);
-    this.levelText = this.add.text(5, 4, 'Lv.1', { fontSize: '9px', fontFamily: 'monospace', color: '#ffd23f' }).setOrigin(0, 0);
+    this.levelText = this.add.text(5, 4, 'Lv.1', { fontSize: '9px', fontFamily: TD_FONT, color: '#ffd23f' }).setOrigin(0, 0);
     this.hpBarBg = this.add.rectangle(38, 5, 84, 8, 0x1a2028, 1).setOrigin(0, 0);
     this.hpBarFill = this.add.rectangle(39, 6, 82, 6, 0x44cc66, 1).setOrigin(0, 0);
-    this.hpText = this.add.text(80, 5, '', { fontSize: '7px', fontFamily: 'monospace', color: '#eaffef' }).setOrigin(0.5, 0);
+    this.hpText = this.add.text(80, 5, '', { fontSize: '7px', fontFamily: TD_FONT, color: '#eaffef' }).setOrigin(0.5, 0);
     this.xpBarBg = this.add.rectangle(38, 15, 84, 3, 0x1a2028, 1).setOrigin(0, 0);
     this.xpBarFill = this.add.rectangle(38, 15, 0, 3, 0x7f7fff, 1).setOrigin(0, 0);
     this.energyBarBg = this.add.rectangle(38, 21, 84, 7, 0x1a2028, 1).setOrigin(0, 0);
     this.energyBarFill = this.add.rectangle(39, 22, 82, 5, 0x57b8d8, 1).setOrigin(0, 0);
-    this.energyText = this.add.text(5, 20, '⚡', { fontSize: '9px', fontFamily: 'monospace', color: '#9fe8ff' }).setOrigin(0, 0);
-    this.goldText = this.add.text(5, 33, '', { fontSize: '9px', fontFamily: 'monospace', color: '#ffd23f' }).setOrigin(0, 0);
-    this.fireBoostText = this.add.text(70, 33, '', { fontSize: '9px', fontFamily: 'monospace', color: '#ff9d3f' })
+    this.energyText = this.add.text(5, 20, '⚡', { fontSize: '9px', fontFamily: TD_FONT, color: '#9fe8ff' }).setOrigin(0, 0);
+    this.goldText = this.add.text(5, 33, '', { fontSize: '9px', fontFamily: TD_FONT, color: '#ffd23f' }).setOrigin(0, 0);
+    this.fireBoostText = this.add.text(70, 33, '', { fontSize: '9px', fontFamily: TD_FONT, color: '#ff9d3f' })
       .setOrigin(0, 0).setVisible(false);
     this.statsPanel.add([pBg, this.levelText, this.hpBarBg, this.hpBarFill, this.hpText,
       this.xpBarBg, this.xpBarFill, this.energyBarBg, this.energyBarFill, this.energyText,
       this.goldText, this.fireBoostText]);
     this.gatherHint = this.add.text(0, 0, '', {
-      fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
+      fontSize: '10px', fontFamily: TD_FONT, color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
 
     // atmosfer: tam-ekran tint + alt fog bandı (scrollFactor 0, düşük alpha, lerp update()'te)
@@ -295,7 +295,7 @@ export class TdWorldScene extends Phaser.Scene {
     this.bagPanel = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9 + 2).setVisible(false);
     const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true;
     this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [B] bag · [M] map · [-/+] zoom', {
-      fontSize: '8px', fontFamily: 'monospace', color: '#cfe3f2',
+      fontSize: '8px', fontFamily: TD_FONT, color: '#cfe3f2',
     }).setOrigin(1, 1).setScrollFactor(0).setDepth(1e9).setAlpha(0.55).setVisible(!isTouch);
 
     // Faz 5.4: minimap keşfedilebilir olsun — masaüstünde default AÇIK (M yine kapatır);
@@ -434,7 +434,7 @@ export class TdWorldScene extends Phaser.Scene {
     this.bagPanel.removeAll(true);
     const W2 = 208, H2 = 148;
     const T = (x: number, y: number, msg: string, color: string, size = 9, originX = 0) =>
-      this.add.text(x, y, msg, { fontSize: `${size}px`, fontFamily: 'monospace', color })
+      this.add.text(x, y, msg, { fontSize: `${size}px`, fontFamily: TD_FONT, color })
         .setOrigin(originX, 0).setResolution(k);
     const bg = this.add.rectangle(0, 0, W2, H2, 0x141c24, 0.94).setOrigin(0.5).setStrokeStyle(1, 0x3a4e63, 1);
     const x0 = -W2 / 2 + 10, y0 = -H2 / 2 + 8;
@@ -635,7 +635,7 @@ export class TdWorldScene extends Phaser.Scene {
             }
             const bimg = this.add.image(p.x, p.y, bk).setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
             const label = this.add.text(p.x, p.y - p.data!.hTiles! * 16 - 18, p.data!.name!, {
-              fontSize: '8px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
+              fontSize: '8px', fontFamily: TD_FONT, color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
             }).setOrigin(0.5, 1).setDepth(depth(p.x, p.y) + 1)
               .setResolution(this.uiZoom); // Faz 5.2: 8px-label FIT-blur cilası da kapanır
             objs.push(bimg, label); continue;
@@ -954,7 +954,7 @@ export class TdWorldScene extends Phaser.Scene {
   /** Yükselen '+1 🪵' vb. juice metni: 900ms'de 20px yukarı süzülüp yok olur. */
   private floatText(x: number, y: number, msg: string, color = '#e8eef4'): void {
     const t = this.add.text(x, y, msg, {
-      fontSize: '10px', fontFamily: 'monospace', color, backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
+      fontSize: '10px', fontFamily: TD_FONT, color, backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
     }).setOrigin(0.5, 1).setDepth(1e9).setResolution(this.uiZoom);
     this.tweens.add({ targets: t, y: y - 20, alpha: 0, duration: 900, onComplete: () => t.destroy() });
   }
