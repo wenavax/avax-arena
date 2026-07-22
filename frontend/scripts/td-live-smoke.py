@@ -29,7 +29,8 @@ def check(name, cond):
 
 
 with sync_playwright() as p:
-    b = p.chromium.launch(headless=True)
+    # Faz 5.2: GPU-açık headless (SwiftShader'da WebGL yapay yavaş — td-walk-smoke notu)
+    b = p.chromium.launch(headless=True, args=['--enable-gpu', '--use-angle=metal'])
     pg = b.new_page(viewport={'width': 1200, 'height': 800})
     console_errors = []
     pg.on('console', lambda m: console_errors.append(m.text()) if m.type == 'error' else None)

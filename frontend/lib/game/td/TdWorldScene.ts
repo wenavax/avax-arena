@@ -2,7 +2,7 @@
 // ─── Açık dünya sahnesi: chunk streaming + chibi kahraman ───
 // Client-only (Phaser sahnesi). Su animasyonu yalnız su içeren chunk'ları tazeler.
 import * as Phaser from 'phaser';
-import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, depth, hash2d } from './tdCore';
+import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, computeTdView, depth, hash2d } from './tdCore';
 import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
@@ -64,7 +64,8 @@ class TdRemotePlayer {
     this.label = scene.add.text(x, y - CHIBI_H - 2, name || 'traveler', {
       fontSize: '8px', fontFamily: 'monospace', color: '#aaddff',
       backgroundColor: '#141c24cc', padding: { x: 2, y: 1 },
-    }).setOrigin(0.5, 1).setDepth(depth(x, y) + 1);
+    }).setOrigin(0.5, 1).setDepth(depth(x, y) + 1)
+      .setResolution((scene as TdWorldScene).uiZoom); // Faz 5.2: kamera zoom altında net metin
   }
 
   setTarget(x: number, y: number): void {
@@ -114,8 +115,9 @@ export class TdWorldScene extends Phaser.Scene {
   private fogRect!: Phaser.GameObjects.Rectangle;
   private minimapImg?: Phaser.GameObjects.Image;
   private minimapDot?: Phaser.GameObjects.Rectangle;
-  // Faz 5.1: konum layoutHud()'da scale.width'ten hesaplanır (adaptif çözünürlük)
+  // Faz 5.2: konumlar layoutHud()'da (kamera-zoom dönüşümü); uiZoom = aktif tam-sayı k
   private minimapX = 0; private minimapY = 4;
+  uiZoom = 3; // MP remote label / prop label setResolution'ı da okur
   // ── Faz 3: overworld canavarları ──
   private chunkMonsters = new Map<string, MonRef[]>();
   private battleActive = false;
@@ -184,8 +186,11 @@ export class TdWorldScene extends Phaser.Scene {
     // F3: perf overlay (Faz 1 doğrulama aracı)
     kb.on('keydown-F3', () => {
       if (this.perfText) { this.perfText.destroy(); this.perfText = undefined; }
-      else this.perfText = this.add.text(4, 4, '', { fontSize: '10px', color: '#9fe8ff', backgroundColor: '#000000aa' })
-        .setScrollFactor(0).setDepth(1e9);
+      else {
+        this.perfText = this.add.text(4, 4, '', { fontSize: '10px', color: '#9fe8ff', backgroundColor: '#000000aa' })
+          .setScrollFactor(0).setDepth(1e9).setResolution(this.uiZoom);
+        this.layoutHud();
+      }
     });
 
     // prop texture'ları (bir kez)
@@ -225,12 +230,12 @@ export class TdWorldScene extends Phaser.Scene {
     this.fogRect = this.add.rectangle(0, 0, 8, 48, 0xbbddff, 0.10)
       .setScrollFactor(0).setDepth(1501);
 
-    // Faz 5.1: HUD yerleşimi mevcut oyun boyutundan; resize'da (k/boyut değişimi,
-    // savaş dönüşü dahil) yeniden. Scale global emitter — shutdown/destroy'da off ŞART.
-    this.layoutHud();
-    this.scale.on(Phaser.Scale.Events.RESIZE, this.layoutHud, this);
-    this.events.once('shutdown', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutHud, this));
-    this.events.once('destroy', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutHud, this));
+    // Faz 5.2: kamera zoom k (tam-sayı, viewport'tan) + HUD yerleşimi; viewport
+    // resize'ında yeniden. Scale global emitter — shutdown/destroy'da off ŞART.
+    this.applyZoom();
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.applyZoom, this);
+    this.events.once('shutdown', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.applyZoom, this));
+    this.events.once('destroy', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.applyZoom, this));
 
     // E: en yakın hub binasına gir (LIVE: gerçek overlay / PREVIEW: toast) veya en yakın
     // zindan kapısına gir (TdDungeon launch+pause — battle akışıyla simetrik).
@@ -250,19 +255,39 @@ export class TdWorldScene extends Phaser.Scene {
     this.events.once('destroy', () => this.cleanupMultiplayerTd());
   }
 
+  /** Faz 5.2: viewport'tan tam-sayı kamera zoom'u seç + HUD'u yeniden yerleştir (create + RESIZE). */
+  private applyZoom(): void {
+    this.uiZoom = computeTdView(this.scale.width, this.scale.height).k;
+    this.cameras.main.setZoom(this.uiZoom);
+    this.layoutHud();
+  }
+
   /**
-   * Faz 5.1: viewport'a bağlı HUD konumları — create'te + her scale RESIZE'da.
-   * (Savaş sırasında 1280×720 ile de çağrılır; battle backdrop'u alta çizilen dünyayı
-   * örttüğünden zararsız, savaş dönüşü resize'ı doğru yerleşimi geri getirir.)
+   * Faz 5.2 HUD yerleşimi (Larvy paritesi): canvas TAM çözünürlükte, dünya kamera
+   * zoom'uyla k× — scrollFactor(0) nesneler de kamera MERKEZİ etrafında k× büyür.
+   * Ekran hedefi S → nesne koordinatı L = (S - C)/k + C dönüşümüyle yerleştirilir;
+   * boyutlar "mantıksal" (384×256-devri) birimde kalır, zoom k× büyütür. Metinler
+   * setResolution(k) ile native çözünürlükte örneklenir (netlik paketinin özü).
    */
   private layoutHud(): void {
-    const w = this.scale.width, h = this.scale.height;
-    this.minimapX = w - 100;
-    this.hintText.setPosition(w / 2, h - 14);
-    this.gatherHint.setPosition(w / 2, h - 26);
-    this.tintRect.setPosition(w / 2, h / 2).setSize(w, h);
-    this.fogRect.setPosition(w / 2, h - 24).setSize(w, 48);
+    const k = this.uiZoom, sw = this.scale.width, sh = this.scale.height;
+    const cx = sw / 2, cy = sh / 2;
+    const x0 = cx - cx / k, y0 = cy - cy / k;      // mantıksal görünür rect'in sol-üstü
+    const w = sw / k, h = sh / k;                   // mantıksal görünür boyut
+    this.minimapX = x0 + w - 100; this.minimapY = y0 + 4;
+    this.energyBarBg.setPosition(x0 + 6, y0 + 6);
+    this.energyBarFill.setPosition(x0 + 6, y0 + 6);
+    this.energyText.setPosition(x0 + 70, y0 + 3);
+    this.fireBoostText.setPosition(x0 + 6, y0 + 14);
+    this.goldText.setPosition(x0 + 6, y0 + 24);
+    this.hintText.setPosition(x0 + w / 2, y0 + h - 14);
+    this.gatherHint.setPosition(x0 + w / 2, y0 + h - 26);
+    this.tintRect.setPosition(x0 + w / 2, y0 + h / 2).setSize(w, h);
+    this.fogRect.setPosition(x0 + w / 2, y0 + h - 24).setSize(w, 48);
     this.minimapImg?.setPosition(this.minimapX, this.minimapY);
+    this.perfText?.setPosition(x0 + 4, y0 + 4);
+    for (const t of [this.hintText, this.gatherHint, this.energyText, this.fireBoostText, this.goldText])
+      if (t.style.resolution !== k) t.setResolution(k);
   }
 
   /** E etkileşimi: en yakın interaktif prop'a göre dallanır (klavye + dokunmatik ortak yol). */
@@ -434,7 +459,8 @@ export class TdWorldScene extends Phaser.Scene {
             const bimg = this.add.image(p.x, p.y, bk).setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
             const label = this.add.text(p.x, p.y - p.data!.hTiles! * 16 - 18, p.data!.name!, {
               fontSize: '8px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
-            }).setOrigin(0.5, 1).setDepth(depth(p.x, p.y) + 1);
+            }).setOrigin(0.5, 1).setDepth(depth(p.x, p.y) + 1)
+              .setResolution(this.uiZoom); // Faz 5.2: 8px-label FIT-blur cilası da kapanır
             objs.push(bimg, label); continue;
           }
           void meta; // (ox/oy şu an yalnız gölge-hizalama notu; origin(0.5,1) çizim tabanlıdır)
@@ -711,7 +737,7 @@ export class TdWorldScene extends Phaser.Scene {
   private floatText(x: number, y: number, msg: string, color = '#e8eef4'): void {
     const t = this.add.text(x, y, msg, {
       fontSize: '10px', fontFamily: 'monospace', color, backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
-    }).setOrigin(0.5, 1).setDepth(1e9);
+    }).setOrigin(0.5, 1).setDepth(1e9).setResolution(this.uiZoom);
     this.tweens.add({ targets: t, y: y - 20, alpha: 0, duration: 900, onComplete: () => t.destroy() });
   }
 

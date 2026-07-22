@@ -20,7 +20,6 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
   useEffect(() => {
     let game: import('phaser').Game | null = null;
     let cancelled = false;
-    let ro: ResizeObserver | null = null;
     (async () => {
       const Phaser = await import('phaser');
       // ── LIVE mod: GERÇEK kaydı singleton'a yükle + NFT sync (CharacterSelect paritesi).
@@ -53,46 +52,36 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
       const { TdWorldScene } = await import('./TdWorldScene');
       const { TdBattleScene } = await import('./TdBattleScene');
       const { TdDungeonScene } = await import('./TdDungeonScene');
-      const { computeTdView } = await import('./tdCore');
-      const { GAME_WIDTH, GAME_HEIGHT } = await import('../config');
       if (cancelled || !ref.current) return;
-      // ── Faz 5.1 Çözünürlük Paketi: Scale.FIT (sabit 384×256 + letterbox) yerine
-      // Larvy-usulü adaptif tam-doldurma — tam-sayı zoom k, mantıksal boyut ceil(vp/k),
-      // Scale.NONE + zoom (canvas CSS'te k× büyür; ortalama/kırpma wrapper CSS'inde). ──
-      const v0 = computeTdView(ref.current.clientWidth, ref.current.clientHeight);
+      // ── Faz 5.2 Netlik (Larvy paritesi — play.larvy.fun game.js incelemesi):
+      // canvas TAM viewport çözünürlüğünde (Scale.RESIZE; CSS ölçekleme YOK → tarayıcı
+      // yeniden-örnekleme bulanıklığı ve yarım-piksel ofset sınıfı komple ölür).
+      // Dünya büyütmesi sahnelerin KAMERASINDA (setZoom(k), tam-sayı; computeTdView.k)
+      // — sprite pikselleri çizim anında k× nearest, metin/HUD native çözünürlükte
+      // (layoutHud screen→logical dönüşümü + setResolution). Savaş kendi kamerasını
+      // kesirli fit-zoom'lar; ScaleManager'a kimse dokunmaz → restore dansı yok. ──
       game = new Phaser.Game({
-        type: Phaser.CANVAS,
+        // Faz 5.2: CANVAS → AUTO (WebGL) — tam-çözünürlük canvas'ta 2D rasterizer dar
+        // boğazdı; izo PhaserGame de AUTO idi (BattleScene kodu WebGL'de kanıtlı).
+        // Chunk/su texture'ları frame-başına AYRI addCanvas key'leri kullanır (in-place
+        // mutasyon yok) → WebGL texture-refresh tuzağı yok.
+        type: Phaser.AUTO,
         parent: ref.current,
-        width: v0.w, height: v0.h,
         pixelArt: true, roundPixels: true,
         backgroundColor: '#0d1319',
-        scale: { mode: Phaser.Scale.NONE, zoom: v0.k },
+        scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH, width: '100%', height: '100%' },
         scene: [TdWorldScene, TdBattleScene, TdDungeonScene],
       });
       // Sahneler create()'te registry.get('tdMode') okur — scene başlamadan hemen önce set edilir.
       game.registry.set('tdMode', mode);
       game.registry.set('tdTouch', { dx: 0, dy: 0, e: false, space: false });
-      game.registry.set('tdBattle', false); // TdBattle aktifken resize'da fit-zoom yolu seçilir
       if (process.env.NODE_ENV !== 'production') (window as unknown as { __tdGame?: unknown }).__tdGame = game;
-
-      // Viewport değişiminde k'yı yeniden seç. Savaşta (tdBattle) boyut native 1280×720
-      // sabit kalır, yalnız kesirli fit-zoom güncellenir (FIT muadili; TdBattleScene notu).
-      const applyView = () => {
-        if (!game || !game.isBooted || !ref.current) return;
-        const pw = ref.current.clientWidth, ph = ref.current.clientHeight;
-        if (!pw || !ph) return;
-        if (game.registry.get('tdBattle')) {
-          game.scale.setZoom(Math.min(pw / GAME_WIDTH, ph / GAME_HEIGHT));
-        } else {
-          const v = computeTdView(pw, ph);
-          game.scale.setZoom(v.k);
-          game.scale.setGameSize(v.w, v.h);
-        }
-      };
-      ro = new ResizeObserver(applyView);
-      ro.observe(ref.current);
+      // Larvy DPR fallback'i: kesirli devicePixelRatio (Windows %125/150, tarayıcı zoom'u)
+      // pixelated canvas'ı compositor'da kemirir — o ekranlarda smooth örneklemeye düş.
+      const dpr = window.devicePixelRatio || 1;
+      if (Math.abs(dpr - Math.round(dpr)) > 0.01 && game.canvas) game.canvas.style.imageRendering = 'auto';
     })();
-    return () => { cancelled = true; ro?.disconnect(); game?.destroy(true); };
+    return () => { cancelled = true; game?.destroy(true); };
     // mode değişmez (component ömrü boyunca sabit prop) — yeniden mount gerektirmez.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -185,11 +174,10 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
   return (
     // live: tam viewport (world layout takeover'ı ile bütün ekran)
     // preview: worldtestnet'in ortalanmış 3:2 kutusu
-    // Faz 5.1: Scale.NONE'da ortalamayı/kırpmayı biz yaparız — canvas mantıksal boyut×k
-    // CSS boyutunda gelir (dünya: konteynerden ≤k-1px büyük → grid-center + overflow-hidden
-    // kenarlardan eşit kırpar; savaş: fit-zoom ile küçük → aynı grid ortalar, bant bg rengi).
+    // Faz 5.2: Scale.RESIZE canvas'ı konteynere 1:1 oturtur (CSS ölçekleme yok) —
+    // ortalama/kırpma gerekmez, pixelated yalnız DPR compositor upscale'i için.
     <div className={mode === 'live' ? 'fixed inset-0 bg-[#0d1319]' : 'relative w-full max-w-5xl'}>
-      <div ref={ref} className={(mode === 'live' ? 'h-full w-full' : 'aspect-[3/2] w-full') + ' grid place-items-center overflow-hidden bg-[#0d1319] [image-rendering:pixelated]'} />
+      <div ref={ref} className={(mode === 'live' ? 'h-full w-full' : 'aspect-[3/2] w-full') + ' overflow-hidden bg-[#0d1319] [image-rendering:pixelated]'} />
 
       {isTouch && (
         <>

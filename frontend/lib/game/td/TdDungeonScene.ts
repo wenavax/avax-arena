@@ -4,7 +4,7 @@
 // (chunk streaming gerekmez — zindan küçük). Kapı akışı: TdWorldScene pause+launch,
 // bu sahne stop+resume (battle akışıyla simetrik).
 import * as Phaser from 'phaser';
-import { TILE, depth } from './tdCore';
+import { TILE, computeTdView, depth } from './tdCore';
 import { REGIONS } from './worldMap';
 import { biomeTopColor } from './tiles';
 import { atmoForRegion } from './atmosphere';
@@ -48,6 +48,7 @@ export class TdDungeonScene extends Phaser.Scene {
   private tintRect!: Phaser.GameObjects.Rectangle;
   private timeInDungeon = 0;
   private leaving = false;
+  private uiZoom = 3; // Faz 5.2: aktif tam-sayı kamera zoom'u (applyZoom)
 
   constructor() { super({ key: 'TdDungeon' }); }
 
@@ -118,7 +119,7 @@ export class TdDungeonScene extends Phaser.Scene {
     this.cursors = kb.createCursorKeys();
     kb.on('keydown-ESC', () => this.leave());
 
-    // Faz 5.1: HUD/tint konum+boyutları layoutHud()'da scale'den (adaptif çözünürlük)
+    // Faz 5.2: HUD/tint konum+boyutları layoutHud()'da (kamera-zoom dönüşümü)
     this.hintText = this.add.text(0, 0, '', {
       fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
@@ -127,11 +128,11 @@ export class TdDungeonScene extends Phaser.Scene {
     const atmo = atmoForRegion(this.dungeonId);
     this.tintRect = this.add.rectangle(0, 0, 8, 8, atmo.tint, Math.min(0.9, atmo.tintAlpha * 1.6))
       .setScrollFactor(0).setDepth(1500);
-    this.layoutHud();
-    this.scale.on(Phaser.Scale.Events.RESIZE, this.layoutHud, this);
+    this.applyZoom();
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.applyZoom, this);
     // Zindan sahnesi stop edilir — global scale emitter'dan çıkmak ŞART (sızıntı/stale ref)
-    this.events.once('shutdown', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutHud, this));
-    this.events.once('destroy', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.layoutHud, this));
+    this.events.once('shutdown', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.applyZoom, this));
+    this.events.once('destroy', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.applyZoom, this));
 
     // ── canavarlar: roster havuzunu spawn noktalarına döngüsel dağıt ──
     const roster = DUNGEON_ROSTERS[this.dungeonId];
@@ -166,11 +167,22 @@ export class TdDungeonScene extends Phaser.Scene {
     }
   }
 
-  /** Faz 5.1: viewport'a bağlı HUD/tint yerleşimi — create'te + her scale RESIZE'da (savaş dönüşü dahil). */
+  /** Faz 5.2: viewport'tan tam-sayı kamera zoom'u + HUD yerleşimi (create + RESIZE). */
+  private applyZoom(): void {
+    this.uiZoom = computeTdView(this.scale.width, this.scale.height).k;
+    this.cameras.main.setZoom(this.uiZoom);
+    this.layoutHud();
+  }
+
+  /** HUD/tint yerleşimi — kamera zoom altında screen→logical dönüşümü (TdWorldScene.layoutHud notu). */
   private layoutHud(): void {
-    const w = this.scale.width, h = this.scale.height;
-    this.hintText.setPosition(w / 2, h - 16);
-    this.tintRect.setPosition(w / 2, h / 2).setSize(w, h);
+    const k = this.uiZoom, sw = this.scale.width, sh = this.scale.height;
+    const cx = sw / 2, cy = sh / 2;
+    const x0 = cx - cx / k, y0 = cy - cy / k;
+    const w = sw / k, h = sh / k;
+    this.hintText.setPosition(x0 + w / 2, y0 + h - 16);
+    if (this.hintText.style.resolution !== k) this.hintText.setResolution(k);
+    this.tintRect.setPosition(x0 + w / 2, y0 + h / 2).setSize(w, h);
   }
 
   /** Canavar texture'larını bir kez üretir/kaydeder (2 kare, küçük boy — overworld ile aynı kalıp). */

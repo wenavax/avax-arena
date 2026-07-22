@@ -12,7 +12,9 @@ def check(name, cond):
     if not cond: fails.append(name)
 
 with sync_playwright() as p:
-    b = p.chromium.launch(headless=True)
+    # Faz 5.2: tam-çözünürlük WebGL render'ı headless'ın SwiftShader'ında (yazılım GPU)
+    # yapay olarak yavaş — gerçek GPU'yu aç (M-serisi Mac'te ANGLE Metal; fps ölçümü gerçekçi olsun).
+    b = p.chromium.launch(headless=True, args=['--enable-gpu', '--use-angle=metal'])
     pg = b.new_page(viewport={'width': 1200, 'height': 800})
     pg.goto(URL, wait_until='domcontentloaded')  # networkidle dev-HMR'da flake yapiyor
     pg.wait_for_function('() => !!window.__tdGame', timeout=30000)
@@ -63,21 +65,26 @@ with sync_playwright() as p:
         print('wood', wood, 'energy0', energy0, 'energy1', energy1)
         check('gather-wood', wood >= 1)
         check('energy-spent', energy1 < energy0)
-    # ── Faz 5.1: adaptif çözünürlük — tam-sayı zoom, viewport tam-doldurma, HUD konumu ──
+    # ── Faz 5.2 (Larvy paritesi): canvas TAM viewport çözünürlüğünde (Scale.RESIZE),
+    # dünya kamerası tam-sayı zoom k, HUD screen→logical dönüşümlü + native metin ──
     res = pg.evaluate("""() => {
-        const sc = window.__tdGame.scale;
-        const parent = window.__tdGame.canvas.parentElement;
-        return { k: sc.zoom, w: sc.width, h: sc.height,
-                 pw: parent.clientWidth, ph: parent.clientHeight };
+        const g = window.__tdGame, sc = g.scale;
+        const parent = g.canvas.parentElement;
+        const s = g.scene.keys.TdWorld;
+        return { sw: sc.width, sh: sc.height, pw: parent.clientWidth, ph: parent.clientHeight,
+                 attrW: g.canvas.width, attrH: g.canvas.height,
+                 k: s.cameras.main.zoom, uiZoom: s.uiZoom };
     }""")
     print('view', json.dumps(res))
-    check('zoom-integer', res['k'] == int(res['k']) and res['k'] >= 2)
-    check('view-fills', res['w'] * res['k'] >= res['pw'] and res['h'] * res['k'] >= res['ph'])
-    check('view-crop-max', res['w'] * res['k'] - res['pw'] < res['k'] and res['h'] * res['k'] - res['ph'] < res['k'])
-    hud = pg.evaluate(S % "({hx: s.hintText.x, hy: s.hintText.y, fw: s.fogRect.width, mmx: s.minimapX})")
-    check('hud-adaptive', abs(hud['hx'] - res['w'] / 2) < 1 and abs(hud['hy'] - (res['h'] - 14)) < 1
-          and hud['fw'] == res['w'] and hud['mmx'] == res['w'] - 100)
-    # savaşa gir/çık: native 1280×720'ye geçmeli, dönüşte k-tabanlı boyuta RESTORE etmeli
+    check('canvas-full-res', res['sw'] == res['pw'] and res['sh'] == res['ph'] and res['attrW'] == res['pw'])
+    check('cam-zoom-integer', res['k'] == int(res['k']) and res['k'] >= 2 and res['k'] == res['uiZoom'])
+    k, sw, sh = res['k'], res['sw'], res['sh']
+    hud = pg.evaluate(S % "({hx: s.hintText.x, hy: s.hintText.y, fw: s.fogRect.width, mmx: s.minimapX, tres: s.hintText.style.resolution})")
+    check('hud-adaptive', abs(hud['hx'] - sw / 2) < 1 and abs(hud['hy'] - (sh / 2 + sh / (2 * k) - 14)) < 1
+          and abs(hud['fw'] - sw / k) < 1 and abs(hud['mmx'] - (sw / 2 + sw / (2 * k) - 100)) < 1)
+    check('hud-text-native-res', hud['tres'] == k)
+    # savaşa gir/çık: battle KENDİ kamerasını 1280×720'ye fit'ler; ScaleManager'a dokunmaz;
+    # çıkışta dünya kamerası k'da kalmış olmalı (restore dansı yok)
     mon = pg.evaluate(S % """((() => {
         for (const arr of s.chunkMonsters.values()) if (arr.length) return { x: arr[0].x, y: arr[0].y };
         return null;
@@ -85,21 +92,24 @@ with sync_playwright() as p:
     check('battle-mon-found', mon is not None)
     if mon:
         pg.evaluate(S % f"((s.heroPos.x = {mon['x']}, s.heroPos.y = {mon['y']}, true))")
-        pg.wait_for_function("() => window.__tdGame.registry.get('tdBattle') === true", timeout=8000)
-        bres = pg.evaluate("() => ({w: window.__tdGame.scale.width, h: window.__tdGame.scale.height, k: window.__tdGame.scale.zoom})")
+        pg.wait_for_function("() => window.__tdGame.scene.keys.TdBattle.scene.isActive()", timeout=8000)
+        time.sleep(0.5)
+        bres = pg.evaluate("""() => { const g = window.__tdGame; return {
+            sw: g.scale.width, sh: g.scale.height,
+            bz: g.scene.keys.TdBattle.cameras.main.zoom }; }""")
         print('battle-view', json.dumps(bres))
-        check('battle-native', bres['w'] == 1280 and bres['h'] == 720)
-        check('battle-fit-zoom', abs(bres['k'] - min(res['pw'] / 1280, res['ph'] / 720)) < 0.01)
+        check('battle-canvas-untouched', bres['sw'] == sw and bres['sh'] == sh)
+        check('battle-cam-fit', abs(bres['bz'] - min(sw / 1280, sh / 720)) < 0.02)
         pg.evaluate("""() => {
             const g = window.__tdGame;
-            g.scene.keys.TdBattle.scene.stop();      // SHUTDOWN → çözünürlük restore
+            g.scene.keys.TdBattle.scene.stop();
             g.scene.keys.TdWorld.scene.resume();
             g.scene.keys.TdWorld.battleActive = false;
         }""")
         time.sleep(0.5)
-        rres = pg.evaluate("() => ({w: window.__tdGame.scale.width, h: window.__tdGame.scale.height, k: window.__tdGame.scale.zoom})")
+        rres = pg.evaluate(S % "({k: s.cameras.main.zoom, sw: s.scale.width})")
         print('restored-view', json.dumps(rres))
-        check('battle-restore-k', rres['k'] == res['k'] and rres['w'] == res['w'] and rres['h'] == res['h'])
+        check('world-zoom-stable', rres['k'] == k and rres['sw'] == sw)
     # fps
     time.sleep(1)
     fps = pg.evaluate("() => window.__tdGame.loop.actualFps")

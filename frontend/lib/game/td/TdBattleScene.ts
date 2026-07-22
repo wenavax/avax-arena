@@ -15,7 +15,6 @@ import { getRandomMobLine } from '../lore';
 import { biomeTopColor } from './tiles';
 import { atmoForRegion } from './atmosphere';
 import { mkMonsterChibi } from './sprites/monsterChibi';
-import { computeTdView } from './tdCore';
 import type { Biome } from './worldMap';
 
 interface BattleData { monster: MonsterData; returnScene: string; region?: string; sandbox?: boolean; }
@@ -208,6 +207,19 @@ export class TdBattleScene extends Phaser.Scene {
   private skillMenuContainer: Phaser.GameObjects.Container | null = null;
   private btnGraphics: { gfx: Phaser.GameObjects.Graphics; hitArea: Phaser.GameObjects.Rectangle; color: number; x: number; btnW: number; btnY: number; btnH: number }[] = [];
 
+  // Faz 5.2: 1280×720 mantıksal alanı viewport'a oturtan kesirli kamera fit-zoom'u
+  // (zoom-punch gibi kamera efektleri buna göreli çalışır).
+  private baseZoom = 1;
+
+  /** Kamerayı 1280×720 mantıksal savaş alanına fit'ler (create + viewport RESIZE). */
+  private applyFitZoom(): void {
+    this.baseZoom = Math.min(this.scale.width / GAME_WIDTH, this.scale.height / GAME_HEIGHT);
+    this.cameras.main.setZoom(this.baseZoom);
+    this.cameras.main.centerOn(GAME_WIDTH / 2, GAME_HEIGHT / 2);
+    // Letterbox bantlarında altta pauselu duran dünya/zindan görünmesin — opak kamera bg.
+    this.cameras.main.setBackgroundColor('#0d1319');
+  }
+
   constructor() { super({ key: 'TdBattle' }); }
 
   init(data: BattleData) {
@@ -280,28 +292,15 @@ export class TdBattleScene extends Phaser.Scene {
 
     // TD reskin: BattleScene tüm düzenini GAME_WIDTH×GAME_HEIGHT (1280×720) mutlak
     // koordinatlarla çizer (screen-space HUD yok — setScrollFactor(0) hiç kullanılmıyor,
-    // her şey world-space). Tam ekran fix (22 Tem): savaş boyunca oyun tuvali native
-    // 1280×720'ye geçer; metinler/oran native.
-    // Faz 5.1 (Çözünürlük Paketi): dünya artık adaptif (Scale.NONE + tam-sayı zoom k,
-    // TdPhaserGame). Savaşta boyut native sabit + KESİRLİ fit-zoom ile viewport'a sığar
-    // (eski Scale.FIT muadili; savaş pixel-art-kritik değil). Shutdown'da sabit 384×256'ya
-    // DEĞİL, computeTdView'un k-tabanlı boyutuna dönülür — registry 'tdBattle' bayrağı
-    // TdPhaserGame'in ResizeObserver'ına hangi yolun aktif olduğunu söyler.
-    const parentDims = () => {
-      const el = this.scale.parent as HTMLElement | null;
-      return { pw: el?.clientWidth || window.innerWidth, ph: el?.clientHeight || window.innerHeight };
-    };
-    this.registry.set('tdBattle', true);
-    this.scale.setGameSize(GAME_WIDTH, GAME_HEIGHT);
-    const { pw, ph } = parentDims();
-    this.scale.setZoom(Math.min(pw / GAME_WIDTH, ph / GAME_HEIGHT));
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.registry.set('tdBattle', false);
-      const d = parentDims();
-      const v = computeTdView(d.pw, d.ph);
-      this.scale.setZoom(v.k);
-      this.scale.setGameSize(v.w, v.h);
-    });
+    // her şey world-space).
+    // Faz 5.2 (Larvy paritesi): canvas hep TAM viewport çözünürlüğünde (Scale.RESIZE),
+    // ScaleManager'a DOKUNULMAZ — bu sahnenin KAMERASI 1280×720 mantıksal alanı kesirli
+    // fit-zoom'la viewport'a oturtur (letterbox kamera dışı = oyun bg rengi). Dünya
+    // sahnesinin kamerası da kendine ait → savaş çıkışında restore dansı yok.
+    this.applyFitZoom();
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.applyFitZoom, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.applyFitZoom, this));
 
     // ── Background ──
     // TD reskin: izo'nun ZONE_ATMOSPHERE+silüet backdrop'u yerine bölge-paletli
@@ -2503,12 +2502,13 @@ export class TdBattleScene extends Phaser.Scene {
     // Larger camera shake + quick zoom punch (impact weight). Direct tween
     // with yoyo — a nested zoomTo(1) gets ignored while the first zoom
     // effect is active and left the camera stuck at 1.05.
+    // Faz 5.2: taban artık kesirli fit-zoom (baseZoom) — punch ona göreli.
     this.cameras.main.shake(120, 0.012);
     this.tweens.killTweensOf(this.cameras.main);
-    this.cameras.main.zoom = 1;
+    this.cameras.main.zoom = this.baseZoom;
     this.tweens.add({
-      targets: this.cameras.main, zoom: 1.05, duration: 90, yoyo: true, ease: 'Power2',
-      onComplete: () => { this.cameras.main.zoom = 1; },
+      targets: this.cameras.main, zoom: this.baseZoom * 1.05, duration: 90, yoyo: true, ease: 'Power2',
+      onComplete: () => { this.cameras.main.zoom = this.baseZoom; },
     });
 
     // "CRITICAL!" text bounces
