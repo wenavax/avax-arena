@@ -47,6 +47,16 @@ export function mkBush(v: number): { img: HTMLCanvasElement; ox: number; oy: num
   return { img, ox: img.width >> 1, oy: img.height - 2 };
 }
 
+/** Kesilmiş ağaç kütüğü — ağaç toplandıktan sonra texture swap hedefi. 12×8. */
+export function mkStump(): { img: HTMLCanvasElement; ox: number; oy: number } {
+  const img = outline(spr(12, 8, (px) => {
+    px(1, 3, 10, 5, '#7a5a3e');
+    px(2, 2, 8, 2, '#8f6c4a');
+    px(3, 2, 3, 1, '#a5805c');
+  }));
+  return { img, ox: img.width >> 1, oy: img.height - 1 };
+}
+
 /** 4-karelik kamp ateşi. */
 export function mkFireFrames(): HTMLCanvasElement[] {
   return [0, 1, 2, 3].map(f => outline(spr(14, 12, (px) => {

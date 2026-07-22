@@ -43,12 +43,13 @@ export function migrateV1(v1: Record<string, unknown>): Record<string, unknown> 
 
 **Files:** Modify `frontend/lib/game/td/TdWorldScene.ts`, `frontend/app/worldtestnet/page.tsx` (kontrol satırına SPACE ekle)
 
-- [ ] TdState instance sahnede (lazy `new TdState()` + `load()` create'te; her mutasyondan sonra `save()` — kendi anahtarına, güvenli).
-- [ ] SPACE (keydown-SPACE): en yakın toplanabilir ≤22px: tree→`gather('wood')` 3 vuruş sonra kütük (img texture swap `td-stump` — sprites/props.ts'e mkStump ekle) + 25sn respawn; rock→'stone' (%25 hash şansıyla 'ore' — salt 4) 3 vuruş → despawn + 30sn; bush(berry varyantı)→'frostberry' tek vuruş → boş varyant + 20sn. Vuruş başına enerji maliyeti rules'tan (kesme 5/vuruş = toplam 15 vb. — rules'ta perHit alanları). Yetersiz enerji → hint kırmızı 'Not enough energy'. Floating +1 metni (mini Text, 60 frame yukarı süzülür — juice).
-- [ ] Node durumu chunk-yerel RAM'de (respawn timer'lı Map; evict'te temizlenir — determinism bozulmaz çünkü kalıcı değil, bilinçli: node'lar chunk yeniden yüklenince tazelenir).
-- [ ] Enerji HUD: sol-üst 60×6 bar (scrollFactor 0, depth 1e9) + ⚡sayı; kamp ateşi ≤48px iken bar yanında 🔥×4 göstergesi; update'te `tdState.tick(dt, nearFire)`.
-- [ ] Balık: kahraman kıyıda (4 komşu tile'dan biri water) + SPACE + yakında başka toplanabilir yokken → 2.5sn sayaç (hint 'fishing…'), hareket iptal eder, bitince `gather('fish')`.
-- [ ] Doğrulama: typecheck, build, smoke'a ekle: SPACE ile ağaç kesimi → `s.tdState.resources.wood > 0` && energy < 1000 (hero'yu ağaca ışınlayarak — dev'de `__tdGame`). Commit.
+- [x] TdState instance sahnede (lazy `new TdState()` + `load()` create'te; her mutasyondan sonra `save()` — kendi anahtarına, güvenli).
+- [x] SPACE (keydown-SPACE): en yakın toplanabilir ≤22px: tree→`gather('wood')` 3 vuruş sonra kütük (img texture swap `td-stump` — sprites/props.ts'e mkStump ekle) + 25sn respawn; rock→'stone' (%25 hash şansıyla 'ore' — salt 4) 3 vuruş → despawn + 30sn; bush(berry varyantı)→'frostberry' tek vuruş → boş varyant + 20sn. Vuruş başına enerji maliyeti rules'tan (kesme 5/vuruş = toplam 15 vb. — rules'ta perHit alanları). Yetersiz enerji → hint kırmızı 'Not enough energy'. Floating +1 metni (mini Text, 60 frame yukarı süzülür — juice).
+  - **API notu**: `tdState.gather(kind)` TOPLAM aksiyon maliyetini (COSTS.chop=15 vb.) tek seferde düşürüyor — vuruş-başına harcama modeline uymuyor. Çok-vuruşlu kesme/kazma için enerji PER_HIT'ten manuel düşüldü (yetersizse hiçbir şey değişmez kuralı korunarak) ve yalnız SON vuruşta kaynak +1 edildi (toplam harcama COSTS ile birebir). Tek-vuruşluk bush/fish için `gather()` doğrudan kullanıldı (API tam uyumlu).
+- [x] Node durumu chunk-yerel RAM'de (respawn timer'lı Map; evict'te temizlenir — determinism bozulmaz çünkü kalıcı değil, bilinçli: node'lar chunk yeniden yüklenince tazelenir).
+- [x] Enerji HUD: sol-üst 60×6 bar (scrollFactor 0, depth 1e9) + ⚡sayı; kamp ateşi ≤48px iken bar yanında 🔥×4 göstergesi; update'te `tdState.tick(dt, nearFire)`.
+- [x] Balık: kahraman kıyıda (4 komşu tile'dan biri water) + SPACE + yakında başka toplanabilir yokken → 2.5sn sayaç (hint 'fishing…'), hareket iptal eder, bitince `gather('fish')`.
+- [x] Doğrulama: typecheck, build, smoke'a ekle: SPACE ile ağaç kesimi → `s.tdState.resources.wood > 0` && energy < 1000 (hero'yu ağaca ışınlayarak — dev'de `__tdGame`). Commit.
 
 ---
 

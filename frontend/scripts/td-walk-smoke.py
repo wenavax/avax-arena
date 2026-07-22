@@ -39,6 +39,28 @@ with sync_playwright() as p:
         mons = pg.evaluate(S % "([...s.chunkMonsters.values()].reduce((n,c)=>n+c.length,0))")
         print('monsters (after walk)', mons)
     check('monsters-spawned', mons > 0)
+    # toplama: bir ağaç toplanabilirin yanına ışınlan, 3× SPACE bas, kaynak+enerji doğrula
+    tree = pg.evaluate(S % """((() => {
+        for (const g of s.chunkGatherables.values()) {
+          for (const gv of g.values()) if (gv.kind === 'tree' && gv.alive) return { x: gv.x, y: gv.y };
+        }
+        return null;
+    })())""")
+    print('tree', json.dumps(tree))
+    check('tree-found', tree is not None)
+    if tree:
+        energy0 = pg.evaluate(S % "(s.tdState.energy)")
+        pg.evaluate(S % f"((s.heroPos.x = {tree['x']} + 10, s.heroPos.y = {tree['y']}, true))")
+        time.sleep(0.3)
+        for _ in range(3):
+            pg.keyboard.press('Space')
+            time.sleep(0.2)
+        time.sleep(0.3)
+        wood = pg.evaluate(S % "(s.tdState.resources.wood)")
+        energy1 = pg.evaluate(S % "(s.tdState.energy)")
+        print('wood', wood, 'energy0', energy0, 'energy1', energy1)
+        check('gather-wood', wood >= 1)
+        check('energy-spent', energy1 < energy0)
     # fps
     time.sleep(1)
     fps = pg.evaluate("() => window.__tdGame.loop.actualFps")

@@ -7,10 +7,12 @@ import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H } from './sprites/chibi';
 import { propsForChunk, type TdProp } from './worldProps';
-import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor } from './sprites/props';
+import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump } from './sprites/props';
 import { atmoForRegion } from './atmosphere';
 import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
 import { mkMonsterChibi } from './sprites/monsterChibi';
+import { TdState } from './tdState';
+import { COSTS, PER_HIT } from './cozy/rules';
 
 const WALK_FRAMES = [0, 1, 0, 2] as const; // faz dizisi (spec §4)
 
@@ -25,6 +27,19 @@ interface MonRef {
   f: number; ft: number;         // 2-kare anim + zamanlayıcı
   isElite: boolean;
   downUntil: number;             // knockback/stun süresi (ms, this.time.now bazlı)
+}
+
+/** Toplanabilir kaynak node'u (chunk-yerel RAM'de; kalıcı değil — chunk yeniden yüklenince tazelenir). */
+interface Gatherable {
+  kind: 'tree' | 'rock' | 'bush';
+  img: Phaser.GameObjects.Image;
+  x: number; y: number;
+  tx: number; ty: number;      // tile koordinatı (ore şansı hash'i için)
+  hits: number;                 // kalan vuruş sayısı (tree/rock=3, bush=1)
+  alive: boolean;
+  respawnAt: number;            // this.time.now bazlı; alive=false iken geçerli
+  origTexKey: string;           // respawn'da geri dönülecek texture
+  bushVariant?: number;         // bush ise orijinal v (0/1)
 }
 
 export class TdWorldScene extends Phaser.Scene {
@@ -53,10 +68,21 @@ export class TdWorldScene extends Phaser.Scene {
   private chunkMonsters = new Map<string, MonRef[]>();
   private battleActive = false;
   private monTexCache = new Set<string>();
+  // ── Faz 4: cozy toplama (SPACE) + enerji HUD ──
+  tdState = new TdState();
+  private chunkGatherables = new Map<string, Map<string, Gatherable>>();
+  private saveT = 0; // enerji tick save biriktirici (≤ 5sn'de bir yaz)
+  private energyBarBg!: Phaser.GameObjects.Rectangle;
+  private energyBarFill!: Phaser.GameObjects.Rectangle;
+  private energyText!: Phaser.GameObjects.Text;
+  private fireBoostText!: Phaser.GameObjects.Text;
+  private gatherHint!: Phaser.GameObjects.Text;
+  private fishing = false; private fishT = 0;
 
   constructor() { super({ key: 'TdWorld' }); }
 
   create(): void {
+    this.tdState.load();
     // kahraman kareleri: 3 yön × 3 faz → texture'lar
     for (let d = 0; d < 3; d++) for (let p = 0; p < 3; p++) {
       const key = `td-hero-${d}-${p}`;
@@ -83,9 +109,23 @@ export class TdWorldScene extends Phaser.Scene {
     for (let v = 0; v < 2; v++) { const m = mkBush(v); reg(`td-bush-${v}`, m); this.propMeta.set(`bush-${v}`, { ox: m.ox, oy: m.oy }); }
     mkFireFrames().forEach((c, f) => { if (!this.textures.exists(`td-fire-${f}`)) this.textures.addCanvas(`td-fire-${f}`, c); });
     const dd = mkDungeonDoor(); reg('td-door-dungeon', dd); this.propMeta.set('door', { ox: dd.ox, oy: dd.oy });
+    const stump = mkStump(); reg('td-stump', stump); this.propMeta.set('stump', { ox: stump.ox, oy: stump.oy });
 
     // etkileşim ipucu (alt-orta, HUD)
     this.hintText = this.add.text(VIEW_W / 2, VIEW_H - 14, '', {
+      fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
+    }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
+
+    // enerji HUD: sol-üst 60×6 bar + ⚡sayı; kamp ateşi yakınında 🔥×4 rozeti
+    this.energyBarBg = this.add.rectangle(6, 6, 60, 6, 0x1a2028, 0.85).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9);
+    this.energyBarFill = this.add.rectangle(6, 6, 60, 6, 0x57b8d8, 1).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9);
+    this.energyText = this.add.text(70, 3, '', {
+      fontSize: '10px', fontFamily: 'monospace', color: '#9fe8ff', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
+    }).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9);
+    this.fireBoostText = this.add.text(6, 14, '', {
+      fontSize: '9px', fontFamily: 'monospace', color: '#ff9d3f',
+    }).setOrigin(0, 0).setScrollFactor(0).setDepth(1e9).setVisible(false);
+    this.gatherHint = this.add.text(VIEW_W / 2, VIEW_H - 26, '', {
       fontSize: '10px', fontFamily: 'monospace', color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
 
@@ -111,6 +151,8 @@ export class TdWorldScene extends Phaser.Scene {
     });
     // M: minimap toggle
     kb.on('keydown-M', () => this.toggleMinimap());
+    // SPACE: en yakın toplanabilir kes/kaz/topla, yoksa kıyıda balık tut
+    kb.on('keydown-SPACE', () => this.onSpaceGather());
 
     this.streamChunks();
   }
@@ -170,6 +212,7 @@ export class TdWorldScene extends Phaser.Scene {
       this.chunkProps.delete(key);
       this.fires = this.fires.filter(f => f.img.active);
     }
+    this.chunkGatherables.delete(key); // node'lar chunk-yerel RAM'de; evict'te bilinçli tazelenir (determinizm bozulmaz)
     const mons = this.chunkMonsters.get(key);
     if (mons) {
       mons.forEach(m => m.img.destroy());
@@ -198,6 +241,7 @@ export class TdWorldScene extends Phaser.Scene {
         const objs: Phaser.GameObjects.GameObject[] = [];
         const solids: NonNullable<TdProp['solid']>[] = [];
         const interactives: TdProp[] = [];
+        const gatherables = new Map<string, Gatherable>();
         for (const p of list) {
           if (p.solid) solids.push(p.solid);
           if (p.kind === 'building' || p.kind === 'door_dungeon') interactives.push(p);
@@ -224,8 +268,19 @@ export class TdWorldScene extends Phaser.Scene {
           void meta; // (ox/oy şu an yalnız gölge-hizalama notu; origin(0.5,1) çizim tabanlıdır)
           const pimg = this.add.image(p.x, p.y, texKey2).setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
           objs.push(pimg);
+          // toplanabilir kayıt: tree/rock her zaman; bush yalnız berry-full varyant (v===1)
+          if (p.kind === 'tree' || p.kind === 'rock' || (p.kind === 'bush' && (p.v ?? 0) === 1)) {
+            const gkey = `${p.x},${p.y}`;
+            gatherables.set(gkey, {
+              kind: p.kind, img: pimg, x: p.x, y: p.y,
+              tx: Math.floor(p.x / TILE), ty: Math.floor(p.y / TILE),
+              hits: p.kind === 'bush' ? 1 : 3, alive: true, respawnAt: 0,
+              origTexKey: texKey2, bushVariant: p.kind === 'bush' ? p.v : undefined,
+            });
+          }
         }
         this.chunkProps.set(key, { objs, solids, interactives });
+        this.chunkGatherables.set(key, gatherables);
       }
       if (!this.chunkMonsters.has(key)) this.spawnChunkMonsters(c.cx, c.cy, key);
     }
@@ -302,11 +357,14 @@ export class TdWorldScene extends Phaser.Scene {
   update(t: number, dtMs: number): void {
     const dt = Math.min(dtMs, 50) / 1000;
     let dx = 0, dy = 0;
-    if (this.keys.W.isDown || this.cursors.up.isDown) dy -= 1;
-    if (this.keys.S.isDown || this.cursors.down.isDown) dy += 1;
-    if (this.keys.A.isDown || this.cursors.left.isDown) dx -= 1;
-    if (this.keys.D.isDown || this.cursors.right.isDown) dx += 1;
+    if (!this.fishing) {
+      if (this.keys.W.isDown || this.cursors.up.isDown) dy -= 1;
+      if (this.keys.S.isDown || this.cursors.down.isDown) dy += 1;
+      if (this.keys.A.isDown || this.cursors.left.isDown) dx -= 1;
+      if (this.keys.D.isDown || this.cursors.right.isDown) dx += 1;
+    }
     const moving = !!(dx || dy);
+    if (moving && this.fishing) { this.fishing = false; this.gatherHint.setVisible(false); } // hareket iptal eder
     if (moving) {
       const len = Math.hypot(dx, dy); dx /= len; dy /= len;
       const sp = 88 * dt;
@@ -397,6 +455,138 @@ export class TdWorldScene extends Phaser.Scene {
     this.fogRect.fillColor = atmo.fogColor; this.fogRect.fillAlpha += (atmo.fogAlpha - this.fogRect.fillAlpha) * 0.05;
     // minimap hero noktası
     if (this.minimapDot?.visible) this.minimapDot.setPosition(this.minimapX + this.heroPos.x / (MAP_W * TILE) * 96, this.minimapY + this.heroPos.y / (MAP_H * TILE) * 96);
+
+    // ── Faz 4: kamp ateşi yakınlığı + enerji tick + HUD ──
+    let nearFire = false;
+    for (const f of this.fires) {
+      if (Math.hypot(this.heroPos.x - f.x, this.heroPos.y - f.y) <= 48) { nearFire = true; break; }
+    }
+    this.tdState.tick(dt, nearFire);
+    this.fireBoostText.setVisible(nearFire).setText(nearFire ? '🔥×4' : '');
+    const pct = Phaser.Math.Clamp(this.tdState.energy / TdState.ENERGY_MAX, 0, 1);
+    this.energyBarFill.width = 60 * pct;
+    this.energyBarFill.fillColor = pct < 0.2 ? 0xe84142 : 0x57b8d8;
+    this.energyText.setText(`⚡${Math.round(this.tdState.energy)}`);
+
+    // periyodik kaydet (per-frame yazma yerine ≤5sn'de bir — tick kaynaklı sürekli enerji değişimi için)
+    this.saveT += dt;
+    if (this.saveT >= 5) { this.saveT = 0; this.tdState.save(); }
+
+    // toplanabilir respawn: süresi geçmişleri geri getir
+    for (const g of this.chunkGatherables.values()) for (const gv of g.values()) {
+      if (!gv.alive && gv.respawnAt > 0 && t >= gv.respawnAt) {
+        gv.alive = true; gv.respawnAt = 0;
+        gv.hits = gv.kind === 'bush' ? 1 : 3;
+        if (gv.kind === 'bush') gv.img.setTexture(`td-bush-${gv.bushVariant ?? 1}`);
+        else if (gv.kind === 'tree') gv.img.setTexture(gv.origTexKey);
+        else { gv.img.setVisible(true); gv.img.setTexture(gv.origTexKey); }
+      }
+    }
+
+    // balık tutma sayacı (2.5sn) — hareket iptal eder (üstte), tamamlanınca +1 balık
+    if (this.fishing) {
+      this.fishT += dt;
+      if (this.fishT >= 2.5) {
+        this.fishing = false; this.fishT = 0;
+        if (this.tdState.gather('fish')) {
+          this.floatText(this.heroPos.x, this.heroPos.y - 16, '+1 🐟');
+          this.tdState.save();
+        } else {
+          this.showRedHint('Not enough energy ⚡');
+        }
+        this.gatherHint.setVisible(false);
+      }
+    }
+  }
+
+  /** Yükselen '+1 🪵' vb. juice metni: 900ms'de 20px yukarı süzülüp yok olur. */
+  private floatText(x: number, y: number, msg: string, color = '#e8eef4'): void {
+    const t = this.add.text(x, y, msg, {
+      fontSize: '10px', fontFamily: 'monospace', color, backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
+    }).setOrigin(0.5, 1).setDepth(1e9);
+    this.tweens.add({ targets: t, y: y - 20, alpha: 0, duration: 900, onComplete: () => t.destroy() });
+  }
+
+  /** Geçici kırmızı ipucu (ör. 'Not enough energy ⚡'), 1.2sn sonra gatherHint temizlenir. */
+  private showRedHint(msg: string): void {
+    this.gatherHint.setText(msg).setColor('#ff5c5c').setVisible(true);
+    this.time.delayedCall(1200, () => { if (this.gatherHint.text === msg) this.gatherHint.setVisible(false); });
+  }
+
+  /**
+   * SPACE: en yakın toplanabilir (≤22px) → kes/kaz/topla; yoksa kıyıda balık tutmayı dener.
+   * NOT (API notu): tdState.gather(kind) TOPLAM aksiyon maliyetini (COSTS.chop=15 vb.) TEK seferde
+   * düşürür — vuruş-başına harcama modeline uymuyor. Bu yüzden çok-vuruşlu kesme/kazma için enerji
+   * PER_HIT'ten manuel düşülür (gather ile birebir aynı "yetersizse hiçbir şey değişmez" kuralına
+   * uyularak) ve yalnız SON vuruşta kaynak +1 edilir — böylece toplam harcanan enerji COSTS ile
+   * birebir eşleşir. Tek-vuruşluk bush/fish için gather() doğrudan kullanılır (API tam uyumlu).
+   */
+  private onSpaceGather(): void {
+    if (this.battleActive) return;
+    if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
+    if (this.fishing) return;
+
+    let nearest: Gatherable | null = null; let nd = 22;
+    for (const g of this.chunkGatherables.values()) for (const gv of g.values()) {
+      if (!gv.alive) continue;
+      const d = Math.hypot(this.heroPos.x - gv.x, this.heroPos.y - gv.y);
+      if (d < nd) { nd = d; nearest = gv; }
+    }
+
+    if (nearest) {
+      const g = nearest as Gatherable;
+      if (g.kind === 'bush') {
+        if (!this.tdState.gather('frostberry')) { this.showRedHint('Not enough energy ⚡'); return; }
+        g.alive = false; g.respawnAt = this.time.now + 20000;
+        g.img.setTexture('td-bush-0');
+        this.floatText(g.x, g.y - 14, '+1 🍒');
+        this.tdState.save();
+        return;
+      }
+      const perHit = g.kind === 'tree' ? PER_HIT.chop : PER_HIT.mine;
+      if (this.tdState.energy < perHit) { this.showRedHint('Not enough energy ⚡'); return; }
+      this.tdState.energy -= perHit;
+      g.hits -= 1;
+      if (g.hits > 0) {
+        this.floatText(g.x, g.y - 14, g.kind === 'tree' ? '🪵' : '⛏️', '#cfd8df');
+        this.tdState.save();
+        return;
+      }
+      // son vuruş: kaynak +1, despawn/respawn
+      if (g.kind === 'tree') {
+        this.tdState.resources.wood += 1;
+        g.alive = false; g.respawnAt = this.time.now + 25000;
+        g.img.setTexture('td-stump');
+        this.floatText(g.x, g.y - 14, '+1 🪵');
+      } else {
+        const isOre = hash2d(g.tx, g.ty, 4) % 4 === 0;
+        if (isOre) this.tdState.resources.ore += 1; else this.tdState.resources.stone += 1;
+        g.alive = false; g.respawnAt = this.time.now + 30000;
+        g.img.setVisible(false);
+        this.floatText(g.x, g.y - 14, isOre ? '+1 ⛏️' : '+1 🪨');
+      }
+      this.tdState.save();
+      return;
+    }
+
+    // toplanabilir yok: kıyı kontrolü → balık tutma
+    if (this.isNearWater()) this.startFishing();
+  }
+
+  /** 4 komşu tile'dan biri su mu? (kıyı testi) */
+  private isNearWater(): boolean {
+    const tx = Math.floor(this.heroPos.x / TILE), ty = Math.floor(this.heroPos.y / TILE);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      if (getTile(tx + dx, ty + dy).biome === 'water') return true;
+    }
+    return false;
+  }
+
+  private startFishing(): void {
+    if (this.fishing) return;
+    if (this.tdState.energy < COSTS.fish) { this.showRedHint('Not enough energy ⚡'); return; }
+    this.fishing = true; this.fishT = 0;
+    this.gatherHint.setText('fishing… 🎣').setColor('#9fe8ff').setVisible(true);
   }
 
   /** Bir MonRef'i chunkMonsters'ta bulup listesinden çıkarır + görüntüsünü yok eder (kazanılan savaş). */

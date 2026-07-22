@@ -129,7 +129,7 @@ export default function TdDevPage() {
     <div className="flex min-h-[80vh] items-center justify-center">
       <div className="w-full max-w-5xl">
         <p className="mb-2 text-center font-mono text-xs text-white/40">
-          WORLD TESTNET — early preview · WASD move · E interact · M minimap · F3 perf
+          WORLD TESTNET — early preview · WASD move · E interact · SPACE gather · M minimap · F3 perf
         </p>
         <div ref={ref} className="aspect-[3/2] w-full [image-rendering:pixelated]" />
       </div>
