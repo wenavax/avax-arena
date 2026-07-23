@@ -99,6 +99,14 @@ function remoteTexKey(id: string): string {
   return `td-remote-${hashId(id) % 6}`;
 }
 
+/** RGB kanallarını cur→target arası t oranında yumuşatır; 0xRRGGBB döner (atmosfer geçişi). */
+function lerpColor(cur: number, target: number, t: number): number {
+  const r = ((cur >> 16) & 0xff) + (((target >> 16) & 0xff) - ((cur >> 16) & 0xff)) * t;
+  const g = ((cur >> 8) & 0xff) + (((target >> 8) & 0xff) - ((cur >> 8) & 0xff)) * t;
+  const b = (cur & 0xff) + ((target & 0xff) - (cur & 0xff)) * t;
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
+}
+
 export class TdWorldScene extends Phaser.Scene {
   private hero!: Phaser.GameObjects.Image;
   private heroShadow!: Phaser.GameObjects.Ellipse;
@@ -119,6 +127,10 @@ export class TdWorldScene extends Phaser.Scene {
   private hintText!: Phaser.GameObjects.Text;
   private tintRect!: Phaser.GameObjects.Rectangle;
   private fogRect!: Phaser.GameObjects.Rectangle;
+  // Cila: atmosfer geçişinde RENK de yumuşasın (alpha zaten lerp'liydi, renk snap yapıyordu).
+  // İnterpole edilen mevcut renkler burada tutulur; hedefe her kare %5 yaklaşır.
+  private tintCur = 0x88bbff;
+  private fogCur = 0xbbddff;
   private minimapImg?: Phaser.GameObjects.Image;
   private minimapDot?: Phaser.GameObjects.Rectangle;
   private minimapBorder?: Phaser.GameObjects.Rectangle;
@@ -172,6 +184,16 @@ export class TdWorldScene extends Phaser.Scene {
   create(): void {
     this.tdMode = (this.registry.get('tdMode') as 'preview' | 'live' | undefined) ?? 'preview';
     this.tdState.load();
+    // Faz 6+ altın birleşimi: tek cüzdan PlayerState.gold. Eski kayıtlarda biriken
+    // cozy altını (tdState.gold) bir kez ps.gold'a taşınır ve sıfırlanır (sellAll artık
+    // yazmadığından bu geçiş idempotent — sonraki açılışlarda tdState.gold zaten 0).
+    if (this.tdMode === 'live' && this.tdState.gold > 0) {
+      const ps = PlayerState.get();
+      ps.gold += this.tdState.gold;
+      this.tdState.gold = 0;
+      ps.save();
+      this.tdState.save();
+    }
     // LIVE mod: tdState'te kayıtlı TD pozisyonu öncelikli; yoksa canlı v1 (izo) save'inden
     // migrateV1 ile TÜRETİLEN worldPos (salt okuma — frostbite_save'e asla yazılmaz);
     // o da yoksa TOWN_SPAWN (heroPos zaten TOWN_SPAWN ile başlatıldı, dokunma).
@@ -430,6 +452,10 @@ export class TdWorldScene extends Phaser.Scene {
       const gold = this.tdState.sellAll();
       this.tdState.save();
       if (gold > 0) {
+        // Tek cüzdan: satış geliri PlayerState.gold'a (savaş ödülleriyle aynı yere)
+        const ps = PlayerState.get();
+        ps.gold += gold;
+        if (this.tdMode === 'live') ps.save();
         window.dispatchEvent(new CustomEvent('td-sell', { detail: { gold, total: gold } }));
         this.floatText(this.heroPos.x, this.heroPos.y - 16, `+${gold}g 💰`, '#ffd23f');
       } else {
@@ -539,7 +565,7 @@ export class TdWorldScene extends Phaser.Scene {
       [ps.equipped.weapon, ps.equipped.armor, ps.equipped.accessory, ps.equipped.ring].filter(isNft).length;
     slot(1, 1, '⚔', ps.equipped.weapon ? (isNft(ps.equipped.weapon) ? '★' : '') : null, !ps.equipped.weapon);
     slot(2, 1, '🛡', ps.equipped.armor ? (isNft(ps.equipped.armor) ? '★' : '') : null, !ps.equipped.armor);
-    slot(3, 1, '💰', this.tdState.gold, this.tdState.gold === 0);
+    slot(3, 1, '💰', ps.gold, ps.gold === 0);
     slot(4, 1, '★', nftCount > 0 ? nftCount : null, nftCount === 0); // item NFT'leri (ERC-1155)
     // alt şerit: kahraman özeti
     const by = gy0 + 2 * (SLOT + GAP + 6) + 4;
@@ -1007,10 +1033,12 @@ export class TdWorldScene extends Phaser.Scene {
       }
       }
     }
-    // atmosfer lerp
+    // atmosfer lerp — hem alpha hem RENK yumuşak (bölge sınırında hue-snap cilası)
     const atmo = atmoForRegion(regionAt(Math.floor(this.heroPos.x / 16), Math.floor(this.heroPos.y / 16)).key);
-    this.tintRect.fillColor = atmo.tint; this.tintRect.fillAlpha += (atmo.tintAlpha - this.tintRect.fillAlpha) * 0.05;
-    this.fogRect.fillColor = atmo.fogColor; this.fogRect.fillAlpha += (atmo.fogAlpha - this.fogRect.fillAlpha) * 0.05;
+    this.tintCur = lerpColor(this.tintCur, atmo.tint, 0.05);
+    this.fogCur = lerpColor(this.fogCur, atmo.fogColor, 0.05);
+    this.tintRect.fillColor = this.tintCur; this.tintRect.fillAlpha += (atmo.tintAlpha - this.tintRect.fillAlpha) * 0.05;
+    this.fogRect.fillColor = this.fogCur; this.fogRect.fillAlpha += (atmo.fogAlpha - this.fogRect.fillAlpha) * 0.05;
     // minimap: mod-farkındalıklı konum/crop/nokta (Faz 5.5)
     this.updateMinimap();
 
@@ -1030,7 +1058,7 @@ export class TdWorldScene extends Phaser.Scene {
     this.levelText.setText(`${ps.level}`);
     this.hpText.setText(`${Math.round(ps.hp)}/${ps.maxHp}`);
     this.energyText.setText(`${Math.round(this.tdState.energy)}`);
-    this.goldText.setText(`${this.tdState.gold}`);
+    this.goldText.setText(`${PlayerState.get().gold}`);
     this.fireBoostText.setVisible(nearFire);
     const key = `${hpR.toFixed(3)}|${hpColor}|${xpR.toFixed(3)}|${pct.toFixed(3)}|${enColor}|${nearFire ? 1 : 0}`;
     if (key !== this.statsCache) {

@@ -81,7 +81,8 @@ eq('farm-growth-stages', FARM.growthStages, 2);
   const expectedGold = 2 * PRICES.wood + 1 * PRICES.stone + 1 * PRICES.ore + 1 * PRICES.fish + 1 * PRICES.frostberry;
   const earned = s.sellAll();
   eq('sellall-earned', earned, expectedGold);
-  eq('sellall-gold', s.gold, expectedGold);
+  // Faz 6+ tek cüzdan: sellAll artık tdState.gold'a YAZMAZ (çağrı yeri ps.gold'a ekler)
+  eq('sellall-gold-untouched', s.gold, 0);
   eq('sellall-resources-cleared', s.resources, { wood: 0, stone: 0, ore: 0, fish: 0, frostberry: 0 });
 
   // selling nothing yields 0 and doesn't throw

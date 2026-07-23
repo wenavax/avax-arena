@@ -19,6 +19,9 @@ export class TdState {
   static readonly ENERGY_MAX = 1000;
 
   energy = TdState.ENERGY_MAX;
+  // LEGACY/migration-only: Faz 6 sonrası tek cüzdan PlayerState.gold. sellAll artık
+  // buraya YAZMAZ; bu alan yalnız eski kayıtlardan okunur (TdWorldScene mount'ta
+  // ps.gold'a taşınıp sıfırlanır). save() tutarlılık için hâlâ yazar (ileride 0 kalır).
   gold = 0;
   resources: TdResources = { wood: 0, stone: 0, ore: 0, fish: 0, frostberry: 0 };
   farm: FarmPlot[] = Array.from({ length: FARM.plotCount }, () => ({ stage: 0 as const, t: 0 }));
@@ -55,7 +58,11 @@ export class TdState {
     }
   }
 
-  /** Tüm hammaddeleri fiyat tablosuyla gold'a çevirir; kaynaklar sıfırlanır. Kazanılan tutarı döner. */
+  /**
+   * Tüm hammaddeleri fiyat tablosuyla gold'a çevirir; kaynaklar sıfırlanır. Kazanılanı DÖNER.
+   * Faz 6 sonrası: tek cüzdan PlayerState.gold — çağrı yeri dönen tutarı ps.gold'a ekler.
+   * Bu yüzden burada this.gold'a EKLENMEZ (çift sayımı önler; bkz. gold alanı notu).
+   */
   sellAll(): number {
     const earned =
       this.resources.wood * PRICES.wood +
@@ -64,7 +71,6 @@ export class TdState {
       this.resources.fish * PRICES.fish +
       this.resources.frostberry * PRICES.frostberry;
     this.resources = { wood: 0, stone: 0, ore: 0, fish: 0, frostberry: 0 };
-    this.gold += earned;
     return earned;
   }
 

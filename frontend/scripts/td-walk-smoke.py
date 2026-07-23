@@ -133,6 +133,15 @@ with sync_playwright() as p:
             print('boss-battle-view', json.dumps(bres))
             check('battle-canvas-untouched', bres['sw'] == sw)
             check('battle-cam-fit', abs(bres['bz'] - min(sw / 1280, sh / 720)) < 0.02)
+            # Render-order regresyon çapası (23 Tem boss-donma bug'ı): TdBattle, duraklatılmış
+            # TdDungeon'ın ÜSTÜNDE render edilmeli — yoksa savaş görünmez kalır ("donma").
+            # Phaser sahneleri game.scene.scenes sırasıyla çizer; sonda olan üstte.
+            order = pg.evaluate("""() => { const ss = window.__tdGame.scene.scenes.map(s => s.scene.key);
+                const bt = window.__tdGame.scene.keys.TdBattle;
+                return { idxBattle: ss.indexOf('TdBattle'), idxDungeon: ss.indexOf('TdDungeon'), battleVisible: bt.scene.isVisible() }; }""")
+            print('boss-render-order', json.dumps(order))
+            check('battle-renders-above-dungeon', order['idxBattle'] > order['idxDungeon'])
+            check('battle-scene-visible', order['battleVisible'] is True)
             pg.evaluate("""() => {
                 const g = window.__tdGame;
                 g.scene.keys.TdBattle.scene.stop();
