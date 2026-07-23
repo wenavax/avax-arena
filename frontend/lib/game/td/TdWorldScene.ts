@@ -139,20 +139,19 @@ export class TdWorldScene extends Phaser.Scene {
   tdState = new TdState();
   private chunkGatherables = new Map<string, Map<string, Gatherable>>();
   private saveT = 0; // enerji tick save biriktirici (≤ 5sn'de bir yaz)
-  private energyBarBg!: Phaser.GameObjects.Rectangle;
-  private energyBarFill!: Phaser.GameObjects.Rectangle;
   private energyText!: Phaser.GameObjects.Text;
   private fireBoostText!: Phaser.GameObjects.Text;
-  // ── Faz 5.4: stat paneli + çanta + tuş ipucu ──
+  // ── Faz 5.4/5.10: stat paneli + çanta + tuş ipucu ──
   private statsPanel!: Phaser.GameObjects.Container;
+  private statsGfx!: Phaser.GameObjects.Graphics;
+  private levelLabel!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
-  private hpBarBg!: Phaser.GameObjects.Rectangle;
-  private hpBarFill!: Phaser.GameObjects.Rectangle;
+  private hpIcon!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
-  private xpBarBg!: Phaser.GameObjects.Rectangle;
-  private xpBarFill!: Phaser.GameObjects.Rectangle;
   private bagPanel!: Phaser.GameObjects.Container;
   private keysHint!: Phaser.GameObjects.Text;
+  // redrawStats değişim algılama önbelleği (her kare Graphics çizmemek için)
+  private statsCache = '';
   private gatherHint!: Phaser.GameObjects.Text;
   private fishing = false; private fishT = 0;
   private farmImgs = new Map<number, Phaser.GameObjects.Image>(); // plotIndex → img (kalıcı: kasaba her zaman yüklü chunk'ta)
@@ -234,27 +233,26 @@ export class TdWorldScene extends Phaser.Scene {
       fontSize: '10px', fontFamily: TD_FONT, color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
 
-    // ── Faz 5.4: sol-üst STAT PANELİ (izo HUDScene paritesi, cozy) — tek container:
-    // Lv + HP bar + XP bar + enerji bar + altın + 🔥×4. Container scrollFactor(0),
-    // çocuklar LOKAL koordinatta; layoutHud yalnız container'ı taşır. ──
+    // ── Faz 5.10: sol-üst STAT PANELİ (pro redesign) — yuvarlatılmış gölgeli panel,
+    // Lv madalyonu, kapsül barlar (iç-gölgeli track + üst-parlamalı dolgu), ikon
+    // satırları, altın/ateş pill çipleri. Bar geometrisi TEK Graphics'te; update()
+    // değerler değişince redrawStats() ile yeniden çizer (her kare değil). ──
     this.statsPanel = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9);
-    const pBg = this.add.rectangle(0, 0, 128, 48, 0x141c24, 0.82).setOrigin(0, 0)
-      .setStrokeStyle(1, 0x2a3a4c, 0.9);
-    this.levelText = this.add.text(5, 4, 'Lv.1', { fontSize: '9px', fontFamily: TD_FONT, color: '#ffd23f' }).setOrigin(0, 0);
-    this.hpBarBg = this.add.rectangle(38, 5, 84, 8, 0x1a2028, 1).setOrigin(0, 0);
-    this.hpBarFill = this.add.rectangle(39, 6, 82, 6, 0x44cc66, 1).setOrigin(0, 0);
-    this.hpText = this.add.text(80, 5, '', { fontSize: '7px', fontFamily: TD_FONT, color: '#eaffef' }).setOrigin(0.5, 0);
-    this.xpBarBg = this.add.rectangle(38, 15, 84, 3, 0x1a2028, 1).setOrigin(0, 0);
-    this.xpBarFill = this.add.rectangle(38, 15, 0, 3, 0x7f7fff, 1).setOrigin(0, 0);
-    this.energyBarBg = this.add.rectangle(38, 21, 84, 7, 0x1a2028, 1).setOrigin(0, 0);
-    this.energyBarFill = this.add.rectangle(39, 22, 82, 5, 0x57b8d8, 1).setOrigin(0, 0);
-    this.energyText = this.add.text(5, 20, '⚡', { fontSize: '9px', fontFamily: TD_FONT, color: '#9fe8ff' }).setOrigin(0, 0);
-    this.goldText = this.add.text(5, 33, '', { fontSize: '9px', fontFamily: TD_FONT, color: '#ffd23f' }).setOrigin(0, 0);
-    this.fireBoostText = this.add.text(70, 33, '', { fontSize: '9px', fontFamily: TD_FONT, color: '#ff9d3f' })
+    this.statsGfx = this.add.graphics();
+    this.levelLabel = this.add.text(17, 8, 'LV', { fontSize: '6px', fontFamily: TD_FONT, color: '#8fa6bd' }).setOrigin(0.5, 0);
+    this.levelText = this.add.text(17, 14, '1', { fontSize: '11px', fontFamily: TD_FONT, color: '#ffd23f', fontStyle: 'bold' }).setOrigin(0.5, 0);
+    this.hpIcon = this.add.text(31, 6, '❤', { fontSize: '8px', fontFamily: TD_FONT, color: '#ff7a7a' }).setOrigin(0, 0);
+    this.hpText = this.add.text(89, 7, '', { fontSize: '7px', fontFamily: TD_FONT, color: '#eaffef' }).setOrigin(0.5, 0);
+    // '⚡' emoji'si Text canvas'ında koyu kutulu render oluyor (glyph artefaktı) —
+    // şimşek redrawStats'ta poligon olarak çizilir; buradaki obje boş yer tutucu değil, YOK.
+    this.energyText = this.add.text(89, 26, '', { fontSize: '7px', fontFamily: TD_FONT, color: '#eaffff' }).setOrigin(0.5, 0);
+    this.goldText = this.add.text(24, 41, '', { fontSize: '9px', fontFamily: TD_FONT, color: '#ffd23f' }).setOrigin(0, 0);
+    const goldIcon = this.add.text(11, 41, '💰', { fontSize: '8px', fontFamily: TD_FONT, color: '#ffd23f' }).setOrigin(0, 0);
+    this.fireBoostText = this.add.text(96, 41, '🔥×4', { fontSize: '8px', fontFamily: TD_FONT, color: '#ff9d3f' })
       .setOrigin(0, 0).setVisible(false);
-    this.statsPanel.add([pBg, this.levelText, this.hpBarBg, this.hpBarFill, this.hpText,
-      this.xpBarBg, this.xpBarFill, this.energyBarBg, this.energyBarFill, this.energyText,
-      this.goldText, this.fireBoostText]);
+    this.statsPanel.add([this.statsGfx, this.levelLabel, this.levelText, this.hpIcon, this.hpText,
+      this.energyText, goldIcon, this.goldText, this.fireBoostText]);
+    this.redrawStats(1, 0x44cc66, 0, 1, 0x57b8d8, false); // ilk çizim (default değerler)
     this.gatherHint = this.add.text(0, 0, '', {
       fontSize: '10px', fontFamily: TD_FONT, color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
@@ -315,6 +313,60 @@ export class TdWorldScene extends Phaser.Scene {
   }
 
   /**
+   * Faz 5.10: stat paneli bar/çip geometrisi — kapsül track (iç gölge) + dolgu
+   * (üst gloss şeridi) + Lv madalyonu + altın/ateş pill'leri. update() değerleri
+   * cache anahtarıyla karşılaştırır; yalnız değişince çizilir.
+   */
+  private redrawStats(hpR: number, hpColor: number, xpR: number, enR: number, enColor: number, fire: boolean): void {
+    const g = this.statsGfx;
+    g.clear();
+    // panel: gölge + gövde + kenar + üst iç-parlama
+    g.fillStyle(0x000000, 0.28); g.fillRoundedRect(1, 2, 140, 54, 7);
+    // gövde ~opak: yarı saydamlıkta arkadaki bina/duvar silüetleri panelde leke gibi sızıyordu
+    g.fillStyle(0x121a23, 0.97); g.fillRoundedRect(0, 0, 140, 54, 7);
+    g.lineStyle(1, 0x3a4e63, 1); g.strokeRoundedRect(0, 0, 140, 54, 7);
+    g.fillStyle(0xffffff, 0.05); g.fillRect(3, 1, 134, 1);
+    // Lv madalyonu
+    g.fillStyle(0x1d2836, 1); g.fillCircle(17, 17, 12);
+    g.lineStyle(1, 0xe8b23f, 0.9); g.strokeCircle(17, 17, 12);
+    g.lineStyle(1, 0xffffff, 0.12); g.strokeCircle(17, 17, 10);
+    // bar çizici: kapsül track + iç gölge + dolgu + üst gloss.
+    // DİKKAT: fillRoundedRect'te yarıçap > yükseklik/2 GEÇERSİZ geometri üretir
+    // (bozuk üçgenleme panelde koyu kutu artefaktı olarak render oldu) — gloss/iç-gölge
+    // şeritleri DÜZ fillRect (kapsül içine x'ten yarıçap kadar girinti), dolgu yarıçapı kıskaçlı.
+    const bar = (x: number, y: number, w: number, h: number, ratio: number, color: number) => {
+      const rad = h / 2;
+      g.fillStyle(0x0b1117, 1); g.fillRoundedRect(x, y, w, h, rad);
+      g.fillStyle(0x000000, 0.35); g.fillRect(x + rad, y + 1, w - 2 * rad, Math.max(1, Math.round(h * 0.3))); // iç gölge
+      const fw = Math.max(0, Math.round((w - 2) * ratio));
+      if (fw > 1) {
+        const fr = Math.min((h - 2) / 2, fw / 2);
+        g.fillStyle(color, 1); g.fillRoundedRect(x + 1, y + 1, fw, h - 2, fr);
+        const gw = Math.max(0, fw - 2 * fr);
+        if (gw > 0) { g.fillStyle(0xffffff, 0.22); g.fillRect(x + 1 + fr, y + 2, gw, Math.max(1, Math.round((h - 2) * 0.35))); } // gloss
+      }
+      g.lineStyle(1, 0x2a3a4c, 1); g.strokeRoundedRect(x, y, w, h, rad);
+    };
+    bar(41, 6, 94, 10, hpR, hpColor);
+    // XP: ince şerit (etiketsiz — sessiz ilerleme)
+    bar(41, 18, 94, 4, xpR, 0x8f7fff);
+    bar(41, 25, 94, 9, enR, enColor);
+    // şimşek ikonu (poligon — '⚡' emoji'si Text'te koyu kutulu render oluyordu)
+    g.fillStyle(0xffd23f, 1);
+    g.fillPoints([
+      { x: 36, y: 24 }, { x: 31, y: 30 }, { x: 34, y: 30 },
+      { x: 32, y: 35 }, { x: 38, y: 28 }, { x: 35, y: 28 },
+    ] as Phaser.Geom.Point[], true);
+    // altın pill'i + (koşullu) ateş pill'i
+    g.fillStyle(0x1a2430, 1); g.fillRoundedRect(7, 39, 62, 13, 6);
+    g.lineStyle(1, 0x3a4e63, 0.8); g.strokeRoundedRect(7, 39, 62, 13, 6);
+    if (fire) {
+      g.fillStyle(0x2a1c12, 1); g.fillRoundedRect(92, 39, 40, 13, 6);
+      g.lineStyle(1, 0xff9d3f, 0.6); g.strokeRoundedRect(92, 39, 40, 13, 6);
+    }
+  }
+
+  /**
    * Faz 5.2/5.5: kamera zoom'u — kullanıcı tercihi ([-]/[+], kalıcı) varsa o,
    * yoksa computeTdView default'u (masaüstü 3 = Larvy paritesi, dar ekran 2).
    */
@@ -356,7 +408,7 @@ export class TdWorldScene extends Phaser.Scene {
     this.updateMinimap();
     this.perfText?.setPosition(x0 + 4, y0 + 4);
     const texts = [this.hintText, this.gatherHint, this.energyText, this.fireBoostText, this.goldText,
-      this.levelText, this.hpText];
+      this.levelText, this.levelLabel, this.hpText, this.hpIcon];
     if (this.keysHint) texts.push(this.keysHint);
     for (const t of texts) if (t.style.resolution !== k) t.setResolution(k);
   }
@@ -892,19 +944,23 @@ export class TdWorldScene extends Phaser.Scene {
       if (Math.hypot(this.heroPos.x - f.x, this.heroPos.y - f.y) <= 48) { nearFire = true; break; }
     }
     this.tdState.tick(dt, nearFire);
-    this.fireBoostText.setVisible(nearFire).setText(nearFire ? '🔥×4' : '');
-    const pct = Phaser.Math.Clamp(this.tdState.energy / TdState.ENERGY_MAX, 0, 1);
-    this.energyBarFill.width = 82 * pct;
-    this.energyBarFill.fillColor = pct < 0.2 ? 0xe84142 : 0x57b8d8;
-    this.energyText.setText(`⚡${Math.round(this.tdState.energy)}`);
-    this.goldText.setText(`💰${this.tdState.gold}`);
-    // Faz 5.4: stat paneli — Lv/HP/XP (PlayerState; live'da gerçek kayıt, preview'da default)
+    // Faz 5.10: stat paneli — metinler + değişim-algılamalı bar redraw'ı
     const ps = PlayerState.get();
-    this.levelText.setText(`Lv.${ps.level}`);
-    this.hpBarFill.width = 82 * Phaser.Math.Clamp(ps.hp / ps.maxHp, 0, 1);
-    this.hpBarFill.fillColor = ps.hp / ps.maxHp < 0.25 ? 0xe84142 : 0x44cc66;
+    const pct = Phaser.Math.Clamp(this.tdState.energy / TdState.ENERGY_MAX, 0, 1);
+    const enColor = pct < 0.2 ? 0xe84142 : 0x57b8d8;
+    const hpR = Phaser.Math.Clamp(ps.hp / ps.maxHp, 0, 1);
+    const hpColor = hpR < 0.25 ? 0xe84142 : 0x44cc66;
+    const xpR = Phaser.Math.Clamp(ps.xp / ps.xpToNext, 0, 1);
+    this.levelText.setText(`${ps.level}`);
     this.hpText.setText(`${Math.round(ps.hp)}/${ps.maxHp}`);
-    this.xpBarFill.width = 84 * Phaser.Math.Clamp(ps.xp / ps.xpToNext, 0, 1);
+    this.energyText.setText(`${Math.round(this.tdState.energy)}`);
+    this.goldText.setText(`${this.tdState.gold}`);
+    this.fireBoostText.setVisible(nearFire);
+    const key = `${hpR.toFixed(3)}|${hpColor}|${xpR.toFixed(3)}|${pct.toFixed(3)}|${enColor}|${nearFire ? 1 : 0}`;
+    if (key !== this.statsCache) {
+      this.statsCache = key;
+      this.redrawStats(hpR, hpColor, xpR, pct, enColor, nearFire);
+    }
 
     // tarla parsel görselleri: tdState.farm[i].stage ile senkron (texture swap)
     for (const [idx, img] of this.farmImgs) {
