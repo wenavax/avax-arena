@@ -64,7 +64,7 @@ export function regionAt(tx: number, ty: number): Region {
 // 2-tile genişlik. Tüm yatay bacaklar y=191-192 bandını paylaşır → tek ana cadde +
 // bölge sapakları okunur bir ağ verir. Su üstünde yol = köprü (collision false).
 // Kasaba çekirdeği (≤16 tile) yol almaz — meydan zemini bozulmasın.
-const ROAD_Y = 192;
+export const ROAD_Y = 192; // Faz 5.11: tabela yerleşimi de kullanır (worldProps.roadSigns)
 interface RoadSeg { x0: number; x1: number; y0: number; y1: number }
 // Faz 5.8: yatay ana cadde ile dikey sapaklar AYRIŞTI — cadde köyün İÇİNDEN geçer
 // (kuzey bina sırasının kapı önü), dikey sapaklar köy çekirdeğinde (≤16 tile) kesilir.

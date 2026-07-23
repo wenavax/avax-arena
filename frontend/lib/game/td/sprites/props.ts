@@ -118,6 +118,18 @@ export function mkBuilding(wTiles: number, hTiles: number, accent: string, icon:
 }
 
 /** Zindan kapısı — taş kemer + bölge-accent parıltı noktası. */
+/** Faz 5.11: yol tabelası — ahşap direk + levha (metin sahnede Text olarak üstüne basılır). */
+export function mkSignpost(): { img: HTMLCanvasElement; ox: number; oy: number } {
+  const img = outline(spr(14, 16, (px) => {
+    px(6, 3, 2, 13, '#6e4e30'); px(6, 3, 1, 13, '#54391f');      // direk
+    px(1, 1, 12, 6, '#8a6a42'); px(1, 1, 12, 1, '#a5835a');      // levha + üst vurgusu
+    px(1, 6, 12, 1, '#54391f');                                   // levha alt gölgesi
+    px(2, 3, 10, 1, '#54391f'); px(2, 5, 8, 1, '#54391f');        // yazı çizikleri (dekoratif)
+    px(2, 0, 4, 1, SNOW); px(9, 0, 3, 1, SNOW);                   // kar
+  }));
+  return { img, ox: img.width >> 1, oy: img.height - 1 };
+}
+
 /** Faz 5.6: kasaba portalı — taş kaide + camgöbeği ışıyan halka (2 kare: iç parıltı oynar). */
 export function mkPortal(frame: 0 | 1 = 0): { img: HTMLCanvasElement; ox: number; oy: number } {
   const img = outline(spr(22, 26, (px) => {

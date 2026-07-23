@@ -7,7 +7,7 @@ import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
 import { propsForChunk, dungeonDoors, townPortals, TOWN_ORIGIN, type TdProp } from './worldProps';
-import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump, mkFarmPlot, mkPortal } from './sprites/props';
+import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump, mkFarmPlot, mkPortal, mkSignpost } from './sprites/props';
 import { atmoForRegion } from './atmosphere';
 import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
 import { mkMonsterChibi } from './sprites/monsterChibi';
@@ -225,6 +225,7 @@ export class TdWorldScene extends Phaser.Scene {
     mkFireFrames().forEach((c, f) => { if (!this.textures.exists(`td-fire-${f}`)) this.textures.addCanvas(`td-fire-${f}`, c); });
     const dd = mkDungeonDoor(); reg('td-door-dungeon', dd); this.propMeta.set('door', { ox: dd.ox, oy: dd.oy });
     reg('td-portal-0', mkPortal(0)); reg('td-portal-1', mkPortal(1)); // Faz 5.6
+    reg('td-signpost', mkSignpost()); // Faz 5.11
     const stump = mkStump(); reg('td-stump', stump); this.propMeta.set('stump', { ox: stump.ox, oy: stump.oy });
     for (let s = 0; s < 4; s++) { const m = mkFarmPlot(s as 0 | 1 | 2 | 3); reg(`td-farm-${s}`, m); this.propMeta.set(`farm-${s}`, { ox: m.ox, oy: m.oy }); }
 
@@ -284,6 +285,13 @@ export class TdWorldScene extends Phaser.Scene {
     // Faz 5.5: [-]/[+] kamera mesafesi (PLUS = ana sıra '=' tuşu, Phaser keycode 187)
     kb.on('keydown-MINUS', () => this.nudgeZoom(-1));
     kb.on('keydown-PLUS', () => this.nudgeZoom(1));
+    // Faz 5.11: Q — hızlı iksir iç (savaş ekranına girmeden; mobil 🧪 aynı yol)
+    kb.on('keydown-Q', () => this.drinkPotion());
+    // zindan/battle aktifken dünya dinleyicisi tüketmesin (çift iksir tuzağı)
+    const onUiPotion = () => { if (!this.scene.isActive('TdDungeon') && !this.scene.isActive('TdBattle')) this.drinkPotion(); };
+    window.addEventListener('td-ui-potion', onUiPotion);
+    this.events.once('shutdown', () => window.removeEventListener('td-ui-potion', onUiPotion));
+    this.events.once('destroy', () => window.removeEventListener('td-ui-potion', onUiPotion));
     const onUiBag = () => this.toggleBag();
     const onUiMap = () => this.toggleMinimap();
     window.addEventListener('td-ui-bag', onUiBag);
@@ -295,7 +303,7 @@ export class TdWorldScene extends Phaser.Scene {
     // Faz 5.4: çanta paneli (kapalı başlar; içerik her açılışta tazelenir) + tuş ipucu
     this.bagPanel = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9 + 2).setVisible(false);
     const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true;
-    this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [B] bag · [M] map · [-/+] zoom', {
+    this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [Q] potion · [B] bag · [M] map · [-/+] zoom', {
       fontSize: '8px', fontFamily: TD_FONT, color: '#cfe3f2',
     }).setOrigin(1, 1).setScrollFactor(0).setDepth(1e9).setAlpha(0.55).setVisible(!isTouch);
 
@@ -669,6 +677,14 @@ export class TdWorldScene extends Phaser.Scene {
           else if (p.kind === 'rock') { texKey2 = `td-rock-${p.v ?? 0}`; meta = this.propMeta.get(`rock-${p.v ?? 0}`)!; }
           else if (p.kind === 'bush') { texKey2 = `td-bush-${p.v ?? 0}`; meta = this.propMeta.get(`bush-${p.v ?? 0}`)!; }
           else if (p.kind === 'door_dungeon') { texKey2 = 'td-door-dungeon'; meta = this.propMeta.get('door')!; }
+          else if (p.kind === 'sign') {
+            // Faz 5.11: tabela — sprite + üstünde yön/bölge etiketi ("↑ MINES")
+            const simg = this.add.image(p.x, p.y, 'td-signpost').setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
+            const slabel = this.add.text(p.x, p.y - 18, p.data!.name!, {
+              fontSize: '7px', fontFamily: TD_FONT, color: '#ffe9c9', backgroundColor: '#3a2a18dd', padding: { x: 3, y: 1 },
+            }).setOrigin(0.5, 1).setDepth(depth(p.x, p.y) + 1).setResolution(this.uiZoom);
+            objs.push(simg, slabel); continue;
+          }
           else if (p.kind === 'portal') {
             // Faz 5.6: kasaba portalı — 2-kare parıltı (700ms flip; obj cull'da tween de ölür)
             const pimg = this.add.image(p.x, p.y, 'td-portal-0').setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
@@ -1190,6 +1206,20 @@ export class TdWorldScene extends Phaser.Scene {
     this.floatText(this.heroPos.x, this.heroPos.y - 20, `-${dmg}`, '#ff5c5c');
     if (this.tdMode === 'live') ps.save();
     if (ps.hp <= 0) this.heroDown();
+  }
+
+  /** Faz 5.11: Q — envanterden ilk iksiri iç (heal; live'da kalıcı). Battle'ın Potion butonundan bağımsız. */
+  drinkPotion(): void {
+    const ps = PlayerState.get();
+    const pot = ps.inventory.find(i => i.type === 'potion' && (i.count ?? 1) > 0);
+    if (!pot) { this.showRedHint('no potions 🧪'); return; }
+    if (ps.hp >= ps.maxHp) { this.showRedHint('HP already full ❤'); return; }
+    pot.count = (pot.count ?? 1) - 1;
+    if (pot.count <= 0) ps.inventory.splice(ps.inventory.indexOf(pot), 1);
+    const heal = pot.stat?.hp ?? 40;
+    ps.hp = Math.min(ps.maxHp, ps.hp + heal);
+    if (this.tdMode === 'live') ps.save();
+    this.floatText(this.heroPos.x, this.heroPos.y - 18, `+${heal} ❤ 🧪`, '#5aef8a');
   }
 
   /** Kahraman düştü: kasabaya dön, yarım canla uyan (ceza hafif — cozy ton). */

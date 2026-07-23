@@ -208,6 +208,11 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
               className="h-11 w-11 touch-none rounded-full border border-white/20 bg-black/30 text-lg active:bg-white/20"
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >🗺</button>
+            <button
+              onPointerDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('td-ui-potion')); }}
+              className="h-11 w-11 touch-none rounded-full border border-white/20 bg-black/30 text-lg active:bg-white/20"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >🧪</button>
           </div>
           {/* sağ-alt E / SPACE */}
           <div className="absolute bottom-4 right-4 z-40 flex gap-3">

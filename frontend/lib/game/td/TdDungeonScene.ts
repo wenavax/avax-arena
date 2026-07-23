@@ -136,6 +136,11 @@ export class TdDungeonScene extends Phaser.Scene {
     kb.on('keydown-ESC', () => this.leave());
     // Faz 5.6/5.7: SPACE — önce savaş (trash mob), yoksa cevher kazma
     kb.on('keydown-SPACE', () => this.onSpaceAction());
+    // Faz 5.11: Q — hızlı iksir (dünya sahnesinin ortak yolu; float zindanda basılır)
+    kb.on('keydown-Q', () => this.drinkPotionD());
+    const onUiPotion = () => this.drinkPotionD();
+    window.addEventListener('td-ui-potion', onUiPotion);
+    this.events.once('shutdown', () => window.removeEventListener('td-ui-potion', onUiPotion));
 
     // Faz 5.2: HUD/tint konum+boyutları layoutHud()'da (kamera-zoom dönüşümü)
     this.hintText = this.add.text(0, 0, '', {
@@ -351,6 +356,19 @@ export class TdDungeonScene extends Phaser.Scene {
     nearest.img.setVisible(false);
     this.veinFloat(nearest.x, nearest.y, `+${yieldN} ⛏️`, '#ffd884');
     st.save();
+  }
+
+  /** Faz 5.11: Q iksir — mantık PlayerState'te, float bu sahnede. */
+  private drinkPotionD(): void {
+    const ps = PlayerState.get();
+    const pot = ps.inventory.find(i => i.type === 'potion' && (i.count ?? 1) > 0);
+    if (!pot || ps.hp >= ps.maxHp) return;
+    pot.count = (pot.count ?? 1) - 1;
+    if (pot.count <= 0) ps.inventory.splice(ps.inventory.indexOf(pot), 1);
+    const heal = pot.stat?.hp ?? 40;
+    ps.hp = Math.min(ps.maxHp, ps.hp + heal);
+    if ((this.registry.get('tdMode') as string) === 'live') ps.save();
+    this.veinFloat(this.heroPos.x, this.heroPos.y - 8, `+${heal} ❤ 🧪`, '#5aef8a');
   }
 
   /** Yükselen juice metni (TdWorldScene.floatText'in zindan eşleniği). */

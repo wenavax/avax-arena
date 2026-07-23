@@ -3,10 +3,10 @@
 // Kasaba binaları HUB_GAMES'ten türetilir (tek doğruluk kaynağı korunur).
 // salt sözlüğü: 3=yerleşim(ağaç), 4=varyant, 5=kaya, 6=çalı, 11=portal (bkz tdCore.hash2d).
 import { CHUNK, MAP_W, MAP_H, hash2d } from './tdCore';
-import { getTile, regionAt, REGIONS, TOWN_SPAWN } from './worldMap';
+import { getTile, regionAt, REGIONS, TOWN_SPAWN, ROAD_Y } from './worldMap';
 import { HUB_GAMES } from '../hub/hubGames';
 
-export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot' | 'portal';
+export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot' | 'portal' | 'sign';
 export interface TdProp {
   kind: PropKind;
   x: number; y: number;                    // dünya px (taban/ayak noktası)
@@ -143,6 +143,24 @@ export function townPortals(): TdProp[] {
   return (PORTAL_CACHE = out);
 }
 
+// ── Faz 5.11: YOL TABELALARI — ana cadde × bölge sapağı kavşaklarına, sapağın işaret
+// ettiği bölgenin adı + yön okuyla. Deterministik (bölge listesinden türetilir).
+let SIGN_CACHE: TdProp[] | null = null;
+export function roadSigns(): TdProp[] {
+  if (SIGN_CACHE) return SIGN_CACHE;
+  const out: TdProp[] = [];
+  for (const rg of REGIONS) {
+    if (rg.key === 'town') continue;
+    const dir = rg.cy < ROAD_Y ? '↑' : '↓';
+    const tx = rg.cx + 2, ty = ROAD_Y - 2;                     // kavşağın hemen kuzey-doğusu
+    out.push({
+      kind: 'sign', x: tx * 16 + 8, y: ty * 16 + 14,
+      data: { id: `sign-${rg.key}`, name: `${dir} ${rg.key.toUpperCase()}`, region: rg.key },
+    });
+  }
+  return (SIGN_CACHE = out);
+}
+
 // otomatik yerleşime kapalı: bina rect'leri (x ±1 tile, üst 1 / alt 2 tile pay — kapı önü), spawn ±3, kapı ±2 tile, portal ±2 tile
 function reserved(tx: number, ty: number): boolean {
   if (Math.abs(tx - TOWN_SPAWN.tx) <= 3 && Math.abs(ty - TOWN_SPAWN.ty) <= 3) return true;
@@ -171,6 +189,7 @@ export function propsForChunk(cx: number, cy: number): TdProp[] {
   for (const p of allTownProps()) if (inChunk(p)) out.push(p);
   for (const d of dungeonDoors()) if (inChunk(d)) out.push(d);
   for (const p of townPortals()) if (inChunk(p)) out.push(p);
+  for (const s of roadSigns()) if (inChunk(s)) out.push(s);
   for (let ty = by; ty < by + CHUNK; ty++) for (let tx = bx; tx < bx + CHUNK; tx++) {
     const t = getTile(tx, ty);
     if (t.collision || t.biome === 'water') continue;
