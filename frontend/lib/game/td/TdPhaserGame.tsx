@@ -32,6 +32,7 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
         const w = window as unknown as {
           __frostbiteWallet?: { authenticated?: boolean };
           __frostbiteHero?: { tokenId: number; element: number; rarity: number; level?: number; xp?: number; atk: number; def: number; spd: number };
+          __frostbiteItems?: import('../nft/onchain').RawNftItem[];
         };
         const nft = w.__frostbiteWallet?.authenticated ? w.__frostbiteHero : undefined;
         if (nft) {
@@ -47,6 +48,14 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
           st.maxHp = 120 + 15 * (st.level - 1) + rarityBonus;
           if (!loaded) { st.hp = st.maxHp; st.gold = 50; } // kayıtsız NFT sahibi: taze başlangıç
           else st.hp = Math.min(st.hp, st.maxHp);
+        }
+        // Faz 6: ERC-1155 item NFT'leri (WorldLoginGate __frostbiteItems'ı doldurur) →
+        // envantere import + otomatik kuşanma (izo IsoBaseScene createPlayer paritesi).
+        // Cüzdansız/item'sız durumda syncNftItems no-op — smoke bozulmaz.
+        if (w.__frostbiteWallet?.authenticated) {
+          const { syncNftItems } = await import('../nft/onchain');
+          const res = syncNftItems(st, w.__frostbiteItems);
+          if (res.imported > 0 || res.equipped.length > 0) st.save();
         }
       }
       const { TdWorldScene } = await import('./TdWorldScene');
@@ -103,6 +112,24 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
       if (timer) clearTimeout(timer);
     };
   }, [mode]);
+
+  // ── Faz 6: zincir-kayıt toast'u (bag panelindeki ⛓ SAVE butonu tetikler) ──
+  const [chainToast, setChainToast] = useState<{ msg: string; color: string } | null>(null);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onChain = (e: Event) => {
+      const detail = (e as CustomEvent<{ msg?: string; color?: string }>).detail;
+      if (!detail?.msg) return;
+      setChainToast({ msg: detail.msg, color: detail.color ?? '#9fe8ff' });
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setChainToast(null), 3500);
+    };
+    window.addEventListener('td-chain-toast', onChain);
+    return () => {
+      window.removeEventListener('td-chain-toast', onChain);
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   // ── sell toast (her iki mod) ──
   useEffect(() => {
@@ -248,6 +275,14 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
           style={{ borderLeft: '3px solid #ffd23f' }}
         >
           Sold for {sellToast}g 💰
+        </div>
+      )}
+      {chainToast !== null && (
+        <div
+          className="fixed bottom-20 right-6 z-50 rounded bg-[#141c24] px-4 py-3 text-sm text-white shadow-lg"
+          style={{ borderLeft: `3px solid ${chainToast.color}` }}
+        >
+          {chainToast.msg}
         </div>
       )}
 

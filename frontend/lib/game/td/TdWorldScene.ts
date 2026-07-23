@@ -498,7 +498,10 @@ export class TdWorldScene extends Phaser.Scene {
     // ── Faz 5.12: KARE KARE slot ızgarası (stat panelinin görsel dili: yuvarlatılmış
     // paneller + iç gölge). 5 sütun × 2 sıra slot + altta kahraman özet şeridi. ──
     const COLS = 5, SLOT = 26, GAP = 5;
-    const W2 = COLS * SLOT + (COLS - 1) * GAP + 24, H2 = 158;
+    // Faz 6: live modda cüzdan bağlıysa altta ⛓ SAVE ON-CHAIN satırı açılır (panel uzar)
+    const chainSave = this.tdMode === 'live' &&
+      (window as unknown as { __frostbiteWallet?: { authenticated?: boolean } }).__frostbiteWallet?.authenticated === true;
+    const W2 = COLS * SLOT + (COLS - 1) * GAP + 24, H2 = chainSave ? 174 : 158;
     const gx0 = -W2 / 2 + 12, gy0 = -H2 / 2 + 24;
     const g = this.add.graphics();
     g.fillStyle(0x000000, 0.3); g.fillRoundedRect(-W2 / 2 + 1, -H2 / 2 + 2, W2, H2, 8);
@@ -531,10 +534,14 @@ export class TdWorldScene extends Phaser.Scene {
     // sıra 2: iksir + ekipman + altın
     const potions = ps.inventory.filter(i => i.type === 'potion').reduce((n, i) => n + (i.count || 1), 0);
     slot(0, 1, '🧪', potions, potions === 0);
-    slot(1, 1, '⚔', ps.equipped.weapon ? '' : null, !ps.equipped.weapon);
-    slot(2, 1, '🛡', ps.equipped.armor ? '' : null, !ps.equipped.armor);
+    // Faz 6: NFT ekipman ★ rozetiyle işaretlenir; ★ slotu sahip olunan item NFT sayısı
+    const isNft = (i: { id: string } | null) => !!i && i.id.startsWith('nft_item_');
+    const nftCount = ps.inventory.filter(isNft).length +
+      [ps.equipped.weapon, ps.equipped.armor, ps.equipped.accessory, ps.equipped.ring].filter(isNft).length;
+    slot(1, 1, '⚔', ps.equipped.weapon ? (isNft(ps.equipped.weapon) ? '★' : '') : null, !ps.equipped.weapon);
+    slot(2, 1, '🛡', ps.equipped.armor ? (isNft(ps.equipped.armor) ? '★' : '') : null, !ps.equipped.armor);
     slot(3, 1, '💰', this.tdState.gold, this.tdState.gold === 0);
-    slot(4, 1, '★', null, true); // boş slot (gelecek: item NFT'leri)
+    slot(4, 1, '★', nftCount > 0 ? nftCount : null, nftCount === 0); // item NFT'leri (ERC-1155)
     // alt şerit: kahraman özeti
     const by = gy0 + 2 * (SLOT + GAP + 6) + 4;
     g.fillStyle(0x0e151d, 1); g.fillRoundedRect(-W2 / 2 + 8, by, W2 - 16, 30, 6);
@@ -544,8 +551,36 @@ export class TdWorldScene extends Phaser.Scene {
       T(gx0, by + 16, `ATK ${ps.atk}  DEF ${ps.def}  SPD ${ps.spd}`, '#cfe3f2', 7),
       T(0, H2 / 2 - 4, 'sell at the Marketplace [E] · [Q] potion', '#8fa6bd', 7, 0.5, 1),
     );
+    if (chainSave) {
+      const btn = T(0, H2 / 2 - 18, this.chainSaving ? 'Saving…' : '⛓ SAVE ON-CHAIN', this.chainSaving ? '#ffd23f' : '#57e8e0', 8, 0.5, 0.5)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.chainSaveNow(btn));
+      items.push(btn);
+    }
     this.bagPanel.add(items);
     this.bagPanel.setVisible(true);
+  }
+
+  /**
+   * Faz 6: on-chain progress kaydı — izo HUDScene "Save to chain" butonunun TD portu.
+   * Kullanıcı tetikler (tx imzası ister; otomatik sync cüzdan popup spam'i olurdu).
+   * Sonuç DOM toast'la bildirilir ('td-chain-toast' → TdPhaserGame). Panel toggle'ı
+   * butonu yok edebilir (removeAll(true)) — btn.active guard'ı o yüzden.
+   */
+  private chainSaving = false;
+  private async chainSaveNow(btn: Phaser.GameObjects.Text): Promise<void> {
+    if (this.chainSaving) return;
+    this.chainSaving = true;
+    if (btn.active) btn.setText('Saving…').setColor('#ffd23f');
+    window.dispatchEvent(new CustomEvent('td-chain-toast', { detail: { msg: 'Saving on-chain…', color: '#ffd23f' } }));
+    try {
+      const { saveProgressToChain } = await import('../nft/onchain');
+      const res = await saveProgressToChain(PlayerState.get());
+      window.dispatchEvent(new CustomEvent('td-chain-toast', { detail: { msg: res.message, color: res.ok ? '#6ee87a' : '#ff6b6b' } }));
+    } finally {
+      this.chainSaving = false;
+      if (btn.active) btn.setText('⛓ SAVE ON-CHAIN').setColor('#57e8e0');
+    }
   }
 
   /**
