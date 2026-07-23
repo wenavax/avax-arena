@@ -495,29 +495,56 @@ export class TdWorldScene extends Phaser.Scene {
     const ps = PlayerState.get();
     const res = this.tdState.resources;
     this.bagPanel.removeAll(true);
-    const W2 = 208, H2 = 148;
-    const T = (x: number, y: number, msg: string, color: string, size = 9, originX = 0) =>
+    // ── Faz 5.12: KARE KARE slot ızgarası (stat panelinin görsel dili: yuvarlatılmış
+    // paneller + iç gölge). 5 sütun × 2 sıra slot + altta kahraman özet şeridi. ──
+    const COLS = 5, SLOT = 26, GAP = 5;
+    const W2 = COLS * SLOT + (COLS - 1) * GAP + 24, H2 = 158;
+    const gx0 = -W2 / 2 + 12, gy0 = -H2 / 2 + 24;
+    const g = this.add.graphics();
+    g.fillStyle(0x000000, 0.3); g.fillRoundedRect(-W2 / 2 + 1, -H2 / 2 + 2, W2, H2, 8);
+    g.fillStyle(0x121a23, 0.97); g.fillRoundedRect(-W2 / 2, -H2 / 2, W2, H2, 8);
+    g.lineStyle(1, 0x3a4e63, 1); g.strokeRoundedRect(-W2 / 2, -H2 / 2, W2, H2, 8);
+    g.fillStyle(0xffffff, 0.05); g.fillRect(-W2 / 2 + 3, -H2 / 2 + 1, W2 - 6, 1);
+    const T = (x: number, y: number, msg: string, color: string, size = 9, originX = 0, originY = 0) =>
       this.add.text(x, y, msg, { fontSize: `${size}px`, fontFamily: TD_FONT, color })
-        .setOrigin(originX, 0).setResolution(k);
-    const bg = this.add.rectangle(0, 0, W2, H2, 0x141c24, 0.94).setOrigin(0.5).setStrokeStyle(1, 0x3a4e63, 1);
-    const x0 = -W2 / 2 + 10, y0 = -H2 / 2 + 8;
-    const title = T(0, y0, 'BAG', '#9fe8ff', 11, 0.5);
-    const close = T(W2 / 2 - 14, y0, '✕', '#8fa6bd', 11)
-      .setInteractive({ useHandCursor: true }).on('pointerdown', () => this.toggleBag());
-    const potions = ps.inventory.filter(i => i.type === 'potion').reduce((n, i) => n + (i.count || 1), 0);
-    const rows: Phaser.GameObjects.GameObject[] = [
-      bg, title, close,
-      T(x0, y0 + 18, 'Satchel', '#7fd0a0', 8),
-      T(x0, y0 + 30, `🪵 ${res.wood}   🪨 ${res.stone}   ⛏ ${res.ore}`, '#e8eef4'),
-      T(x0, y0 + 43, `🐟 ${res.fish}   🍒 ${res.frostberry}   💰 ${this.tdState.gold}g`, '#e8eef4'),
-      T(x0, y0 + 60, 'Hero', '#7fd0a0', 8),
-      T(x0, y0 + 72, `Lv.${ps.level}  HP ${Math.round(ps.hp)}/${ps.maxHp}  🧪 ×${potions}`, '#e8eef4'),
-      T(x0, y0 + 85, `ATK ${ps.atk}  DEF ${ps.def}  SPD ${ps.spd}`, '#cfe3f2'),
-      T(x0, y0 + 98, `⚔ ${ps.equipped.weapon?.name || 'Fists'}`, '#cfe3f2'),
-      T(x0, y0 + 111, `🛡 ${ps.equipped.armor?.name || 'None'}`, '#cfe3f2'),
-      T(0, H2 / 2 - 16, 'sell at the Marketplace [E]', '#8fa6bd', 7, 0.5),
+        .setOrigin(originX, originY).setResolution(k);
+    const items: Phaser.GameObjects.GameObject[] = [g,
+      T(0, -H2 / 2 + 7, 'BAG', '#9fe8ff', 11, 0.5),
+      T(W2 / 2 - 14, -H2 / 2 + 6, '✕', '#8fa6bd', 11)
+        .setInteractive({ useHandCursor: true }).on('pointerdown', () => this.toggleBag()),
     ];
-    this.bagPanel.add(rows);
+    // slot çizici: kare yuva (iç gölge + kenar) + ikon + sağ-alt adet rozeti
+    const slot = (col: number, row: number, icon: string, count: number | string | null, dim = false) => {
+      const sx = gx0 + col * (SLOT + GAP), sy = gy0 + row * (SLOT + GAP + 6);
+      g.fillStyle(0x0b1117, 1); g.fillRoundedRect(sx, sy, SLOT, SLOT, 5);
+      g.fillStyle(0x000000, 0.35); g.fillRect(sx + 3, sy + 1, SLOT - 6, 3);
+      g.lineStyle(1, 0x2a3a4c, 1); g.strokeRoundedRect(sx, sy, SLOT, SLOT, 5);
+      items.push(T(sx + SLOT / 2, sy + SLOT / 2 - 1, icon, '#e8eef4', 11, 0.5, 0.5).setAlpha(dim ? 0.35 : 1));
+      if (count !== null) items.push(T(sx + SLOT - 2, sy + SLOT - 2, `${count}`, '#ffd23f', 7, 1, 1));
+    };
+    // sıra 1: cozy kaynaklar
+    slot(0, 0, '🪵', res.wood, res.wood === 0);
+    slot(1, 0, '🪨', res.stone, res.stone === 0);
+    slot(2, 0, '⛏', res.ore, res.ore === 0);
+    slot(3, 0, '🐟', res.fish, res.fish === 0);
+    slot(4, 0, '🍒', res.frostberry, res.frostberry === 0);
+    // sıra 2: iksir + ekipman + altın
+    const potions = ps.inventory.filter(i => i.type === 'potion').reduce((n, i) => n + (i.count || 1), 0);
+    slot(0, 1, '🧪', potions, potions === 0);
+    slot(1, 1, '⚔', ps.equipped.weapon ? '' : null, !ps.equipped.weapon);
+    slot(2, 1, '🛡', ps.equipped.armor ? '' : null, !ps.equipped.armor);
+    slot(3, 1, '💰', this.tdState.gold, this.tdState.gold === 0);
+    slot(4, 1, '★', null, true); // boş slot (gelecek: item NFT'leri)
+    // alt şerit: kahraman özeti
+    const by = gy0 + 2 * (SLOT + GAP + 6) + 4;
+    g.fillStyle(0x0e151d, 1); g.fillRoundedRect(-W2 / 2 + 8, by, W2 - 16, 30, 6);
+    g.lineStyle(1, 0x2a3a4c, 1); g.strokeRoundedRect(-W2 / 2 + 8, by, W2 - 16, 30, 6);
+    items.push(
+      T(gx0, by + 4, `Lv.${ps.level}  ❤${Math.round(ps.hp)}/${ps.maxHp}`, '#e8eef4', 8),
+      T(gx0, by + 16, `ATK ${ps.atk}  DEF ${ps.def}  SPD ${ps.spd}`, '#cfe3f2', 7),
+      T(0, H2 / 2 - 4, 'sell at the Marketplace [E] · [Q] potion', '#8fa6bd', 7, 0.5, 1),
+    );
+    this.bagPanel.add(items);
     this.bagPanel.setVisible(true);
   }
 
