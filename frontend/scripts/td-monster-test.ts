@@ -1,5 +1,5 @@
 import { ARCH_TO_PLAN, PLANS, monsterPlanFor } from '../lib/game/td/sprites/monsterChibi';
-import { ARCHETYPES, MONSTER_VISUALS } from '../lib/game/iso/monsterSprites';
+import { ARCHETYPES, MONSTER_VISUALS } from '../lib/game/monsterSprites';
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.error('FAIL ' + n); } };
 ok('plans-6', Object.keys(PLANS).length === 6);

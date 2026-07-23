@@ -1,7 +1,14 @@
-// Phaser-free kasaba harita üretici — IsoTownScene ve testler (hub-town-check.ts) tarafından paylaşılır.
-// ZoneTile tipi 'phaser' içeren iso/core.ts'ten geliyor; type-only import tsx tarafından silinir (Phaser'ı çalışma zamanında yüklemez).
-import type { ZoneTile } from '../iso/core';
+// Phaser-free kasaba harita üretici — testler (hub-town-check.ts) tarafından paylaşılır.
+// ZoneTile eskiden iso/core.ts'ten gelirdi; izo silinince (Faz 6 sonrası temizlik) buraya taşındı.
 import { HUB_GAMES, HUB_INTERACT_PREFIX, buildingRect } from '../hub/hubGames';
+
+export interface ZoneTile {
+  height: number;       // 0-5
+  biome: string;        // key into ZONE_BIOME_COLORS
+  collision: boolean;
+  interact?: string;    // 'npc', 'shop', 'inn', 'exit_forest', etc.
+  data?: any;           // NPC name, exit target, etc.
+}
 
 // ---------------------------------------------------------------------------
 // Map builder — 32 cols x 26 rows

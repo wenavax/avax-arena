@@ -3,7 +3,7 @@
 // Veri kaynağı iso/monsterSprites (SADECE import — dokunulmaz).
 // Client-only çizim; monsterPlanFor/ARCH_TO_PLAN saf (Node-testli).
 import { spr, outline, type Px } from './chibi';
-import { MONSTER_VISUALS } from '../../iso/monsterSprites';
+import { MONSTER_VISUALS } from '../../monsterSprites';
 
 export type PlanKey = 'biped' | 'beast' | 'blob' | 'flying' | 'serpent' | 'boss';
 export const PLANS: Record<PlanKey, true> = { biped: true, beast: true, blob: true, flying: true, serpent: true, boss: true };
