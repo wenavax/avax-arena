@@ -134,7 +134,6 @@ export class TdWorldScene extends Phaser.Scene {
   // Faz 5.7: gerçek-zamanlı savaş durumu
   private atkCdUntil = 0;
   private heroInvulnUntil = 0;
-  private monTexCache = new Set<string>();
   // ── Faz 4: cozy toplama (SPACE) + enerji HUD ──
   tdState = new TdState();
   private chunkGatherables = new Map<string, Map<string, Gatherable>>();
@@ -799,11 +798,10 @@ export class TdWorldScene extends Phaser.Scene {
   /** Canavar texture'larını bir kez üretir/kaydeder (2 kare). */
   private monTexture(type: string, isElite: boolean): string {
     const key = `td-mon-${type}`;
-    if (!this.monTexCache.has(key)) {
+    if (!this.textures.exists(key) || !this.textures.exists(`${key}-1`)) {
       const m = mkMonsterChibi(type, false);
-      this.textures.addCanvas(key, m.frames[0]);
-      this.textures.addCanvas(`${key}-1`, m.frames[1]);
-      this.monTexCache.add(key);
+      if (!this.textures.exists(key)) this.textures.addCanvas(key, m.frames[0]);
+      if (!this.textures.exists(`${key}-1`)) this.textures.addCanvas(`${key}-1`, m.frames[1]);
     }
     void isElite;
     return key;

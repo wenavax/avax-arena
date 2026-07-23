@@ -293,6 +293,10 @@ export class TdBattleScene extends Phaser.Scene {
   }
 
   create() {
+    // Sahne config sırası [World, Battle, Dungeon] — zindandan launch edilince
+    // duraklatılmış TdDungeon üstte kalıp savaşı tamamen örtüyordu ("boss'ta donma"):
+    // savaş her açılışta render yığınının tepesine alınır.
+    this.scene.bringToTop();
     const W = GAME_WIDTH;
     const H = GAME_HEIGHT;
     const state = PlayerState.get();
@@ -775,10 +779,11 @@ export class TdBattleScene extends Phaser.Scene {
     const baseType = this.monster.type.startsWith('elite_') ? this.monster.type.slice(6) : this.monster.type;
     const keyA = `td-bmon-${baseType}-0`;
     const keyB = `td-bmon-${baseType}-1`;
-    if (!this.textures.exists(keyA)) {
+    // keyB ayrı guard: zindan boss chibi'si `td-bmon-<type>-1`i zaten kaydetmiş olabilir
+    if (!this.textures.exists(keyA) || !this.textures.exists(keyB)) {
       const { frames } = mkMonsterChibi(baseType, true);
-      this.textures.addCanvas(keyA, frames[0]);
-      this.textures.addCanvas(keyB, frames[1]);
+      if (!this.textures.exists(keyA)) this.textures.addCanvas(keyA, frames[0]);
+      if (!this.textures.exists(keyB)) this.textures.addCanvas(keyB, frames[1]);
     }
     const scale = monsterPlanFor(baseType) === 'boss' ? 2.6 : 3;
     // flipX: beast/serpent planları başı SAĞDA çizer — sağ köşedeki canavar oyuncuya baksın.

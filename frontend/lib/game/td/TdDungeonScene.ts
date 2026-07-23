@@ -49,7 +49,6 @@ export class TdDungeonScene extends Phaser.Scene {
   private walkIdx = 0; private walkT = 0;
   private keys!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private monTexCache = new Set<string>();
   private mons: DMonRef[] = [];
   private boss: DMonRef | null = null;
   private battleActive = false;
@@ -195,11 +194,12 @@ export class TdDungeonScene extends Phaser.Scene {
     if (roster?.boss) {
       const bx = boss.x * TILE + 8, by = boss.y * TILE + 8;
       const bKeyBase = `td-bmon-${roster.boss.type}`;
-      if (!this.monTexCache.has(bKeyBase)) {
+      // instance-cache yerine textures.exists: sahne yeniden girişte texture'lar global
+      // kalır, cache sıfırlanır → "Texture key already in use" hataları akardı
+      if (!this.textures.exists(bKeyBase) || !this.textures.exists(`${bKeyBase}-1`)) {
         const m = mkMonsterChibi(roster.boss.type, true);
-        this.textures.addCanvas(bKeyBase, m.frames[0]);
-        this.textures.addCanvas(`${bKeyBase}-1`, m.frames[1]);
-        this.monTexCache.add(bKeyBase);
+        if (!this.textures.exists(bKeyBase)) this.textures.addCanvas(bKeyBase, m.frames[0]);
+        if (!this.textures.exists(`${bKeyBase}-1`)) this.textures.addCanvas(`${bKeyBase}-1`, m.frames[1]);
       }
       const bimg = this.add.image(bx, by, bKeyBase).setOrigin(0.5, 1).setDepth(depth(bx, by)).setScale(1.2);
       this.boss = {
@@ -231,11 +231,10 @@ export class TdDungeonScene extends Phaser.Scene {
   /** Canavar texture'larını bir kez üretir/kaydeder (2 kare, küçük boy — overworld ile aynı kalıp). */
   private monTexture(type: string, big: boolean): string {
     const key = big ? `td-bmon-${type}` : `td-mon-${type}`;
-    if (!this.monTexCache.has(key)) {
+    if (!this.textures.exists(key) || !this.textures.exists(`${key}-1`)) {
       const m = mkMonsterChibi(type, big);
-      this.textures.addCanvas(key, m.frames[0]);
-      this.textures.addCanvas(`${key}-1`, m.frames[1]);
-      this.monTexCache.add(key);
+      if (!this.textures.exists(key)) this.textures.addCanvas(key, m.frames[0]);
+      if (!this.textures.exists(`${key}-1`)) this.textures.addCanvas(`${key}-1`, m.frames[1]);
     }
     return key;
   }
