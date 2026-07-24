@@ -959,8 +959,10 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
   }
 
   // ── car factory: realistic hand-built silhouettes (GLB kit retired) ──
-  // Fully procedural, real-car proportions: LEGENDARY = open-wheel formula car,
-  // EPIC = GT coupé, COMMON = hot hatch. PBR clearcoat paint + glossy glass +
+  // Fully procedural, real-car proportions: LEGENDARY = hypercar, EPIC = sports
+  // coupé, COMMON = GT-R sedan — 3 distinct road-car silhouettes per rarity
+  // (buildRoadCar + ROAD_SPECS), matching the Higgsfield card art. The old
+  // open-wheel buildF1 is retained below but unused. PBR clearcoat paint + glass +
   // an IBL environment give convincing reflections with zero external assets.
   // The effect contract is preserved: spinnable wheels are groups named
   // `wheel-proc` (spin axis z), decal anchors ride in userData.decor, and the
@@ -987,8 +989,8 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
         envMap: carEnv, envMapIntensity: 0.9,
       }),
       glass: new THREE.MeshPhysicalMaterial({
-        color: 0x10151f, metalness: 0.2, roughness: 0.06,
-        envMap: carEnv, envMapIntensity: 1.5,
+        color: 0x0a0e16, metalness: 0.3, roughness: 0.12,
+        envMap: carEnv, envMapIntensity: 0.7,
       }),
       carbon: new THREE.MeshStandardMaterial({ color: 0x16161c, roughness: 0.55, metalness: 0.4 }),
       chrome: new THREE.MeshStandardMaterial({ color: 0xcfd6e2, metalness: 1, roughness: 0.22, envMap: carEnv }),
@@ -1197,9 +1199,98 @@ export async function createTrack3D(container: HTMLElement, seats: Seat3D[]): Pr
     return g;
   }
 
+  /** Kapalı-gövde yol arabası spec'i (nadirlik başına silüet). Koordinatlar buildF1
+   *  ile aynı çerçevede: burun +x, kuyruk -x, tekerlek x≈±1.0/z≈±0.6, zemin y=0 →
+   *  far/alev/iz/decal çapaları değişmeden oturur. */
+  interface RoadSpec {
+    accent: number; band: number;      // nadirlik accent + tekerlek bandı
+    ride: number; bodyH: number;       // zemin yüksekliği + gövde yüksekliği
+    cabX0: number; cabX1: number; roofY: number;  // kabin ön/arka x + tavan y
+    wsRake: number; rwRake: number;    // ön cam / arka cam eğimi
+    noseDroop: number; tailKick: number;
+    wingScale: number; wingY: number;  // arka kanat boyu (0=ducktail) + yükseklik
+    wheelR: number;
+  }
+
+  /** Parametrik yol arabası: hypercar / coupé / sedan tek yapıcıdan. buildF1 ile
+   *  aynı carKit DSL'i (B/CX/R/W) — wheel-proc tekerlekler döner, noInk küçük parçalar. */
+  function buildRoadCar(M: CarM, spec: RoadSpec): InstanceType<typeof THREE.Group> {
+    const { g, B, CX, R, W } = carKit(M);
+    const accent = new THREE.MeshBasicMaterial({ color: spec.accent });
+    const y0 = spec.ride, bh = spec.bodyH, midY = y0 + bh / 2, halfW = 0.56;
+    const deckY = y0 + bh;                                   // hood/deck top level
+    const cabH = Math.max(0.16, spec.roofY - deckY);         // greenhouse height (low canopy)
+    const cabCx = (spec.cabX0 + spec.cabX1) / 2, cabLen = spec.cabX0 - spec.cabX1;
+    void CX;
+
+    // ── underbody + main hull (low, wide) ──
+    B(3.0, 0.05, 1.04, M.carbon, -0.05, y0, 0);
+    B(2.72, bh, 1.08, M.paint, -0.05, midY, 0);                         // main body
+    // hood (front deck, slight down-slope) + low nose wedge + front lip
+    B(0.95, bh * 0.42, 1.0, M.paint, 0.92, deckY - bh * 0.18, 0, spec.noseDroop);
+    B(0.42, bh * 0.5, 0.9, M.paint, 1.45, y0 + bh * 0.28, 0, spec.noseDroop);
+    B(0.14, bh * 0.28, 0.82, accent, 1.63, y0 + bh * 0.2, 0, spec.noseDroop, true); // nose accent bar
+    // rear deck + tail
+    B(0.9, bh * 0.44, 1.0, M.paint, -0.95, deckY - bh * 0.16, 0, -spec.tailKick);
+    B(0.42, bh * 0.55, 0.94, M.paint, -1.4, y0 + bh * 0.4, 0);
+    // splitter + skirts + dive winglets
+    B(0.5, 0.04, 1.14, M.carbon, 1.4, y0 - 0.005, 0);
+    for (const s of [-1, 1]) B(0.16, 0.07, 0.03, accent, 1.54, y0 + 0.06, s * 0.5, 0, true);
+    for (const s of [-1, 1]) B(1.7, 0.06, 0.05, M.carbon, -0.1, y0 + 0.03, s * 0.55, 0, true);
+
+    // ── greenhouse: low canopy (heights derive from cabH so glass never over-shoots) ──
+    B(0.32, cabH * 1.12, 0.8, M.glass, spec.cabX0 - 0.03, deckY + cabH * 0.5, 0, spec.wsRake);      // windshield
+    B(cabLen * 0.64, 0.05, 0.78, M.paint, cabCx - 0.03, spec.roofY, 0);                             // roof
+    for (const s of [-1, 1]) B(cabLen * 0.7, cabH * 0.8, 0.02, M.glass, cabCx, deckY + cabH * 0.52, s * 0.4, 0, true); // side glass
+    B(0.32, cabH * 1.08, 0.78, M.glass, spec.cabX1 + 0.03, deckY + cabH * 0.5, 0, -spec.rwRake);    // rear glass
+    for (const s of [-1, 1]) B(0.05, cabH * 0.9, 0.05, M.carbon, spec.cabX1 - 0.01, deckY + cabH * 0.5, s * 0.39, 0, true); // C-pillar
+
+    // ── lights + mirrors + side accent stripe ──
+    for (const s of [-1, 1]) B(0.1, 0.07, 0.18, M.lensW, 1.55, deckY - bh * 0.05, s * 0.36, 0, true); // headlights
+    for (const s of [-1, 1]) B(0.05, 0.08, 0.22, M.lensR, -1.52, deckY - bh * 0.02, s * 0.32, 0, true); // taillights
+    for (const s of [-1, 1]) B(0.1, 0.04, 0.12, M.paint, spec.cabX0 + 0.02, deckY + cabH * 0.28, s * 0.5, 0, true); // mirrors
+    for (const s of [-1, 1]) B(1.95, 0.02, 0.012, accent, -0.05, midY + bh * 0.08, s * (halfW + 0.005), 0, true); // stripe
+
+    // ── rear wing (big) or ducktail ──
+    if (spec.wingScale > 0) {
+      B(0.3, 0.03, 1.0 * spec.wingScale, M.carbon, -1.4, spec.wingY, 0, -0.1);
+      B(1.0 * spec.wingScale, 0.014, 0.03, accent, -1.4, spec.wingY + 0.03, 0, -0.1, true);
+      for (const s of [-1, 1]) B(0.3, 0.24, 0.028, M.paint, -1.4, spec.wingY - 0.12, s * 0.48 * spec.wingScale, 0, true);
+      R(0.02, -1.26, deckY - 0.04, 0.12, -1.4, spec.wingY, 0.1);
+      R(0.02, -1.26, deckY - 0.04, -0.12, -1.4, spec.wingY, -0.1);
+    } else {
+      B(0.34, 0.08, 0.92, M.paint, -1.3, deckY + 0.03, 0, -0.3);
+      B(0.34, 0.016, 0.92, accent, -1.3, deckY + 0.1, 0, -0.3, true);
+    }
+    // ── diffuser + exhausts ──
+    B(0.45, 0.05, 0.9, M.carbon, -1.34, y0 + 0.05, 0, 0.3);
+    for (const s of [-0.28, -0.1, 0.1, 0.28]) B(0.3, 0.08, 0.014, M.carbon, -1.35, y0 + 0.06, s, 0.3, true);
+    for (const s of [-1, 1]) CX(0.035, 0.042, 0.1, 10, M.chrome, -1.5, y0 + 0.12, s * 0.22);
+
+    // ── wheels (front + rear, wheel-proc → spins) ──
+    W(spec.wheelR, 0.24, 1.0, 0.58, spec.band); W(spec.wheelR, 0.24, 1.0, -0.58, spec.band);
+    W(spec.wheelR + 0.01, 0.27, -0.98, 0.6, spec.band); W(spec.wheelR + 0.01, 0.27, -0.98, -0.6, spec.band);
+
+    g.userData.decor = {
+      hoodY: y0 + bh * 0.62, hoodS: 0.5, doorZ: halfW, doorY: midY, doorS: 0.34,
+      wingX: -1.5, wingY: spec.wingY, wingW: 1.0, wingH: 0.3,
+    };
+    return g;
+  }
+
+  /** Nadirlik → silüet: LEGENDARY hypercar (altın), EPIC coupé (mor), COMMON GT-R sedan (gümüş). */
+  const ROAD_SPECS: Record<string, RoadSpec> = {
+    LEGENDARY: { accent: 0xf5c542, band: 0xd53a3a, ride: 0.12, bodyH: 0.32, cabX0: 0.72, cabX1: -0.34,
+      roofY: 0.62, wsRake: 0.5, rwRake: 0.55, noseDroop: -0.05, tailKick: 0.06, wingScale: 1.0, wingY: 0.82, wheelR: 0.3 },
+    EPIC: { accent: 0xa78bfa, band: 0xf0c93c, ride: 0.14, bodyH: 0.35, cabX0: 0.68, cabX1: -0.5,
+      roofY: 0.68, wsRake: 0.42, rwRake: 0.4, noseDroop: -0.03, tailKick: 0.1, wingScale: 0, wingY: 0.7, wheelR: 0.3 },
+    COMMON: { accent: 0x8ea0b5, band: 0xe9edf4, ride: 0.16, bodyH: 0.42, cabX0: 0.82, cabX1: -0.46,
+      roofY: 0.8, wsRake: 0.32, rwRake: 0.32, noseDroop: -0.02, tailKick: 0.04, wingScale: 0.95, wingY: 0.92, wheelR: 0.3 },
+  };
+
   function buildProceduralCar(veh: string | null, color: number): InstanceType<typeof THREE.Group> {
     const M = carMats(color);
-    return buildF1(M, F1_TRIM[veh ?? ''] ?? F1_TRIM.EPIC);
+    return buildRoadCar(M, ROAD_SPECS[veh ?? ''] ?? ROAD_SPECS.EPIC);
   }
 
   interface CarRig {
