@@ -11,6 +11,7 @@
  */
 import { CFG, COMBO, evaluate, fxClass, isCompletePlay, type Card, type PlayEval } from './engine';
 import { ABILITIES } from './abilities';
+import { cardArtImg, hasCardArt } from './cardArt';
 import { vehicleSelector, vehAbbr } from './vehicles';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
 import { createCgSound, soundLabel } from './sound';
@@ -307,8 +308,8 @@ export function mountMultiplayer(root: HTMLElement, opts: MpRenderOpts): () => v
     for (const c of hand) {
       const el = document.createElement('div');
       el.style.setProperty('--ci', String(ci++));
-      el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(c.id) ? ' sel' : '');
-      el.innerHTML = `<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
+      el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (hasCardArt(c) ? ' hasart' : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(c.id) ? ' sel' : '');
+      el.innerHTML = `${cardArtImg(c)}<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
         <i class="cardart">${c.magic ? MAGIC_ICON[c.magic] || '' : '❄'}</i>
         <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : `<small class="ab">${ABILITIES[c.value].key}</small>`}`;
       el.onpointerdown = (e) => { e.preventDefault(); if (selected.has(c.id)) selected.delete(c.id); else if (selected.size < 8) selected.add(c.id); bestNote = ''; renderHand(); };

@@ -368,6 +368,20 @@ body.cg-noscroll{overflow:hidden}
 /* per-value ability ribbon on normal card faces */
 .cgroot .card small.ab{font-size:6px;letter-spacing:.8px;color:rgba(26,36,54,.58)}
 .cgroot .card.hi small.ab{color:rgba(90,63,5,.62)}
+/* ── ability cards: full Higgsfield artwork (2026-07-24) ───────────────
+   .hasart cards swap the light face for edge-to-edge render art. A top+bottom
+   scrim keeps the value (top) and ability name (bottom) legible in white.
+   Placed AFTER .hi rules so white text wins over gold on value 9-10 cards. */
+.cgroot .card.hasart{background:#0b0f16;border-color:rgba(255,255,255,.18)}
+.cgroot .card.hasart .cardimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;user-select:none}
+.cgroot .card.hasart::after{content:'';position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(180deg,rgba(4,7,12,.74) 0%,transparent 28%,transparent 56%,rgba(4,7,12,.88) 100%)}
+.cgroot .card.hasart .cardart{display:none}
+.cgroot .card.hasart .cv{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.95),0 0 10px rgba(0,0,0,.55)}
+.cgroot .card.hasart .ix,.cgroot .card.hasart.hi .ix{color:rgba(255,255,255,.94);text-shadow:0 1px 2px rgba(0,0,0,.9)}
+.cgroot .card.hasart.hi .cv{color:#ffe9a8;text-shadow:0 1px 3px rgba(0,0,0,.95),0 0 12px rgba(245,197,66,.5)}
+.cgroot .card.hasart small.ab,.cgroot .card.hasart.hi small.ab{color:#fff;background:transparent;border-top:0;
+  text-shadow:0 1px 2px rgba(0,0,0,.98);letter-spacing:.6px}
 /* ability trigger popup: smaller companion to the combo popup */
 .cgroot .popup.pop-ab{font-size:16px;letter-spacing:2px;color:var(--cg-ice);
   filter:drop-shadow(0 0 10px rgba(77,208,225,.5));animation:cg-rise 1.4s ease-out forwards}
@@ -597,6 +611,9 @@ body.cg-noscroll{overflow:hidden}
   box-shadow:0 0 0 1px var(--vc),0 10px 26px rgba(0,0,0,.35),0 0 34px color-mix(in srgb,var(--vc) 22%,transparent)}
 .cgroot .cg-vcard:active:not(:disabled){transform:translateY(-1px)}
 .cgroot .cg-vcard.used{opacity:.4;cursor:not-allowed;filter:grayscale(.55)}
+.cgroot .cg-vimg{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px;margin-bottom:2px;
+  background:#0b0f16;border:1px solid rgba(255,255,255,.08);box-shadow:0 0 14px -4px var(--vc)}
+.cgroot .cg-vcard.used .cg-vimg{filter:grayscale(.55)}
 .cgroot .cg-vcard.vr-legendary{--vc:#f5c542}
 .cgroot .cg-vcard.vr-epic{--vc:#a78bfa}
 .cgroot .cg-vcard.vr-common{--vc:#8ea0b5}

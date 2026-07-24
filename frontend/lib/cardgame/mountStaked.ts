@@ -15,6 +15,7 @@ import {
   CFG, type MatchState, type MatchInput, type PlayEvent, type Pid,
 } from './engine';
 import { ABILITIES } from './abilities';
+import { cardArtImg, hasCardArt } from './cardArt';
 import { vehicleSelector, vehAbbr } from './vehicles';
 import { bestPlan, bestPlay, planNote } from './bestPlay';
 import { showRaceResults, closeRaceResults } from './resultsOverlay';
@@ -187,8 +188,8 @@ export function mountStaked(root: HTMLElement, opts: StakedOpts): () => void {
     p1.hand.forEach((c, i) => {
       const el = document.createElement('div');
       el.style.setProperty('--ci', String(i));
-      el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(i) ? ' sel' : '');
-      el.innerHTML = `<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
+      el.className = 'card' + (c.type === 'MAGIC' ? ' magic ' + (c.magic === 'NAIL' ? 'nail' : c.magic === 'OIL' ? 'oil' : '') : '') + (hasCardArt(c) ? ' hasart' : '') + (c.value >= 9 ? ' hi' : '') + (selected.has(i) ? ' sel' : '');
+      el.innerHTML = `${cardArtImg(c)}<span class="ix">${c.value}</span><span class="ix2">${c.value}</span>
         <i class="cardart">${c.magic ? MAGIC_ICON[c.magic] || '' : '❄'}</i>
         <span class="cv">${c.value}</span>${c.magic ? `<small>${c.magic}</small>` : `<small class="ab">${ABILITIES[c.value].key}</small>`}`;
       el.onpointerdown = (e) => { e.preventDefault(); if (selected.has(i)) selected.delete(i); else if (selected.size < 8) selected.add(i); bestNote = ''; renderHand(); };

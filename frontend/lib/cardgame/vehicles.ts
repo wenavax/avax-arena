@@ -40,6 +40,7 @@ export function vehicleSelector(opts: {
     const st = CFG.VEH[v];
     const used = !!opts.used[v];
     return `<button class="cg-vcard ${rarityClass(v)}${used ? ' used' : ''}" data-veh="${v}"${used ? ' disabled' : ''}>
+      <img class="cg-vimg" src="/avalanche/cardgame/cards/veh-${v.toLowerCase()}.webp" alt="" loading="lazy" draggable="false">
       <span class="cg-vrar">${m.rarity}${used ? ' · USED' : ''}</span>
       <span class="cg-vname">${v}</span>
       <span class="cg-vstat"><span class="cg-vlab">SPEED</span><span class="cg-vbar"><i style="width:${st.s * 10}%"></i></span><b>${st.s}</b></span>
