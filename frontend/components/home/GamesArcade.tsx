@@ -88,8 +88,8 @@ function GameCard({ g, i }: { g: Game; i: number }) {
   );
 }
 
-/** Mysterious full-width teaser — hints at the upcoming World transformation
- *  without revealing it. Not a link on purpose: the mystery IS the card. */
+/** Full-width spotlight for Avalanche World — now LIVE. Once a "coming soon"
+ *  teaser; the world shipped, so this is a real link to it. */
 function TeaserCard() {
   const reduce = useReducedMotion();
   return (
@@ -100,7 +100,7 @@ function TeaserCard() {
       viewport={{ once: true, margin: '-60px' }}
       transition={{ duration: 0.5, delay: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
     >
-      <div className="arcade-card arcade-card--feat group cursor-default select-none" style={{ '--acc': '#7dd3fc' } as React.CSSProperties}>
+      <Link href="/world" className="arcade-card arcade-card--feat group block" style={{ '--acc': '#7dd3fc' } as React.CSSProperties}>
         <span className="arcade-pat arcade-pat--dots" aria-hidden />
         <span className="arcade-mark" aria-hidden>
           <Snowflake className="h-36 w-36 animate-[spin_24s_linear_infinite]" strokeWidth={1.2} />
@@ -109,20 +109,20 @@ function TeaserCard() {
         <span className="arcade-shine" aria-hidden />
         <div className="relative z-10 flex items-start justify-between gap-3">
           <span className="arcade-ico h-14 w-14"><Snowflake className="h-7 w-7" strokeWidth={2} /></span>
-          <span className="arcade-chip" style={{ '--dot': '#7dd3fc', '--ctext': '#a5e3fc' } as React.CSSProperties}>
-            <i className="arcade-dot" /> SOON
+          <span className="arcade-chip" style={{ '--dot': '#4dd0e1', '--ctext': '#a5e3fc' } as React.CSSProperties}>
+            <i className="arcade-dot" /> LIVE · TESTNET
           </span>
         </div>
         <div className="relative z-10 mt-auto pt-6">
           <h3 className="arcade-title font-display text-2xl font-bold text-white sm:text-[28px]">
-            Something is growing beneath the snow…
+            The world beneath the snow is alive
           </h3>
           <p className="mt-1.5 max-w-md text-sm leading-relaxed text-white/50">
-            Bigger. Warmer. Alive. A whole new world is taking shape under the frost — keep your axe close.
+            A whole cozy open world has taken shape under the frost — dungeons, battles, farming and NFT heroes. Grab your axe and step in.
           </p>
-          <span className="arcade-cta mt-4 opacity-70">❄ stay tuned</span>
+          <span className="arcade-cta mt-4">❄ enter Avalanche World →</span>
         </div>
-      </div>
+      </Link>
     </motion.div>
   );
 }
