@@ -118,6 +118,9 @@ export class TdWorldScene extends Phaser.Scene {
   private chunks = new Map<string, Phaser.GameObjects.Image>();   // "cx,cy" → image
   private hasWaterCache = new Map<string, boolean>();             // chunk su önbelleği (statik dünya)
   private waterFrame: 0 | 1 | 2 = 0; private waterT = 0;
+  // Cila: streamChunks yalnız kahraman chunk sınırını geçince (veya su tick'inde) koşar
+  // — her karede want/evict tarama + koleksiyon ayırma yerine. Sentinel: ilk update tazeler.
+  private lastChunkCx = NaN; private lastChunkCy = NaN;
   private perf = { chunkMs: 0, visible: 0 }; private perfText?: Phaser.GameObjects.Text;
   // ── Faz 2: prop render/collision + etkileşim + atmosfer + minimap ──
   private propMeta = new Map<string, { ox: number; oy: number }>();
@@ -737,9 +740,15 @@ export class TdWorldScene extends Phaser.Scene {
       const key = `${c.cx},${c.cy}`;
       const exists = this.chunks.has(key);
       if (exists && !(refreshWater && this.chunkHasWaterCached(c.cx, c.cy))) continue;
-      if (exists) { this.chunks.get(key)!.destroy(); this.chunks.delete(key); }
       const texKey = `td-chunk-${key}-${this.waterFrame}`;
       if (!this.textures.exists(texKey)) this.textures.addCanvas(texKey, renderChunk(c.cx, c.cy, this.waterFrame));
+      if (exists) {
+        // Cila: su tick'inde chunk Image'ini yok edip yeniden kurmak yerine yalnız texture'ı
+        // değiştir (origin/pos/depth korunur) — GameObject churn'ü kalkar. Frame texture'ları
+        // zaten cache'li, tek maliyet swap. chunkProps/gatherables/monsters'a DOKUNULMAZ.
+        this.chunks.get(key)!.setTexture(texKey);
+        continue;
+      }
       const img = this.add.image(c.cx * CHUNK * TILE, c.cy * CHUNK * TILE, texKey).setOrigin(0, 0).setDepth(-1000);
       this.chunks.set(key, img);
       // NOT: su-tazeleme yolunda chunkProps'a DOKUNMA (statik dünya, prop'lar chunk başına bir kez kurulur)
@@ -928,14 +937,19 @@ export class TdWorldScene extends Phaser.Scene {
     this.heroShadow.setPosition(Math.round(this.heroPos.x), Math.round(this.heroPos.y) + 1)
       .setDepth(depth(this.heroPos.x, this.heroPos.y) - 1);
     this.hero.setDepth(depth(this.heroPos.x, this.heroPos.y));
-    // su animasyonu: 400ms'de bir yalnız su içeren chunk'lar tazelenir
+    // su animasyonu: 400ms'de bir yalnız su içeren chunk'lar tazelenir.
+    // Cila (perf): load/evict taraması yalnız kahraman yeni bir chunk'a geçince koşar —
+    // chunk 768px, kahraman 88px/s → sınır geçişi ~8sn'de bir; kalan karelerde streamChunks
+    // çağrısı (want dizisi + Set + evict tarama ayırması) atlanır. Su tick'i kendi yolunu korur.
+    const hcxs = Math.floor(this.heroPos.x / (CHUNK * TILE)), hcys = Math.floor(this.heroPos.y / (CHUNK * TILE));
     this.waterT += dt;
     if (this.waterT > 0.4) {
       this.waterT = 0; this.waterFrame = ((this.waterFrame + 1) % 3) as 0 | 1 | 2;
       this.streamChunks(true);
-    } else {
+    } else if (hcxs !== this.lastChunkCx || hcys !== this.lastChunkCy) {
       this.streamChunks();
     }
+    this.lastChunkCx = hcxs; this.lastChunkCy = hcys;
     if (this.perfText) {
       let monCount = 0;
       for (const list of this.chunkMonsters.values()) monCount += list.length;
