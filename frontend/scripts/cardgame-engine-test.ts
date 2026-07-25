@@ -141,7 +141,7 @@ function main() {
       const s = fresh(); const p1 = s.players[0];
       p1.hand = [mk(2, 9004), mk(2, 9005)];
       applyPlay(s, p1, [9004, 9005]);
-      ok('DRAFT (2) extends this play\'s boost +15 ticks', p1.nm!.endsAt === s.t + CFG.DUR_TICKS + 15, `endsAt ${p1.nm!.endsAt}`);
+      ok('DRAFT (2) extends this play\'s boost +25 ticks', p1.nm!.endsAt === s.t + CFG.DUR_TICKS + 25, `endsAt ${p1.nm!.endsAt}`);
     }
     {
       const s = fresh(); const p1 = s.players[0]; const p2 = s.players[1];
@@ -149,7 +149,7 @@ function main() {
       p1.hand = [mk(6, 9006)];
       const r = applyPlay(s, p1, [9006])!;
       const slow = p2.magics.find((e) => e.mult === 0.85);
-      ok('BUMP (6) slows the racer ahead for 20 ticks', !!slow && slow!.endsAt === s.t + 20 && p2.debuff === 'fx-hit' && r.abilities!.some((a) => a.includes('BUMP')));
+      ok('BUMP (6) slows the racer ahead for 25 ticks', !!slow && slow!.endsAt === s.t + 25 && p2.debuff === 'fx-hit' && r.abilities!.some((a) => a.includes('BUMP')));
     }
   }
 

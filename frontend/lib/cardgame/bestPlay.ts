@@ -28,6 +28,32 @@ const NITRO_M = CFG.MAGIC.NITRO.m; // 1.25 — stays in sync with the engine
 const MAX_PLAY = 8; // applyPlay accepts 1–8 cards
 const MAX_DP_N = 12; // hands are ≤10 by the rules; guard against pathological input
 
+// Per-value card abilities (abilities.ts) fire once per distinct NORMAL value
+// played. The solver used to be blind to them, so single high cards — above all
+// 10 = REDLINE (+30%/4s, the strongest self-buff) — were undervalued and the
+// ✨ Best button told players to hoard them. We add the SELF-SPEED buffs' worth
+// (8=GRIP, 9=OVERTAKE, 10=REDLINE): these are unconditionally valuable regardless
+// of race position, so a position-blind solver can score them safely. The
+// situational abilities (1 SLIPSTREAM/catch-up, 5 DEICE/cleanse, 3 SCAVENGE/draw,
+// 7 SYNERGY/needs an active combo) are deliberately left at 0 here — their worth
+// depends on race state the solver can't see, and pricing them in makes it dump
+// catch-up cards when ahead. Self buffs share the engine's SELF_BUDGET (1.6) per
+// play, so the combined bonus is capped to avoid over-rating 8-9-10 straights.
+// Magic cards never trigger their printed value's ability, so only NORMAL cards
+// count. First-pass heuristic — revisit with play telemetry (and race-state
+// threading if the situational abilities are ever priced in).
+const ABILITY_SELF: Record<number, number> = { 8: 0.3, 9: 0.35, 10: 0.55 };
+const SELF_BONUS_CAP = 0.6; // mirrors SELF_BUDGET 1.6 → max ~0.6 speed-integral/play
+
+/** Flat worth of the self-speed abilities this play triggers (position-agnostic). */
+function abilityBonus(cards: Card[]): number {
+  const vals = new Set<number>();
+  for (const c of cards) if (c.type === 'NORMAL') vals.add(c.value);
+  let self = 0;
+  for (const v of vals) self += ABILITY_SELF[v] ?? 0;
+  return Math.min(self, SELF_BONUS_CAP);
+}
+
 export interface PlannedPlay { cards: Card[]; eval: PlayEval; gain: number }
 export interface Plan { plays: PlannedPlay[]; held: Card[]; totalGain: number }
 
@@ -40,7 +66,7 @@ function playGain(cards: Card[], r: PlayEval, holdCost: number): number {
     if (m.type === 'NITRO') eff *= NITRO_M;
     else bonus += DEBUFF_BONUS[m.type] ?? 0;
   }
-  return eff - 1 + bonus - holdCost * cards.length;
+  return eff - 1 + bonus + abilityBonus(cards) - holdCost * cards.length;
 }
 
 /**

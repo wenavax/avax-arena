@@ -1,11 +1,15 @@
 /**
  * CAR(D) GAME — MatchEscrow (Fuji testnet) client bindings.
- * Deployed: 0xb25Eec9D2C2b4FA5AB099677233A86BD9Aa6EE50 (chainId 43113).
+ * Deployed: 0x3872DAb4eB43170b4b5Be08a9796f75f3802efe9 (chainId 43113, 1 AVAX entry).
+ * NOTE: the retired 0.01 AVAX contract 0xb25Eec9D2C2b4FA5AB099677233A86BD9Aa6EE50
+ * is a DIFFERENT economics tier — do not use it as a fallback.
+ * At mainnet cutover, update this fallback + CARDGAME_CHAIN_ID in the same commit
+ * as the 43114 address is finalized (don't rely on the env var alone).
  */
 import { parseAbi } from 'viem';
 
 export const CARDGAME_ESCROW = (process.env.NEXT_PUBLIC_CARDGAME_ESCROW ||
-  '0xb25Eec9D2C2b4FA5AB099677233A86BD9Aa6EE50') as `0x${string}`;
+  '0x3872DAb4eB43170b4b5Be08a9796f75f3802efe9') as `0x${string}`;
 
 export const CARDGAME_CHAIN_ID = 43113; // Avalanche Fuji
 

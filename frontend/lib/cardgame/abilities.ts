@@ -60,11 +60,11 @@ export interface Ability {
 export const SELF_BUDGET = 1.6;   // max product of self speed buffs per play
 const MIN_GRANT = 1.02;           // below this a clipped self-buff is a no-op
 const SLIP_MAX = 15;              // SLIPSTREAM jump cap (units)
-const SLIP_PCT = 0.12;            // ... or 12% of the gap to the leader
+const SLIP_PCT = 0.15;            // ... or 15% of the gap to the leader (comeback lever)
 const SLIP_WALL = 999;            // never jump past this (finish by speed only)
-const DRAFT_EXT = 1.5;            // DRAFT boost extension (s)
+const DRAFT_EXT = 2.5;            // DRAFT boost extension (s) — buffed so value-2 in a combo pays
 const TUNE_CUT = 1;               // TUNE cooldown reduction (s)
-const BUMP_MULT = 0.85; const BUMP_DUR = 2;
+const BUMP_MULT = 0.85; const BUMP_DUR = 2.5;
 const SYNERGY_ADD = 0.25;
 const GRIP_MULT = 1.18; const GRIP_DUR = 3;
 const OVER_MULT = 1.22; const OVER_DUR = 2.5;
@@ -97,7 +97,7 @@ const pct = (m: number) => `${Math.round((m - 1) * 100)}%`;
 // ── the 10 abilities ─────────────────────────────────────────────────────────
 export const ABILITIES: Record<number, Ability> = {
   1: {
-    key: 'SLIPSTREAM', icon: '🌀', desc: 'Jump forward 12% of your gap to the leader (max 15u)',
+    key: 'SLIPSTREAM', icon: '🌀', desc: 'Jump forward 15% of your gap to the leader (max 15u)',
     apply(ctx) {
       const lead = leaderOf(ctx);
       if (!lead || lead.dist <= ctx.p.dist) return null;
@@ -108,7 +108,7 @@ export const ABILITIES: Record<number, Ability> = {
     },
   },
   2: {
-    key: 'DRAFT', icon: '💨', desc: 'Extend your running boost by 1.5s',
+    key: 'DRAFT', icon: '💨', desc: 'Extend your running boost by 2.5s',
     apply(ctx) {
       if (!ctx.p.nm || ctx.t >= ctx.p.nm.endsAt) return null;
       ctx.p.nm.endsAt += ctx.sec(DRAFT_EXT);
@@ -137,7 +137,7 @@ export const ABILITIES: Record<number, Ability> = {
     },
   },
   6: {
-    key: 'BUMP', icon: '💥', desc: 'Slow the racer just ahead of you −15% for 2s',
+    key: 'BUMP', icon: '💥', desc: 'Slow the racer just ahead of you −15% for 2.5s',
     apply(ctx) {
       const tg = aheadOf(ctx);
       if (!tg) return null;
@@ -163,7 +163,7 @@ export const ABILITIES: Record<number, Ability> = {
     },
   },
   9: {
-    key: 'OVERTAKE', icon: '⏩', desc: '+22% for 2.5s, and the racer ahead −15% for 2s',
+    key: 'OVERTAKE', icon: '⏩', desc: '+22% for 2.5s, and the racer ahead −15% for 2.5s',
     apply(ctx) {
       const g = selfBuff(ctx, OVER_MULT, OVER_DUR);
       const tg = aheadOf(ctx);

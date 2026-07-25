@@ -30,7 +30,7 @@ console.log('SLIPSTREAM (1)');
   const me = mkP('P1', 300), lead = mkP('P2', 400);
   const { ctx } = mkCtx(me, [me, lead]);
   const txt = ABILITIES[1].apply(ctx);
-  ok(txt !== null && me.dist === 312, `12% of 100u gap → +12u (dist ${me.dist})`);
+  ok(txt !== null && me.dist === 315, `15% of 100u gap → +15u (dist ${me.dist})`);
   const far = mkP('P1', 100), lead2 = mkP('P2', 400);
   const c2 = mkCtx(far, [far, lead2]);
   ABILITIES[1].apply(c2.ctx);
@@ -48,7 +48,7 @@ console.log('DRAFT (2)');
 {
   const me = mkP('P1', 100); me.nm = { mult: 2, endsAt: 12 };
   const { ctx } = mkCtx(me, [me]); // t=10 → boost active
-  ok(ABILITIES[2].apply(ctx) !== null && me.nm.endsAt === 13.5, `extends boost to 13.5 (got ${me.nm.endsAt})`);
+  ok(ABILITIES[2].apply(ctx) !== null && me.nm.endsAt === 14.5, `extends boost to 14.5 (got ${me.nm.endsAt})`);
   const noB = mkP('P1', 100);
   ok(ABILITIES[2].apply(mkCtx(noB, [noB]).ctx) === null, 'no active boost → no-op');
   const expired = mkP('P1', 100); expired.nm = { mult: 2, endsAt: 5 };
@@ -89,7 +89,7 @@ console.log('BUMP (6)');
   const me = mkP('P1', 300), ahead = mkP('P2', 350), far = mkP('P3', 600), behind = mkP('P4', 100);
   const c = mkCtx(me, [me, ahead, far, behind]);
   const txt = ABILITIES[6].apply(c.ctx);
-  ok(txt !== null && c.buffs.length === 1 && c.buffs[0].target === ahead && c.buffs[0].mult === 0.85 && c.buffs[0].seconds === 2,
+  ok(txt !== null && c.buffs.length === 1 && c.buffs[0].target === ahead && c.buffs[0].mult === 0.85 && c.buffs[0].seconds === 2.5,
     'slows the racer immediately ahead');
   const lead = mkP('P1', 700);
   const c2 = mkCtx(lead, [lead, me]);
@@ -147,7 +147,7 @@ console.log('triggerAbilities dedupe + order');
   const c = mkCtx(me, [me, lead]);
   const texts = triggerAbilities([7, 1, 7, 1], c.ctx);
   ok(texts.length <= 2, `each unique value once (got ${texts.length})`);
-  ok(me.dist === 312, 'SLIPSTREAM fired exactly once');
+  ok(me.dist === 315, 'SLIPSTREAM fired exactly once');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
