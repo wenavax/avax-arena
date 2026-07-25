@@ -1,3 +1,9 @@
 [submodule "frozenfriends/contracts/lib/openzeppelin-contracts"]
 	path = frozenfriends/contracts/lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "cardgame/contracts/lib/forge-std"]
+	path = cardgame/contracts/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "cardgame/contracts/lib/openzeppelin-contracts"]
+	path = cardgame/contracts/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts

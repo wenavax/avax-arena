@@ -42,13 +42,13 @@ The contract is identical for A and B (`createMatch(matchId, address[4])` + 4 `j
 
 ## B. Technical — can do now (no money, no external dependency)
 
-- [ ] **Pin dependencies for the auditor.** `lib/forge-std` and `lib/openzeppelin-contracts`
-      are vendored as loose copies (not git submodules), so the exact upstream is not
-      reproducible. OZ is **5.6.1** (`lib/openzeppelin-contracts/package.json`); solc
-      `0.8.24`, optimizer 200 runs, `via_ir = false`. Before external audit: convert both
-      to pinned git submodules (OZ tag `v5.6.1`, forge-std a tagged release) so the audited
-      commit is reproducible. *(Left as a recommendation — changing the vendored libs could
-      disturb the build; do it in a dedicated commit and re-run `forge test`.)*
+- [x] **Pin dependencies for the auditor.** DONE (2026-07-25). `lib/forge-std` and
+      `lib/openzeppelin-contracts` were vendored loose copies (git-ignored, not reproducible);
+      converted to **pinned git submodules** so a recursive clone reproduces the audited build:
+      - `openzeppelin-contracts` → tag **`v5.6.1`** (commit `5fd1781b1454fd1ef8e722282f86f9293cacf256`)
+      - `forge-std` → tag **`v1.16.2`** (commit `bf647bd6046f2f7da30d0c2bf435e5c76a780c1b`)
+      Build config: solc `0.8.24`, optimizer 200 runs, `via_ir = false`. `forge test` green
+      (117 passed) with the pinned submodules. Auditor: `git submodule update --init --recursive`.
 - [ ] **Etherscan/Routescan verification command** (run after deploy — see §D):
       ```
       forge verify-contract <ESCROW_ADDR> src/MatchEscrow.sol:MatchEscrow \

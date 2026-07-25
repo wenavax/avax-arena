@@ -2,7 +2,6 @@ out/
 cache/
 broadcast/
 .env
-lib/
 lcov.info
 .gas-snapshot
 src/*.bak
