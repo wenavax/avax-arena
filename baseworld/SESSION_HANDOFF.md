@@ -30,7 +30,10 @@ Bu doküman bir oturum sonunda her şeyi kapsayacak şekilde yazıldı. Yeni otu
 ## 3. KRİTİK CREDENTIALS
 
 ```
-Deploy wallet PK: <SIZAN-ANAHTAR-SOKULDU-30TEM2026>
+Deploy wallet PK: <BURADA DEGIL — asla repoya yazma>
+                  ESKI anahtar (0x42274A73CF875b8022513F08FB4bA4f171BAE501) 30 Tem 2026'da
+                  YAKILDI: bu dosyada acik metin public repoya push edilmisti. Kullanma.
+                  Yeni deployer: ~/Desktop/baseworld-deployer-keys.json (chmod 600, repo DISI)
 Base App ID:      6a22c2b22280de924021e2c0  (base.dev'de kayıtlı, meta tag layout.tsx'te)
 Builder Code:     YOK — bc_xxx, kullanıcı base.dev'den çekecek, NEXT_PUBLIC_BUILDER_CODE env'e yazılacak
 PINATA_JWT:       YOK — VPS local storage tercih edildi, IPFS opsiyonel
