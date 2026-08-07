@@ -13,6 +13,8 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
   const ref = useRef<HTMLDivElement>(null);
   const [toast, setToast] = useState<HubToast | null>(null);
   const [sellToast, setSellToast] = useState<number | null>(null);
+  // Faz 7: görev tamamlandı bildirimi (quests.ts pushQuestEvent yayınlar)
+  const [questToast, setQuestToast] = useState<string | null>(null);
 
   // ── Phaser mount: 3 TD sahnesi, registry.set('tdMode', mode) game oluşturulur oluşturulmaz
   // (sahnelerin create()'i registry'den senkron okur — Phaser.Game constructor'ı sahneleri
@@ -148,6 +150,23 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
     };
   }, []);
 
+  // ── Faz 7: görev tamamlandı toast'u (her iki mod; sell toast'unun emsali) ──
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onQuest = (e: Event) => {
+      const detail = (e as CustomEvent<{ title?: string }>).detail;
+      if (!detail?.title) return;
+      setQuestToast(detail.title);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => setQuestToast(null), 3500);
+    };
+    window.addEventListener('td-quest-toast', onQuest);
+    return () => {
+      window.removeEventListener('td-quest-toast', onQuest);
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+
   // ── Mobil dokunmatik kontroller: (pointer: coarse) — sol sanal joystick + sağ E/SPACE ──
   const [isTouch, setIsTouch] = useState(false);
   useEffect(() => {
@@ -275,6 +294,14 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
           style={{ borderLeft: '3px solid #ffd23f' }}
         >
           Sold for {sellToast}g 💰
+        </div>
+      )}
+      {questToast !== null && (
+        <div
+          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded bg-[#141c24] px-4 py-3 text-sm text-white shadow-lg"
+          style={{ borderLeft: '3px solid #6ee87a' }}
+        >
+          Quest complete — {questToast} ✔ <span className="opacity-60">turn it in</span>
         </div>
       )}
       {chainToast !== null && (

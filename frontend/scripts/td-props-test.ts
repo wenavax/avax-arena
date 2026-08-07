@@ -1,4 +1,5 @@
-import { propsForChunk, allTownProps, dungeonDoors, TOWN_ORIGIN } from '../lib/game/td/worldProps';
+import { propsForChunk, allTownProps, dungeonDoors, npcProps, TOWN_ORIGIN } from '../lib/game/td/worldProps';
+import { NPCS, NPC_BY_ID } from '../lib/game/td/npcs';
 import { getTile } from '../lib/game/td/worldMap';
 import { HUB_GAMES } from '../lib/game/hub/hubGames';
 
@@ -50,5 +51,17 @@ ok('farm-plots-in-town-chunk', farms.every(p => {
   const cx = Math.floor(p.x / 16 / 48), cy = Math.floor(p.y / 16 / 48);
   return cx === 4 && cy === 4;
 }));
+// Faz 7: NPC prop'ları — elle yerleştirilmiş 8 kişi, hepsi kasaba chunk'larında,
+// solid + çözülebilir data.id ile; anchor'ları bina/kamp ateşi solid'lerinin dışında.
+const npcs = townChunks.flat().filter(p => p.kind === 'npc');
+ok('npc-count-in-town-chunks', npcs.length === NPCS.length);
+ok('npc-data-resolves', npcs.every(p => !!p.data?.id && !!NPC_BY_ID[p.data.id] && p.data.name === NPC_BY_ID[p.data.id].name));
+ok('npc-has-solid', npcs.every(p => !!p.solid));
+ok('npc-anchor-tile-matches-def', npcs.every(p => {
+  const d = NPC_BY_ID[p.data!.id!];
+  return Math.floor(p.x / 16) === d.tx && Math.floor(p.y / 16) === d.ty;
+}));
+ok('npc-not-in-buildings', npcs.every(p => !inSolid(p.x, p.y)));
+ok('npc-cached-ref', npcProps() === npcProps());
 console.log(`td-props: ${pass} pass, ${fail} fail`);
 if (fail) process.exit(1);

@@ -10,6 +10,12 @@ export interface QuestData {
   reward: { type: 'item' | 'gold' | 'xp'; id?: string; amount: number };
   completed: boolean;
   turnedIn: boolean;
+  // Faz 7 (quests.ts): yalnız tip genişletmesi — yeni ÜST-SEVİYE save alanı yok, `v` 1'de kalır.
+  // Eski satırlarda undefined; save() olduğu gibi yazar, load() `?? []` ile alır.
+  /** 'daily' → rolloverRepeatables() resetAt geçince satırı sıfırlar. */
+  repeatable?: 'daily';
+  /** Günlük tekrarın yeniden açılacağı epoch ms (teslimde yazılır). */
+  resetAt?: number;
 }
 
 export interface InventoryItem {

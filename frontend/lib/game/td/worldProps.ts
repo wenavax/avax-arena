@@ -5,8 +5,9 @@
 import { CHUNK, MAP_W, MAP_H, hash2d } from './tdCore';
 import { getTile, regionAt, REGIONS, TOWN_SPAWN, ROAD_Y } from './worldMap';
 import { HUB_GAMES } from '../hub/hubGames';
+import { NPCS } from './npcs';
 
-export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot' | 'portal' | 'sign';
+export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot' | 'portal' | 'sign' | 'npc';
 export interface TdProp {
   kind: PropKind;
   x: number; y: number;                    // dünya px (taban/ayak noktası)
@@ -161,6 +162,18 @@ export function roadSigns(): TdProp[] {
   return (SIGN_CACHE = out);
 }
 
+// ── Faz 7: KASABA NPC'LERİ — npcs.ts elle yerleştirilmiş liste, hash YOK (deterministik).
+// Ayak noktası diğer prop'larla aynı hizada (ty*16+14 → floor(y/16) === ty), solid kutusu
+// ağaçlarınkiyle birebir: yolu tıkamaz ama içinden geçilmez.
+let NPC_CACHE: TdProp[] | null = null;
+export function npcProps(): TdProp[] {
+  return NPC_CACHE ?? (NPC_CACHE = NPCS.map(n => ({
+    kind: 'npc' as const, x: n.tx * 16 + 8, y: n.ty * 16 + 14,
+    solid: { x: n.tx * 16 + 3, y: n.ty * 16 + 10, w: 10, h: 6 },
+    data: { id: n.id, name: n.name },
+  })));
+}
+
 // otomatik yerleşime kapalı: bina rect'leri (x ±1 tile, üst 1 / alt 2 tile pay — kapı önü), spawn ±3, kapı ±2 tile, portal ±2 tile
 function reserved(tx: number, ty: number): boolean {
   if (Math.abs(tx - TOWN_SPAWN.tx) <= 3 && Math.abs(ty - TOWN_SPAWN.ty) <= 3) return true;
@@ -190,6 +203,7 @@ export function propsForChunk(cx: number, cy: number): TdProp[] {
   for (const d of dungeonDoors()) if (inChunk(d)) out.push(d);
   for (const p of townPortals()) if (inChunk(p)) out.push(p);
   for (const s of roadSigns()) if (inChunk(s)) out.push(s);
+  for (const n of npcProps()) if (inChunk(n)) out.push(n);
   for (let ty = by; ty < by + CHUNK; ty++) for (let tx = bx; tx < bx + CHUNK; tx++) {
     const t = getTile(tx, ty);
     if (t.collision || t.biome === 'water') continue;

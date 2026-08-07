@@ -16,6 +16,7 @@ import { genDungeon, type DungeonGen } from './dungeonGen';
 import { PER_HIT } from './cozy/rules';
 import type { TdWorldScene } from './TdWorldScene';
 import { PlayerState } from '../PlayerState';
+import { pushQuestEvent, objectiveKey } from './quests';
 import { heroHit, mobHit, killRewards, ATTACK_RANGE, ATTACK_CD_MS, AGGRO_RANGE, CHASE_SPEED, CONTACT_RANGE, HERO_IFRAME_MS } from './combat';
 
 const WALK_FRAMES = [0, 1, 0, 2] as const;
@@ -380,6 +381,11 @@ export class TdDungeonScene extends Phaser.Scene {
 
   /** Bir DMonRef'i listeden çıkarıp görüntüsünü yok eder (kazanılan savaş). */
   private despawnMonster(m: DMonRef): void {
+    // Faz 7: zindan ölümleri de görev sayar — TEK çoklu-giriş noktası (haritada dövülen
+    // trash + TdBattle'da yenilen boss ikisi de buraya düşer, çift sayım yok).
+    pushQuestEvent(objectiveKey('kill', m.entry.type));
+    if (m.isBoss) pushQuestEvent(objectiveKey('boss', m.entry.type));
+    if ((this.registry.get('tdMode') as string) === 'live') PlayerState.get().save();
     if (m.isBoss) {
       this.boss = null;
       this.openBossExitGlow(m.x, m.y);

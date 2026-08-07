@@ -7,6 +7,11 @@ import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
 import { propsForChunk, dungeonDoors, townPortals, TOWN_ORIGIN, type TdProp } from './worldProps';
+import { NPCS, NPC_BY_ID } from './npcs';
+import {
+  QUEST_BY_ID, questsForGiver, offerState, makeRow, grantReward, rolloverRepeatables,
+  pushQuestEvent, objectiveKey, REWARD_ITEMS, DAILY_MS, type QuestDef, type OfferState,
+} from './quests';
 import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump, mkFarmPlot, mkPortal, mkSignpost } from './sprites/props';
 import { atmoForRegion } from './atmosphere';
 import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
@@ -163,6 +168,12 @@ export class TdWorldScene extends Phaser.Scene {
   private hpIcon!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
   private bagPanel!: Phaser.GameObjects.Container;
+  // Faz 7: NPC diyaloğu + görev günlüğü. İkisi de bagPanel emsali (removeAll(true) ile
+  // her açılışta taze kurulur — panel içi state tutulmaz, tek doğruluk kaynağı ps.quests).
+  private questPanel!: Phaser.GameObjects.Container;
+  private dialogNpc: string | null = null;
+  private npcMarkers = new Map<string, Phaser.GameObjects.Text>(); // npcId → baş üstü ! / ? / …
+  private markersDirty = true;                                     // true → update() işaretçi metinlerini tazeler
   private keysHint!: Phaser.GameObjects.Text;
   // redrawStats değişim algılama önbelleği (her kare Graphics çizmemek için)
   private statsCache = '';
@@ -251,6 +262,12 @@ export class TdWorldScene extends Phaser.Scene {
     reg('td-portal-0', mkPortal(0)); reg('td-portal-1', mkPortal(1)); // Faz 5.6
     reg('td-signpost', mkSignpost()); // Faz 5.11
     const stump = mkStump(); reg('td-stump', stump); this.propMeta.set('stump', { ox: stump.ox, oy: stump.oy });
+    // Faz 7: NPC portreleri — kahramanla aynı chibi çizici, NPC başına sabit palet/yön
+    // (tek kare: NPC'ler yürümez). 8 texture, sahne başına bir kez.
+    for (const n of NPCS) {
+      const nk = `td-npc-${n.id}`;
+      if (!this.textures.exists(nk)) this.textures.addCanvas(nk, chibiHumanoid(n.dir, 0, n.palette));
+    }
     for (let s = 0; s < 4; s++) { const m = mkFarmPlot(s as 0 | 1 | 2 | 3); reg(`td-farm-${s}`, m); this.propMeta.set(`farm-${s}`, { ox: m.ox, oy: m.oy }); }
 
     // etkileşim ipucu (alt-orta, HUD) — konumlar layoutHud()'da (adaptif çözünürlük)
@@ -306,6 +323,10 @@ export class TdWorldScene extends Phaser.Scene {
     kb.on('keydown-SPACE', () => this.onSpaceGather());
     // Faz 5.4: B çanta; mobil 🎒/🗺 butonları window event'iyle gelir (TdPhaserGame)
     kb.on('keydown-B', () => this.toggleBag());
+    // Faz 7: J görev günlüğü; ESC açık diyaloğu/günlüğü kapatır (dünya sahnesinde başka
+    // ESC tüketicisi yok — zindan/savaş kendi sahnelerinde dinler)
+    kb.on('keydown-J', () => this.toggleQuestLog());
+    kb.on('keydown-ESC', () => { if (this.questPanel.visible) this.closeQuestPanel(); });
     // Faz 5.5: [-]/[+] kamera mesafesi (PLUS = ana sıra '=' tuşu, Phaser keycode 187)
     kb.on('keydown-MINUS', () => this.nudgeZoom(-1));
     kb.on('keydown-PLUS', () => this.nudgeZoom(1));
@@ -326,8 +347,17 @@ export class TdWorldScene extends Phaser.Scene {
 
     // Faz 5.4: çanta paneli (kapalı başlar; içerik her açılışta tazelenir) + tuş ipucu
     this.bagPanel = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9 + 2).setVisible(false);
+    // Faz 7: diyalog/günlük paneli — çantanın bir tık üstünde (ikisi aynı anda açılmaz,
+    // openDialog/toggleQuestLog karşılıklı kapatır)
+    this.questPanel = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9 + 3).setVisible(false);
+    // Faz 7: günlük tekrarların penceresi açıldıysa satırları sıfırla (oturum başında bir kez).
+    // Date.now() BURADA okunur — quests.ts saf kalsın diye `now` parametreli.
+    {
+      const ps = PlayerState.get();
+      if (rolloverRepeatables(ps.quests, Date.now()).length && this.tdMode === 'live') ps.save();
+    }
     const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true;
-    this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [Q] potion · [B] bag · [M] map · [-/+] zoom', {
+    this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [Q] potion · [B] bag · [J] quests · [M] map · [-/+] zoom', {
       fontSize: '8px', fontFamily: TD_FONT, color: '#cfe3f2',
     }).setOrigin(1, 1).setScrollFactor(0).setDepth(1e9).setAlpha(0.55).setVisible(!isTouch);
 
@@ -432,6 +462,7 @@ export class TdWorldScene extends Phaser.Scene {
     const w = sw / k, h = sh / k;                   // mantıksal görünür boyut
     this.statsPanel.setPosition(x0 + 6, y0 + 6);
     this.bagPanel?.setPosition(x0 + w / 2, y0 + h / 2);   // create'te applyZoom'dan sonra doğar
+    this.questPanel?.setPosition(x0 + w / 2, y0 + h / 2); // Faz 7: diyalog/günlük — aynı merkez
     this.keysHint?.setPosition(x0 + w - 4, y0 + h - 4);
     this.hintText.setPosition(x0 + w / 2, y0 + h - 14);
     this.gatherHint.setPosition(x0 + w / 2, y0 + h - 26);
@@ -451,6 +482,10 @@ export class TdWorldScene extends Phaser.Scene {
     if (this.battleActive) return;
     // paused-input sızıntısına karşı savunma: alt sahne aktifken yeniden-launch yok
     if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
+    // Faz 7: açık diyalog varsa E onu kapatır (aynı tuşla girip çıkma — panel arkasından
+    // ikinci bir etkileşim tetiklenmesin)
+    if (this.questPanel.visible) { this.closeQuestPanel(); return; }
+    if (p?.kind === 'npc') { this.openDialog(p.data!.id!); return; }
     if (p?.kind === 'building' && p.data!.id === 'marketplace') {
       const gold = this.tdState.sellAll();
       this.tdState.save();
@@ -458,6 +493,7 @@ export class TdWorldScene extends Phaser.Scene {
         // Tek cüzdan: satış geliri PlayerState.gold'a (savaş ödülleriyle aynı yere)
         const ps = PlayerState.get();
         ps.gold += gold;
+        this.questEvent(objectiveKey('sell', 'gold'), gold);
         if (this.tdMode === 'live') ps.save();
         window.dispatchEvent(new CustomEvent('td-sell', { detail: { gold, total: gold } }));
         this.floatText(this.heroPos.x, this.heroPos.y - 16, `+${gold}g 💰`, '#ffd23f');
@@ -465,6 +501,9 @@ export class TdWorldScene extends Phaser.Scene {
         this.showRedHint('nothing to sell');
       }
     } else if (p?.kind === 'building') {
+      // Faz 7: hub ziyareti — `visit:<gameId>` TEK SEFER (flags dedupe). `visit:any` sayan
+      // q_grand_tour aynı binaya 9 kez girerek tamamlanamaz; dedupe burada, quests.ts'te değil.
+      this.markVisit(p.data!.id!);
       if (this.tdMode === 'live') {
         // Gerçek same-origin iframe overlay (GameOverlay.tsx) — izo'nun 'hub_' akışıyla
         // birebir aynı sözleşme: HUB_GAMES id'si + hub-overlay-opened/closed ack çifti.
@@ -488,6 +527,8 @@ export class TdWorldScene extends Phaser.Scene {
         window.dispatchEvent(new CustomEvent('td-hub-open', { detail: { url: p.data!.url, name: p.data!.name, accent: p.data!.accent } }));
       }
     } else if (p?.kind === 'door_dungeon') {
+      // Faz 7: `enter:<dungeonId>` — kapıdan her geçişte (giriş sayısı hedefi 1, tekrar zararsız)
+      this.questEvent(objectiveKey('enter', p.data!.id!));
       this.scene.pause();
       this.scene.launch('TdDungeon', { dungeonId: p.data!.id, exitPos: { x: this.heroPos.x, y: this.heroPos.y } });
     } else if (p?.kind === 'portal') {
@@ -504,8 +545,11 @@ export class TdWorldScene extends Phaser.Scene {
         if (this.tdState.plant(i)) { this.tdState.save(); this.floatText(p.x, p.y - 14, 'planted 🌱', '#5aa06a'); }
         else this.showRedHint('Not enough energy ⚡');
       } else if (plot?.stage === 3) {
-        if (this.tdState.harvest(i)) { this.tdState.save(); this.floatText(p.x, p.y - 14, '+1 🍒'); }
-        else this.showRedHint('Not enough energy ⚡');
+        if (this.tdState.harvest(i)) {
+          this.tdState.save();
+          this.questEvent(objectiveKey('harvest', 'crop'));
+          this.floatText(p.x, p.y - 14, '+1 🍒');
+        } else this.showRedHint('Not enough energy ⚡');
       } else {
         this.showRedHint('growing…');
       }
@@ -536,9 +580,12 @@ export class TdWorldScene extends Phaser.Scene {
     g.fillStyle(0x121a23, 0.97); g.fillRoundedRect(-W2 / 2, -H2 / 2, W2, H2, 8);
     g.lineStyle(1, 0x3a4e63, 1); g.strokeRoundedRect(-W2 / 2, -H2 / 2, W2, H2, 8);
     g.fillStyle(0xffffff, 0.05); g.fillRect(-W2 / 2 + 3, -H2 / 2 + 1, W2 - 6, 1);
+    // setScrollFactor(0): render'da etkisiz (container matrisi geçerli) ama INPUT için şart —
+    // Phaser'ın hitTest'i pointer'ı ÇOCUĞUN scrollFactor'üne göre düzeltir; 1 kalırsa
+    // kamera scroll'u kadar kayar ve tıklama hiçbir zaman isabet etmez (Faz 7'de yakalandı).
     const T = (x: number, y: number, msg: string, color: string, size = 9, originX = 0, originY = 0) =>
       this.add.text(x, y, msg, { fontSize: `${size}px`, fontFamily: TD_FONT, color })
-        .setOrigin(originX, originY).setResolution(k);
+        .setOrigin(originX, originY).setResolution(k).setScrollFactor(0);
     const items: Phaser.GameObjects.GameObject[] = [g,
       T(0, -H2 / 2 + 7, 'BAG', '#9fe8ff', 11, 0.5),
       T(W2 / 2 - 14, -H2 / 2 + 6, '✕', '#8fa6bd', 11)
@@ -587,6 +634,230 @@ export class TdWorldScene extends Phaser.Scene {
     }
     this.bagPanel.add(items);
     this.bagPanel.setVisible(true);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Faz 7: NPC diyaloğu + görev günlüğü + olay kancaları
+  // ───────────────────────────────────────────────────────────────────────
+
+  /**
+   * Görev olayı girişi. TÜM oyun-içi kancalar (kill/gather/harvest/visit/enter) buradan
+   * geçer — pushQuestEvent saf mantığı koşar, LIVE kalıcılığı burada yönetilir: yeni
+   * tamamlanan varsa HEMEN yaz, yoksa 5sn'lik biriktiriciye bırak (odun kesme gibi
+   * saniye-başı olaylarda localStorage yazma amplifikasyonu olmasın).
+   */
+  private questDirty = false;
+  private questEvent(key: string, amount = 1): void {
+    const done = pushQuestEvent(key, amount);
+    this.markersDirty = true;
+    if (done.length) {
+      if (this.tdMode === 'live') PlayerState.get().save();
+      this.questDirty = false;
+    } else {
+      this.questDirty = true;
+    }
+  }
+
+  /** Hub binasına ilk girişte `visit:<id>` — flags dedupe (bkz. handleInteract notu). */
+  private markVisit(gameId: string): void {
+    const ps = PlayerState.get();
+    const flag = `hub_seen_${gameId}`;
+    if (ps.flags.has(flag)) return;
+    ps.flags.add(flag);
+    this.questEvent(objectiveKey('visit', gameId));
+    if (this.tdMode === 'live') ps.save(); // flag kalıcı olmalı (dedupe yenilemede de dursun)
+  }
+
+  /** Bir NPC'nin baş üstü işaretçisi: teslim > yeni görev > devam eden. */
+  private npcMarkerFor(npcId: string): { txt: string; color: string } {
+    const rows = PlayerState.get().quests;
+    let ready = false, avail = false, active = false;
+    for (const q of questsForGiver(npcId)) {
+      const st = offerState(rows, q);
+      if (st === 'ready') ready = true;
+      else if (st === 'available') avail = true;
+      else if (st === 'active') active = true;
+    }
+    if (ready) return { txt: '?', color: '#ffd23f' };
+    if (avail) return { txt: '!', color: '#ffd23f' };
+    if (active) return { txt: '·', color: '#8fa6bd' };
+    return { txt: '', color: '#ffd23f' };
+  }
+
+  private refreshNpcMarkers(): void {
+    for (const [id, t] of this.npcMarkers) {
+      if (!t.active) { this.npcMarkers.delete(id); continue; }
+      const m = this.npcMarkerFor(id);
+      if (t.text !== m.txt) t.setText(m.txt);
+      t.setColor(m.color).setVisible(m.txt !== '');
+    }
+  }
+
+  /** Ödül satırı metni (diyalog + günlük ortak). */
+  private rewardLabel(def: QuestDef): string {
+    const r = def.reward;
+    if (r.type === 'gold') return `${r.amount}g 💰`;
+    if (r.type === 'xp') return `${r.amount} XP ✨`;
+    return `${r.amount}× ${REWARD_ITEMS[r.id ?? '']?.name ?? r.id ?? 'item'} 🧪`;
+  }
+
+  private closeQuestPanel(): void {
+    this.questPanel.removeAll(true);
+    this.questPanel.setVisible(false);
+    this.dialogNpc = null;
+  }
+
+  /**
+   * Panel iskeleti (bagPanel'in görsel diliyle birebir: gölge + gövde + kenar + üst
+   * parlama). Dönen `T` yardımcısı panel-yerel koordinatta metin ekler.
+   */
+  private buildPanel(w: number, h: number, title: string): {
+    items: Phaser.GameObjects.GameObject[];
+    T: (x: number, y: number, msg: string, color: string, size?: number, ox?: number, oy?: number) => Phaser.GameObjects.Text;
+  } {
+    const k = this.uiZoom;
+    const g = this.add.graphics();
+    g.fillStyle(0x000000, 0.3); g.fillRoundedRect(-w / 2 + 1, -h / 2 + 2, w, h, 8);
+    g.fillStyle(0x121a23, 0.97); g.fillRoundedRect(-w / 2, -h / 2, w, h, 8);
+    g.lineStyle(1, 0x3a4e63, 1); g.strokeRoundedRect(-w / 2, -h / 2, w, h, 8);
+    g.fillStyle(0xffffff, 0.05); g.fillRect(-w / 2 + 3, -h / 2 + 1, w - 6, 1);
+    // setScrollFactor(0) input için ŞART — bkz. toggleBag()'deki T() notu.
+    const T = (x: number, y: number, msg: string, color: string, size = 8, ox = 0, oy = 0) =>
+      this.add.text(x, y, msg, { fontSize: `${size}px`, fontFamily: TD_FONT, color })
+        .setOrigin(ox, oy).setResolution(k).setScrollFactor(0);
+    const items: Phaser.GameObjects.GameObject[] = [g,
+      T(0, -h / 2 + 7, title, '#9fe8ff', 11, 0.5),
+      T(w / 2 - 14, -h / 2 + 6, '✕', '#8fa6bd', 11).setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.closeQuestPanel()),
+    ];
+    return { items, T };
+  }
+
+  /** Tıklanabilir buton metni (panel içi ortak stil). */
+  private panelBtn(t: Phaser.GameObjects.Text, onClick: () => void): Phaser.GameObjects.Text {
+    return t.setInteractive({ useHandCursor: true })
+      .on('pointerover', () => t.setAlpha(0.75))
+      .on('pointerout', () => t.setAlpha(1))
+      .on('pointerdown', onClick);
+  }
+
+  /**
+   * NPC diyaloğu. Tek görev gösterir — öncelik teslim > yeni > devam eden > kilitli.
+   * Panelde state TUTULMAZ: her aksiyondan sonra openDialog yeniden çizer, tek doğruluk
+   * kaynağı PlayerState.quests kalır.
+   */
+  private openDialog(npcId: string): void {
+    const npc = NPC_BY_ID[npcId];
+    if (!npc) return;
+    this.bagPanel.setVisible(false);
+    this.questPanel.removeAll(true);
+    this.dialogNpc = npcId;
+    const rows = PlayerState.get().quests;
+    const rank: Record<OfferState, number> = { ready: 0, available: 1, active: 2, locked: 3, done: 4 };
+    let best: QuestDef | null = null, bestState: OfferState = 'done';
+    for (const q of questsForGiver(npcId)) {
+      const st = offerState(rows, q);
+      if (!best || rank[st] < rank[bestState]) { best = q; bestState = st; }
+    }
+
+    const W = 236, H = 150;
+    const { items, T } = this.buildPanel(W, H, npc.name);
+    const x0 = -W / 2 + 12, wrapW = W - 24;
+
+    if (!best || bestState === 'done' || bestState === 'locked') {
+      items.push(T(x0, -H / 2 + 26, npc.greeting, '#cfe3f2', 8).setWordWrapWidth(wrapW));
+      const pre = best?.requires ? QUEST_BY_ID[best.requires] : undefined;
+      items.push(T(x0, H / 2 - 38, pre
+        ? `Come back after "${pre.title}".`
+        : 'Nothing more for you right now.', '#8fa6bd', 7).setWordWrapWidth(wrapW));
+      items.push(this.panelBtn(T(0, H / 2 - 16, '[ OK ]', '#9fe8ff', 9, 0.5), () => this.closeQuestPanel()));
+    } else {
+      const row = rows.find(r => r.id === best!.id);
+      items.push(
+        T(x0, -H / 2 + 24, best.title, '#ffd23f', 10),
+        T(x0, -H / 2 + 40, best.description, '#cfe3f2', 8).setWordWrapWidth(wrapW),
+        T(x0, H / 2 - 52, `Reward: ${this.rewardLabel(best)}${best.repeatable === 'daily' ? '   ⟳ daily' : ''}`, '#9fe8ff', 8),
+      );
+      if (bestState === 'available') {
+        items.push(
+          T(x0, H / 2 - 38, `Objective: ${best.count}× ${best.target === 'any' ? best.kind : best.target}`, '#8fa6bd', 7),
+          this.panelBtn(T(-W / 2 + 62, H / 2 - 16, '[ ACCEPT ]', '#6ee87a', 9, 0.5), () => this.acceptQuest(best!)),
+          this.panelBtn(T(W / 2 - 52, H / 2 - 16, '[ later ]', '#8fa6bd', 9, 0.5), () => this.closeQuestPanel()),
+        );
+      } else if (bestState === 'ready') {
+        items.push(
+          T(x0, H / 2 - 38, `Complete — ${row?.progress ?? 0}/${row?.target ?? best.count} ✔`, '#6ee87a', 7),
+          this.panelBtn(T(0, H / 2 - 16, '[ TURN IN ]', '#ffd23f', 9, 0.5), () => this.turnInQuest(best!)),
+        );
+      } else {
+        items.push(
+          T(x0, H / 2 - 38, `In progress — ${row?.progress ?? 0}/${row?.target ?? best.count}`, '#cfe3f2', 7),
+          this.panelBtn(T(0, H / 2 - 16, '[ OK ]', '#9fe8ff', 9, 0.5), () => this.closeQuestPanel()),
+        );
+      }
+    }
+    this.questPanel.add(items);
+    this.questPanel.setVisible(true);
+    this.layoutHud();
+  }
+
+  private acceptQuest(def: QuestDef): void {
+    const ps = PlayerState.get();
+    if (ps.quests.some(r => r.id === def.id)) return; // çift-tık koruması
+    ps.quests.push(makeRow(def));
+    if (this.tdMode === 'live') ps.save();
+    this.markersDirty = true;
+    this.floatText(this.heroPos.x, this.heroPos.y - 20, '📜 quest accepted', '#ffd23f');
+    if (this.dialogNpc) this.openDialog(this.dialogNpc); // 'active' görünüme yeniden çiz
+  }
+
+  private turnInQuest(def: QuestDef): void {
+    const ps = PlayerState.get();
+    const row = ps.quests.find(r => r.id === def.id);
+    if (!row || !row.completed || row.turnedIn) return;
+    // grantReward çanta doluysa false döner ve HİÇBİR ŞEYİ değiştirmez — satırı da
+    // turnedIn yapmıyoruz; oyuncu yer açıp geri gelebilsin.
+    if (!grantReward(ps, def)) { this.showRedHint('bag is full — make room 🎒'); return; }
+    row.turnedIn = true;
+    if (def.repeatable === 'daily') row.resetAt = Date.now() + DAILY_MS;
+    if (this.tdMode === 'live') ps.save();
+    this.markersDirty = true;
+    this.floatText(this.heroPos.x, this.heroPos.y - 20, `+${this.rewardLabel(def)}`, '#ffd23f');
+    if (this.dialogNpc) this.openDialog(this.dialogNpc); // sıradaki görev varsa hemen görünsün
+  }
+
+  /** J: görev günlüğü — kabul edilmiş, teslim edilmemiş satırlar (hazır olanlar üstte). */
+  private toggleQuestLog(): void {
+    if (this.questPanel.visible && this.dialogNpc === null) { this.closeQuestPanel(); return; }
+    this.bagPanel.setVisible(false);
+    this.questPanel.removeAll(true);
+    this.dialogNpc = null;
+    const rows = PlayerState.get().quests
+      .filter(r => !r.turnedIn)
+      .sort((a, b) => Number(b.completed) - Number(a.completed));
+    const shown = rows.slice(0, 6);
+    const W = 236, H = Math.max(92, 40 + Math.max(1, shown.length) * 22 + 14);
+    const { items, T } = this.buildPanel(W, H, 'QUEST LOG');
+    const x0 = -W / 2 + 12;
+    if (!shown.length) {
+      items.push(T(x0, -H / 2 + 28, 'No active quests. Townsfolk marked with a ! have work for you.', '#8fa6bd', 8)
+        .setWordWrapWidth(W - 24));
+    } else {
+      shown.forEach((r, i) => {
+        const y = -H / 2 + 26 + i * 22;
+        const giver = NPC_BY_ID[QUEST_BY_ID[r.id]?.giver ?? '']?.name ?? '';
+        items.push(
+          T(x0, y, `${r.completed ? '✔' : '•'} ${r.title}`, r.completed ? '#6ee87a' : '#e8eef4', 8),
+          T(x0, y + 10, `${r.progress}/${r.target}${giver ? `  ·  ${giver}` : ''}`, '#8fa6bd', 7),
+        );
+      });
+      if (rows.length > shown.length) {
+        items.push(T(W / 2 - 12, H / 2 - 6, `+${rows.length - shown.length} more`, '#8fa6bd', 7, 1, 1));
+      }
+    }
+    this.questPanel.add(items);
+    this.questPanel.setVisible(true);
+    this.layoutHud();
   }
 
   /**
@@ -760,7 +1031,26 @@ export class TdWorldScene extends Phaser.Scene {
         const gatherables = new Map<string, Gatherable>();
         for (const p of list) {
           if (p.solid) solids.push(p.solid);
-          if (p.kind === 'building' || p.kind === 'door_dungeon' || p.kind === 'farm_plot' || p.kind === 'portal') interactives.push(p);
+          if (p.kind === 'building' || p.kind === 'door_dungeon' || p.kind === 'farm_plot' || p.kind === 'portal' || p.kind === 'npc') interactives.push(p);
+          if (p.kind === 'npc') {
+            // Kahramanla aynı origin (ayak hizası) — NPC'ler statik, yürüme fazı yok.
+            const nimg = this.add.image(p.x, p.y, `td-npc-${p.data!.id}`)
+              .setOrigin(0.5, (CHIBI_H - 3) / CHIBI_H).setDepth(depth(p.x, p.y));
+            const nlabel = this.add.text(p.x, p.y - CHIBI_H + 1, p.data!.name!, {
+              fontSize: '7px', fontFamily: TD_FONT, color: '#e9f4ff', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
+            }).setOrigin(0.5, 1).setDepth(depth(p.x, p.y) + 1).setResolution(this.uiZoom);
+            // Baş üstü görev işaretçisi — metni refreshNpcMarkers() basar (burada boş başlar).
+            const marker = this.add.text(p.x, p.y - CHIBI_H - 9, '', {
+              fontSize: '11px', fontFamily: TD_FONT, color: '#ffd23f', fontStyle: 'bold',
+            }).setOrigin(0.5, 1).setDepth(depth(p.x, p.y) + 2).setResolution(this.uiZoom);
+            this.npcMarkers.set(p.data!.id!, marker);
+            // chunk cull'ında Map'te ölü referans kalmasın (evictChunk objs'i destroy eder)
+            marker.once(Phaser.GameObjects.Events.DESTROY, () => {
+              if (this.npcMarkers.get(p.data!.id!) === marker) this.npcMarkers.delete(p.data!.id!);
+            });
+            this.markersDirty = true; // yeni işaretçi doğdu → bir sonraki update() metni bassın
+            objs.push(nimg, nlabel, marker); continue;
+          }
           if (p.kind === 'farm_plot') {
             const stage = this.tdState.farm[p.data!.plotIndex!]?.stage ?? 0;
             const fimg = this.add.image(p.x, p.y, `td-farm-${stage}`).setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
@@ -1011,7 +1301,8 @@ export class TdWorldScene extends Phaser.Scene {
     if (near !== this.nearProp) {
       this.nearProp = near;
       this.hintText.setText(near
-        ? (near.kind === 'building' ? `E — ${near.data!.name}`
+        ? (near.kind === 'npc' ? `E — talk to ${near.data!.name}`
+          : near.kind === 'building' ? `E — ${near.data!.name}`
           : near.kind === 'portal' ? 'E — Town Portal 🌀'
           : near.kind === 'farm_plot' ? (() => {
               const st = this.tdState.farm[near!.data!.plotIndex!]?.stage ?? 0;
@@ -1047,6 +1338,8 @@ export class TdWorldScene extends Phaser.Scene {
       }
       }
     }
+    // Faz 7: baş üstü görev işaretçileri — yalnız kirliyken (olay/kabul/teslim/yeni chunk)
+    if (this.markersDirty) { this.markersDirty = false; this.refreshNpcMarkers(); }
     // atmosfer lerp — hem alpha hem RENK yumuşak (bölge sınırında hue-snap cilası)
     const atmo = atmoForRegion(regionAt(Math.floor(this.heroPos.x / 16), Math.floor(this.heroPos.y / 16)).key);
     this.tintCur = lerpColor(this.tintCur, atmo.tint, 0.05);
@@ -1101,6 +1394,8 @@ export class TdWorldScene extends Phaser.Scene {
       this.saveT = 0;
       if (this.tdMode === 'live') this.tdState.worldPos = { x: this.heroPos.x, y: this.heroPos.y };
       this.tdState.save();
+      // Faz 7: tamamlanmamış görev ilerlemesi de aynı pencerede yazılır (yazma amplifikasyonu yok)
+      if (this.questDirty && this.tdMode === 'live') { this.questDirty = false; PlayerState.get().save(); }
     }
 
     // toplanabilir respawn: süresi geçmişleri geri getir
@@ -1120,6 +1415,7 @@ export class TdWorldScene extends Phaser.Scene {
       if (this.fishT >= 2.5) {
         this.fishing = false; this.fishT = 0;
         if (this.tdState.gather('fish')) {
+          this.questEvent(objectiveKey('gather', 'fish'));
           this.floatText(this.heroPos.x, this.heroPos.y - 16, '+1 🐟');
           this.tdState.save();
         } else {
@@ -1178,6 +1474,7 @@ export class TdWorldScene extends Phaser.Scene {
         if (!this.tdState.gather('frostberry')) { this.showRedHint('Not enough energy ⚡'); return; }
         g.alive = false; g.respawnAt = this.time.now + 20000;
         g.img.setTexture('td-bush-0');
+        this.questEvent(objectiveKey('gather', 'frostberry'));
         this.floatText(g.x, g.y - 14, '+1 🍒');
         this.tdState.save();
         return;
@@ -1194,12 +1491,14 @@ export class TdWorldScene extends Phaser.Scene {
       // son vuruş: kaynak +1, despawn/respawn
       if (g.kind === 'tree') {
         this.tdState.resources.wood += 1;
+        this.questEvent(objectiveKey('gather', 'wood'));
         g.alive = false; g.respawnAt = this.time.now + 25000;
         g.img.setTexture('td-stump');
         this.floatText(g.x, g.y - 14, '+1 🪵');
       } else {
         const isOre = hash2d(g.tx, g.ty, 4) % 4 === 0;
         if (isOre) this.tdState.resources.ore += 1; else this.tdState.resources.stone += 1;
+        this.questEvent(objectiveKey('gather', isOre ? 'ore' : 'stone'));
         g.alive = false; g.respawnAt = this.time.now + 30000;
         g.img.setVisible(false);
         this.floatText(g.x, g.y - 14, isOre ? '+1 ⛏️' : '+1 🪨');
@@ -1281,6 +1580,8 @@ export class TdWorldScene extends Phaser.Scene {
     const ps = PlayerState.get();
     const { xp, gold } = killRewards(m.entry.level ?? 1, m.isElite);
     ps.addXp(xp); ps.gold += gold;
+    // Faz 7: elit'ler `elite_<tip>` anahtarıyla gider — matchEvent taban tipi de ilerletir
+    this.questEvent(objectiveKey('kill', m.isElite ? `elite_${m.entry.type}` : m.entry.type));
     if (this.tdMode === 'live') ps.save();
     this.floatText(m.x, m.y - 24, `+${xp} XP`, '#7f7fff');
     this.floatText(m.x, m.y - 12, `+${gold}g 💰`, '#ffd23f');
