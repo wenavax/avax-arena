@@ -6,13 +6,14 @@ import { TILE, CHUNK, MAP_W, MAP_H, chunksInView, computeTdView, userTdZoom, set
 import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
-import { propsForChunk, dungeonDoors, townPortals, TOWN_ORIGIN, type TdProp } from './worldProps';
+import { propsForChunk, dungeonDoors, townPortals, TOWN_ORIGIN, DECO_KINDS, type TdProp } from './worldProps';
 import { NPCS, NPC_BY_ID } from './npcs';
 import {
   QUEST_BY_ID, questsForGiver, offerState, makeRow, grantReward, rolloverRepeatables,
   pushQuestEvent, objectiveKey, REWARD_ITEMS, DAILY_MS, type QuestDef, type OfferState,
 } from './quests';
 import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump, mkFarmPlot, mkPortal, mkSignpost } from './sprites/props';
+import { mkDeco } from './sprites/decoProps';
 import { atmoForRegion } from './atmosphere';
 import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
 import { mkMonsterChibi } from './sprites/monsterChibi';
@@ -269,6 +270,10 @@ export class TdWorldScene extends Phaser.Scene {
       if (!this.textures.exists(nk)) this.textures.addCanvas(nk, chibiHumanoid(n.dir, 0, n.palette));
     }
     for (let s = 0; s < 4; s++) { const m = mkFarmPlot(s as 0 | 1 | 2 | 3); reg(`td-farm-${s}`, m); this.propMeta.set(`farm-${s}`, { ox: m.ox, oy: m.oy }); }
+    // Faz 8: süs prop'ları — biyom kimliği + kasaba sokak mobilyası. Tek `deco` kind,
+    // alt-tip data.deco'da; texture anahtarı `td-deco-<tip>`. Toplanabilir DEĞİL
+    // (gatherable kaydı yalnız tree/rock/bush'a bakar) → enerji/kaynak dengesi değişmez.
+    for (const k of DECO_KINDS) { const m = mkDeco(k); reg(`td-deco-${k}`, m); this.propMeta.set(`deco-${k}`, { ox: m.ox, oy: m.oy }); }
 
     // etkileşim ipucu (alt-orta, HUD) — konumlar layoutHud()'da (adaptif çözünürlük)
     this.hintText = this.add.text(0, 0, '', {
@@ -1062,6 +1067,7 @@ export class TdWorldScene extends Phaser.Scene {
           if (p.kind === 'tree') { texKey2 = `td-tree-${p.v ?? 0}`; meta = this.propMeta.get(`tree-${p.v ?? 0}`)!; }
           else if (p.kind === 'rock') { texKey2 = `td-rock-${p.v ?? 0}`; meta = this.propMeta.get(`rock-${p.v ?? 0}`)!; }
           else if (p.kind === 'bush') { texKey2 = `td-bush-${p.v ?? 0}`; meta = this.propMeta.get(`bush-${p.v ?? 0}`)!; }
+          else if (p.kind === 'deco') { texKey2 = `td-deco-${p.data!.deco}`; meta = this.propMeta.get(`deco-${p.data!.deco}`)!; }
           else if (p.kind === 'door_dungeon') { texKey2 = 'td-door-dungeon'; meta = this.propMeta.get('door')!; }
           else if (p.kind === 'sign') {
             // Faz 5.11: tabela — sprite + üstünde yön/bölge etiketi ("↑ MINES")

@@ -1,6 +1,6 @@
-import { propsForChunk, allTownProps, dungeonDoors, npcProps, TOWN_ORIGIN } from '../lib/game/td/worldProps';
+import { propsForChunk, allTownProps, dungeonDoors, npcProps, TOWN_ORIGIN, DECO_KINDS, DECO_BY_BIOME as DECO_BY_BIOME_TEST, type TdProp } from '../lib/game/td/worldProps';
 import { NPCS, NPC_BY_ID } from '../lib/game/td/npcs';
-import { getTile } from '../lib/game/td/worldMap';
+import { getTile, TOWN_SPAWN, ROAD_Y } from '../lib/game/td/worldMap';
 import { HUB_GAMES } from '../lib/game/hub/hubGames';
 
 let pass = 0, fail = 0;
@@ -27,7 +27,9 @@ ok('town-buildings-in-chunk', townChunks.reduce((n, c) => n + c.filter(p => p.ki
 // bina rect'leri içinde otomatik ağaç yok
 // Faz 5.8: plaza süs ağaçlarının KENDİ gövde solid'leri listeye girmesin (ağaç
 // anchor'ı kendi solid'inin içinde — sahte çakışma); amaç bina/ateş içi ağaç yakalamak.
-const solids = town.filter(p => p.solid && p.kind !== 'tree').map(p => p.solid!);
+// Faz 8: 'deco' de ağaçlarla aynı nedenle dışarıda — kuyu/tezgâh anchor'ı KENDİ dar
+// solid'inin içinde (sahte çakışma); amaç bina/kamp ateşi içi prop yakalamak.
+const solids = town.filter(p => p.solid && p.kind !== 'tree' && p.kind !== 'deco').map(p => p.solid!);
 const inSolid = (x: number, y: number) => solids.some(s => x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h);
 ok('no-tree-in-buildings', townChunks.flat().filter(p => p.kind === 'tree').every(p => !inSolid(p.x, p.y)));
 // zindan kapıları: 14 adet (town/forest/grassE/grassS hariç), koordinatlar bölge merkezinde
@@ -63,5 +65,79 @@ ok('npc-anchor-tile-matches-def', npcs.every(p => {
 }));
 ok('npc-not-in-buildings', npcs.every(p => !inSolid(p.x, p.y)));
 ok('npc-cached-ref', npcProps() === npcProps());
+// ─────────────────────────────────────────────────────────────────────────────
+// Faz 8: SÜS PROP'LARI (deco)
+// ─────────────────────────────────────────────────────────────────────────────
+// 1) Mevcut yerleşimler BOZULMADI: süs zincirin sonunda durduğu için ağaç/kaya/çalı
+//    koordinatları birebir aynı kalmalı (regresyon çapası — süs eklemek eskiyi kaydırmaz).
+const treeKeys = (l: TdProp[]) => l.filter(p => p.kind === 'tree').map(p => `${p.x},${p.y},${p.v}`).join('|');
+ok('forest-trees-count-stable', trees > 80 && trees < 400);
+ok('deco-does-not-shift-trees', treeKeys(a) === treeKeys(propsForChunk(3, 3)));
+
+// 2) Süs gerçekten üretiliyor ve deterministik
+const decoA = a.filter(p => p.kind === 'deco');
+console.log('forest chunk deco:', decoA.length, '· tipler:', [...new Set(decoA.map(p => p.data!.deco))].join(','));
+ok('deco-exists-forest', decoA.length > 10);
+ok('deco-deterministic', JSON.stringify(decoA) === JSON.stringify(propsForChunk(3, 3).filter(p => p.kind === 'deco')));
+
+// 3) Her süsün data.deco'su geçerli bir DecoKind
+const allDeco = [...decoA, ...m1.filter(p => p.kind === 'deco'), ...c44.filter(p => p.kind === 'deco')];
+ok('deco-kind-valid', allDeco.every(p => !!p.data?.deco && (DECO_KINDS as readonly string[]).includes(p.data.deco)));
+
+// 4) Süs, biyomunun havuzundan seçilmiş olmalı (volkanda mantar bitmez)
+ok('deco-matches-biome-pool', [propsForChunk(6, 6), propsForChunk(1, 3), propsForChunk(5, 6)].flat()
+  .filter(p => p.kind === 'deco' && p.data?.region !== undefined)
+  .every(p => {
+    const biome = getTile(Math.floor(p.x / 16), Math.floor(p.y / 16)).biome;
+    const pool = DECO_BY_BIOME_TEST[biome];
+    return !pool || pool.includes(p.data!.deco!);
+  }));
+
+// 5) Süs collision/su tile'ına düşmez ve toplanabilir prop'la aynı tile'ı paylaşmaz
+ok('deco-not-on-collision', allDeco.every(p => !getTile(Math.floor(p.x / 16), Math.floor(p.y / 16)).collision));
+const tileKey = (p: TdProp) => `${Math.floor(p.x / 16)},${Math.floor(p.y / 16)}`;
+const scatterTiles = new Set(a.filter(p => p.kind === 'tree' || p.kind === 'rock' || p.kind === 'bush').map(tileKey));
+ok('deco-no-tile-overlap-with-scatter', decoA.every(p => !scatterTiles.has(tileKey(p))));
+
+// 6) Kasaba sokak mobilyası — elle yerleşim, çakışma yok
+const street = town.filter(p => p.kind === 'deco');
+console.log('kasaba mobilyası:', street.length, 'parça');
+ok('street-furniture-exists', street.length >= 20);
+ok('street-not-in-buildings', street.every(p => !inSolid(p.x, p.y)));
+const npcTiles = new Set(NPCS.map(n => `${n.tx},${n.ty}`));
+ok('street-not-on-npc', street.every(p => !npcTiles.has(tileKey(p))));
+const fixedTiles = new Set(town.filter(p => p.kind !== 'deco').map(tileKey));  // bina kapısı/ateş/ağaç/parsel
+ok('street-not-on-fixed-props', street.every(p => !fixedTiles.has(tileKey(p))));
+ok('street-not-on-spawn', street.every(p => tileKey(p) !== `${TOWN_SPAWN.tx},${TOWN_SPAWN.ty}`));
+ok('street-not-on-road', street.every(p => { const ty = Math.floor(p.y / 16); return ty !== ROAD_Y && ty !== ROAD_Y - 1; }));
+ok('street-tiles-unique', new Set(street.map(tileKey)).size === street.length);
+
+// 7) 🔒 MÜHÜRLEME ÇAPASI — spawn'dan flood-fill: yeni mobilya hiçbir yeri kapatmamalı.
+//    Yürünebilir = collision yok + su değil + hiçbir town solid'i o tile'ı kaplamıyor.
+//    Hedefler: her bina kapısı, her NPC'nin durduğu tile, her tarla parseli.
+const townSolids = town.filter(p => p.solid).map(p => p.solid!);
+const blocked = (tx: number, ty: number) => {
+  const g = getTile(tx, ty);
+  if (g.collision || g.biome === 'water') return true;
+  const cx = tx * 16 + 8, cy = ty * 16 + 8;
+  return townSolids.some(s => cx >= s.x && cx < s.x + s.w && cy >= s.y && cy < s.y + s.h);
+};
+const seen = new Set<string>([`${TOWN_SPAWN.tx},${TOWN_SPAWN.ty}`]);
+const queue = [[TOWN_SPAWN.tx, TOWN_SPAWN.ty] as [number, number]];
+while (queue.length) {
+  const [tx, ty] = queue.pop()!;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    const nx = tx + dx, ny = ty + dy, k = `${nx},${ny}`;
+    if (seen.has(k) || nx < 170 || nx > 215 || ny < 180 || ny > 225) continue;  // kasaba kutusu
+    if (blocked(nx, ny)) continue;
+    seen.add(k); queue.push([nx, ny]);
+  }
+}
+const doorTiles = town.filter(p => p.kind === 'building').map(p => `${Math.floor(p.x / 16)},${Math.floor(p.y / 16) + 1}`);
+ok('reachable-all-building-doors', doorTiles.every(k => seen.has(k)));
+ok('reachable-all-npcs', NPCS.every(n => seen.has(`${n.tx},${n.ty + 1}`) || seen.has(`${n.tx + 1},${n.ty}`) || seen.has(`${n.tx - 1},${n.ty}`)));
+ok('reachable-all-farm-plots', town.filter(p => p.kind === 'farm_plot').every(p => seen.has(tileKey(p))));
+ok('reachable-campfire-plaza', seen.has('192,196') && seen.has('187,197') && seen.has('197,197'));
+
 console.log(`td-props: ${pass} pass, ${fail} fail`);
 if (fail) process.exit(1);

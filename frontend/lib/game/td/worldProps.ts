@@ -1,19 +1,23 @@
 // frontend/lib/game/td/worldProps.ts
 // ─── Deterministik prop yerleşimi (saf; DOM yok) ───
 // Kasaba binaları HUB_GAMES'ten türetilir (tek doğruluk kaynağı korunur).
-// salt sözlüğü: 3=yerleşim(ağaç), 4=varyant, 5=kaya, 6=çalı, 11=portal (bkz tdCore.hash2d).
+// salt sözlüğü: 3=yerleşim(ağaç), 4=varyant, 5=kaya, 6=çalı, 11=portal,
+// 12=süs yerleşimi, 13=süs tipi (bkz tdCore.hash2d).
 import { CHUNK, MAP_W, MAP_H, hash2d } from './tdCore';
 import { getTile, regionAt, REGIONS, TOWN_SPAWN, ROAD_Y } from './worldMap';
 import { HUB_GAMES } from '../hub/hubGames';
 import { NPCS } from './npcs';
 
-export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot' | 'portal' | 'sign' | 'npc';
+export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot' | 'portal' | 'sign' | 'npc' | 'deco';
+
+export const DECO_KINDS = ['mushroom', 'fallen_log', 'flowers', 'tall_grass', 'reeds', 'ice_crystal', 'frozen_bones', 'gravestone', 'bone_pile', 'broken_pillar', 'rubble', 'mine_cart', 'timber_support', 'obsidian_shard', 'lava_crack', 'void_spike', 'rune_stone', 'brazier', 'lamp_post', 'well', 'barrel', 'crate', 'bench', 'fence', 'snowman', 'stall'] as const;
+export type DecoKind = typeof DECO_KINDS[number];
 export interface TdProp {
   kind: PropKind;
   x: number; y: number;                    // dünya px (taban/ayak noktası)
   v?: number;                              // sprite varyantı
   solid?: { x: number; y: number; w: number; h: number };
-  data?: { id?: string; name?: string; icon?: string; url?: string; accent?: string; wTiles?: number; hTiles?: number; region?: string; plotIndex?: number };
+  data?: { id?: string; name?: string; icon?: string; url?: string; accent?: string; wTiles?: number; hTiles?: number; region?: string; plotIndex?: number; deco?: DecoKind };
 }
 
 /** Tarla parseli grid'i — kasaba güneybatısında, TOWN_SPAWN'ın ~6-11 tile güneyi.
@@ -60,6 +64,38 @@ const ROCK_DENS: Record<string, number> = {
 };
 const BUSH_DENS: Record<string, number> = { forest: 14, grass: 12, town: 2, swamp: 10, water: 0, path: 0 };
 
+// ── Faz 8: BİYOM SÜSLERİ — 18 bölge ağaç/kaya/çalıdan ibaretti, hepsi birbirine
+// benziyordu. Her biyoma 2-4 imza nesnesi; salt 12 = yerleşim, 13 = tip seçimi.
+// Yerleşim zincirin SONUNDA (ağaç/kaya/çalı'nın hiçbirini kapmadığı tile'lar) →
+// mevcut prop koordinatları bit-bit KORUNUR (eski testler kırılmaz).
+// Kasaba (town) LİSTE DIŞI: sokak mobilyası elle yerleştirilir (townProps), rastgele değil.
+export const DECO_BY_BIOME: Record<string, readonly DecoKind[]> = {
+  forest: ['mushroom', 'fallen_log', 'flowers', 'tall_grass'],
+  grass: ['flowers', 'tall_grass', 'mushroom'],
+  swamp: ['reeds', 'mushroom', 'fallen_log', 'tall_grass'],
+  frostwastes: ['ice_crystal', 'frozen_bones', 'rubble'],
+  sanctum: ['rune_stone', 'brazier', 'flowers'],
+  necropolis: ['gravestone', 'bone_pile', 'rubble'],
+  ruins: ['broken_pillar', 'rubble', 'gravestone'],
+  mines: ['mine_cart', 'timber_support', 'rubble'],
+  citadel: ['broken_pillar', 'brazier', 'rubble'],
+  crypt: ['gravestone', 'broken_pillar', 'bone_pile'],
+  volcano: ['obsidian_shard', 'lava_crack', 'rubble'],
+  abyss: ['void_spike', 'frozen_bones', 'bone_pile'],
+  forge: ['brazier', 'obsidian_shard', 'rubble', 'lava_crack'],
+  demongate: ['void_spike', 'bone_pile', 'obsidian_shard'],
+  voidrealm: ['void_spike', 'rune_stone'],
+  eternal: ['ice_crystal', 'rune_stone', 'void_spike'],
+};
+const DECO_DENS: Record<string, number> = {
+  forest: 26, grass: 22, swamp: 34, frostwastes: 26, sanctum: 20, necropolis: 30,
+  ruins: 30, mines: 26, citadel: 22, crypt: 28, volcano: 30, abyss: 26,
+  forge: 26, demongate: 26, voidrealm: 24, eternal: 24, town: 0, water: 0, path: 0,
+};
+/** Gövdesi olan süsler — içinden geçilmez (ağaç solid'iyle aynı dar kutu; yolu tıkamaz).
+ * Geri kalan her süs DEKORATİFTİR: solid YOK, üstünden yürünür → yol bulma riski sıfır. */
+const DECO_SOLID: ReadonlySet<DecoKind> = new Set<DecoKind>(['fallen_log', 'broken_pillar', 'mine_cart', 'timber_support', 'well', 'stall']);
+
 // ── Faz 5.8: DÜZENLİ KÖY — HUB_GAMES liste/kimlik tek kaynak kalır (id/isim/url/accent),
 // GEOMETRİ TD'ye ait: ana caddenin (ROAD_Y=192, rel ty -1..0) kuzeyinde 5 bina sırası
 // (kapılar caddeye bakar), merkez plaza (kamp ateşi + spawn), güneyinde 4 bina sırası,
@@ -99,7 +135,41 @@ function townProps(): TdProp[] {
       solid: { x: ttx * 16 + 3, y: tty * 16 + 10, w: 10, h: 6 },
     });
   }
+  out.push(...townStreetProps());
   out.push(...allFarmPlots());
+  return out;
+}
+
+/** Süs prop'u kurucusu — ayak noktası diğer prop'larla aynı hizada (ty*16+14 →
+ * floor(y/16) === ty). Solid yalnız DECO_SOLID tiplerinde, ağaç kutusuyla birebir. */
+function deco(kind: DecoKind, tx: number, ty: number): TdProp {
+  const p: TdProp = { kind: 'deco', x: tx * 16 + 8, y: ty * 16 + 14, data: { deco: kind } };
+  if (DECO_SOLID.has(kind)) p.solid = { x: tx * 16 + 3, y: ty * 16 + 10, w: 10, h: 6 };
+  return p;
+}
+
+// ── Faz 8: KASABA SOKAK MOBİLYASI — elle yerleştirilmiş (hash YOK, deterministik).
+// Referans geometri: cadde ty 191-192 · kuzey binalar ty 188-190 · güney binalar ty 200-202 ·
+// plaza ty 193-199 · spawn (192,198) · kamp ateşi (192,195) · plaza ağaçları (187/197, 194/200) ·
+// tarla tx 192-198 / ty 209-213. NPC tile'ları npcs.ts'te.
+// KURAL: hiçbir mobilya bina rect'i, NPC tile'ı, ateş, ağaç, spawn ya da tarla parseli
+// üstüne düşmez ve hiçbir yeri MÜHÜRLEMEZ — td-props-test flood-fill ile assert eder.
+function townStreetProps(): TdProp[] {
+  const out: TdProp[] = [];
+  // caddenin güney kenarında fener sırası (4 tile pitch) + plaza güney köşeleri
+  for (const tx of [182, 186, 190, 194, 198, 202]) out.push(deco('lamp_post', tx, 193));
+  out.push(deco('lamp_post', 186, 199), deco('lamp_post', 198, 199));
+  out.push(deco('well', 185, 195));                                   // plaza kuyusu
+  out.push(deco('bench', 190, 196), deco('bench', 194, 196));         // ateşin iki yanı
+  out.push(deco('snowman', 183, 196));
+  out.push(deco('stall', 200, 194));                                  // marketplace önü pazar tezgâhı
+  out.push(deco('barrel', 202, 195), deco('barrel', 185, 198));
+  out.push(deco('crate', 201, 196), deco('crate', 184, 197));
+  // tarla çiti — kuzeyde 3 tile'lık kapı boşluğu (194-196, çiftçi bu yönden gelir).
+  // Çit DEKORATİF (DECO_SOLID'de değil): üstünden geçilir, parselleri asla hapsedemez.
+  for (let tx = 191; tx <= 199; tx++) { if (tx >= 194 && tx <= 196) continue; out.push(deco('fence', tx, 208)); }
+  for (let tx = 191; tx <= 199; tx++) out.push(deco('fence', tx, 214));
+  for (let ty = 209; ty <= 213; ty++) out.push(deco('fence', 190, ty), deco('fence', 200, ty));
   return out;
 }
 // Modül-seviye cache güvenli: girdiler (HUB_GAMES/REGIONS) statik sabit.
@@ -222,6 +292,15 @@ export function propsForChunk(cx: number, cy: number): TdProp[] {
     }
     if (hash2d(tx, ty, 6) % 1000 < (BUSH_DENS[t.biome] ?? 4)) {
       out.push({ kind: 'bush', x: tx * 16 + 8, y: ty * 16 + 13, v: hash2d(tx, ty, 4) % 2, data: { region: rgKey } });
+      continue;
+    }
+    // Faz 8: biyom süsü — zincirin SONUNDA, yalnız boş kalan tile'larda (yukarıdaki
+    // ağaç/kaya/çalı koordinatları değişmez). Tip, tile'a bağlı hash ile seçilir.
+    const pool = DECO_BY_BIOME[t.biome];
+    if (pool && pool.length && hash2d(tx, ty, 12) % 1000 < (DECO_DENS[t.biome] ?? 0)) {
+      const d = deco(pool[hash2d(tx, ty, 13) % pool.length], tx, ty);
+      d.data!.region = rgKey;
+      out.push(d);
     }
   }
   return out;
