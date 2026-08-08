@@ -20,22 +20,48 @@
 #
 # Usage:  ./scripts/deploy-mainnet.sh
 # NOTE:   if package-lock changed, run `npm ci` in the node_modules home first.
+# NOTE:   do NOT pipe this script into `tail`/`head` — the pipeline's exit status
+#         comes from the pager, so a failed deploy reports success. Redirect instead:
+#           ./scripts/deploy-mainnet.sh > /tmp/deploy.log 2>&1
+# RESUME: if rsync died mid-ship, re-run against the SAME release to reship only
+#         the delta and skip the (already valid) rebuild:
+#           STAMP=<stamp> SKIP_BUILD=1 ./scripts/deploy-mainnet.sh
 set -euo pipefail
 
 KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 HOST="${DEPLOY_HOST:-root@5.189.173.167}"
 LOCAL="$(cd "$(dirname "$0")/.." && pwd)"      # the frontend/ dir
-STAMP="$(date +%Y%m%d-%H%M%S)"
+# STAMP overridable so a network-interrupted deploy can RESUME into the same
+# half-shipped release dir (rsync then ships only the delta) instead of leaving
+# it as orphaned garbage and re-uploading ~180MB from zero.
+STAMP="${STAMP:-$(date +%Y%m%d-%H%M%S)}"
 
-echo "==> [1/3] build (local — server OOMs)"
-( cd "$LOCAL" && npm run build )
+if [ "${SKIP_BUILD:-0}" = 1 ]; then
+  echo "==> [1/3] build SKIPPED (SKIP_BUILD=1 — reusing existing .next)"
+  [ -d "$LOCAL/.next" ] || { echo "!! SKIP_BUILD=1 but $LOCAL/.next missing — refusing to ship a buildless release"; exit 1; }
+else
+  echo "==> [1/3] build (local — server OOMs)"
+  ( cd "$LOCAL" && npm run build )
+fi
 
 echo "==> [2/3] ship to release $STAMP (data/env/node_modules excluded)"
 ssh -i "$KEY" "$HOST" "mkdir -p /opt/frostbite/mainnet/releases/$STAMP/frontend"
-rsync -az --delete \
-  --exclude='node_modules' --exclude='data' \
-  --exclude='.env' --exclude='.env.local' --exclude='.env.mainnet' --exclude='.env.testnet' \
-  -e "ssh -i $KEY" "$LOCAL/" "$HOST:/opt/frostbite/mainnet/releases/$STAMP/frontend/"
+# --partial keeps interrupted files for the next attempt; the retry loop rides out
+# transient SSH drops ("Can't assign requested address" / broken pipe) that would
+# otherwise abort the whole deploy after a successful build.
+shipped=0
+for attempt in 1 2 3; do
+  if rsync -az --delete --partial --timeout=90 \
+      --exclude='node_modules' --exclude='data' \
+      --exclude='.env' --exclude='.env.local' --exclude='.env.mainnet' --exclude='.env.testnet' \
+      -e "ssh -i $KEY -o ServerAliveInterval=15 -o ServerAliveCountMax=4" \
+      "$LOCAL/" "$HOST:/opt/frostbite/mainnet/releases/$STAMP/frontend/"; then
+    shipped=1; break
+  fi
+  echo "!! rsync attempt $attempt failed — retrying in 10s (release dir is kept, only the delta reships)"
+  sleep 10
+done
+[ "$shipped" = 1 ] || { echo "!! rsync failed 3x — ABORTING before cutover. Traffic untouched; 'current' still points at the previous release."; exit 1; }
 
 echo "==> [3/3] blue-green cutover (remote)"
 ssh -i "$KEY" "$HOST" "STAMP=$STAMP bash -s" <<'REMOTE'
