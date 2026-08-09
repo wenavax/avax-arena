@@ -259,6 +259,13 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
               className="h-11 w-11 touch-none rounded-full border border-white/20 bg-black/30 text-lg active:bg-white/20"
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >🧪</button>
+            {/* Faz 9A.4: 🔊 müzik sessize alma — Phaser HUD düğmesiyle AYNI yol (tek olay;
+                yalnız en üstteki sahne tüketir, ikon durumu Phaser HUD'ında görünür) */}
+            <button
+              onPointerDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('td-ui-music')); }}
+              className="h-11 w-11 touch-none rounded-full border border-white/20 bg-black/30 text-lg active:bg-white/20"
+              style={{ WebkitTapHighlightColor: 'transparent' }}
+            >🔊</button>
           </div>
           {/* Faz 9A.2: yetenek yuvaları 1-4 — SPACE/E'nin ÜSTÜNDE (baş parmak erişimi,
               joystick'e uzak). İkonlar Phaser çubuğunda; buradaki numara yuva sırasıyla eşleşir. */}

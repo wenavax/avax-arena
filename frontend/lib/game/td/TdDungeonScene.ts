@@ -8,6 +8,8 @@ import { TILE, computeTdView, userTdZoom, depth, hash2d, TD_FONT } from './tdCor
 import { REGIONS } from './worldMap';
 import { biomeTopColor } from './tiles';
 import { atmoForRegion } from './atmosphere';
+import { musicForDungeon, isAudioUnlocked, markAudioUnlocked } from './zoneMusic';
+import { music, type ZoneMusic } from '../musicSystem';
 import { chibiHumanoid, CHIBI_H } from './sprites/chibi';
 import { mkMonsterChibi } from './sprites/monsterChibi';
 import { mkOreVein } from './sprites/props';
@@ -34,6 +36,9 @@ import {
 import {
   heroElemFx, mobElemFx, damageHex, elementHex, ELEM_FLOAT_COOLDOWN_MS, type ElemFx,
 } from './elemental';
+import { recordKillStats } from './killStats';
+import { incrementStat, buildStats, checkAndUnlock } from '../achievements';
+import { rollBark, BarkStack, BARK_HOLD_MS, BARK_FADE_MS } from './barks';
 import type { Skill } from '../skills';
 import type { Element } from '../elements';
 
@@ -59,6 +64,8 @@ interface DMonRef {
   // Faz 9A.2: DoT (zehir/yanma) — TdWorldScene.MonRef.dots ile birebir sözleşme.
   // RAM'de, DMonRef ile birlikte ölür (despawn → referans gider, ayrı temizlik gerekmez).
   dots?: Array<{ type: 'poison' | 'burn'; left: number; nextAt: number; pct: number }>;
+  // Faz 9A.6: replik kilidi (barks.ts BarkLock) — mob başına ÖMÜR BOYU tek deneme.
+  barked?: boolean;
 }
 
 /** Faz 9A.1: zindanda yerde duran loot (TdWorldScene.GroundItem'in zindan eşleniği; RAM-yerel). */
@@ -112,6 +119,16 @@ export class TdDungeonScene extends Phaser.Scene {
   // Yetenek geri bildirimi hintText'i ödünç alır; update()'in gizleme dalı yalnız KENDİ
   // metinlerini tanıyordu → keyfi bir mesaj ekranda asılı kalırdı (9A.1'in BAG_FULL_HINT dersi).
   private tempHintUntil = 0;
+  // Faz 9A.4: en son ÇALINAN ambiyans (dünya sahnesiyle aynı sözleşme). Boss savaşı
+  // müziği 'boss'a çevirir ve geri döndürmez → 'resume'da null'lanır, update() tazeler.
+  private playedZone: ZoneMusic | null = null;
+  // ── Faz 9A.6: ekranda duran replik baloncukları (defter barks.ts'te, saf) ──
+  // 🔴 `destroy()` TEK BAŞINA YETMEZ: Phaser tween'i hedefi yok edilse de listede tutar
+  // (9A.1'in yerdeki-loot sızıntısı) → sökme çifti TEK yerde, dünya sahnesiyle birebir.
+  private barks = new BarkStack<Phaser.GameObjects.Text>((t) => {
+    this.tweens.killTweensOf(t);
+    t.destroy();
+  });
 
   constructor() { super({ key: 'TdDungeon' }); }
 
@@ -134,6 +151,9 @@ export class TdDungeonScene extends Phaser.Scene {
     this.dodgeBuffPct = 0; this.dodgeBuffUntil = 0;
     this.tempHintUntil = 0;
     this.skillBarCache = '';
+    // Faz 9A.4: sahne örneği yeniden kullanılıyor — bayat playedZone yeni girişte
+    // müziği bastırırdı (dünya bu arada kendi ambiyansına dönmüş oluyor).
+    this.playedZone = null;
   }
 
   create(): void {
@@ -211,6 +231,25 @@ export class TdDungeonScene extends Phaser.Scene {
     };
     window.addEventListener('td-ui-skill', onUiSkill);
     this.events.once('shutdown', () => window.removeEventListener('td-ui-skill', onUiSkill));
+    // ── Faz 9A.4: bölge müziği ──
+    // create()'te music.play() YOK (autoplay tuzağı — bkz. zoneMusic.ts). Kilit OTURUM
+    // kapsamlı: oyuncu buraya dünyadan yürüyerek geldiyse zaten açıktır ve zindan
+    // ambiyansı ilk karede başlar; doğrudan açılışta ilk jesti bekler.
+    kb.once('keydown', markAudioUnlocked);
+    this.input.once('pointerdown', markAudioUnlocked);
+    // 🔊 sessize alma: mobil buton dünya/zindan için TEK olay yayınlar — savaş üstteyken
+    // sus (dünya dinleyicisi zaten zindan aktifken kendini kapatıyor → çift toggle olmaz).
+    const onUiMusic = () => { if (!this.scene.isActive('TdBattle')) music.toggleMute(); };
+    window.addEventListener('td-ui-music', onUiMusic);
+    const offMusic = () => window.removeEventListener('td-ui-music', onUiMusic);
+    this.events.once('shutdown', offMusic);
+    this.events.once('destroy', offMusic);
+    // Boss savaşından dönüş: TdBattleScene müziği 'boss'a çevirdi, geri döndürmüyor.
+    this.events.on('resume', () => { this.playedZone = null; });
+    // 🔇 Bu sahne shutdown'da music.stop() ÇAĞIRMAZ: zindandan çıkış her zaman
+    // TdWorld'ü resume eder ve dünya bir sonraki karede kendi ambiyansını basar. Burada
+    // durdurmak, bölge müziği de 'dungeon' olduğunda (maden/harabe/mezar...) aynı parçayı
+    // gereksizce kesip baştan başlatırdı. Oturum kökündeki stop TdWorldScene'de.
 
     // Faz 5.2: HUD/tint konum+boyutları layoutHud()'da (kamera-zoom dönüşümü)
     this.hintText = this.add.text(0, 0, '', {
@@ -229,6 +268,9 @@ export class TdDungeonScene extends Phaser.Scene {
     // Zindan sahnesi stop edilir — global scale emitter'dan çıkmak ŞART (sızıntı/stale ref)
     this.events.once('shutdown', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.applyZoom, this));
     this.events.once('destroy', () => this.scale.off(Phaser.Scale.Events.RESIZE, this.applyZoom, this));
+    // Faz 9A.6: replik baloncukları — İKİSİNDE de temizlenir (tween + metin birlikte).
+    this.events.once('shutdown', () => this.barks.clear());
+    this.events.once('destroy', () => this.barks.clear());
 
     // ── canavarlar: roster havuzunu spawn noktalarına döngüsel dağıt ──
     const roster = DUNGEON_ROSTERS[this.dungeonId];
@@ -399,11 +441,60 @@ export class TdDungeonScene extends Phaser.Scene {
     // veriyor → oraya koymak boss'ta ÇİFT LOOT olurdu. Trash asla elit değil (elit
     // ayrımı overworld'e ait; boss ayrı funnel'da).
     this.dropGroundLoot(m.x, m.y, rollGroundLoot(m.entry.type, false));
+    // Faz 9A.5: achievement sayımı — aynı tek boğazdan. Kip kapısı killStats.ts'te
+    // (önizlemede inc/unlock HİÇ çağrılmaz; `frostbite_achievements` canlı veri).
+    recordKillStats(this.registry.get('tdMode') as string | undefined, { type: m.entry.type, gold }, {
+      inc: incrementStat,
+      unlock: () => this.unlockAchievements(),
+      toast: (title, i) => this.veinFloat(this.heroPos.x, this.heroPos.y - 30 - i * 12, `🏆 ${title}`, '#ffd23f'),
+    });
     if ((this.registry.get('tdMode') as string) === 'live') ps.save();
     this.veinFloat(m.x, m.y - 16, `+${xp} XP`, '#7f7fff');
     this.veinFloat(m.x, m.y - 6, `+${gold}g 💰`, '#ffd23f');
     m.hpBg?.destroy(); m.hpFill?.destroy(); m.hpBg = undefined; m.hpFill = undefined;
     this.despawnMonster(m);
+  }
+
+  /**
+   * Faz 9A.5: kalıcı sayaçlar + canlı PlayerState alanlarıyla başarım denetimi —
+   * TdWorldScene.unlockAchievements ile birebir aynı sözleşme (aynı dosyada olmadıkları
+   * için ortak bir sarmal PlayerState'i saf killStats.ts'e sokardı).
+   * `zonesVisited` boş: gezilen bölge hiçbir yerde tutulmuyor (bkz. TdWorldScene).
+   */
+  private unlockAchievements(): string[] {
+    const ps = PlayerState.get();
+    const eq = ps.equipped;
+    return checkAndUnlock(buildStats({
+      level: ps.level,
+      currentGold: ps.gold,
+      equipSlotsFilled: [eq.weapon, eq.armor, eq.accessory, eq.ring].filter(Boolean).length,
+      questsCompleted: ps.quests.filter(q => q.turnedIn).length,
+      zonesVisited: new Set<string>(),
+      itemsCollected: ps.inventory.length,
+    })).map(a => a.title);
+  }
+
+  // -----------------------------------------------------------------------
+  // Faz 9A.6: canavar replikleri — dünya sahnesiyle birebir sözleşme, zindan deyimiyle
+  // (daha alçak baloncuk + veinFloat'ın 1e8 derinliği).
+  // -----------------------------------------------------------------------
+  /** Aggro dalından her karede; kilit `barks.ts`te (mob başına tek DENEME). */
+  private tryBark(m: DMonRef): void {
+    const line = rollBark(m, m.entry.type);
+    if (line) this.showBark(m.x, m.y, line);
+  }
+
+  /** Bekle → yukarı süzülerek sol. Tween SONLU; kapasite aşımını defter yönetir. */
+  private showBark(x: number, y: number, msg: string): void {
+    const t = this.add.text(x, y - 26, msg, {
+      fontSize: '8px', fontFamily: TD_FONT, color: '#e8eef4', backgroundColor: '#141c24e0',
+      padding: { x: 4, y: 2 }, align: 'center', wordWrap: { width: 132 },
+    }).setOrigin(0.5, 1).setDepth(1e8).setResolution(this.uiZoom);
+    this.barks.add(t);
+    this.tweens.add({
+      targets: t, y: y - 34, alpha: 0, delay: BARK_HOLD_MS, duration: BARK_FADE_MS,
+      onComplete: () => this.barks.remove(t),
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -845,6 +936,17 @@ export class TdDungeonScene extends Phaser.Scene {
     this.scene.resume('TdWorld');
   }
 
+  /**
+   * Faz 9A.4: yer altı her zaman 'dungeon' çalar (bkz. musicForDungeon). Ucuz: zone
+   * değişmediyse hiçbir şey yapmaz; kilit kapalıyken çalmaz ama açılınca ilk karede yakalar.
+   */
+  private syncZoneMusic(): void {
+    const zone = musicForDungeon();
+    if (!isAudioUnlocked() || zone === this.playedZone) return;
+    this.playedZone = zone;
+    music.play(zone);
+  }
+
   update(t: number, dtMs: number): void {
     const dt = Math.min(dtMs, 50) / 1000;
     this.timeInDungeon += dt;
@@ -871,7 +973,11 @@ export class TdDungeonScene extends Phaser.Scene {
       // Faz 5.6/5.7: dokunmatik SPACE one-shot → savaş/kazma
       if (touch.space && !this.touchSpacePrev) this.onSpaceAction();
       this.touchSpacePrev = !!touch.space;
+      // Faz 9A.4: joystick Phaser pointer/keyboard olayı üretmez — kilit burada da açılır
+      if (!isAudioUnlocked() && (touch.dx || touch.dy || touch.e || touch.space)) markAudioUnlocked();
     }
+    // Faz 9A.4: yer altı ambiyansı (kilit kapalıysa sessiz bekler, jestte başlar)
+    this.syncZoneMusic();
     const moving = !!(dx || dy);
     if (moving) {
       const len = Math.hypot(dx, dy); dx /= len; dy /= len;
@@ -908,6 +1014,7 @@ export class TdDungeonScene extends Phaser.Scene {
           const cxm = (this.heroPos.x - m.x) / hd, cym = (this.heroPos.y - m.y) / hd;
           m.x += cxm * CHASE_SPEED * dt; m.y += cym * CHASE_SPEED * dt;
           m.img.setFlipX(cxm < 0);
+          this.tryBark(m); // Faz 9A.6: kilit mob'un kendi bayrağında → tek deneme
         } else if (m.pause > 0) {
           m.pause -= dt;
         } else {
