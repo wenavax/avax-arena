@@ -21,6 +21,12 @@ export interface NpcDef {
   dir: 0 | 1 | 2;
   /** Görev yokken gösterilen selam cümlesi (İNGİLİZCE). */
   greeting: string;
+  /**
+   * Faz 9B.3: gece selamı. GÖREV AKIŞINI ETKİLEMEZ — kabul/teslim gece de tamamen açık
+   * (planın 🔴 tuzağı: teslimi geceye kilitlemek oyuncuyu görevde mahsur bırakır).
+   * Yalnız "boş sohbet" dalı değişir.
+   */
+  nightGreeting: string;
 }
 
 // Frostbite kimliğine yakın 2 ek palet (varyant havuzu 6 taneydi, 8 NPC var).
@@ -36,42 +42,61 @@ export const NPCS: NpcDef[] = [
     id: 'herald', name: 'Herald Ru', tx: 191, ty: 197,
     palette: REMOTE_PALETTE_VARIANTS[4], dir: 0,
     greeting: 'New here? The town square holds nine doors. Each one is a different game.',
+    nightGreeting: 'The doors stay open all night, but nobody is announcing them. Come back tomorrow.',
   },
   {
     id: 'elder', name: 'Elder Maren', tx: 188, ty: 194,
     palette: PALETTE_SAGE, dir: 0,
     greeting: 'The frost took our stores. Any hand that works is a hand we need.',
+    nightGreeting: 'Old bones and cold nights do not mix. Ask me again in the morning.',
   },
   {
     id: 'hunter', name: 'Hunter Bex', tx: 195, ty: 196,
     palette: REMOTE_PALETTE_VARIANTS[2], dir: 0,
     greeting: 'Beasts thicken past the road. Keep your blade up and your back to the fire.',
+    nightGreeting: 'They hunt harder after dark — and they drop more. Your call.',
   },
   {
     id: 'blacksmith', name: 'Smith Hilda', tx: 188, ty: 189,
     palette: REMOTE_PALETTE_VARIANTS[3], dir: 0,
     greeting: 'Bring me ore and stone. I will turn it into something that keeps you alive.',
+    nightGreeting: 'Forge is banked for the night. Leave the ore, come back tomorrow.',
   },
   {
     id: 'merchant', name: 'Trader Vess', tx: 195, ty: 189,
     palette: REMOTE_PALETTE_VARIANTS[5], dir: 0,
     greeting: 'Everything sells if you carry it far enough. The market is right behind me.',
+    nightGreeting: 'Stall is shuttered. Nobody haggles well by lantern light.',
   },
   {
     id: 'fisher', name: 'Fisher Pell', tx: 186, ty: 201,
     palette: REMOTE_PALETTE_VARIANTS[1], dir: 0,
     greeting: 'The lakes never freeze all the way through. That is where the good ones hide.',
+    nightGreeting: 'Lines are in the water, and I am asleep. Try me at first light.',
   },
   {
     id: 'scholar', name: 'Scribe Yuna', tx: 198, ty: 201,
     palette: PALETTE_SCRIBE, dir: 0,
     greeting: 'Every dungeon door was carved by someone. I intend to find out who.',
+    nightGreeting: 'Candles are down to stubs. The archive can wait for daylight.',
   },
   {
     id: 'farmer', name: 'Farmer Odd', tx: 192, ty: 205,
     palette: REMOTE_PALETTE_VARIANTS[0], dir: 0,
     greeting: 'Plots are down the path. Plant, wait, harvest. The frost cannot stop all of it.',
+    nightGreeting: 'Crops grow while I sleep. You should try sleeping sometime.',
   },
 ];
+
+/**
+ * Faz 9B.3: gündüz/gece selam seçimi. TEK yer — sahne `isNight(dayTime)` sonucunu geçer,
+ * NPC verisi zamanı kendisi sorgulamaz (saflık: npcs.ts Node testinde import ediliyor).
+ */
+export function greetingFor(npc: NpcDef, night: boolean): string {
+  return night ? npc.nightGreeting : npc.greeting;
+}
+
+/** Gece NPC opaklığı — kaybolmazlar (görev teslimi için hâlâ tıklanabilir), soluklaşırlar. */
+export const NIGHT_NPC_ALPHA = 0.42;
 
 export const NPC_BY_ID: Record<string, NpcDef> = Object.fromEntries(NPCS.map((n) => [n.id, n]));

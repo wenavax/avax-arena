@@ -284,7 +284,18 @@ for (const [name, src, code, killSig] of scenes) {
   eq(`${name}: tek checkAndUnlock çağrısı`, count(code, 'checkAndUnlock('), 1);
   ok(`${name}: checkAndUnlock unlockAchievements içinde`,
     methodBody(src, '  private unlockAchievements(): string[] {').includes('checkAndUnlock('));
-  eq(`${name}: unlockAchievements yalnız deps'ten çağrılıyor`, count(code, 'this.unlockAchievements()'), 1);
+  // Faz 9B.1: dünyada 2. çağrı yeri var — bölge ziyareti (zonesVisited artık gerçek veri).
+  const expectedUnlockCalls = name === 'dünya' ? 2 : 1;
+  eq(`${name}: unlockAchievements yalnız deps'ten çağrılıyor`, count(code, 'this.unlockAchievements()'), expectedUnlockCalls);
+  if (name === 'dünya') {
+    // 🔒 O 2. çağrı MOD KAPILI olmalı: `frostbite_achievements` CANLI veri, önizleme
+    // oynanışı onu kirletemez. (1. çağrı deps üzerinden killStats.ts'in kapısından geçiyor —
+    // yukarıdaki `shouldCountStat` çapaları onu kanıtlıyor; bu ikincisinin kapısı inline.)
+    const living = methodBody(src, '  private updateLivingWorld(');
+    eq('dünya: ziyaret çağrısı updateLivingWorld içinde', count(living, 'this.unlockAchievements()'), 1);
+    ok(`dünya: ziyaret çağrısı 'live' kapısı altında`,
+      /this\.tdMode === 'live'[\s\S]*?this\.unlockAchievements\(\)/.test(living));
+  }
 
   // ── 9A.6: baloncuk yaşam döngüsü ──
   eq(`${name}: tek tryBark çağrı sitesi (aggro dalı)`, count(code, 'this.tryBark('), 1);

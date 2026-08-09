@@ -269,15 +269,20 @@ for (const [name, src, code, atkSig, hitSig] of scenes) {
   const hit = methodBody(src, hitSig);
   // yön 1: kahraman → canavar
   ok(`${name}: kahraman vuruşu heroElemFx hesaplıyor`, atk.includes('heroElemFx(ps.playerClass, m.entry.type, skillElem)'));
-  ok(`${name}: çarpan heroHit'e geçiyor`, /heroHit\(atkOverride \?\? ps\.atk, m\.entry\.def \?\? 0, fx\.mult\)/.test(atk));
+  // Faz 9B.1: DÜNYADA def/atk'ye gece çarpanı bindi (zindanda YOK — orada zaman donuk).
+  // fx.mult ve operandlar değişmedi; opsiyonel olan yalnız gece çarpanı.
+  ok(`${name}: çarpan heroHit'e geçiyor`, /heroHit\(atkOverride \?\? ps\.atk, \(?m\.entry\.def \?\? 0\)?( \* nightMult)?, fx\.mult\)/.test(atk));
   // yön 2: canavar → kahraman
   ok(`${name}: temas vuruşu mobElemFx hesaplıyor`, hit.includes('mobElemFx(m.entry.type, ps.playerClass)'));
-  ok(`${name}: çarpan mobHit'e geçiyor`, /mobHit\(m\.entry\.atk \?\? 5, effectiveDef\(ps\.def, this\.defBuffPct\), fx\.mult\)/.test(hit));
+  ok(`${name}: çarpan mobHit'e geçiyor`, /mobHit\(\(?m\.entry\.atk \?\? 5\)?( \* mobStatMult\(this\.tdState\.dayTime\))?,\s*effectiveDef\(ps\.def, this\.defBuffPct\), fx\.mult\)/.test(hit));
   // çarpansız (eski) çağrı KALMAMALI — tek yönü unutmak sessiz regresyon olurdu
   eq(`${name}: heroHit tek çağrı ve çarpanlı`, count(code, 'heroHit('), 1);
   eq(`${name}: mobHit tek çağrı ve çarpanlı`, count(code, 'mobHit('), 1);
-  ok(`${name}: çarpansız heroHit yok`, !/heroHit\([^)]*def \?\? 0\)/.test(code));
-  ok(`${name}: çarpansız mobHit yok`, !/mobHit\([^)]*this\.defBuffPct\)\)/.test(code));
+  // Çapa 9B.1'de yeniden yazıldı: eski hâli `heroHit(... def ?? 0)` metnini yasaklıyordu,
+  // ama gece çarpanı parantezi (`(m.entry.def ?? 0) * nightMult`) bu metni MASUM biçimde
+  // içeriyor → yanlış kırmızı. Asıl niyet "tek çağrı da fx.mult taşısın" (count zaten 1).
+  ok(`${name}: heroHit çağrısı fx.mult taşıyor`, /heroHit\([^;]*fx\.mult\)/.test(code));
+  ok(`${name}: mobHit çağrısı fx.mult taşıyor`, /mobHit\([^;]*fx\.mult\)/.test(code));
   // görsel: hasar sayısı renklendirilir + etkililik float'ı kapılı
   ok(`${name}: hasar sayısı damageHex ile renkleniyor`, atk.includes("damageHex(fx, crit ? '#ffd23f' : '#ffffff')"));
   ok(`${name}: temas hasarı damageHex ile renkleniyor`, hit.includes("damageHex(fx, '#ff5c5c')"));

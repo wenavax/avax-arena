@@ -210,7 +210,9 @@ eq('pickup-label-english', pickupLabel(mkItem('Iron Sword')), '+ Iron Sword');
 const killMob = methodBody(worldSrc, '  private killMob(');
 ok('world-killMob-found', killMob.length > 0);
 ok('world-killMob-drops', killMob.includes('this.dropGroundLoot(') && killMob.includes('rollGroundLoot('));
-ok('world-killMob-elite-aware', killMob.includes('rollGroundLoot(m.entry.type, m.isElite)'));
+// Faz 9B.1: 3. argüman gece şansı (lootLuckMult) — ilk iki argüman AYNEN korunmalı.
+ok('world-killMob-elite-aware', killMob.includes('rollGroundLoot(m.entry.type, m.isElite'));
+ok('world-killMob-night-luck', /rollGroundLoot\(m\.entry\.type, m\.isElite,\s*lootLuckMult\(this\.tdState\.dayTime\)\)/.test(killMob));
 ok('world-live-saves', killMob.includes("this.tdMode === 'live'") && killMob.includes('ps.save()'));
 
 // ─── (b) zindan boğazı: killMobD ───

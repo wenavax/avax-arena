@@ -33,3 +33,15 @@ const REGION_TO_ATMO: Record<string, string> = {
 export function atmoForRegion(regionKey: string): TdAtmo {
   return ATMO[REGION_TO_ATMO[regionKey] ?? 'Town'] ?? ATMO.Town;
 }
+
+/**
+ * Faz 9B.1: bölge anahtarı → KANONİK zone adı. `achievements.ts`'in `zonesVisited`
+ * kümesi bu büyük-harfli adlarla karşılaştırıyor ('Volcano', 'IceCave'), bölge
+ * anahtarları ise küçük harf ('volcano') — eşleme olmadan keşif başarımları HİÇ açılmazdı.
+ *
+ * Tablo yeniden yazılmadı, REGION_TO_ATMO tekrar kullanıldı: iki eşleme birbirinden
+ * ayrılırsa (yeni bölge birine eklenip diğerine eklenmezse) sessiz sapma olurdu.
+ */
+export function zoneNameForRegion(regionKey: string): string {
+  return REGION_TO_ATMO[regionKey] ?? 'Town';
+}

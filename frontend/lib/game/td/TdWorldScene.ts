@@ -7,7 +7,7 @@ import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
 import { propsForChunk, dungeonDoors, townPortals, TOWN_ORIGIN, DECO_KINDS, type TdProp } from './worldProps';
-import { NPCS, NPC_BY_ID } from './npcs';
+import { NPCS, NPC_BY_ID, greetingFor, NIGHT_NPC_ALPHA } from './npcs';
 import {
   QUEST_BY_ID, questsForGiver, offerState, makeRow, grantReward, rolloverRepeatables,
   pushQuestEvent, objectiveKey, REWARD_ITEMS, DAILY_MS, type QuestDef, type OfferState,
@@ -22,7 +22,12 @@ import {
 } from './groundLoot';
 import type { InventoryItem } from '../PlayerState';
 import { RARITY_COLORS, type LootResult, type Rarity } from '../lootTables';
-import { atmoForRegion } from './atmosphere';
+import { atmoForRegion, zoneNameForRegion } from './atmosphere';
+import { isNight, nightOverlay, mobStatMult, lootLuckMult, clockLabel, phaseIcon } from './dayNight';
+import {
+  weatherForRegion, stepParticle, seedParticle, WEATHER_SPEC, MAX_PARTICLES,
+  type WeatherKind, type Particle,
+} from './weather';
 import { musicForRegion, isAudioUnlocked, markAudioUnlocked } from './zoneMusic';
 import { music, type ZoneMusic } from '../musicSystem';
 import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
@@ -179,6 +184,22 @@ export class TdWorldScene extends Phaser.Scene {
   // İnterpole edilen mevcut renkler burada tutulur; hedefe her kare %5 yaklaşır.
   private tintCur = 0x88bbff;
   private fogCur = 0xbbddff;
+  // ── Faz 9B.1/9B.2: gece perdesi + hava parçacıkları (ikisi de scrollFactor 0) ──
+  private nightRect!: Phaser.GameObjects.Rectangle;
+  private clockText!: Phaser.GameObjects.Text;
+  /** `?weather=0` ile kapatılır — parçacık serpmesi smoke testinin tek belirsiz yeri. */
+  private weatherOn = true;
+  private weatherKind: WeatherKind = 'none';
+  private weatherObjs: Phaser.GameObjects.Rectangle[] = [];
+  private weatherParts: Particle[] = [];
+  /** Ziyaret takibi: bölge anahtarı her karede sorgulanıyor, yalnız DEĞİŞİNCE iş yapılır. */
+  private lastRegionKey = '';
+  /** NPC gövde görselleri (gece soluklaştırma) — npcMarkers ile aynı yaşam döngüsü. */
+  private npcImgs = new Map<string, Phaser.GameObjects.Image>();
+  /** layoutHud'un hesapladığı MANTIKSAL görünür rect (scrollFactor 0 uzayı). */
+  private hudX0 = 0; private hudY0 = 0; private hudW = 0; private hudH = 0;
+  private clockCache = '';      // HUD saati: dakika değişmedikçe setText yok
+  private nightCache = false;   // gece bayrağı: yalnız KENARINDA NPC alpha'sı gezilir
   private minimapImg?: Phaser.GameObjects.Image;
   private minimapDot?: Phaser.GameObjects.Rectangle;
   private minimapBorder?: Phaser.GameObjects.Rectangle;
@@ -384,6 +405,24 @@ export class TdWorldScene extends Phaser.Scene {
       .setScrollFactor(0).setDepth(1500);
     this.fogRect = this.add.rectangle(0, 0, 8, 48, 0xbbddff, 0.10)
       .setScrollFactor(0).setDepth(1501);
+    // Faz 9B.1: gece perdesi atmosferin ÜSTÜNE biner — atmoForRegion/tintCur lerp'i
+    // olduğu gibi durur (planın kısıtı). Alpha update()'te darkness()'ten gelir.
+    this.nightRect = this.add.rectangle(0, 0, 8, 8, nightOverlay(0).color, 0)
+      .setScrollFactor(0).setDepth(1502);
+    // Faz 9B.2: hava havuzu TEK SEFER yaratılır (MAX_PARTICLES), kip değişiminde yalnız
+    // görünürlük/renk/boyut güncellenir — bölge geçişinde nesne yaratma/yıkma YOK.
+    this.weatherOn = !(typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('weather') === '0');
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      this.weatherObjs.push(this.add.rectangle(0, 0, 2, 2, 0xffffff, 0)
+        .setScrollFactor(0).setDepth(1503).setVisible(false));
+      this.weatherParts.push(seedParticle(i, this.scale.width, this.scale.height));
+    }
+    // HUD saati (☀ 09:12) — stat panelinin sağ üstünde, layoutHud konumlandırır.
+    this.clockText = this.add.text(0, 0, '', {
+      fontSize: '9px', fontFamily: TD_FONT, color: '#cfe3f2', backgroundColor: '#141c24cc',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(1e9);
 
     // Faz 5.2: kamera zoom k (tam-sayı, viewport'tan) + HUD yerleşimi; viewport
     // resize'ında yeniden. Scale global emitter — shutdown/destroy'da off ŞART.
@@ -672,6 +711,15 @@ export class TdWorldScene extends Phaser.Scene {
     this.gatherHint.setPosition(x0 + w / 2, y0 + h - 26);
     this.tintRect.setPosition(x0 + w / 2, y0 + h / 2).setSize(w, h);
     this.fogRect.setPosition(x0 + w / 2, y0 + h - 24).setSize(w, 48);
+    this.nightRect?.setPosition(x0 + w / 2, y0 + h / 2).setSize(w, h);
+    this.clockText?.setPosition(x0 + w - 6, y0 + 6).setResolution(k);
+    // Faz 9B.2: parçacıklar MANTIKSAL rect'te yaşar (scrollFactor 0 + zoom k dönüşümü);
+    // görünür alan değiştiğinde yeniden serpilir — yoksa zoom/resize sonrası ekran dışında
+    // takılıp hava "durmuş" görünürdü.
+    if (this.weatherObjs.length && (w !== this.hudW || h !== this.hudH)) {
+      for (let i = 0; i < this.weatherParts.length; i++) this.weatherParts[i] = seedParticle(i, w, h);
+    }
+    this.hudX0 = x0; this.hudY0 = y0; this.hudW = w; this.hudH = h;
     this.updateMinimap();
     this.perfText?.setPosition(x0 + 4, y0 + 4);
     const texts = [this.hintText, this.gatherHint, this.energyText, this.fireBoostText, this.goldText,
@@ -1007,7 +1055,10 @@ export class TdWorldScene extends Phaser.Scene {
     const x0 = -W / 2 + 12, wrapW = W - 24;
 
     if (!best || bestState === 'done' || bestState === 'locked') {
-      items.push(T(x0, -H / 2 + 26, npc.greeting, '#cfe3f2', 8).setWordWrapWidth(wrapW));
+      // Faz 9B.3: yalnız BOŞ SOHBET dalı gece metnine döner. Görev kabul/teslim dalları
+      // (aşağıdaki else) gece de birebir aynı — teslim asla kilitlenmez.
+      items.push(T(x0, -H / 2 + 26, greetingFor(npc, isNight(this.tdState.dayTime)), '#cfe3f2', 8)
+        .setWordWrapWidth(wrapW));
       const pre = best?.requires ? QUEST_BY_ID[best.requires] : undefined;
       items.push(T(x0, H / 2 - 38, pre
         ? `Come back after "${pre.title}".`
@@ -1284,7 +1335,14 @@ export class TdWorldScene extends Phaser.Scene {
           if (p.kind === 'npc') {
             // Kahramanla aynı origin (ayak hizası) — NPC'ler statik, yürüme fazı yok.
             const nimg = this.add.image(p.x, p.y, `td-npc-${p.data!.id}`)
-              .setOrigin(0.5, (CHIBI_H - 3) / CHIBI_H).setDepth(depth(p.x, p.y));
+              .setOrigin(0.5, (CHIBI_H - 3) / CHIBI_H).setDepth(depth(p.x, p.y))
+              // Faz 9B.3: gece yüklenen chunk'ın NPC'si de SOLUK doğmalı — yoksa
+              // kasabaya gece dönüldüğünde bazıları parlak, bazıları soluk olurdu.
+              .setAlpha(this.nightCache ? NIGHT_NPC_ALPHA : 1);
+            this.npcImgs.set(p.data!.id!, nimg);
+            nimg.once(Phaser.GameObjects.Events.DESTROY, () => {
+              if (this.npcImgs.get(p.data!.id!) === nimg) this.npcImgs.delete(p.data!.id!);
+            });
             const nlabel = this.add.text(p.x, p.y - CHIBI_H + 1, p.data!.name!, {
               fontSize: '7px', fontFamily: TD_FONT, color: '#e9f4ff', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
             }).setOrigin(0.5, 1).setDepth(depth(p.x, p.y) + 1).setResolution(this.uiZoom);
@@ -1606,6 +1664,9 @@ export class TdWorldScene extends Phaser.Scene {
     this.fogCur = lerpColor(this.fogCur, atmo.fogColor, 0.05);
     this.tintRect.fillColor = this.tintCur; this.tintRect.fillAlpha += (atmo.tintAlpha - this.tintRect.fillAlpha) * 0.05;
     this.fogRect.fillColor = this.fogCur; this.fogRect.fillAlpha += (atmo.fogAlpha - this.fogRect.fillAlpha) * 0.05;
+    // Faz 9B: gece perdesi + hava + bölge ziyareti — atmosferle AYNI regionAt sonucundan
+    // (müzikle de aynı): bölge sorgusu karede tek kez yapılır, üç sistem ondan beslenir.
+    this.updateLivingWorld(dt, t, regionKey);
     // minimap: mod-farkındalıklı konum/crop/nokta (Faz 5.5)
     this.updateMinimap();
 
@@ -1948,7 +2009,12 @@ export class TdWorldScene extends Phaser.Scene {
     }
     const ps = PlayerState.get();
     const fx = heroElemFx(ps.playerClass, m.entry.type, skillElem);
-    const { dmg, crit } = heroHit(atkOverride ?? ps.atk, m.entry.def ?? 0, fx.mult);
+    // Faz 9B.1: gece canavarı daha dayanıklı (def ×1.3). ⚠️ `hp`/`maxHp` BİLİNÇLİ OLARAK
+    // DIŞARIDA: onlar MonRef'te spawn anında donuyor; dinamik çarpan uygulasaydık şafak
+    // sökerken can barı ZIPLAR, hatta yarı canlı bir canavar gece basınca "iyileşirdi".
+    // atk/def okuma anında çarpılıyor → tutarlı ve gözlemlenebilir.
+    const nightMult = mobStatMult(this.tdState.dayTime);
+    const { dmg, crit } = heroHit(atkOverride ?? ps.atk, (m.entry.def ?? 0) * nightMult, fx.mult);
     m.hp -= dmg;
     const ddx = m.x - this.heroPos.x, ddy = m.y - this.heroPos.y;
     const len = Math.hypot(ddx, ddy) || 1;
@@ -1977,7 +2043,9 @@ export class TdWorldScene extends Phaser.Scene {
     this.questEvent(objectiveKey('kill', m.isElite ? `elite_${m.entry.type}` : m.entry.type));
     // Faz 9A.1: DÜNYA loot boğazı — bu sahnedeki TEK rollGroundLoot çağrısı burada.
     // (despawnMonster'a KOYMA: orası ölüm dışı yollarla da çağrılabilecek ortak temizlik.)
-    this.dropGroundLoot(m.x, m.y, rollGroundLoot(m.entry.type, m.isElite));
+    // Faz 9B.1: gece ödülü — beklenen düşüş ×1.5 (risk/ödül dengesi statların ×1.3'üne karşılık).
+    this.dropGroundLoot(m.x, m.y,
+      rollGroundLoot(m.entry.type, m.isElite, lootLuckMult(this.tdState.dayTime)));
     // Faz 9A.5: achievement sayımı — aynı tek boğazdan. Kip kapısı killStats.ts'te
     // (önizlemede inc/unlock HİÇ çağrılmaz; `frostbite_achievements` canlı veri).
     recordKillStats(this.tdMode, { type: m.isElite ? `elite_${m.entry.type}` : m.entry.type, gold }, {
@@ -2000,11 +2068,76 @@ export class TdWorldScene extends Phaser.Scene {
    * Faz 9A.5: kalıcı sayaçlar + canlı PlayerState alanlarıyla başarım denetimi.
    * YALNIZ recordKillStats'ın kapısından geçince çağrılır (checkAndUnlock da diske yazar).
    *
-   * `zonesVisited` boş: gezilen bölgeler hiçbir yerde tutulmuyor (ne PlayerState'te ne
-   * tdState'te) — uydurma bir oturum-yerel küme keşif başarımlarını rastgele açardı.
-   * Boş küme onları KAPALI bırakır, kirletmez; izleme Faz 9B'nin (gündüz/gece + seyahat)
-   * doğal yeri.
+   * `zonesVisited` Faz 9B.1'de GERÇEKLEŞTİ: `tdState.visitedZones` kalıcı bir dizi
+   * (kanonik zone adları — `zoneNameForRegion`), her bölge sınırı geçişinde bir kez yazılır.
+   * 9A.5'te bilinçli olarak boş bırakılmıştı; artık uydurma değil, ölçülen veri.
    */
+  /**
+   * Faz 9B: gece perdesi + HUD saati + NPC rutini + biyom havası + bölge ziyareti.
+   * update()'in atmosfer bloğundan SONRA, aynı `regionKey` ile çağrılır — bölge sorgusu
+   * karede tek kez yapılıyor (atmosfer/müzik/hava/ziyaret hepsi o tek sonuçtan besleniyor),
+   * dolayısıyla "ekran karardı ama X hâlâ gündüzde" tutarsızlığı yapısal olarak imkânsız.
+   */
+  private updateLivingWorld(dt: number, t: number, regionKey: string): void {
+    const dayT = this.tdState.dayTime;
+
+    // ── gece perdesi: hedefe %8 lerp (atmosfer lerp'iyle aynı his, ani karartma yok) ──
+    const ov = nightOverlay(dayT);
+    this.nightRect.fillColor = ov.color;
+    this.nightRect.fillAlpha += (ov.alpha - this.nightRect.fillAlpha) * 0.08;
+
+    // ── HUD saati: dakika değişmedikçe setText çağrılmaz (redrawStats cache deseni) ──
+    const clock = `${phaseIcon(dayT)} ${clockLabel(dayT)}`;
+    if (clock !== this.clockCache) { this.clockCache = clock; this.clockText.setText(clock); }
+
+    // ── Faz 9B.3: NPC gece rutini. NPC'ler YOK OLMAZ, yalnız solar: yok etseydik gece
+    // görev TESLİMİ imkânsız olurdu (planın 🔴 tuzağı — oyuncu görevde mahsur kalır).
+    // Etkileşim yarıçapı, işaretçiler ve teslim akışı gece de birebir aynı çalışır.
+    const night = isNight(dayT);
+    if (night !== this.nightCache) {
+      this.nightCache = night;
+      for (const img of this.npcImgs.values()) img.setAlpha(night ? NIGHT_NPC_ALPHA : 1);
+      if (this.dialogNpc) this.openDialog(this.dialogNpc); // açık diyalog gece metnine dönsün
+    }
+
+    // ── bölge ziyareti → achievements.zonesVisited (9A.5'te bilinçli boş bırakılmıştı) ──
+    if (regionKey !== this.lastRegionKey) {
+      this.lastRegionKey = regionKey;
+      if (this.tdState.visitZone(zoneNameForRegion(regionKey))) {
+        this.tdState.save();
+        // 🔴 Sandbox kapısı 9A.5'in aynısı: `frostbite_achievements` CANLI veri,
+        // önizleme oynanışı onu kirletmemeli.
+        if (this.tdMode === 'live') {
+          this.unlockAchievements().forEach((title, i) =>
+            this.floatText(this.heroPos.x, this.heroPos.y - 44 - i * 12, `🏆 ${title}`, '#ffd23f'));
+        }
+      }
+    }
+
+    // ── Faz 9B.2: hava. Kip değişiminde nesne YARATILMAZ/YIKILMAZ — havuz sabit,
+    // yalnız görünürlük/renk/boyut güncellenir (bölge sınırında GC dalgalanması olmasın).
+    const kind: WeatherKind = this.weatherOn ? weatherForRegion(regionKey) : 'none';
+    if (kind !== this.weatherKind) {
+      this.weatherKind = kind;
+      const spec = kind === 'none' ? null : WEATHER_SPEC[kind];
+      for (let i = 0; i < this.weatherObjs.length; i++) {
+        const o = this.weatherObjs[i];
+        if (!spec || i >= spec.count) { o.setVisible(false); continue; }
+        o.setSize(spec.w, spec.h).setFillStyle(spec.color, spec.alpha).setVisible(true);
+      }
+    }
+    if (this.weatherKind !== 'none') {
+      const spec = WEATHER_SPEC[this.weatherKind];
+      const tsec = t / 1000;
+      for (let i = 0; i < spec.count; i++) {
+        const p = this.weatherParts[i];
+        const n = stepParticle(p, spec, dt, this.hudW, this.hudH, tsec);
+        p.x = n.x; p.y = n.y;
+        this.weatherObjs[i].setPosition(this.hudX0 + n.x, this.hudY0 + n.y);
+      }
+    }
+  }
+
   private unlockAchievements(): string[] {
     const ps = PlayerState.get();
     const eq = ps.equipped;
@@ -2013,7 +2146,8 @@ export class TdWorldScene extends Phaser.Scene {
       currentGold: ps.gold,
       equipSlotsFilled: [eq.weapon, eq.armor, eq.accessory, eq.ring].filter(Boolean).length,
       questsCompleted: ps.quests.filter(q => q.turnedIn).length,
-      zonesVisited: new Set<string>(),
+      // Faz 9B.1: artık gerçek — tdState.visitedZones kalıcı, kanonik zone adlarıyla.
+      zonesVisited: new Set(this.tdState.visitedZones),
       itemsCollected: ps.inventory.length,
     })).map(a => a.title);
   }
@@ -2174,7 +2308,10 @@ export class TdWorldScene extends Phaser.Scene {
       return;
     }
     const fx = mobElemFx(m.entry.type, ps.playerClass);
-    const dmg = mobHit(m.entry.atk ?? 5, effectiveDef(ps.def, this.defBuffPct), fx.mult);
+    // Faz 9B.1: gece canavarı daha sert vurur (×1.0 → ×1.3, darkness ile sürekli).
+    // Çarpan VURUŞ ANINDA okunur, spawn'da DEĞİL — bkz. heroAttack'teki `hp` gerekçesi.
+    const dmg = mobHit((m.entry.atk ?? 5) * mobStatMult(this.tdState.dayTime),
+      effectiveDef(ps.def, this.defBuffPct), fx.mult);
     ps.hp = Math.max(0, ps.hp - dmg);
     this.heroInvulnUntil = this.time.now + HERO_IFRAME_MS;
     const ddx = this.heroPos.x - m.x, ddy = this.heroPos.y - m.y;

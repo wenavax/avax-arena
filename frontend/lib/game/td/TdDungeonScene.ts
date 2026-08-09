@@ -459,17 +459,21 @@ export class TdDungeonScene extends Phaser.Scene {
    * Faz 9A.5: kalıcı sayaçlar + canlı PlayerState alanlarıyla başarım denetimi —
    * TdWorldScene.unlockAchievements ile birebir aynı sözleşme (aynı dosyada olmadıkları
    * için ortak bir sarmal PlayerState'i saf killStats.ts'e sokardı).
-   * `zonesVisited` boş: gezilen bölge hiçbir yerde tutulmuyor (bkz. TdWorldScene).
+   * `zonesVisited` Faz 9B.1'den beri GERÇEK: dünya sahnesinin `tdState.visitedZones`
+   * dizisi (kanonik zone adları). Buradan da okunur — yoksa 5. bölgeyi görüp zindana
+   * giren oyuncunun keşif başarımı zindandaki öldürmede sessizce ATLANIRDI. Dünya
+   * sahnesi yoksa (teorik) boş küme: eksik veriyle uydurma açılış yapmaktansa kapalı kalsın.
    */
   private unlockAchievements(): string[] {
     const ps = PlayerState.get();
     const eq = ps.equipped;
+    const world = this.scene.get('TdWorld') as TdWorldScene | null;
     return checkAndUnlock(buildStats({
       level: ps.level,
       currentGold: ps.gold,
       equipSlotsFilled: [eq.weapon, eq.armor, eq.accessory, eq.ring].filter(Boolean).length,
       questsCompleted: ps.quests.filter(q => q.turnedIn).length,
-      zonesVisited: new Set<string>(),
+      zonesVisited: new Set(world?.tdState?.visitedZones ?? []),
       itemsCollected: ps.inventory.length,
     })).map(a => a.title);
   }

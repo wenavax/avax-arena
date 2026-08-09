@@ -79,8 +79,17 @@ export const RARITY_FX: Record<Rarity, RarityFx> = {
  * chance'ı ×2'ler ve rarity'yi +1 tier yükseltir. Ölü önek kaldırıldı.
  * (Elit quest anahtarı `elite_<tip>` AYRI bir sözleşme — o objectiveKey tarafında.)
  */
-export function rollGroundLoot(baseType: string, isElite: boolean): LootResult[] {
-  return rollLoot(baseType, isElite);
+export function rollGroundLoot(
+  baseType: string, isElite: boolean, luck = 1, rng: () => number = Math.random,
+): LootResult[] {
+  const out = rollLoot(baseType, isElite);
+  // Faz 9B.1 — gece ödülü. `lootTables.rollLoot` İMZASI DEĞİŞTİRİLMEDİ (regresyon
+  // çapası: TdBattleScene aynı fonksiyonu paylaşıyor). Şans çarpanı burada, EK BİR ROLL
+  // olarak uygulanır: p = luck-1 olasılıkla ikinci tur → beklenen düşüş tam olarak ×luck
+  // (luck ∈ [1,2] için). Tabloya, chance alanlarına, rarity merdivenine dokunulmaz.
+  const extra = luck - 1;
+  if (extra > 0 && rng() < Math.min(1, extra)) out.push(...rollLoot(baseType, isElite));
+  return out;
 }
 
 /** i. düşüşün ölüm noktasından px sapması — deterministik (test edilebilir), altın-açı serpme. */

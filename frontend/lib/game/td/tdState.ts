@@ -4,6 +4,7 @@
 import { COSTS, FARM, PRICES, REGEN, TdResourceKind } from './cozy/rules';
 import { REGIONS, TOWN_SPAWN } from './worldMap';
 import { TILE } from './tdCore';
+import { DAY_LENGTH_SEC, DEFAULT_DAY_TIME } from './dayNight';
 
 export interface TdResources { wood: number; stone: number; ore: number; fish: number; frostberry: number }
 export interface FarmPlot { stage: 0 | 1 | 2 | 3; t: number } // 0 boş, 1-2 büyüme, 3 olgun
@@ -27,6 +28,19 @@ export class TdState {
   farm: FarmPlot[] = Array.from({ length: FARM.plotCount }, () => ({ stage: 0 as const, t: 0 }));
   /** Canlı modda dünyada kaldığı son konum (px). Preview modda/hiç kaydedilmemişse null. */
   worldPos: { x: number; y: number } | null = null;
+  /**
+   * Faz 9B.1: dünya saati (saniye, DAY_LENGTH_SEC'te sarmalanır). Burada — `frostbite_save`
+   * (canlı karakter) şemasına DOKUNMADAN: bu anahtar TD'ye izole.
+   * Sadece `tick()` ilerletir; zindan/savaş sahneleri `tick` çağırmaz → oyuncu içerideyken
+   * zaman DONAR (çıkışta gece bastırmış bulmaz).
+   */
+  dayTime = DEFAULT_DAY_TIME;
+  /**
+   * Faz 9B.1: gezilen bölgelerin kanonik zone adları (achievements `zonesVisited`).
+   * 9A.5'te bilinçli boş bırakılmıştı ("izleme Faz 9B'nin doğal yeri") — burası orası.
+   * Set değil dizi: JSON'a doğrudan yazılabilsin (Set `{}` olarak serileşir — sessiz veri kaybı).
+   */
+  visitedZones: string[] = [];
 
   private storage?: Pick<Storage, 'getItem' | 'setItem'>;
 
@@ -47,6 +61,9 @@ export class TdState {
   tick(dt: number, nearFire: boolean): void {
     const rate = REGEN.perSec * (nearFire ? REGEN.campfireMult : 1);
     this.energy = Math.min(TdState.ENERGY_MAX, this.energy + rate * dt);
+    // Faz 9B.1: dünya saati aynı tik'te ilerler — enerji/tarla ile TEK zaman kaynağı.
+    // Modülo burada alınır ki alan sınırsız büyümesin (kayıt dosyasında da küçük kalır).
+    this.dayTime = (this.dayTime + dt) % DAY_LENGTH_SEC;
 
     for (const plot of this.farm) {
       if (plot.stage === 0 || plot.stage > FARM.growthStages) continue; // boş ya da zaten olgun
@@ -97,6 +114,16 @@ export class TdState {
     return true;
   }
 
+  /**
+   * Faz 9B.1: bölge ziyaretini kaydeder. YENİ bir zone ise `true` döner — çağıran o zaman
+   * (ve yalnız o zaman) kaydeder/başarım denetler; her karede yazma amplifikasyonu olmaz.
+   */
+  visitZone(zoneName: string): boolean {
+    if (!zoneName || this.visitedZones.includes(zoneName)) return false;
+    this.visitedZones.push(zoneName);
+    return true;
+  }
+
   save(): void {
     if (!this.storage) return;
     try {
@@ -107,6 +134,8 @@ export class TdState {
         resources: this.resources,
         farm: this.farm,
         worldPos: this.worldPos,
+        dayTime: this.dayTime,
+        visitedZones: this.visitedZones,
         savedAt: Date.now(),
       };
       this.storage.setItem(TD_SAVE_KEY, JSON.stringify(data));
@@ -125,6 +154,11 @@ export class TdState {
       this.resources = d.resources ?? { wood: 0, stone: 0, ore: 0, fish: 0, frostberry: 0 };
       this.farm = d.farm ?? Array.from({ length: FARM.plotCount }, () => ({ stage: 0 as const, t: 0 }));
       this.worldPos = (d.worldPos && typeof d.worldPos.x === 'number' && typeof d.worldPos.y === 'number') ? d.worldPos : null;
+      // Faz 9B.1: alan yoksa varsayılan (migrateV1 deseni) — 9B öncesi kayıtlar sabaha uyanır.
+      this.dayTime = typeof d.dayTime === 'number' && Number.isFinite(d.dayTime)
+        ? ((d.dayTime % DAY_LENGTH_SEC) + DAY_LENGTH_SEC) % DAY_LENGTH_SEC
+        : DEFAULT_DAY_TIME;
+      this.visitedZones = Array.isArray(d.visitedZones) ? d.visitedZones.filter((z: unknown) => typeof z === 'string') : [];
       return true;
     } catch {
       return false;
