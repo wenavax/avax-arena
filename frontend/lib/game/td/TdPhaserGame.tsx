@@ -260,6 +260,18 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
               style={{ WebkitTapHighlightColor: 'transparent' }}
             >🧪</button>
           </div>
+          {/* Faz 9A.2: yetenek yuvaları 1-4 — SPACE/E'nin ÜSTÜNDE (baş parmak erişimi,
+              joystick'e uzak). İkonlar Phaser çubuğunda; buradaki numara yuva sırasıyla eşleşir. */}
+          <div className="absolute bottom-24 right-4 z-40 flex gap-2">
+            {[1, 2, 3, 4].map(slot => (
+              <button
+                key={slot}
+                onPointerDown={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent('td-ui-skill', { detail: { slot } })); }}
+                className="h-11 w-11 touch-none rounded-full border border-white/20 bg-black/30 font-mono text-sm text-white/80 active:bg-white/20"
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+              >{slot}</button>
+            ))}
+          </div>
           {/* sağ-alt E / SPACE */}
           <div className="absolute bottom-4 right-4 z-40 flex gap-3">
             <button

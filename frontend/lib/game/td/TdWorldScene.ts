@@ -30,6 +30,11 @@ import { COSTS, PER_HIT } from './cozy/rules';
 import { mp } from '../multiplayer/socket';
 import { PlayerState } from '../PlayerState';
 import { heroHit, mobHit, killRewards, ATTACK_RANGE, ATTACK_CD_MS, AGGRO_RANGE, CHASE_SPEED, CONTACT_RANGE, HERO_IFRAME_MS } from './combat';
+import {
+  tdSkills, mpRegenPerSec, canCast, skillCdMs, skillAtk, isBuffSkill, turnsToMs,
+  dotPlan, dotTickDamage, effectiveDef, dodgeChance, CAST_GCD_MS, MULTIHIT_DELAY_MS, STUN_MS,
+} from './abilities';
+import type { Skill } from '../skills';
 
 /** Faz 5: TdPhaserGame registry'ye yazdığı basit dokunmatik input state'i (bkz. TdPhaserGame.tsx). */
 interface TdTouchInput { dx: number; dy: number; e: boolean; space: boolean }
@@ -50,6 +55,9 @@ interface MonRef {
   // Faz 5.7: haritada gerçek-zamanlı savaş
   hp: number; maxHp: number;
   hpBg?: Phaser.GameObjects.Rectangle; hpFill?: Phaser.GameObjects.Rectangle;
+  // Faz 9A.2: DoT (zehir/yanma) — tur-tabanlı `{turns,pctPerTurn}`ın gerçek-zamanlı hâli.
+  // RAM'de, MonRef ile birlikte ölür (despawn → referans gider, ayrı temizlik gerekmez).
+  dots?: Array<{ type: 'poison' | 'burn'; left: number; nextAt: number; pct: number }>;
 }
 
 /** Toplanabilir kaynak node'u (chunk-yerel RAM'de; kalıcı değil — chunk yeniden yüklenince tazelenir). */
@@ -201,6 +209,18 @@ export class TdWorldScene extends Phaser.Scene {
   private keysHint!: Phaser.GameObjects.Text;
   // redrawStats değişim algılama önbelleği (her kare Graphics çizmemek için)
   private statsCache = '';
+  // ── Faz 9A.2: yetenekler + MP ──
+  private mpText!: Phaser.GameObjects.Text;
+  private skillBar!: Phaser.GameObjects.Container;
+  private skillGfx!: Phaser.GameObjects.Graphics;
+  private skillTexts: Phaser.GameObjects.Text[] = [];
+  private skillBarCache = '';
+  private skills: Skill[] = [];
+  private skillCdUntil: number[] = [];   // yuva başına CD bitişi (ms, time.now)
+  private castGcdUntil = 0;              // yetenekler + SPACE ortak salınım ritmi
+  private defBuffPct = 0; private defBuffUntil = 0;
+  private dodgeBuffPct = 0; private dodgeBuffUntil = 0;
+  private buffText!: Phaser.GameObjects.Text;
   private gatherHint!: Phaser.GameObjects.Text;
   private fishing = false; private fishT = 0;
   private farmImgs = new Map<number, Phaser.GameObjects.Image>(); // plotIndex → img (kalıcı: kasaba her zaman yüklü chunk'ta)
@@ -319,16 +339,19 @@ export class TdWorldScene extends Phaser.Scene {
     // '⚡' emoji'si Text canvas'ında koyu kutulu render oluyor (glyph artefaktı) —
     // şimşek redrawStats'ta poligon olarak çizilir; buradaki obje boş yer tutucu değil, YOK.
     this.energyText = this.add.text(89, 26, '', { fontSize: '7px', fontFamily: TD_FONT, color: '#eaffff' }).setOrigin(0.5, 0);
-    this.goldText = this.add.text(24, 41, '', { fontSize: '9px', fontFamily: TD_FONT, color: '#ffd23f' }).setOrigin(0, 0);
-    const goldIcon = this.add.text(11, 41, '💰', { fontSize: '8px', fontFamily: TD_FONT, color: '#ffd23f' }).setOrigin(0, 0);
-    this.fireBoostText = this.add.text(96, 41, '🔥×4', { fontSize: '8px', fontFamily: TD_FONT, color: '#ff9d3f' })
+    // Faz 9A.2: MP sayacı (bar 36-44 → metin 37'de)
+    this.mpText = this.add.text(89, 37, '', { fontSize: '7px', fontFamily: TD_FONT, color: '#d8e8ff' }).setOrigin(0.5, 0);
+    this.goldText = this.add.text(24, 51, '', { fontSize: '9px', fontFamily: TD_FONT, color: '#ffd23f' }).setOrigin(0, 0);
+    const goldIcon = this.add.text(11, 51, '💰', { fontSize: '8px', fontFamily: TD_FONT, color: '#ffd23f' }).setOrigin(0, 0);
+    this.fireBoostText = this.add.text(96, 51, '🔥×4', { fontSize: '8px', fontFamily: TD_FONT, color: '#ff9d3f' })
       .setOrigin(0, 0).setVisible(false);
     this.statsPanel.add([this.statsGfx, this.levelLabel, this.levelText, this.hpIcon, this.hpText,
-      this.energyText, goldIcon, this.goldText, this.fireBoostText]);
-    this.redrawStats(1, 0x44cc66, 0, 1, 0x57b8d8, false); // ilk çizim (default değerler)
+      this.energyText, this.mpText, goldIcon, this.goldText, this.fireBoostText]);
+    this.redrawStats(1, 0x44cc66, 0, 1, 0x57b8d8, false, 1); // ilk çizim (default değerler)
     this.gatherHint = this.add.text(0, 0, '', {
       fontSize: '10px', fontFamily: TD_FONT, color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
+    this.buildSkillBar();
 
     // atmosfer: tam-ekran tint + alt fog bandı (scrollFactor 0, düşük alpha, lerp update()'te)
     this.tintRect = this.add.rectangle(0, 0, 8, 8, 0x88bbff, 0.04)
@@ -372,7 +395,21 @@ export class TdWorldScene extends Phaser.Scene {
     const onUiMap = () => this.toggleMinimap();
     window.addEventListener('td-ui-bag', onUiBag);
     window.addEventListener('td-ui-map', onUiMap);
-    const offUi = () => { window.removeEventListener('td-ui-bag', onUiBag); window.removeEventListener('td-ui-map', onUiMap); };
+    // Faz 9A.2: 1-4 yetenek yuvaları. SPACE temel vuruş AYNI KALIR (kas hafızası).
+    // Mobil: 'td-ui-skill' CustomEvent (detail.slot 1-4) — iksirle aynı alt-sahne koruması.
+    const SLOT_KEYS = ['ONE', 'TWO', 'THREE', 'FOUR'] as const;
+    SLOT_KEYS.forEach((k, i) => kb.on(`keydown-${k}`, () => this.useSkillSlot(i)));
+    const onUiSkill = (ev: Event) => {
+      if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
+      const slot = Number((ev as CustomEvent<{ slot?: number }>).detail?.slot ?? 0) - 1;
+      if (slot >= 0) this.useSkillSlot(slot);
+    };
+    window.addEventListener('td-ui-skill', onUiSkill);
+    const offUi = () => {
+      window.removeEventListener('td-ui-bag', onUiBag);
+      window.removeEventListener('td-ui-map', onUiMap);
+      window.removeEventListener('td-ui-skill', onUiSkill);
+    };
     this.events.once('shutdown', offUi);
     this.events.once('destroy', offUi);
 
@@ -388,7 +425,7 @@ export class TdWorldScene extends Phaser.Scene {
       if (rolloverRepeatables(ps.quests, Date.now()).length && this.tdMode === 'live') ps.save();
     }
     const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true;
-    this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [Q] potion · [B] bag · [J] quests · [M] map · [-/+] zoom', {
+    this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [1-4] skills · [Q] potion · [B] bag · [J] quests · [M] map · [-/+] zoom', {
       fontSize: '8px', fontFamily: TD_FONT, color: '#cfe3f2',
     }).setOrigin(1, 1).setScrollFactor(0).setDepth(1e9).setAlpha(0.55).setVisible(!isTouch);
 
@@ -410,14 +447,15 @@ export class TdWorldScene extends Phaser.Scene {
    * (üst gloss şeridi) + Lv madalyonu + altın/ateş pill'leri. update() değerleri
    * cache anahtarıyla karşılaştırır; yalnız değişince çizilir.
    */
-  private redrawStats(hpR: number, hpColor: number, xpR: number, enR: number, enColor: number, fire: boolean): void {
+  private redrawStats(hpR: number, hpColor: number, xpR: number, enR: number, enColor: number, fire: boolean, mpR: number): void {
     const g = this.statsGfx;
     g.clear();
     // panel: gölge + gövde + kenar + üst iç-parlama
-    g.fillStyle(0x000000, 0.28); g.fillRoundedRect(1, 2, 140, 54, 7);
+    // Faz 9A.2: MP barı için yükseklik 54 → 64 (altın/ateş çipleri 39 → 49'a indi).
+    g.fillStyle(0x000000, 0.28); g.fillRoundedRect(1, 2, 140, 64, 7);
     // gövde ~opak: yarı saydamlıkta arkadaki bina/duvar silüetleri panelde leke gibi sızıyordu
-    g.fillStyle(0x121a23, 0.97); g.fillRoundedRect(0, 0, 140, 54, 7);
-    g.lineStyle(1, 0x3a4e63, 1); g.strokeRoundedRect(0, 0, 140, 54, 7);
+    g.fillStyle(0x121a23, 0.97); g.fillRoundedRect(0, 0, 140, 64, 7);
+    g.lineStyle(1, 0x3a4e63, 1); g.strokeRoundedRect(0, 0, 140, 64, 7);
     g.fillStyle(0xffffff, 0.05); g.fillRect(3, 1, 134, 1);
     // Lv madalyonu
     g.fillStyle(0x1d2836, 1); g.fillCircle(17, 17, 12);
@@ -450,13 +488,86 @@ export class TdWorldScene extends Phaser.Scene {
       { x: 36, y: 24 }, { x: 31, y: 30 }, { x: 34, y: 30 },
       { x: 32, y: 35 }, { x: 38, y: 28 }, { x: 35, y: 28 },
     ] as Phaser.Geom.Point[], true);
+    // Faz 9A.2: MP barı (TdBattleScene'in 0x3366cc mavisi — iki ekran arası renk paritesi)
+    bar(41, 36, 94, 8, mpR, 0x3366cc);
+    // MP ikonu: baklava (emoji yok — şimşekle aynı gerekçe)
+    g.fillStyle(0x6aa8ff, 1);
+    g.fillPoints([
+      { x: 34, y: 35 }, { x: 38, y: 40 }, { x: 34, y: 45 }, { x: 30, y: 40 },
+    ] as Phaser.Geom.Point[], true);
     // altın pill'i + (koşullu) ateş pill'i
-    g.fillStyle(0x1a2430, 1); g.fillRoundedRect(7, 39, 62, 13, 6);
-    g.lineStyle(1, 0x3a4e63, 0.8); g.strokeRoundedRect(7, 39, 62, 13, 6);
+    g.fillStyle(0x1a2430, 1); g.fillRoundedRect(7, 49, 62, 13, 6);
+    g.lineStyle(1, 0x3a4e63, 0.8); g.strokeRoundedRect(7, 49, 62, 13, 6);
     if (fire) {
-      g.fillStyle(0x2a1c12, 1); g.fillRoundedRect(92, 39, 40, 13, 6);
-      g.lineStyle(1, 0xff9d3f, 0.6); g.strokeRoundedRect(92, 39, 40, 13, 6);
+      g.fillStyle(0x2a1c12, 1); g.fillRoundedRect(92, 49, 40, 13, 6);
+      g.lineStyle(1, 0xff9d3f, 0.6); g.strokeRoundedRect(92, 49, 40, 13, 6);
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Faz 9A.2: yetenek çubuğu — stat panelinin ALTINDA (sol-üst). Alt-orta
+  // gatherHint/hintText'e ve mobil joystick'e (sol-alt DOM) çarpmasın diye.
+  // -----------------------------------------------------------------------
+  private static readonly SLOT = 26;      // yuva kenarı (mantıksal px)
+  private static readonly SLOT_GAP = 2;
+
+  /** Yuvalar sınıfa göre kurulur (create'te bir kez — sınıf oyun içinde değişmiyor). */
+  private buildSkillBar(): void {
+    const S = TdWorldScene.SLOT, G = TdWorldScene.SLOT_GAP;
+    this.skills = tdSkills(PlayerState.get().playerClass);
+    this.skillCdUntil = this.skills.map(() => 0);
+    this.skillBar = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9);
+    this.skillGfx = this.add.graphics();
+    this.skillBar.add(this.skillGfx);
+    this.skillTexts = [];
+    this.skills.forEach((sk, i) => {
+      const x = i * (S + G);
+      const icon = this.add.text(x + S / 2, S / 2 + 1, sk.icon, { fontSize: '11px', fontFamily: TD_FONT })
+        .setOrigin(0.5, 0.5);
+      const num = this.add.text(x + 3, 2, `${i + 1}`, { fontSize: '6px', fontFamily: TD_FONT, color: '#8fa6bd' })
+        .setOrigin(0, 0);
+      // temel vuruş 0 MP → maliyet etiketi basılmaz (gürültü olmasın)
+      const cost = this.add.text(x + S - 3, S - 2, sk.mpCost ? `${sk.mpCost}` : '',
+        { fontSize: '6px', fontFamily: TD_FONT, color: '#6aa8ff' }).setOrigin(1, 1);
+      this.skillTexts.push(icon, num, cost);
+      this.skillBar.add([icon, num, cost]);
+    });
+    // aktif buff okuması (DEF/dodge) — çubuğun hemen altında, yalnız buff varken görünür
+    this.buffText = this.add.text(0, S + 3, '', { fontSize: '7px', fontFamily: TD_FONT, color: '#9fe8ff' })
+      .setOrigin(0, 0).setVisible(false);
+    this.skillBar.add(this.buffText);
+    this.skillTexts.push(this.buffText);
+    this.redrawSkillBar(0, PlayerState.get().mp);
+  }
+
+  /**
+   * Yuva görselleri: CD süpürmesi (üstten aşağı karartma) + MP yetersizse soluk ikon.
+   * update() cache anahtarıyla çağırır — her kare Graphics çizilmez (redrawStats deseni).
+   */
+  private redrawSkillBar(now: number, mp: number): void {
+    const S = TdWorldScene.SLOT, G = TdWorldScene.SLOT_GAP;
+    const g = this.skillGfx;
+    g.clear();
+    this.skills.forEach((sk, i) => {
+      const x = i * (S + G);
+      const cdLeft = Math.max(0, this.skillCdUntil[i] - now);
+      const cdTotal = skillCdMs(sk.id);
+      const poor = mp < sk.mpCost;
+      g.fillStyle(0x000000, 0.28); g.fillRoundedRect(x + 1, 2, S, S, 5);
+      g.fillStyle(0x121a23, 0.95); g.fillRoundedRect(x, 0, S, S, 5);
+      // CD süpürmesi: kalan oranı kadar üstten karartma
+      if (cdLeft > 0 && cdTotal > 0) {
+        g.fillStyle(0x000000, 0.6);
+        g.fillRect(x + 1, 1, S - 2, Math.round((S - 2) * (cdLeft / cdTotal)));
+      }
+      const ready = cdLeft === 0 && !poor;
+      g.lineStyle(1, ready ? 0x6aa8ff : poor ? 0x553333 : 0x3a4e63, ready ? 1 : 0.8);
+      g.strokeRoundedRect(x, 0, S, S, 5);
+      // ikon/maliyet alfası: kullanılamaz durumda soluk (metinler skillTexts'te 3'erli)
+      const a = ready ? 1 : 0.42;
+      this.skillTexts[i * 3].setAlpha(a);
+      this.skillTexts[i * 3 + 2].setAlpha(a);
+    });
   }
 
   /**
@@ -502,8 +613,11 @@ export class TdWorldScene extends Phaser.Scene {
     this.updateMinimap();
     this.perfText?.setPosition(x0 + 4, y0 + 4);
     const texts = [this.hintText, this.gatherHint, this.energyText, this.fireBoostText, this.goldText,
-      this.levelText, this.levelLabel, this.hpText, this.hpIcon];
+      this.levelText, this.levelLabel, this.hpText, this.hpIcon, this.mpText];
     if (this.keysHint) texts.push(this.keysHint);
+    // Faz 9A.2: yetenek çubuğu — stat panelinin altı (panel 6..70, +6 boşluk)
+    this.skillBar?.setPosition(x0 + 6, y0 + 76);
+    for (const t of this.skillTexts) if (t.style.resolution !== k) t.setResolution(k);
     for (const t of texts) if (t.style.resolution !== k) t.setResolution(k);
   }
 
@@ -1404,16 +1518,25 @@ export class TdWorldScene extends Phaser.Scene {
     const hpR = Phaser.Math.Clamp(ps.hp / ps.maxHp, 0, 1);
     const hpColor = hpR < 0.25 ? 0xe84142 : 0x44cc66;
     const xpR = Phaser.Math.Clamp(ps.xp / ps.xpToNext, 0, 1);
+    // ── Faz 9A.2: MP yenilenmesi + buff süreleri + DoT tikleri ──
+    this.tickAbilities(dt, t, ps);
+    const mpR = Phaser.Math.Clamp(ps.maxMp ? ps.mp / ps.maxMp : 0, 0, 1);
     this.levelText.setText(`${ps.level}`);
     this.hpText.setText(`${Math.round(ps.hp)}/${ps.maxHp}`);
     this.energyText.setText(`${Math.round(this.tdState.energy)}`);
+    this.mpText.setText(`${Math.round(ps.mp)}`);
     this.goldText.setText(`${PlayerState.get().gold}`);
     this.fireBoostText.setVisible(nearFire);
-    const key = `${hpR.toFixed(3)}|${hpColor}|${xpR.toFixed(3)}|${pct.toFixed(3)}|${enColor}|${nearFire ? 1 : 0}`;
+    // mpR cache anahtarında: yoksa MP barı donuk kalır (planın uyardığı tuzak)
+    const key = `${hpR.toFixed(3)}|${hpColor}|${xpR.toFixed(3)}|${pct.toFixed(3)}|${enColor}|${nearFire ? 1 : 0}|${mpR.toFixed(3)}`;
     if (key !== this.statsCache) {
       this.statsCache = key;
-      this.redrawStats(hpR, hpColor, xpR, pct, enColor, nearFire);
+      this.redrawStats(hpR, hpColor, xpR, pct, enColor, nearFire, mpR);
     }
+    // yetenek çubuğu: CD 100ms kovalarına yuvarlanır → saniyede ~10 çizim, her kare değil
+    const sk = this.skills.map((s, i) =>
+      `${Math.ceil(Math.max(0, this.skillCdUntil[i] - t) / 100)}${ps.mp < s.mpCost ? 'x' : ''}`).join(',');
+    if (sk !== this.skillBarCache) { this.skillBarCache = sk; this.redrawSkillBar(t, ps.mp); }
 
     // tarla parsel görselleri: tdState.farm[i].stage ile senkron (texture swap)
     for (const [idx, img] of this.farmImgs) {
@@ -1594,12 +1717,121 @@ export class TdWorldScene extends Phaser.Scene {
     return best;
   }
 
-  /** SPACE saldırısı: hasar + beyaz flaş + knockback + hasar sayısı; ölümde ödül. */
-  private heroAttack(m: MonRef): void {
-    if (this.time.now < this.atkCdUntil) return;
-    this.atkCdUntil = this.time.now + ATTACK_CD_MS;
+  // -----------------------------------------------------------------------
+  // Faz 9A.2: yetenekler. skills.ts TUR-TABANLI (TdBattleScene ile paylaşılıyor) →
+  // tur→ms çevrimi ve CD tablosu abilities.ts'te; burada yalnız sahne efekti.
+  // -----------------------------------------------------------------------
+  /** 1-4 tuşu / mobil buton → yuvadaki yeteneği kullan. */
+  private useSkillSlot(i: number): void {
+    const sk = this.skills[i];
+    if (!sk || this.battleActive) return;
+    if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
+    if (this.bagPanel?.visible || this.questPanel?.visible) return; // panel açıkken yazı/tuş çakışması
     const ps = PlayerState.get();
-    const { dmg, crit } = heroHit(ps.atk, m.entry.def ?? 0);
+    const now = this.time.now;
+    const block = canCast(sk, ps.mp, now, this.skillCdUntil[i] ?? 0, this.castGcdUntil);
+    if (block === 'gcd') return;                                    // 350ms — mesaj basmaya değmez
+    if (block === 'cd') { this.skillHint(`${sk.icon} ${sk.name} on cooldown`); return; }
+    if (block === 'mp') { this.skillHint(`Not enough MP (${sk.mpCost})`); return; }
+    // hasar yetenekleri hedef ister; buff yetenekleri hedefsiz kullanılabilir
+    const target = isBuffSkill(sk) ? null : this.nearestMob(ATTACK_RANGE);
+    if (!isBuffSkill(sk) && !target) { this.skillHint('No target in range'); return; }
+
+    ps.mp = Math.max(0, ps.mp - sk.mpCost);
+    this.castGcdUntil = now + CAST_GCD_MS;
+    this.skillCdUntil[i] = now + skillCdMs(sk.id);
+    this.atkCdUntil = Math.max(this.atkCdUntil, now + CAST_GCD_MS); // SPACE ile ortak ritim
+
+    if (isBuffSkill(sk)) { this.applySelfBuff(sk); return; }
+    this.castDamageSkill(sk, target!);
+  }
+
+  /** Kendine buff (fortify / arcane_barrier / evasion) — süre tur→ms. */
+  private applySelfBuff(sk: Skill): void {
+    const b = sk.selfBuff!;
+    const until = this.time.now + turnsToMs(b.turns);
+    if (b.stat === 'def') { this.defBuffPct = b.amount; this.defBuffUntil = until; }
+    else { this.dodgeBuffPct = b.amount; this.dodgeBuffUntil = until; }
+    this.floatText(this.heroPos.x, this.heroPos.y - 26, `${sk.icon} ${sk.name}!`, '#9fe8ff');
+  }
+
+  /**
+   * Hasar yeteneği: `hits` kez vur (MULTIHIT_DELAY_MS aralıkla), ilk vuruşta DoT/stun uygula.
+   * Gecikmeli vuruşlarda hedef ölmüş/despawn olmuş olabilir → her tikte canlılık kontrolü.
+   */
+  private castDamageSkill(sk: Skill, m: MonRef): void {
+    const ps = PlayerState.get();
+    let n = 0;
+    const hit = () => {
+      if (m.hp <= 0 || !m.img.active) return;   // hedef bu arada öldü/despawn oldu
+      this.heroAttack(m, skillAtk(ps.atk, sk), sk.icon);
+      if (n === 0) {
+        if (sk.dot && m.hp > 0) {
+          const p = dotPlan(sk.dot);
+          (m.dots ??= []).push({ type: sk.dot.type, left: p.ticks, nextAt: this.time.now + p.everyMs, pct: p.pct });
+          this.floatText(m.x, m.y - 30, sk.dot.type === 'burn' ? '🔥 Burn!' : '☠️ Poison!', '#ff6644');
+        }
+        if (sk.stunChance && Math.random() < sk.stunChance && m.hp > 0) {
+          m.downUntil = Math.max(m.downUntil, this.time.now + STUN_MS);
+          this.floatText(m.x, m.y - 34, '💫 Stunned!', '#ffd23f');
+        }
+      }
+      if (++n < sk.hits) this.time.delayedCall(MULTIHIT_DELAY_MS, hit);
+    };
+    hit();
+  }
+
+  /**
+   * Her karede: MP regen (sınıfa göre, tur→sn), buff süre bitişi, canavar DoT tikleri.
+   * DoT hasarı ölüme yol açarsa `killMob` normal ödül yolundan geçer (loot dâhil) —
+   * ayrı bir ölüm yolu AÇILMAZ (9A.1'in tek-boğaz çapası korunur).
+   */
+  private tickAbilities(dt: number, now: number, ps: PlayerState): void {
+    if (ps.mp < ps.maxMp) ps.mp = Math.min(ps.maxMp, ps.mp + mpRegenPerSec(ps.playerClass) * dt);
+    if (this.defBuffPct && now >= this.defBuffUntil) this.defBuffPct = 0;
+    if (this.dodgeBuffPct && now >= this.dodgeBuffUntil) this.dodgeBuffPct = 0;
+    const parts: string[] = [];
+    if (this.defBuffPct) parts.push(`🛡+${this.defBuffPct}% ${Math.ceil((this.defBuffUntil - now) / 1000)}s`);
+    if (this.dodgeBuffPct) parts.push(`💨+${this.dodgeBuffPct}% ${Math.ceil((this.dodgeBuffUntil - now) / 1000)}s`);
+    this.buffText.setText(parts.join('  ')).setVisible(parts.length > 0);
+    // DoT: yalnız dots'u olan canavarlar gezilir (çoğu boş → sıcak döngü ucuz)
+    for (const list of this.chunkMonsters.values()) {
+      for (const m of list) {
+        if (!m.dots?.length || m.hp <= 0) continue;
+        for (let i = m.dots.length - 1; i >= 0; i--) {
+          const d = m.dots[i];
+          if (now < d.nextAt) continue;
+          const dmg = dotTickDamage(m.maxHp, d.pct);
+          m.hp -= dmg;
+          this.floatText(m.x, m.y - 20, `${d.type === 'burn' ? '🔥' : '☠️'}${dmg}`, '#ff8866');
+          d.left--; d.nextAt = now + dotPlan({ type: d.type, turns: 1, pctPerTurn: d.pct }).everyMs;
+          if (d.left <= 0) m.dots.splice(i, 1);
+          if (m.hp <= 0) { this.killMob(m); break; }
+          this.updateMobHpBar(m);
+        }
+      }
+    }
+  }
+
+  /** Yetenek geri bildirimi — gatherHint'i kırmızı-ipucu penceresiyle ödünç alır. */
+  private skillHint(msg: string): void {
+    this.gatherHint.setText(msg).setColor('#ff9d9d').setVisible(true);
+    this.redHintUntil = this.time.now + 900;
+  }
+
+  /**
+   * SPACE saldırısı: hasar + beyaz flaş + knockback + hasar sayısı; ölümde ödül.
+   * Faz 9A.2: `atkOverride`/`icon` yalnız yeteneklerden gelir — SPACE yolu (tek argüman)
+   * DEĞİŞMEDİ, kendi ATTACK_CD_MS kapısını kullanır.
+   */
+  private heroAttack(m: MonRef, atkOverride?: number, icon?: string): void {
+    const isSkill = atkOverride !== undefined;
+    if (!isSkill) {
+      if (this.time.now < this.atkCdUntil) return;
+      this.atkCdUntil = this.time.now + ATTACK_CD_MS;
+    }
+    const ps = PlayerState.get();
+    const { dmg, crit } = heroHit(atkOverride ?? ps.atk, m.entry.def ?? 0);
     m.hp -= dmg;
     const ddx = m.x - this.heroPos.x, ddy = m.y - this.heroPos.y;
     const len = Math.hypot(ddx, ddy) || 1;
@@ -1611,8 +1843,9 @@ export class TdWorldScene extends Phaser.Scene {
     this.time.delayedCall(70, () => { if (m.img.active) m.img.clearTint(); });
     // knockback (canavar kısa süre donar — anında karşı-temas olmasın)
     m.x += (ddx / len) * 10; m.y += (ddy / len) * 10;
-    m.downUntil = this.time.now + 200;
-    this.floatText(m.x, m.y - 18, crit ? `💥${dmg}` : `${dmg}`, crit ? '#ffd23f' : '#ffffff');
+    // max: çok-vuruşlu yetenek 2. vuruşta önceki STUN'u KISALTMASIN (knockback 200ms < stun 2s)
+    m.downUntil = Math.max(m.downUntil, this.time.now + 200);
+    this.floatText(m.x, m.y - 18, `${icon ?? ''}${crit ? '💥' : ''}${dmg}`, crit ? '#ffd23f' : '#ffffff');
     this.ensureMobHpBar(m);
     if (m.hp <= 0) this.killMob(m);
   }
@@ -1729,10 +1962,19 @@ export class TdWorldScene extends Phaser.Scene {
     }
   }
 
-  /** Canavarın temas vuruşu: kahraman hasarı + i-frame + geri tepme + kırmızı flaş. */
+  /**
+   * Canavarın temas vuruşu: kahraman hasarı + i-frame + geri tepme + kırmızı flaş.
+   * Faz 9A.2: `evasion` buff'ı tam kaçınma şansı, `fortify`/`arcane_barrier` DEF çarpanı verir.
+   */
   private mobHitsHero(m: MonRef): void {
     const ps = PlayerState.get();
-    const dmg = mobHit(m.entry.atk ?? 5, ps.def);
+    // kaçınma: dünyada TABAN kaçınma yok — yalnız buff (abilities.dodgeChance, tavan %20)
+    if (this.dodgeBuffPct && Math.random() < dodgeChance(this.dodgeBuffPct)) {
+      this.heroInvulnUntil = this.time.now + HERO_IFRAME_MS;
+      this.floatText(this.heroPos.x, this.heroPos.y - 20, '💨 DODGE', '#44ddff');
+      return;
+    }
+    const dmg = mobHit(m.entry.atk ?? 5, effectiveDef(ps.def, this.defBuffPct));
     ps.hp = Math.max(0, ps.hp - dmg);
     this.heroInvulnUntil = this.time.now + HERO_IFRAME_MS;
     const ddx = this.heroPos.x - m.x, ddy = this.heroPos.y - m.y;
