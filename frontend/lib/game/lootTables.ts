@@ -11,7 +11,7 @@ export const RARITY_COLORS: Record<Rarity, number> = {
   legendary: 0xffaa00,
 };
 
-interface LootEntry {
+export interface LootEntry {
   chance: number; // 0-1
   item: InventoryItem;
   rarity: Rarity;
@@ -27,6 +27,19 @@ const ITEMS = {
   bat_wing: { id: 'bat_wing', name: 'Bat Wing', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
   demon_horn: { id: 'demon_horn', name: 'Demon Horn', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
   ogre_hide: { id: 'ogre_hide', name: 'Ogre Hide', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+
+  // Materials — Faz 9A.0 (bölge temalı; kapsanmayan 27 tipin karakterine uygun)
+  hex_bundle: { id: 'hex_bundle', name: 'Hex Bundle', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+  crystal_dust: { id: 'crystal_dust', name: 'Crystal Dust', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+  chronal_dust: { id: 'chronal_dust', name: 'Chronal Dust', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+  storm_feather: { id: 'storm_feather', name: 'Storm Feather', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+  magma_core: { id: 'magma_core', name: 'Magma Core', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+  permafrost_core: { id: 'permafrost_core', name: 'Permafrost Core', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+  jelly_sac: { id: 'jelly_sac', name: 'Jelly Sac', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+  titan_ingot: { id: 'titan_ingot', name: 'Titan Ingot', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+  blood_vial: { id: 'blood_vial', name: 'Blood Vial', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+  void_shard: { id: 'void_shard', name: 'Void Shard', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
+  eternal_ember: { id: 'eternal_ember', name: 'Eternal Ember', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
 
   // Potions
   potion_hp: { id: 'potion_hp', name: 'Health Potion', sprite: 'potion', type: 'potion' as const, stat: { hp: 40 }, stackable: true, count: 1 },
@@ -64,7 +77,9 @@ const ITEMS = {
   dragon_ring: { id: 'dragon_ring', name: 'Dragon Soul Ring', sprite: 'ring', type: 'ring' as const, stat: { atk: 8, spd: 4 }, stackable: false, count: 1 },
 };
 
-const LOOT_TABLES: Record<string, LootEntry[]> = {
+// Faz 9A.0: export edildi — td-loot-test.ts kapsama/kalibrasyon çapası tabloyu
+// gezmek zorunda (rollLoot rastgele olduğu için tek başına denetlenemez).
+export const LOOT_TABLES: Record<string, LootEntry[]> = {
   skeleton: [
     { chance: 0.20, item: ITEMS.bone_shard, rarity: 'common' },
     { chance: 0.10, item: ITEMS.iron_sword, rarity: 'uncommon' },
@@ -574,6 +589,194 @@ const LOOT_TABLES: Record<string, LootEntry[]> = {
     { chance: 0.40, item: ITEMS.ancient_amulet, rarity: 'legendary' },
     { chance: 0.30, item: ITEMS.ring_elements, rarity: 'legendary' },
   ],
+
+  // ═══ Faz 9A.0 — kapsama onarımı ═══════════════════════════════════════════
+  // monsterData.ts'te olup tablosu OLMAYAN 27 tip. Öncesinde rollLoot sessizce
+  // boş dizi dönüyordu → geç oyun bölgelerinde (voidrealm/eternal/demongate/forge)
+  // loot tamamen duruyordu. Kapsama artık %100 (çapa: scripts/td-loot-test.ts).
+  //
+  // Kalibrasyon: chance'lar komşu tablolarla hizalı — trash 0.06-0.26, zindan
+  // boss'u 0.20-0.80. rollLoot elitlerde chance ×2 + rarity +1 tier uyguluyor,
+  // bu yüzden tablolar "elit DEĞİLKEN makul" yazıldı: en cömert trash girdisi
+  // 0.26 → elitte 0.52, yani mevcut world_eater (0.30) / doom_knight (0.28)
+  // bandını aşmıyor.
+
+  // ─── Haunted Swamp (Lv 12-22) ───
+  witch_apprentice: [
+    { chance: 0.18, item: ITEMS.hex_bundle, rarity: 'common' },
+    { chance: 0.12, item: ITEMS.potion_mp, rarity: 'uncommon' },
+    { chance: 0.08, item: ITEMS.shadow_dagger, rarity: 'uncommon' },
+    { chance: 0.05, item: ITEMS.spider_silk_armor, rarity: 'rare' },
+  ],
+
+  // ─── Crystal Mines (Lv 15-25) ───
+  crystal_spider: [
+    { chance: 0.20, item: ITEMS.crystal_dust, rarity: 'common' },
+    { chance: 0.12, item: ITEMS.spider_silk_mat, rarity: 'common' },
+    { chance: 0.10, item: ITEMS.spider_silk_armor, rarity: 'rare' },
+    { chance: 0.06, item: ITEMS.ice_blade, rarity: 'rare' },
+  ],
+
+  // ─── Ancient Ruins (Lv 18-31) ───
+  vine_crawler: [
+    { chance: 0.18, item: ITEMS.slime_gel, rarity: 'common' },
+    { chance: 0.12, item: ITEMS.leather_armor, rarity: 'uncommon' },
+    { chance: 0.08, item: ITEMS.potion_hp, rarity: 'common' },
+  ],
+  ruin_ghost: [
+    { chance: 0.16, item: ITEMS.ectoplasm, rarity: 'uncommon' },
+    { chance: 0.10, item: ITEMS.ghost_cloak, rarity: 'rare' },
+    { chance: 0.08, item: ITEMS.potion_mp, rarity: 'uncommon' },
+  ],
+  time_wraith: [
+    { chance: 0.18, item: ITEMS.chronal_dust, rarity: 'uncommon' },
+    { chance: 0.12, item: ITEMS.ring_speed, rarity: 'rare' },
+    { chance: 0.10, item: ITEMS.shadow_cape, rarity: 'rare' },
+    { chance: 0.06, item: ITEMS.ring_elements, rarity: 'rare' },
+  ],
+
+  // ─── Sky Citadel (Lv 25-35) ───
+  cloud_wisp: [
+    { chance: 0.18, item: ITEMS.storm_feather, rarity: 'common' },
+    { chance: 0.12, item: ITEMS.speed_tonic, rarity: 'uncommon' },
+    { chance: 0.08, item: ITEMS.ghost_cloak, rarity: 'uncommon' },
+  ],
+
+  // ─── Dragon's Sanctum (Lv 20-30) ───
+  magma_hound: [
+    { chance: 0.18, item: ITEMS.magma_core, rarity: 'uncommon' },
+    { chance: 0.12, item: ITEMS.flame_sword, rarity: 'rare' },
+    { chance: 0.08, item: ITEMS.fire_amulet, rarity: 'rare' },
+  ],
+  molten_smith: [
+    { chance: 0.20, item: ITEMS.magma_core, rarity: 'uncommon' },
+    { chance: 0.15, item: ITEMS.heavy_armor, rarity: 'rare' },
+    { chance: 0.10, item: ITEMS.flame_sword, rarity: 'rare' },
+    { chance: 0.06, item: ITEMS.iron_sword, rarity: 'uncommon' },
+  ],
+  // Sanctum ZİNDAN BOSS'U (Lv 50, hp 1500) — titan_forgemaster/demon_lord bandı.
+  ancient_dragon_king: [
+    { chance: 0.80, item: ITEMS.dragon_scale, rarity: 'legendary' },
+    { chance: 0.65, item: ITEMS.flame_sword, rarity: 'legendary' },
+    { chance: 0.50, item: ITEMS.dragon_ring, rarity: 'legendary' },
+    { chance: 0.35, item: ITEMS.excalibur, rarity: 'legendary' },
+    { chance: 0.25, item: ITEMS.aegis_shield, rarity: 'legendary' },
+    { chance: 0.20, item: ITEMS.ancient_amulet, rarity: 'legendary' },
+  ],
+
+  // ─── Frost Wastes (Lv 40-50) ───
+  aurora_spirit: [
+    { chance: 0.20, item: ITEMS.permafrost_core, rarity: 'rare' },
+    { chance: 0.14, item: ITEMS.frost_pendant, rarity: 'rare' },
+    { chance: 0.10, item: ITEMS.potion_mp, rarity: 'uncommon' },
+  ],
+  permafrost_wyrm: [
+    { chance: 0.22, item: ITEMS.permafrost_core, rarity: 'rare' },
+    { chance: 0.18, item: ITEMS.ice_blade, rarity: 'epic' },
+    { chance: 0.14, item: ITEMS.dragon_scale, rarity: 'epic' },
+    { chance: 0.08, item: ITEMS.frost_pendant, rarity: 'epic' },
+  ],
+
+  // ─── Necropolis (Lv 28-45) ───
+  lich_acolyte: [
+    { chance: 0.20, item: ITEMS.ectoplasm, rarity: 'rare' },
+    { chance: 0.15, item: ITEMS.shadow_dagger, rarity: 'epic' },
+    { chance: 0.10, item: ITEMS.potion_mp, rarity: 'uncommon' },
+    { chance: 0.06, item: ITEMS.shadow_cape, rarity: 'epic' },
+  ],
+
+  // ─── Abyssal Depths (Lv 22-50) ───
+  deep_slime: [
+    { chance: 0.20, item: ITEMS.slime_gel, rarity: 'uncommon' },
+    { chance: 0.12, item: ITEMS.potion_hp, rarity: 'common' },
+    { chance: 0.08, item: ITEMS.frost_pendant, rarity: 'rare' },
+  ],
+  jellyfish: [
+    { chance: 0.20, item: ITEMS.jelly_sac, rarity: 'common' },
+    { chance: 0.12, item: ITEMS.potion_mp, rarity: 'uncommon' },
+    { chance: 0.08, item: ITEMS.speed_tonic, rarity: 'uncommon' },
+  ],
+  gem_golem: [
+    { chance: 0.20, item: ITEMS.crystal_dust, rarity: 'uncommon' },
+    { chance: 0.16, item: ITEMS.heavy_armor, rarity: 'epic' },
+    { chance: 0.12, item: ITEMS.ring_vitality, rarity: 'rare' },
+    { chance: 0.08, item: ITEMS.ring_elements, rarity: 'rare' },
+  ],
+  // Abyss zindan havuzu (Lv 22) — bölge trash'inden düşük seviyeli.
+  maelstrom_spirit: [
+    { chance: 0.18, item: ITEMS.potion_mp, rarity: 'uncommon' },
+    { chance: 0.12, item: ITEMS.frost_pendant, rarity: 'rare' },
+    { chance: 0.08, item: ITEMS.ring_speed, rarity: 'rare' },
+  ],
+
+  // ─── Titan's Forge (Lv 42-52) ───
+  hammer_sentinel: [
+    { chance: 0.20, item: ITEMS.titan_ingot, rarity: 'rare' },
+    { chance: 0.16, item: ITEMS.heavy_armor, rarity: 'epic' },
+    { chance: 0.10, item: ITEMS.aegis_shield, rarity: 'epic' },
+  ],
+  magma_smith: [
+    { chance: 0.20, item: ITEMS.magma_core, rarity: 'rare' },
+    { chance: 0.16, item: ITEMS.flame_sword, rarity: 'epic' },
+    { chance: 0.12, item: ITEMS.fire_amulet, rarity: 'epic' },
+  ],
+  titan_guard: [
+    { chance: 0.22, item: ITEMS.titan_ingot, rarity: 'rare' },
+    { chance: 0.18, item: ITEMS.aegis_shield, rarity: 'epic' },
+    { chance: 0.14, item: ITEMS.ring_power, rarity: 'epic' },
+    { chance: 0.08, item: ITEMS.excalibur, rarity: 'legendary' },
+  ],
+
+  // ─── Demon's Gate (Lv 33-65) ───
+  succubus: [
+    { chance: 0.20, item: ITEMS.blood_vial, rarity: 'rare' },
+    { chance: 0.16, item: ITEMS.shadow_cape, rarity: 'epic' },
+    { chance: 0.12, item: ITEMS.ring_speed, rarity: 'epic' },
+  ],
+  blood_knight: [
+    { chance: 0.22, item: ITEMS.blood_vial, rarity: 'rare' },
+    { chance: 0.18, item: ITEMS.heavy_armor, rarity: 'epic' },
+    { chance: 0.12, item: ITEMS.flame_sword, rarity: 'epic' },
+    { chance: 0.08, item: ITEMS.dragon_ring, rarity: 'legendary' },
+  ],
+  infernal_mage: [
+    { chance: 0.22, item: ITEMS.demon_horn, rarity: 'rare' },
+    { chance: 0.16, item: ITEMS.fire_amulet, rarity: 'epic' },
+    { chance: 0.12, item: ITEMS.potion_mp, rarity: 'uncommon' },
+    { chance: 0.08, item: ITEMS.ancient_amulet, rarity: 'legendary' },
+  ],
+
+  // ─── Void Realm (Lv 42-69) ───
+  chaos_sprite: [
+    { chance: 0.20, item: ITEMS.void_shard, rarity: 'rare' },
+    { chance: 0.16, item: ITEMS.ring_elements, rarity: 'epic' },
+    { chance: 0.12, item: ITEMS.speed_tonic, rarity: 'uncommon' },
+  ],
+  dark_seraphim: [
+    { chance: 0.22, item: ITEMS.void_shard, rarity: 'rare' },
+    { chance: 0.18, item: ITEMS.aegis_shield, rarity: 'epic' },
+    { chance: 0.14, item: ITEMS.ancient_amulet, rarity: 'epic' },
+    { chance: 0.08, item: ITEMS.excalibur, rarity: 'legendary' },
+  ],
+  entropy_demon: [
+    { chance: 0.24, item: ITEMS.void_shard, rarity: 'rare' },
+    { chance: 0.18, item: ITEMS.shadow_dagger, rarity: 'epic' },
+    { chance: 0.14, item: ITEMS.dragon_ring, rarity: 'epic' },
+    { chance: 0.08, item: ITEMS.ancient_amulet, rarity: 'legendary' },
+  ],
+
+  // ─── Eternal Abyss (Lv 55-69) ───
+  primordial_beast: [
+    { chance: 0.26, item: ITEMS.eternal_ember, rarity: 'rare' },
+    { chance: 0.20, item: ITEMS.dragon_scale, rarity: 'legendary' },
+    { chance: 0.15, item: ITEMS.ring_power, rarity: 'epic' },
+  ],
+  eternal_flame: [
+    { chance: 0.26, item: ITEMS.eternal_ember, rarity: 'rare' },
+    { chance: 0.20, item: ITEMS.flame_sword, rarity: 'legendary' },
+    { chance: 0.15, item: ITEMS.fire_amulet, rarity: 'epic' },
+    { chance: 0.10, item: ITEMS.excalibur, rarity: 'epic' },
+  ],
 };
 
 // ─── Sell values (gold) ───
@@ -601,10 +804,21 @@ export interface LootResult {
   rarity: Rarity;
 }
 
-export function rollLoot(monsterType: string, isElite: boolean = false): LootResult[] {
+// Tablo çözümü tek yerde: rollLoot ile hasLootTable ayrışmasın (kapsama testi
+// gerçekten rollLoot'un gördüğü anahtarı denetlemeli, kendi kopyasını değil).
+function lookupTable(monsterType: string): LootEntry[] | undefined {
   // Elite monsters use base type's loot table but with 2x drop chance + guaranteed rare+
   const baseType = monsterType.replace(/^elite_/, '');
-  const table = LOOT_TABLES[baseType] || LOOT_TABLES[monsterType];
+  return LOOT_TABLES[baseType] || LOOT_TABLES[monsterType];
+}
+
+/** Bu canavar tipinin bir loot tablosu var mı? (kapsama çapası — 9A.0) */
+export function hasLootTable(monsterType: string): boolean {
+  return !!lookupTable(monsterType);
+}
+
+export function rollLoot(monsterType: string, isElite: boolean = false): LootResult[] {
+  const table = lookupTable(monsterType);
   if (!table) return [];
 
   const drops: LootResult[] = [];
