@@ -26,6 +26,16 @@ import type { TdWorldScene } from './TdWorldScene';
 import { PlayerState } from '../PlayerState';
 import { pushQuestEvent, objectiveKey } from './quests';
 import { heroHit, mobHit, killRewards, ATTACK_RANGE, ATTACK_CD_MS, AGGRO_RANGE, CHASE_SPEED, CONTACT_RANGE, HERO_IFRAME_MS } from './combat';
+import {
+  tdSkills, mpRegenPerSec, canCast, skillCdMs, skillAtk, isBuffSkill, turnsToMs,
+  dotPlan, dotTickDamage, effectiveDef, dodgeChance, skillBarKey,
+  CAST_GCD_MS, MULTIHIT_DELAY_MS, STUN_MS,
+} from './abilities';
+import {
+  heroElemFx, mobElemFx, damageHex, elementHex, ELEM_FLOAT_COOLDOWN_MS, type ElemFx,
+} from './elemental';
+import type { Skill } from '../skills';
+import type { Element } from '../elements';
 
 const WALK_FRAMES = [0, 1, 0, 2] as const;
 
@@ -46,6 +56,9 @@ interface DMonRef {
   // Faz 5.7: trash moblar haritada dövüşülür (boss TdBattle'da kalır)
   hp: number; maxHp: number;
   hpBg?: Phaser.GameObjects.Rectangle; hpFill?: Phaser.GameObjects.Rectangle;
+  // Faz 9A.2: DoT (zehir/yanma) — TdWorldScene.MonRef.dots ile birebir sözleşme.
+  // RAM'de, DMonRef ile birlikte ölür (despawn → referans gider, ayrı temizlik gerekmez).
+  dots?: Array<{ type: 'poison' | 'burn'; left: number; nextAt: number; pct: number }>;
 }
 
 /** Faz 9A.1: zindanda yerde duran loot (TdWorldScene.GroundItem'in zindan eşleniği; RAM-yerel). */
@@ -83,6 +96,22 @@ export class TdDungeonScene extends Phaser.Scene {
   // Faz 9A.1: yerdeki loot — zindan küçük, tek düz liste yeter (sahne kapanınca yok olur)
   private ground: DGroundItem[] = [];
   private bagHintUntil = 0;
+  // ── Faz 9A.2: yetenekler + MP (dünya sahnesiyle aynı sözleşme, zindan HUD deyimiyle) ──
+  private skillBar!: Phaser.GameObjects.Container;
+  private skillGfx!: Phaser.GameObjects.Graphics;
+  private hudTexts: Phaser.GameObjects.Text[] = [];  // slot başına 3'lü (ikon/numara/maliyet) + sonda mp/buff
+  private mpText!: Phaser.GameObjects.Text;
+  private buffText!: Phaser.GameObjects.Text;
+  private skillBarCache = '';
+  private skills: Skill[] = [];
+  private skillCdUntil: number[] = [];   // yuva başına CD bitişi (ms, time.now)
+  private castGcdUntil = 0;              // yetenekler + SPACE ortak salınım ritmi
+  private defBuffPct = 0; private defBuffUntil = 0;
+  private dodgeBuffPct = 0; private dodgeBuffUntil = 0;
+  private elemFloatUntil = 0;            // Faz 9A.3: etkililik float'ı kapısı (ekran dolmasın)
+  // Yetenek geri bildirimi hintText'i ödünç alır; update()'in gizleme dalı yalnız KENDİ
+  // metinlerini tanıyordu → keyfi bir mesaj ekranda asılı kalırdı (9A.1'in BAG_FULL_HINT dersi).
+  private tempHintUntil = 0;
 
   constructor() { super({ key: 'TdDungeon' }); }
 
@@ -99,6 +128,12 @@ export class TdDungeonScene extends Phaser.Scene {
     // Faz 9A.1: yeni girişte taze başla (görseller sahne stop'unda zaten yok edildi)
     this.ground = [];
     this.bagHintUntil = 0;
+    // Faz 9A.2: buff'lar zindan girişleri arasında TAŞINMAZ (sahne örneği yeniden kullanılır).
+    // CD/GCD sıfırlanmaz: time.now global ve monoton — eski değerler zaten geçmişte kalır.
+    this.defBuffPct = 0; this.defBuffUntil = 0;
+    this.dodgeBuffPct = 0; this.dodgeBuffUntil = 0;
+    this.tempHintUntil = 0;
+    this.skillBarCache = '';
   }
 
   create(): void {
@@ -165,11 +200,25 @@ export class TdDungeonScene extends Phaser.Scene {
     const onUiPotion = () => this.drinkPotionD();
     window.addEventListener('td-ui-potion', onUiPotion);
     this.events.once('shutdown', () => window.removeEventListener('td-ui-potion', onUiPotion));
+    // Faz 9A.2: 1-4 yetenek yuvaları. SPACE (savaş > kazma) zinciri AYNI KALIR.
+    // Mobil: 'td-ui-skill' CustomEvent (detail.slot 1-4) — iksirle aynı kayıt/temizlik kalıbı.
+    const SLOT_KEYS = ['ONE', 'TWO', 'THREE', 'FOUR'] as const;
+    SLOT_KEYS.forEach((k, i) => kb.on(`keydown-${k}`, () => this.useSkillSlot(i)));
+    const onUiSkill = (ev: Event) => {
+      if (this.scene.isActive('TdBattle')) return; // savaş üstteyken dünya/zindan sessiz
+      const slot = Number((ev as CustomEvent<{ slot?: number }>).detail?.slot ?? 0) - 1;
+      if (slot >= 0) this.useSkillSlot(slot);
+    };
+    window.addEventListener('td-ui-skill', onUiSkill);
+    this.events.once('shutdown', () => window.removeEventListener('td-ui-skill', onUiSkill));
 
     // Faz 5.2: HUD/tint konum+boyutları layoutHud()'da (kamera-zoom dönüşümü)
     this.hintText = this.add.text(0, 0, '', {
       fontSize: '10px', fontFamily: TD_FONT, color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 5, y: 2 },
     }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(1e9).setVisible(false);
+
+    // Faz 9A.2: MP barı + yetenek çubuğu (layoutHud konumlar; applyZoom'dan ÖNCE kurulmalı)
+    this.buildSkillBar();
 
     // atmosfer: bölgenin atmo'su koyulaştırılmış (tintAlpha ×1.6)
     const atmo = atmoForRegion(this.dungeonId);
@@ -256,6 +305,9 @@ export class TdDungeonScene extends Phaser.Scene {
     const w = sw / k, h = sh / k;
     this.hintText.setPosition(x0 + w / 2, y0 + h - 16);
     if (this.hintText.style.resolution !== k) this.hintText.setResolution(k);
+    // Faz 9A.2: MP barı + yetenek çubuğu sol-üstte (zindanda stat paneli yok — köşe boş).
+    this.skillBar?.setPosition(x0 + 6, y0 + 6);
+    for (const t of this.hudTexts) if (t.style.resolution !== k) t.setResolution(k);
     this.tintRect.setPosition(x0 + w / 2, y0 + h / 2).setSize(w, h);
   }
 
@@ -296,11 +348,20 @@ export class TdDungeonScene extends Phaser.Scene {
     this.mineNearestVein();
   }
 
-  private heroAttackMob(m: DMonRef): void {
-    if (this.time.now < this.atkCdUntil) return;
-    this.atkCdUntil = this.time.now + ATTACK_CD_MS;
+  /**
+   * Temel vuruş — Faz 9A.2: `atkOverride`/`icon` YALNIZ yeteneklerden gelir. SPACE yolu
+   * (tek argüman) davranış olarak DEĞİŞMEDİ: kendi ATTACK_CD_MS kapısını kullanır.
+   * Faz 9A.3: `skillElem` de yalnız yetenekten gelir; yoksa sınıf elementi kullanılır.
+   */
+  private heroAttackMob(m: DMonRef, atkOverride?: number, icon?: string, skillElem?: Element): void {
+    const isSkill = atkOverride !== undefined;
+    if (!isSkill) {
+      if (this.time.now < this.atkCdUntil) return;
+      this.atkCdUntil = this.time.now + ATTACK_CD_MS;
+    }
     const ps = PlayerState.get();
-    const { dmg, crit } = heroHit(ps.atk, m.entry.def ?? 0);
+    const fx = heroElemFx(ps.playerClass, m.entry.type, skillElem);
+    const { dmg, crit } = heroHit(atkOverride ?? ps.atk, m.entry.def ?? 0, fx.mult);
     m.hp -= dmg;
     const ddx = m.x - this.heroPos.x, ddy = m.y - this.heroPos.y;
     const len = Math.hypot(ddx, ddy) || 1;
@@ -310,28 +371,235 @@ export class TdDungeonScene extends Phaser.Scene {
     m.img.setTintFill(0xffffff);
     this.time.delayedCall(70, () => { if (m.img.active) m.img.clearTint(); });
     m.x += (ddx / len) * 10; m.y += (ddy / len) * 10;
-    m.downUntil = this.time.now + 200;
-    this.veinFloat(m.x, m.y - 4, crit ? `💥${dmg}` : `${dmg}`, crit ? '#ffd23f' : '#ffffff');
+    // Faz 9A.2: max — çok-vuruşlu yeteneğin 2. vuruşu STUN'u KISALTMASIN (knockback 200ms < stun 2s)
+    m.downUntil = Math.max(m.downUntil, this.time.now + 200);
+    this.veinFloat(m.x, m.y - 4, `${icon ?? ''}${crit ? '💥' : ''}${dmg}`, damageHex(fx, crit ? '#ffd23f' : '#ffffff'));
+    this.elemFloat(m.x, m.y - 20, fx);
     if (!m.hpBg) {
       m.hpBg = this.add.rectangle(m.x, m.y, 18, 3, 0x1a2028, 0.9).setOrigin(0.5, 1).setDepth(1e7);
       m.hpFill = this.add.rectangle(m.x, m.y, 16, 1.6, 0xe84142, 1).setOrigin(0, 1).setDepth(1e7 + 1);
     }
     this.updateMobHpBar(m);
-    if (m.hp <= 0) {
-      const { xp, gold } = killRewards(m.entry.level ?? 1, false);
-      ps.addXp(xp); ps.gold += gold;
-      // Faz 9A.1: ZİNDAN TRASH loot boğazı — bu sahnedeki TEK rollGroundLoot çağrısı.
-      // 🔒 despawnMonster'a KOYMA: orası çoklu-giriş (haritada dövülen trash + TdBattle'da
-      // yenilen BOSS ikisi de düşer). TdBattleScene boss loot'unu kendi rollLoot'uyla
-      // veriyor → oraya koymak boss'ta ÇİFT LOOT olurdu. Trash asla elit değil (elit
-      // ayrımı overworld'e ait; boss ayrı funnel'da).
-      this.dropGroundLoot(m.x, m.y, rollGroundLoot(m.entry.type, false));
-      if ((this.registry.get('tdMode') as string) === 'live') ps.save();
-      this.veinFloat(m.x, m.y - 16, `+${xp} XP`, '#7f7fff');
-      this.veinFloat(m.x, m.y - 6, `+${gold}g 💰`, '#ffd23f');
-      m.hpBg?.destroy(); m.hpFill?.destroy(); m.hpBg = undefined; m.hpFill = undefined;
-      this.despawnMonster(m);
+    if (m.hp <= 0) this.killMobD(m);
+  }
+
+  /**
+   * 🔒 ZİNDAN TRASH ölüm boğazı — XP/altın/loot/despawn'ın TEK evi. Faz 9A.2'de
+   * heroAttackMob'un içinden çıkarıldı: DoT hasarı da öldürebiliyor ve ikinci bir ödül
+   * yolu açmak 9A.1'in tek-boğaz çapasını (ve loot dengesini) kırardı. Çağıranlar:
+   * heroAttackMob (SPACE + yetenek vuruşu) ve tickAbilities (DoT tiki) — BAŞKASI YOK.
+   */
+  private killMobD(m: DMonRef): void {
+    const ps = PlayerState.get();
+    const { xp, gold } = killRewards(m.entry.level ?? 1, false);
+    ps.addXp(xp); ps.gold += gold;
+    // Faz 9A.1: bu sahnedeki TEK rollGroundLoot çağrısı.
+    // 🔒 despawnMonster'a KOYMA: orası çoklu-giriş (haritada dövülen trash + TdBattle'da
+    // yenilen BOSS ikisi de düşer). TdBattleScene boss loot'unu kendi rollLoot'uyla
+    // veriyor → oraya koymak boss'ta ÇİFT LOOT olurdu. Trash asla elit değil (elit
+    // ayrımı overworld'e ait; boss ayrı funnel'da).
+    this.dropGroundLoot(m.x, m.y, rollGroundLoot(m.entry.type, false));
+    if ((this.registry.get('tdMode') as string) === 'live') ps.save();
+    this.veinFloat(m.x, m.y - 16, `+${xp} XP`, '#7f7fff');
+    this.veinFloat(m.x, m.y - 6, `+${gold}g 💰`, '#ffd23f');
+    m.hpBg?.destroy(); m.hpFill?.destroy(); m.hpBg = undefined; m.hpFill = undefined;
+    this.despawnMonster(m);
+  }
+
+  // -----------------------------------------------------------------------
+  // Faz 9A.2: yetenekler. skills.ts TUR-TABANLI (TdBattleScene ile paylaşılıyor) →
+  // tur→ms çevrimi ve CD tablosu abilities.ts'te; burada yalnız sahne efekti.
+  // Dünya sahnesiyle sözleşme birebir; zindana özgü farklar: hedef taraması yalnız
+  // this.mons (boss TdBattle'da dövülür), ipuçları hintText üstünden.
+  // -----------------------------------------------------------------------
+  private static readonly SLOT = 26;      // yuva kenarı (mantıksal px)
+  private static readonly SLOT_GAP = 2;
+  private static readonly BAR_Y = 12;     // MP kapsülünün altı → yuva satırı
+
+  /** MP kapsülü + 4 yuva; sınıfa göre create'te bir kez kurulur (sınıf oyun içinde değişmez). */
+  private buildSkillBar(): void {
+    const S = TdDungeonScene.SLOT, G = TdDungeonScene.SLOT_GAP, BY = TdDungeonScene.BAR_Y;
+    this.skills = tdSkills(PlayerState.get().playerClass);
+    this.skillCdUntil = this.skills.map(() => 0);
+    this.skillBar = this.add.container(0, 0).setScrollFactor(0).setDepth(1e9);
+    this.skillGfx = this.add.graphics();
+    this.skillBar.add(this.skillGfx);
+    this.hudTexts = [];
+    this.skills.forEach((sk, i) => {
+      const x = i * (S + G);
+      const icon = this.add.text(x + S / 2, BY + S / 2 + 1, sk.icon, { fontSize: '11px', fontFamily: TD_FONT })
+        .setOrigin(0.5, 0.5);
+      const num = this.add.text(x + 3, BY + 2, `${i + 1}`, { fontSize: '6px', fontFamily: TD_FONT, color: '#8fa6bd' })
+        .setOrigin(0, 0);
+      // temel vuruş 0 MP → maliyet etiketi basılmaz (gürültü olmasın)
+      const cost = this.add.text(x + S - 3, BY + S - 2, sk.mpCost ? `${sk.mpCost}` : '',
+        { fontSize: '6px', fontFamily: TD_FONT, color: '#6aa8ff' }).setOrigin(1, 1);
+      this.hudTexts.push(icon, num, cost);
+      this.skillBar.add([icon, num, cost]);
+    });
+    // MP sayacı kapsülün ortasında; buff okuması çubuğun altında (yalnız buff varken)
+    this.mpText = this.add.text(this.barW() / 2, 1, '', { fontSize: '7px', fontFamily: TD_FONT, color: '#d8e8ff' })
+      .setOrigin(0.5, 0);
+    this.buffText = this.add.text(0, BY + S + 3, '', { fontSize: '7px', fontFamily: TD_FONT, color: '#9fe8ff' })
+      .setOrigin(0, 0).setVisible(false);
+    this.hudTexts.push(this.mpText, this.buffText);
+    this.skillBar.add([this.mpText, this.buffText]);
+    const ps = PlayerState.get();
+    this.redrawSkillBar(0, ps.mp, ps.maxMp);
+  }
+
+  /** Yetenek çubuğunun toplam genişliği (MP kapsülü de bu genişlikte). */
+  private barW(): number {
+    const S = TdDungeonScene.SLOT, G = TdDungeonScene.SLOT_GAP;
+    return this.skills.length * S + Math.max(0, this.skills.length - 1) * G;
+  }
+
+  /**
+   * MP kapsülü + yuva görselleri: CD süpürmesi (üstten aşağı karartma) + MP yetersizse
+   * soluk ikon. update() cache anahtarıyla çağırır — her kare Graphics çizilmez.
+   */
+  private redrawSkillBar(now: number, mp: number, maxMp: number): void {
+    const S = TdDungeonScene.SLOT, G = TdDungeonScene.SLOT_GAP, BY = TdDungeonScene.BAR_Y;
+    const W = this.barW();
+    const g = this.skillGfx;
+    g.clear();
+    // MP kapsülü (TdBattleScene/TdWorldScene'in 0x3366cc mavisi — ekranlar arası renk paritesi)
+    const mpR = Phaser.Math.Clamp(maxMp ? mp / maxMp : 0, 0, 1);
+    g.fillStyle(0x000000, 0.28); g.fillRoundedRect(1, 1, W, 9, 4);
+    g.fillStyle(0x121a23, 0.95); g.fillRoundedRect(0, 0, W, 9, 4);
+    g.fillStyle(0x3366cc, 1); if (mpR > 0) g.fillRoundedRect(1, 1, Math.max(2, (W - 2) * mpR), 7, 3);
+    g.lineStyle(1, 0x3a4e63, 1); g.strokeRoundedRect(0, 0, W, 9, 4);
+    this.mpText.setText(`${Math.round(mp)}/${maxMp}`);
+    this.skills.forEach((sk, i) => {
+      const x = i * (S + G);
+      const cdLeft = Math.max(0, this.skillCdUntil[i] - now);
+      const cdTotal = skillCdMs(sk.id);
+      const poor = mp < sk.mpCost;
+      g.fillStyle(0x000000, 0.28); g.fillRoundedRect(x + 1, BY + 2, S, S, 5);
+      g.fillStyle(0x121a23, 0.95); g.fillRoundedRect(x, BY, S, S, 5);
+      // CD süpürmesi: kalan oranı kadar üstten karartma
+      if (cdLeft > 0 && cdTotal > 0) {
+        g.fillStyle(0x000000, 0.6);
+        g.fillRect(x + 1, BY + 1, S - 2, Math.round((S - 2) * (cdLeft / cdTotal)));
+      }
+      const ready = cdLeft === 0 && !poor;
+      g.lineStyle(1, ready ? 0x6aa8ff : poor ? 0x553333 : 0x3a4e63, ready ? 1 : 0.8);
+      g.strokeRoundedRect(x, BY, S, S, 5);
+      // ikon/maliyet alfası: kullanılamaz durumda soluk (metinler hudTexts'te 3'erli)
+      const a = ready ? 1 : 0.42;
+      this.hudTexts[i * 3].setAlpha(a);
+      this.hudTexts[i * 3 + 2].setAlpha(a);
+    });
+  }
+
+  /** 1-4 tuşu / mobil buton → yuvadaki yeteneği kullan. */
+  private useSkillSlot(i: number): void {
+    const sk = this.skills[i];
+    if (!sk || this.battleActive || this.leaving) return;  // onSpaceAction ile aynı kapı
+    const ps = PlayerState.get();
+    const now = this.time.now;
+    const block = canCast(sk, ps.mp, now, this.skillCdUntil[i] ?? 0, this.castGcdUntil);
+    if (block === 'gcd') return;                                    // 350ms — mesaj basmaya değmez
+    if (block === 'cd') { this.skillHint(`${sk.icon} ${sk.name} on cooldown`); return; }
+    if (block === 'mp') { this.skillHint(`Not enough MP (${sk.mpCost})`); return; }
+    // hasar yetenekleri hedef ister; buff yetenekleri hedefsiz kullanılabilir
+    const target = isBuffSkill(sk) ? null : this.nearestTrash(ATTACK_RANGE);
+    if (!isBuffSkill(sk) && !target) { this.skillHint('No target in range'); return; }
+
+    ps.mp = Math.max(0, ps.mp - sk.mpCost);
+    this.castGcdUntil = now + CAST_GCD_MS;
+    this.skillCdUntil[i] = now + skillCdMs(sk.id);
+    this.atkCdUntil = Math.max(this.atkCdUntil, now + CAST_GCD_MS); // SPACE ile ortak ritim
+
+    if (isBuffSkill(sk)) { this.applySelfBuff(sk); return; }
+    this.castDamageSkill(sk, target!);
+  }
+
+  /** Menzildeki en yakın trash mob — onSpaceAction ile aynı havuz (boss TdBattle'da dövülür). */
+  private nearestTrash(range: number): DMonRef | null {
+    let best: DMonRef | null = null; let bd = range;
+    for (const m of this.mons) {
+      const d = Math.hypot(this.heroPos.x - m.x, this.heroPos.y - m.y);
+      if (d < bd) { bd = d; best = m; }
     }
+    return best;
+  }
+
+  /** Kendine buff (fortify / arcane_barrier / evasion) — süre tur→ms. */
+  private applySelfBuff(sk: Skill): void {
+    const b = sk.selfBuff!;
+    const until = this.time.now + turnsToMs(b.turns);
+    if (b.stat === 'def') { this.defBuffPct = b.amount; this.defBuffUntil = until; }
+    else { this.dodgeBuffPct = b.amount; this.dodgeBuffUntil = until; }
+    this.veinFloat(this.heroPos.x, this.heroPos.y - 12, `${sk.icon} ${sk.name}!`, '#9fe8ff');
+  }
+
+  /**
+   * Hasar yeteneği: `hits` kez vur (MULTIHIT_DELAY_MS aralıkla), ilk vuruşta DoT/stun uygula.
+   * Gecikmeli vuruşlarda hedef ölmüş/despawn olmuş olabilir → her tikte canlılık kontrolü.
+   */
+  private castDamageSkill(sk: Skill, m: DMonRef): void {
+    const ps = PlayerState.get();
+    let n = 0;
+    const hit = () => {
+      if (this.leaving || m.hp <= 0 || !m.img.active) return;   // hedef bu arada öldü/despawn oldu
+      this.heroAttackMob(m, skillAtk(ps.atk, sk), sk.icon, sk.element);
+      if (n === 0) {
+        if (sk.dot && m.hp > 0) {
+          const p = dotPlan(sk.dot);
+          (m.dots ??= []).push({ type: sk.dot.type, left: p.ticks, nextAt: this.time.now + p.everyMs, pct: p.pct });
+          this.veinFloat(m.x, m.y - 24, sk.dot.type === 'burn' ? '🔥 Burn!' : '☠️ Poison!', '#ff6644');
+        }
+        if (sk.stunChance && Math.random() < sk.stunChance && m.hp > 0) {
+          m.downUntil = Math.max(m.downUntil, this.time.now + STUN_MS);
+          this.veinFloat(m.x, m.y - 28, '💫 Stunned!', '#ffd23f');
+        }
+      }
+      if (++n < sk.hits) this.time.delayedCall(MULTIHIT_DELAY_MS, hit);
+    };
+    hit();
+  }
+
+  /**
+   * Her karede: MP regen (sınıfa göre, tur→sn), buff süre bitişi, canavar DoT tikleri.
+   * DoT hasarı ölüme yol açarsa `killMobD` normal ödül yolundan geçer (loot dâhil) —
+   * ayrı bir ölüm yolu AÇILMAZ (9A.1'in tek-boğaz çapası korunur). Liste GERİYE gezilir:
+   * killMobD → despawnMonster this.mons'tan splice ediyor.
+   */
+  private tickAbilities(dt: number, now: number, ps: PlayerState): void {
+    if (ps.mp < ps.maxMp) ps.mp = Math.min(ps.maxMp, ps.mp + mpRegenPerSec(ps.playerClass) * dt);
+    if (this.defBuffPct && now >= this.defBuffUntil) this.defBuffPct = 0;
+    if (this.dodgeBuffPct && now >= this.dodgeBuffUntil) this.dodgeBuffPct = 0;
+    const parts: string[] = [];
+    if (this.defBuffPct) parts.push(`🛡+${this.defBuffPct}% ${Math.ceil((this.defBuffUntil - now) / 1000)}s`);
+    if (this.dodgeBuffPct) parts.push(`💨+${this.dodgeBuffPct}% ${Math.ceil((this.dodgeBuffUntil - now) / 1000)}s`);
+    this.buffText.setText(parts.join('  ')).setVisible(parts.length > 0);
+    for (let mi = this.mons.length - 1; mi >= 0; mi--) {
+      const m = this.mons[mi];
+      if (!m.dots?.length || m.hp <= 0) continue;
+      for (let i = m.dots.length - 1; i >= 0; i--) {
+        const d = m.dots[i];
+        if (now < d.nextAt) continue;
+        const dmg = dotTickDamage(m.maxHp, d.pct);
+        m.hp -= dmg;
+        this.veinFloat(m.x, m.y - 14, `${d.type === 'burn' ? '🔥' : '☠️'}${dmg}`, '#ff8866');
+        d.left--; d.nextAt = now + dotPlan({ type: d.type, turns: 1, pctPerTurn: d.pct }).everyMs;
+        if (d.left <= 0) m.dots.splice(i, 1);
+        if (m.hp <= 0) { this.killMobD(m); break; }
+        this.updateMobHpBar(m);
+      }
+    }
+  }
+
+  /**
+   * Yetenek geri bildirimi — hintText'i ödünç alır. `tempHintUntil` ŞART: update()'in
+   * gizleme dalı yalnız kendi bildiği metinleri tanır, keyfi mesaj orada asılı kalırdı.
+   */
+  private skillHint(msg: string): void {
+    const t = this.time.now;
+    this.hintText.setText(msg).setVisible(true);
+    this.hintLockUntil = t + 1000;
+    this.tempHintUntil = t + 1000;
   }
 
   // ── Faz 9A.1: yerdeki loot (dünya sahnesinin zindan eşleniği; görsel dil birebir) ──
@@ -417,9 +685,21 @@ export class TdDungeonScene extends Phaser.Scene {
     m.hpFill.width = 16 * Phaser.Math.Clamp(m.hp / m.maxHp, 0, 1);
   }
 
+  /**
+   * Canavarın temas vuruşu. Faz 9A.2: `evasion` buff'ı tam kaçınma şansı,
+   * `fortify`/`arcane_barrier` DEF çarpanı verir (dünya sahnesiyle birebir).
+   * Faz 9A.3: element TERS yönde de keser — canavarın elementi sınıfınkine üstünse hasar ×1.5.
+   */
   private mobHitsHero(m: DMonRef): void {
     const ps = PlayerState.get();
-    const dmg = mobHit(m.entry.atk ?? 5, ps.def);
+    // kaçınma: zindanda da TABAN kaçınma yok — yalnız buff (abilities.dodgeChance, tavan %20)
+    if (this.dodgeBuffPct && Math.random() < dodgeChance(this.dodgeBuffPct)) {
+      this.heroInvulnUntil = this.time.now + HERO_IFRAME_MS;
+      this.veinFloat(this.heroPos.x, this.heroPos.y - 8, '💨 DODGE', '#44ddff');
+      return;
+    }
+    const fx = mobElemFx(m.entry.type, ps.playerClass);
+    const dmg = mobHit(m.entry.atk ?? 5, effectiveDef(ps.def, this.defBuffPct), fx.mult);
     ps.hp = Math.max(0, ps.hp - dmg);
     this.heroInvulnUntil = this.time.now + HERO_IFRAME_MS;
     const ddx = this.heroPos.x - m.x, ddy = this.heroPos.y - m.y;
@@ -429,7 +709,8 @@ export class TdDungeonScene extends Phaser.Scene {
     this.hero.setTintFill(0xff5c5c);
     this.time.delayedCall(120, () => this.hero.clearTint());
     this.cameras.main.shake(70, 0.004);
-    this.veinFloat(this.heroPos.x, this.heroPos.y - 8, `-${dmg}`, '#ff5c5c');
+    this.veinFloat(this.heroPos.x, this.heroPos.y - 8, `-${dmg}`, damageHex(fx, '#ff5c5c'));
+    this.elemFloat(this.heroPos.x, this.heroPos.y - 22, fx);
     if ((this.registry.get('tdMode') as string) === 'live') ps.save();
     if (ps.hp <= 0) {
       // düşüş: zindandan çık, kasabada yarım canla uyan (dünya sahnesi toparlar)
@@ -480,6 +761,16 @@ export class TdDungeonScene extends Phaser.Scene {
     ps.hp = Math.min(ps.maxHp, ps.hp + heal);
     if ((this.registry.get('tdMode') as string) === 'live') ps.save();
     this.veinFloat(this.heroPos.x, this.heroPos.y - 8, `+${heal} ❤ 🧪`, '#5aef8a');
+  }
+
+  /**
+   * Faz 9A.3: etkililik metni (dünya sahnesinin elemFloat'ının zindan eşleniği).
+   * Nötr vuruşta basılmaz; ELEM_FLOAT_COOLDOWN_MS kapısı vuruş ritminde ekranı korur.
+   */
+  private elemFloat(x: number, y: number, fx: ElemFx): void {
+    if (!fx.text || this.time.now < this.elemFloatUntil) return;
+    this.elemFloatUntil = this.time.now + ELEM_FLOAT_COOLDOWN_MS;
+    this.veinFloat(x, y, fx.text, elementHex(fx.elem));
   }
 
   /** Yükselen juice metni (TdWorldScene.floatText'in zindan eşleniği). */
@@ -557,6 +848,16 @@ export class TdDungeonScene extends Phaser.Scene {
   update(t: number, dtMs: number): void {
     const dt = Math.min(dtMs, 50) / 1000;
     this.timeInDungeon += dt;
+    // ── Faz 9A.2: MP yenilenmesi + buff süreleri + DoT tikleri ──
+    const psu = PlayerState.get();
+    this.tickAbilities(dt, t, psu);
+    // 🔒 Yeniden-çizim anahtarı abilities.skillBarKey'de (SAF → Node'da davranışı test edilir);
+    // MP anahtarın içinde olmak ZORUNDA, yoksa bar donuk kalır (planın uyardığı tuzak).
+    const sbKey = skillBarKey(psu.mp, psu.maxMp, this.skillCdUntil, this.skills, t);
+    if (sbKey !== this.skillBarCache) {
+      this.skillBarCache = sbKey;
+      this.redrawSkillBar(t, psu.mp, psu.maxMp);
+    }
     const touch = this.registry.get('tdTouch') as { dx: number; dy: number; e: boolean; space: boolean } | undefined;
     let dx = 0, dy = 0;
     if (this.keys.W.isDown || this.cursors.up.isDown) dy -= 1;
@@ -659,8 +960,13 @@ export class TdDungeonScene extends Phaser.Scene {
       else if (nearVein) this.hintText.setText('[SPACE] mine ⛏️').setVisible(true);
       // Faz 9A.1: 'bag is full' uyarısı da bu blokta temizlenir — yoksa kilidi dolunca
       // ekranda kalıcı olarak asılı kalırdı (istem yalnız kendi metinlerini gizliyordu).
-      else if (this.hintText.text === '[SPACE] mine ⛏️' || this.hintText.text === '[SPACE] attack ⚔️'
-        || this.hintText.text === BAG_FULL_HINT) this.hintText.setVisible(false);
+      // Faz 9A.2: yetenek ipuçları KEYFİ metin → metin eşleştirmesi yetmez, süre damgası
+      // (tempHintUntil) ile temizlenir; blok zaten hintLockUntil dolduktan sonra koşuyor.
+      else if (this.tempHintUntil || this.hintText.text === '[SPACE] mine ⛏️'
+        || this.hintText.text === '[SPACE] attack ⚔️' || this.hintText.text === BAG_FULL_HINT) {
+        this.hintText.setVisible(false);
+        this.tempHintUntil = 0;
+      }
     }
 
     // atmosfer lerp

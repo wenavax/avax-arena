@@ -34,7 +34,11 @@ import {
   tdSkills, mpRegenPerSec, canCast, skillCdMs, skillAtk, isBuffSkill, turnsToMs,
   dotPlan, dotTickDamage, effectiveDef, dodgeChance, CAST_GCD_MS, MULTIHIT_DELAY_MS, STUN_MS,
 } from './abilities';
+import {
+  heroElemFx, mobElemFx, damageHex, elementHex, ELEM_FLOAT_COOLDOWN_MS, type ElemFx,
+} from './elemental';
 import type { Skill } from '../skills';
+import type { Element } from '../elements';
 
 /** Faz 5: TdPhaserGame registry'ye yazdığı basit dokunmatik input state'i (bkz. TdPhaserGame.tsx). */
 interface TdTouchInput { dx: number; dy: number; e: boolean; space: boolean }
@@ -220,6 +224,7 @@ export class TdWorldScene extends Phaser.Scene {
   private castGcdUntil = 0;              // yetenekler + SPACE ortak salınım ritmi
   private defBuffPct = 0; private defBuffUntil = 0;
   private dodgeBuffPct = 0; private dodgeBuffUntil = 0;
+  private elemFloatUntil = 0;            // Faz 9A.3: etkililik float'ı kapısı (ekran dolmasın)
   private buffText!: Phaser.GameObjects.Text;
   private gatherHint!: Phaser.GameObjects.Text;
   private fishing = false; private fishT = 0;
@@ -1600,6 +1605,17 @@ export class TdWorldScene extends Phaser.Scene {
   }
 
   /**
+   * Faz 9A.3: 'Super effective!' / 'Not very effective...' — saldıran elementin renginde.
+   * Nötr vuruşta hiç basılmaz; ELEM_FLOAT_COOLDOWN_MS kapısı 350ms'lik vuruş ritminde
+   * ekranın metinle dolmasını engeller (hasar sayısının rengi zaten her vuruşta konuşuyor).
+   */
+  private elemFloat(x: number, y: number, fx: ElemFx): void {
+    if (!fx.text || this.time.now < this.elemFloatUntil) return;
+    this.elemFloatUntil = this.time.now + ELEM_FLOAT_COOLDOWN_MS;
+    this.floatText(x, y, fx.text, elementHex(fx.elem));
+  }
+
+  /**
    * Geçici kırmızı ipucu (ör. 'Not enough energy ⚡') — 1.2sn kilit; süre dolunca
    * update()'teki yakınlık istemi gatherHint'i devralır/gizler (Faz 5.5).
    */
@@ -1764,7 +1780,7 @@ export class TdWorldScene extends Phaser.Scene {
     let n = 0;
     const hit = () => {
       if (m.hp <= 0 || !m.img.active) return;   // hedef bu arada öldü/despawn oldu
-      this.heroAttack(m, skillAtk(ps.atk, sk), sk.icon);
+      this.heroAttack(m, skillAtk(ps.atk, sk), sk.icon, sk.element);
       if (n === 0) {
         if (sk.dot && m.hp > 0) {
           const p = dotPlan(sk.dot);
@@ -1823,15 +1839,17 @@ export class TdWorldScene extends Phaser.Scene {
    * SPACE saldırısı: hasar + beyaz flaş + knockback + hasar sayısı; ölümde ödül.
    * Faz 9A.2: `atkOverride`/`icon` yalnız yeteneklerden gelir — SPACE yolu (tek argüman)
    * DEĞİŞMEDİ, kendi ATTACK_CD_MS kapısını kullanır.
+   * Faz 9A.3: `skillElem` de yalnız yetenekten gelir; yoksa sınıf elementi kullanılır.
    */
-  private heroAttack(m: MonRef, atkOverride?: number, icon?: string): void {
+  private heroAttack(m: MonRef, atkOverride?: number, icon?: string, skillElem?: Element): void {
     const isSkill = atkOverride !== undefined;
     if (!isSkill) {
       if (this.time.now < this.atkCdUntil) return;
       this.atkCdUntil = this.time.now + ATTACK_CD_MS;
     }
     const ps = PlayerState.get();
-    const { dmg, crit } = heroHit(atkOverride ?? ps.atk, m.entry.def ?? 0);
+    const fx = heroElemFx(ps.playerClass, m.entry.type, skillElem);
+    const { dmg, crit } = heroHit(atkOverride ?? ps.atk, m.entry.def ?? 0, fx.mult);
     m.hp -= dmg;
     const ddx = m.x - this.heroPos.x, ddy = m.y - this.heroPos.y;
     const len = Math.hypot(ddx, ddy) || 1;
@@ -1845,7 +1863,8 @@ export class TdWorldScene extends Phaser.Scene {
     m.x += (ddx / len) * 10; m.y += (ddy / len) * 10;
     // max: çok-vuruşlu yetenek 2. vuruşta önceki STUN'u KISALTMASIN (knockback 200ms < stun 2s)
     m.downUntil = Math.max(m.downUntil, this.time.now + 200);
-    this.floatText(m.x, m.y - 18, `${icon ?? ''}${crit ? '💥' : ''}${dmg}`, crit ? '#ffd23f' : '#ffffff');
+    this.floatText(m.x, m.y - 18, `${icon ?? ''}${crit ? '💥' : ''}${dmg}`, damageHex(fx, crit ? '#ffd23f' : '#ffffff'));
+    this.elemFloat(m.x, m.y - 32, fx);
     this.ensureMobHpBar(m);
     if (m.hp <= 0) this.killMob(m);
   }
@@ -1988,6 +2007,7 @@ export class TdWorldScene extends Phaser.Scene {
   /**
    * Canavarın temas vuruşu: kahraman hasarı + i-frame + geri tepme + kırmızı flaş.
    * Faz 9A.2: `evasion` buff'ı tam kaçınma şansı, `fortify`/`arcane_barrier` DEF çarpanı verir.
+   * Faz 9A.3: element TERS yönde de keser — canavarın elementi sınıfınkine üstünse hasar ×1.5.
    */
   private mobHitsHero(m: MonRef): void {
     const ps = PlayerState.get();
@@ -1997,7 +2017,8 @@ export class TdWorldScene extends Phaser.Scene {
       this.floatText(this.heroPos.x, this.heroPos.y - 20, '💨 DODGE', '#44ddff');
       return;
     }
-    const dmg = mobHit(m.entry.atk ?? 5, effectiveDef(ps.def, this.defBuffPct));
+    const fx = mobElemFx(m.entry.type, ps.playerClass);
+    const dmg = mobHit(m.entry.atk ?? 5, effectiveDef(ps.def, this.defBuffPct), fx.mult);
     ps.hp = Math.max(0, ps.hp - dmg);
     this.heroInvulnUntil = this.time.now + HERO_IFRAME_MS;
     const ddx = this.heroPos.x - m.x, ddy = this.heroPos.y - m.y;
@@ -2007,7 +2028,8 @@ export class TdWorldScene extends Phaser.Scene {
     this.hero.setTintFill(0xff5c5c);
     this.time.delayedCall(120, () => this.hero.clearTint());
     this.cameras.main.shake(70, 0.004);
-    this.floatText(this.heroPos.x, this.heroPos.y - 20, `-${dmg}`, '#ff5c5c');
+    this.floatText(this.heroPos.x, this.heroPos.y - 20, `-${dmg}`, damageHex(fx, '#ff5c5c'));
+    this.elemFloat(this.heroPos.x, this.heroPos.y - 34, fx);
     if (this.tdMode === 'live') ps.save();
     if (ps.hp <= 0) this.heroDown();
   }

@@ -213,10 +213,13 @@ ok('world-killMob-drops', killMob.includes('this.dropGroundLoot(') && killMob.in
 ok('world-killMob-elite-aware', killMob.includes('rollGroundLoot(m.entry.type, m.isElite)'));
 ok('world-live-saves', killMob.includes("this.tdMode === 'live'") && killMob.includes('ps.save()'));
 
-// ─── (b) zindan boğazı: heroAttackMob ───
+// ─── (b) zindan boğazı: killMobD ───
+// 9A.2'de ölüm bloğu heroAttackMob'un içinden `killMobD`'ye çıkarıldı: DoT hasarı da
+// öldürebiliyor, ikinci bir ödül yolu açmak bu çapayı anlamsızlaştırırdı. Boğaz hâlâ TEK.
 const heroAttackMob = methodBody(dungeonSrc, '  private heroAttackMob(');
 ok('dungeon-heroAttackMob-found', heroAttackMob.length > 0);
-ok('dungeon-heroAttackMob-drops', heroAttackMob.includes('this.dropGroundLoot(') && heroAttackMob.includes('rollGroundLoot('));
+ok('dungeon-killMobD-drops', methodBody(dungeonSrc, '  private killMobD(').includes('this.dropGroundLoot(')
+  && methodBody(dungeonSrc, '  private killMobD(').includes('rollGroundLoot('));
 
 // ─── (d) 🔒 ÇİFT LOOT ÇAPASI ───
 // despawnMonster ÇOKLU giriş noktası: haritada dövülen trash + TdBattle'da yenilen BOSS
@@ -249,7 +252,10 @@ ok('dungeon-no-direct-rollLoot', !/[^d]rollLoot\(/.test(dungeonSrc));
 const startBattle = methodBody(dungeonSrc, '  private startBattle(');
 ok('dungeon-startBattle-no-loot', noLoot(startBattle));
 ok('dungeon-startBattle-despawns', startBattle.includes('despawnMonster(m)'));
-eq('dungeon-heroAttackMob-callsites', count(dungeonSrc, 'this.heroAttackMob('), 1);
+// 9A.2: iki çağıran var — onSpaceAction (SPACE) ve castDamageSkill (yetenek). İKİSİ DE
+// yalnız this.mons'u tarar (nearestTrash), boss'a asla ulaşmaz; sayı 3'e çıkarsa yeni
+// çağıranın havuzu td-abilities-test'te ayrıca denetleniyor.
+eq('dungeon-heroAttackMob-callsites', count(dungeonCode, 'this.heroAttackMob('), 2);
 const onSpaceAction = methodBody(dungeonSrc, '  private onSpaceAction(');
 ok('dungeon-space-scans-trash-only', onSpaceAction.includes('for (const m of this.mons)')
   && !onSpaceAction.includes('this.boss'));

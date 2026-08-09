@@ -121,3 +121,17 @@ export function dodgeChance(dodgeBuffPct: number): number {
 
 /** Stun süresi: tek tur (mob `downUntil` ile donar — dünyada zaten knockback için var). */
 export const STUN_MS = TURN_MS;
+
+/**
+ * Yetenek çubuğu + MP barı yeniden-çizim anahtarı (Graphics her kare çizilmesin).
+ *
+ * 🔒 MP anahtarın İÇİNDE — planın "cache-anahtarına mp eklenmeli, yoksa bar donuk kalır"
+ * uyarısı. Kesirli regen yuvarlanır: bar MP tam sayı değiştikçe tazelenir, her karede değil.
+ * CD 100ms kovalarına yuvarlanır → saniyede ~10 çizim. `x` = MP yetmiyor (soluk ikon).
+ */
+export function skillBarKey(
+  mp: number, maxMp: number, cdUntilMs: number[], skills: Skill[], nowMs: number,
+): string {
+  return `${Math.round(mp)}/${maxMp}|` + skills.map((s, i) =>
+    `${Math.ceil(Math.max(0, (cdUntilMs[i] ?? 0) - nowMs) / 100)}${mp < s.mpCost ? 'x' : ''}`).join(',');
+}

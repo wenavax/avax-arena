@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import {
   TURN_MS, CAST_GCD_MS, SKILL_CD_MS, MULTIHIT_DELAY_MS, STUN_MS,
   tdSkills, mpRegenPerSec, turnsToMs, canCast, skillCdMs, skillAtk,
-  isBuffSkill, dotPlan, dotTickDamage, effectiveDef, dodgeChance,
+  isBuffSkill, dotPlan, dotTickDamage, effectiveDef, dodgeChance, skillBarKey,
   type TdSkillId,
 } from '../lib/game/td/abilities';
 import { CLASS_SKILLS, CLASS_MP, type Skill } from '../lib/game/skills';
@@ -157,6 +157,7 @@ const abilitiesSrc = read('lib/game/td/abilities.ts');
 const worldSrc = read('lib/game/td/TdWorldScene.ts');
 const dungeonSrc = read('lib/game/td/TdDungeonScene.ts');
 const battleSrc = read('lib/game/td/TdBattleScene.ts');
+const gameSrc = read('lib/game/td/TdPhaserGame.tsx');   // mobil yetenek butonları
 
 // (a) skills.ts TdBattleScene ile paylaşılıyor → TD katmanı oraya alan EKLEMEZ.
 ok('skills.ts cooldown alanı içermiyor (tur-tabanlı sözleşme korunuyor)',
@@ -187,6 +188,161 @@ ok('TdBattleScene abilities.ts import etmiyor (tur-tabanlı kalır)',
   !/from '\.\/abilities'/.test(battleSrc));
 ok('TdBattleScene hâlâ CLASS_SKILLS/CLASS_MP tüketiyor',
   /CLASS_SKILLS/.test(battleSrc) && /CLASS_MP/.test(battleSrc));
+
+// ─────────────────────────────────────────────────────────────
+// 8. HUD yeniden-çizim anahtarı (skillBarKey) — SAF, davranış test edilir
+//    Plan: "redrawStats cache-anahtarına mp eklenmeli, yoksa bar donuk kalır."
+//    Bu tuzağı kaynak-string'i aramakla değil, anahtarın KENDİSİNİ çalıştırarak kilitliyoruz.
+// ─────────────────────────────────────────────────────────────
+const kSkills = CLASS_SKILLS.knight;
+const zeroCd = [0, 0, 0, 0];
+const keyAt = (mp: number, maxMp = 40, cd = zeroCd, now = 100_000) => skillBarKey(mp, maxMp, cd, kSkills, now);
+ok('MP değişimi anahtarı değiştirir (bar donmaz)', keyAt(10) !== keyAt(11));
+ok('maxMp değişimi anahtarı değiştirir (level up)', keyAt(10, 40) !== keyAt(10, 43));
+eq('kesirli regen anahtarı kirletmez (her kare çizim yok)', keyAt(10.1), keyAt(10.4));
+ok('tam MP sınırını geçmek anahtarı değiştirir', keyAt(10.4) !== keyAt(10.6));
+// CD: 100ms kovaları — kova içinde sabit, kova değişince taze
+ok('CD kovası içinde anahtar sabit', keyAt(40, 40, [0, 100_050, 0, 0]) === keyAt(40, 40, [0, 100_099, 0, 0], 100_000));
+ok('CD kovası değişince anahtar değişir',
+  keyAt(40, 40, [0, 100_050, 0, 0]) !== keyAt(40, 40, [0, 100_150, 0, 0]));
+ok('CD bitince anahtar değişir', keyAt(40, 40, [0, 100_500, 0, 0]) !== keyAt(40, 40, zeroCd));
+// MP yetmezliği ('x' işareti = soluk ikon) MP eşiğini geçerken görünür/görünmez olmalı
+const costly = kSkills.find(s => s.mpCost > 0)!;
+ok('MP eşiğinin altında soluk işareti var', keyAt(costly.mpCost - 1).includes('x'));
+ok('MP eşiğinin üstünde soluk işareti yok', !keyAt(Math.max(...kSkills.map(s => s.mpCost))).includes('x'));
+ok('geçmiş CD negatife düşmez (Math.max tabanı)', keyAt(40, 40, [0, 0, 0, 0], 999_999) === keyAt(40, 40, zeroCd, 0));
+eq('eksik CD girdisi 0 sayılır (dizi kısa kalırsa çökmez)', skillBarKey(40, 40, [], kSkills, 0), keyAt(40, 40, zeroCd, 0));
+
+// ─────────────────────────────────────────────────────────────
+// 9. ZİNDAN BAĞLANMASI (Faz 9A.2 ikinci yarısı)
+//    Phaser Node'da ayağa kalkmaz → sahne sözleşmesi KAYNAK üstünden kilitlenir.
+//    ⚠️ Dürüst olmak için gerçek süslü eşleştirmesi ŞART: naif "ilk `\n  }`" kırpması
+//    gövdeyi sessizce boşaltır ve "yok" çapaları trivially yeşil yanar (9A.1 review'ı).
+//    Aşağıdaki methodBody, td-groundloot-test.ts'teki doğrulanmış tarayıcının eşleniği.
+// ─────────────────────────────────────────────────────────────
+function methodBody(src: string, sig: string): string {
+  const i = src.indexOf(sig);
+  if (i < 0) throw new Error(`methodBody: imza bulunamadı → ${sig}`);
+  let j = src.indexOf('{', i);
+  if (j < 0) throw new Error(`methodBody: gövde açılışı yok → ${sig}`);
+  let depth = 0;
+  for (; j < src.length; j++) {
+    const c = src[j];
+    if (c === '/' && src[j + 1] === '/') { j = src.indexOf('\n', j); if (j < 0) break; continue; }
+    if (c === '/' && src[j + 1] === '*') { j = src.indexOf('*/', j + 2); if (j < 0) break; j++; continue; }
+    if (c === "'" || c === '"' || c === '`') {
+      const q = c;
+      for (j++; j < src.length && src[j] !== q; j++) if (src[j] === '\\') j++;
+      continue;
+    }
+    if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return src.slice(i, j + 1);
+  }
+  throw new Error(`methodBody: süslüler dengelenemedi → ${sig}`);
+}
+const count = (s: string, needle: string) => s.split(needle).length - 1;
+const dungeonCode = stripComments(dungeonSrc);
+// çıkarıcının kendisi: sessiz kırpma = sahte yeşil (kopyalanan tarayıcı da denetlenir)
+ok('methodBody girintili süslüde kırpmıyor',
+  methodBody('  private t(): void {\n    const c = {\n      a: 1,\n  };\n    this.killMobD(m);\n  }\n', '  private t(')
+    .includes('this.killMobD(m);'));
+ok('methodBody string içindeki süslüyü saymıyor',
+  methodBody('  private s(): void {\n    const t = "}";\n    const u = 1;\n  }\n', '  private s(').includes('const u = 1;'));
+let dThrew = false;
+try { methodBody(dungeonSrc, '  private definitelyNotAMethod('); } catch { dThrew = true; }
+ok('methodBody eksik imzada throw eder', dThrew);
+
+// (a) yetenekler GERÇEKTEN bağlı — 1-4 tuşları + mobil olay + HUD
+ok('zindan abilities.ts import ediyor', /from '\.\/abilities'/.test(dungeonSrc));
+ok('zindan 1-4 tuşlarını yuvalara bağlıyor',
+  /\['ONE', 'TWO', 'THREE', 'FOUR'\]/.test(dungeonCode) && /keydown-\$\{k\}`, \(\) => this\.useSkillSlot\(i\)/.test(dungeonCode));
+ok("zindan mobil 'td-ui-skill' olayını dinliyor", dungeonCode.includes("window.addEventListener('td-ui-skill', onUiSkill)"));
+ok('zindan td-ui-skill dinleyicisini shutdown\'da kaldırıyor (sızıntı yok)',
+  dungeonCode.includes("window.removeEventListener('td-ui-skill', onUiSkill)"));
+ok('mobil buton yuva numarasını gönderiyor (1-4)',
+  /new CustomEvent\('td-ui-skill', \{ detail: \{ slot \} \}\)/.test(gameSrc) && /\[1, 2, 3, 4\]\.map\(slot =>/.test(gameSrc));
+ok('zindan MP barını + yetenek çubuğunu kuruyor',
+  dungeonCode.includes('this.buildSkillBar();') && dungeonCode.includes('private redrawSkillBar('));
+// HUD anahtarı: sahne kendi anahtarını ELLE kurmamalı (skillBarKey tek ev → MP hep içinde)
+ok('zindan yeniden-çizim anahtarını skillBarKey\'den alıyor', dungeonCode.includes('skillBarKey(psu.mp, psu.maxMp'));
+eq('zindan redrawSkillBar yalnız anahtar değişince çizer',
+  count(methodBody(dungeonSrc, '  update(t: number'), 'this.redrawSkillBar('), 1);
+ok('zindan çizimi cache ile korunuyor', dungeonCode.includes('if (sbKey !== this.skillBarCache)'));
+// HUD zindanın KENDİ deyimine uyuyor: layoutHud konumlandırır + çözünürlük ölçekler
+const dLayout = methodBody(dungeonSrc, '  private layoutHud(');
+ok('yetenek çubuğu layoutHud\'da konumlanıyor', dLayout.includes('this.skillBar?.setPosition('));
+ok('HUD metinleri zoom çözünürlüğünü alıyor', dLayout.includes('for (const t of this.hudTexts)'));
+
+// (b) 🔒 TEK ÖLÜM/ÖDÜL BOĞAZI — DoT ölümü de aynı fonksiyondan geçer
+const dKill = methodBody(dungeonSrc, '  private killMobD(');
+const dAttack = methodBody(dungeonSrc, '  private heroAttackMob(');
+const dTick = methodBody(dungeonSrc, '  private tickAbilities(');
+const dDespawn = methodBody(dungeonSrc, '  private despawnMonster(');
+eq('killMobD tam bir kez tanımlı', count(dungeonCode, 'private killMobD('), 1);
+ok('killMobD XP+altın+loot+despawn veriyor', dKill.includes('killRewards(') && dKill.includes('ps.addXp(')
+  && dKill.includes('this.dropGroundLoot(') && dKill.includes('this.despawnMonster(m)'));
+ok('temel/yetenek vuruşu ölümde killMobD çağırıyor', dAttack.includes('if (m.hp <= 0) this.killMobD(m);'));
+ok('DoT ölümü de killMobD çağırıyor', dTick.includes('this.killMobD(m)'));
+eq('killMobD yalnız bu iki yerden çağrılıyor', count(dungeonCode, 'this.killMobD('), 2);
+// ödül/loot BAŞKA hiçbir yerde verilmiyor (ikinci boğaz = çift XP/çift loot)
+eq('zindanda tek killRewards çağrısı', count(dungeonCode, 'killRewards('), 1);
+eq('zindanda tek addXp çağrısı', count(dungeonCode, 'ps.addXp('), 1);
+eq('zindanda tek dropGroundLoot çağrısı', count(dungeonCode, 'this.dropGroundLoot('), 1);
+eq('zindanda tek rollGroundLoot çağrısı', count(dungeonCode, 'rollGroundLoot('), 1);
+// despawnMonster ÇOKLU giriş (trash + TdBattle boss) → orada ödül/loot OLMAMALI
+const noLoot = (b: string) => !/rollLoot|rollGroundLoot|dropGroundLoot/.test(b);
+ok('despawnMonster loot düşürmüyor (boss çift-loot çapası)', noLoot(dDespawn));
+ok('despawnMonster ödül vermiyor', !/killRewards|addXp|\.gold \+=/.test(dDespawn));
+ok('killMobD boss yolundan çağrılmıyor', !methodBody(dungeonSrc, '  private startBattle(').includes('killMobD'));
+// yetenek hedefi yalnız trash havuzu (boss TdBattle'da dövülür — 9A.1 boğaz mantığı)
+const dNearest = methodBody(dungeonSrc, '  private nearestTrash(');
+ok('yetenek hedefi this.mons\'u tarıyor', dNearest.includes('for (const m of this.mons)') && !dNearest.includes('this.boss'));
+ok('yetenek vuruşu nearestTrash kullanıyor', methodBody(dungeonSrc, '  private useSkillSlot(').includes('this.nearestTrash(ATTACK_RANGE)'));
+
+// (c) 🔒 STUN KISALTMA REGRESYONU — her stun/knockback ataması Math.max'lı olmalı.
+//     Çok-vuruşlu yeteneğin 2. vuruşu (knockback 200ms) 2sn'lik stun'u ezmemeli.
+//     İSTİSNA: startBattle'daki dondurma/yeniden-saldırı gecikmesi (savaş akışı, stun değil).
+const dStartBattle = methodBody(dungeonSrc, '  private startBattle(');
+const downAssigns = [...dungeonCode.matchAll(/\w+\.downUntil\s*=\s*[^;]+;/g)].map(m => m[0]);
+ok('downUntil ataması bulundu (regex çürümedi)', downAssigns.length >= 3);
+for (const a of downAssigns) {
+  const inBattleFlow = dStartBattle.includes(a);
+  ok(`downUntil ataması Math.max'lı ya da savaş akışında: ${a.trim()}`, a.includes('Math.max(') || inBattleFlow);
+}
+ok('knockback ataması Math.max kullanıyor', /m\.downUntil = Math\.max\(m\.downUntil, this\.time\.now \+ 200\)/.test(dungeonCode));
+ok('stun ataması Math.max kullanıyor', /m\.downUntil = Math\.max\(m\.downUntil, this\.time\.now \+ STUN_MS\)/.test(dungeonCode));
+ok('stun süresi abilities.ts sabitinden geliyor', dungeonCode.includes('STUN_MS') && !/downUntil.*\+ 2000/.test(dungeonCode));
+
+// (d) 🔒 SPACE DOKUNULMAZ — temel vuruş/kazı zinciri yetenek yoluna kaymadı
+const dSpace = methodBody(dungeonSrc, '  private onSpaceAction(');
+ok('SPACE hâlâ onSpaceAction\'a bağlı', dungeonCode.includes("kb.on('keydown-SPACE', () => this.onSpaceAction())"));
+ok('dokunmatik SPACE hâlâ onSpaceAction çağırıyor',
+  dungeonCode.includes('if (touch.space && !this.touchSpacePrev) this.onSpaceAction();'));
+ok('SPACE temel vuruşu tek argümanla çağırıyor (yetenek yolu DEĞİL)',
+  dSpace.includes('this.heroAttackMob(best)') && dSpace.includes('this.mineNearestVein();'));
+ok('SPACE yolunda yetenek/MP mantığı yok',
+  !/useSkillSlot|castDamageSkill|skillCdUntil|castGcdUntil|mpCost/.test(dSpace));
+ok('temel vuruş kendi ATTACK_CD kapısını koruyor',
+  dAttack.includes('if (!isSkill)') && dAttack.includes('this.atkCdUntil = this.time.now + ATTACK_CD_MS;'));
+ok('yetenek vuruşu ATTACK_CD kapısını atlıyor (kendi CD/GCD\'si var)',
+  /const isSkill = atkOverride !== undefined;/.test(dAttack));
+ok('SPACE hasarı hâlâ ps.atk (override yalnız yetenekten)', dAttack.includes('heroHit(atkOverride ?? ps.atk'));
+
+// (e) yetenek etkileri abilities.ts'ten akıyor (tur→ms çevrimi sahnede tekrar edilmiyor)
+const dCast = methodBody(dungeonSrc, '  private castDamageSkill(');
+const dMobHit = methodBody(dungeonSrc, '  private mobHitsHero(');
+ok('çok-vuruş abilities gecikmesini kullanıyor', dCast.includes('MULTIHIT_DELAY_MS') && dCast.includes('sk.hits'));
+ok('DoT planı abilities.dotPlan\'den', dCast.includes('dotPlan(sk.dot)'));
+ok('gecikmeli vuruş ölü/despawn hedefi atlıyor', dCast.includes('m.hp <= 0 || !m.img.active'));
+ok('DoT tiki abilities.dotTickDamage kullanıyor', dTick.includes('dotTickDamage(m.maxHp, d.pct)'));
+ok('MP regen abilities.mpRegenPerSec\'ten', dTick.includes('mpRegenPerSec(ps.playerClass)'));
+ok('buff süresi turnsToMs ile', methodBody(dungeonSrc, '  private applySelfBuff(').includes('turnsToMs(b.turns)'));
+ok('DEF buff\'ı temas hasarında uygulanıyor', dMobHit.includes('effectiveDef(ps.def, this.defBuffPct)'));
+ok('kaçınma buff\'ı temas hasarında uygulanıyor', dMobHit.includes('dodgeChance(this.dodgeBuffPct)'));
+ok('DoT listesi geriye geziliyor (killMobD splice eder)', dTick.includes('for (let mi = this.mons.length - 1; mi >= 0; mi--)'));
+// yetenek ipucu keyfi metin → süre damgasıyla temizlenmeli (9A.1'in "asılı kalan uyarı" dersi)
+ok('yetenek ipucu süre damgası kuruyor', methodBody(dungeonSrc, '  private skillHint(').includes('this.tempHintUntil = t + 1000'));
+ok('update ipucu süre damgasını temizliyor', dungeonCode.includes('this.tempHintUntil = 0;'));
 
 console.log(`\ntd-abilities: ${pass} pass, ${fail} fail`);
 if (fail) process.exit(1);
