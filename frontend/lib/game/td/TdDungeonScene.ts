@@ -15,7 +15,7 @@ import { mkGroundItem } from './sprites/groundItems';
 import {
   rollGroundLoot, groundSpriteKind, nearestGround, takeGround, groundOverflow, dropOffset,
   rarityHex, pickupLabel, RARITY_FX, GROUND_SPRITE_KINDS, GROUND_CAP, PICKUP_RADIUS,
-  BAG_HINT_COOLDOWN_MS,
+  BAG_HINT_COOLDOWN_MS, BAG_FULL_HINT,
 } from './groundLoot';
 import { RARITY_COLORS, type LootResult, type Rarity } from '../lootTables';
 import type { InventoryItem } from '../PlayerState';
@@ -29,8 +29,6 @@ import { heroHit, mobHit, killRewards, ATTACK_RANGE, ATTACK_CD_MS, AGGRO_RANGE, 
 
 const WALK_FRAMES = [0, 1, 0, 2] as const;
 
-/** Faz 9A.1: çanta dolu uyarısı (UI dili İngilizce) — hintText temizliğinde de eşleşir. */
-const BAG_FULL_HINT = 'bag is full — make room 🎒';
 
 interface DungeonInitData { dungeonId: string; exitPos: { x: number; y: number } }
 
@@ -371,10 +369,20 @@ export class TdDungeonScene extends Phaser.Scene {
       this.ground.push({ item: drop.item, rarity: drop.rarity, x: gx, y: gy, bornAt: this.time.now, objs });
     });
     for (const victim of groundOverflow(this.ground, GROUND_CAP)) {
-      victim.objs.forEach(o => o.destroy());
+      this.destroyGround(victim);
       const i = this.ground.indexOf(victim);
       if (i >= 0) this.ground.splice(i, 1);
     }
+  }
+
+  /**
+   * 🔒 Yer eşyası yok etmenin TEK yolu — TdWorldScene.destroyGround ile aynı sözleşme:
+   * Phaser'ın destroy()'u objeyi hedefleyen tween'leri öldürmez, sonsuz (`repeat: -1`)
+   * tween'ler ölü objelere çakılı kalır. Bu sahnede sızıntı SINIRLI (leave() → scene.stop()
+   * tween manager'ı temizler), ama iki sahne aynı deseni izlesin diye burada da yapılıyor.
+   */
+  private destroyGround(g: DGroundItem): void {
+    g.objs.forEach(o => { this.tweens.killTweensOf(o); o.destroy(); });
   }
 
   /** Otomatik toplama: üstüne yürü. Çanta doluysa eşya YERDE KALIR + kırmızı ipucu. */
@@ -384,14 +392,19 @@ export class TdDungeonScene extends Phaser.Scene {
     if (!g) return;
     const ps = PlayerState.get();
     if (!takeGround(ps, g, this.ground)) {
-      if (this.time.now > this.bagHintUntil) {
-        this.bagHintUntil = this.time.now + BAG_HINT_COOLDOWN_MS;
+      // 🔒 hintLockUntil'e SAYGI (9A.1 review'ı): despawnMonster boss ölümünde
+      // '👑 Dungeon cleared!' için 2.5sn kilit koyar; alınamayan bir eşyanın üstünden
+      // geçmek o mesajı EZİYORDU. Ayrıca gösterim kilidi = yeniden-gösterim beklemesi
+      // olmalı, yoksa uyarı 1.2sn'de kaybolup 2.5sn'de geri gelir → yanıp söner.
+      const t = this.time.now;
+      if (t > this.bagHintUntil && t > this.hintLockUntil) {
+        this.bagHintUntil = t + BAG_HINT_COOLDOWN_MS;
         this.hintText.setText(BAG_FULL_HINT).setVisible(true);
-        this.hintLockUntil = this.time.now + 1200; // kazı/savaş istemi hemen ezmesin
+        this.hintLockUntil = t + BAG_HINT_COOLDOWN_MS;
       }
       return; // eşya yerde kalır
     }
-    g.objs.forEach(o => o.destroy());
+    this.destroyGround(g);
     this.veinFloat(g.x, g.y + 4, pickupLabel(g.item), rarityHex(g.rarity));
     if ((this.registry.get('tdMode') as string) === 'live') ps.save();
   }

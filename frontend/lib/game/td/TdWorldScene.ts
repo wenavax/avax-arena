@@ -18,7 +18,7 @@ import { mkGroundItem } from './sprites/groundItems';
 import {
   rollGroundLoot, groundSpriteKind, nearestGround, takeGround, groundOverflow, dropOffset,
   rarityHex, pickupLabel, RARITY_FX, GROUND_SPRITE_KINDS, GROUND_CAP, PICKUP_RADIUS,
-  BAG_HINT_COOLDOWN_MS,
+  BAG_HINT_COOLDOWN_MS, BAG_FULL_HINT,
 } from './groundLoot';
 import type { InventoryItem } from '../PlayerState';
 import { RARITY_COLORS, type LootResult, type Rarity } from '../lootTables';
@@ -962,7 +962,7 @@ export class TdWorldScene extends Phaser.Scene {
     if (!row || !row.completed || row.turnedIn) return;
     // grantReward çanta doluysa false döner ve HİÇBİR ŞEYİ değiştirmez — satırı da
     // turnedIn yapmıyoruz; oyuncu yer açıp geri gelebilsin.
-    if (!grantReward(ps, def)) { this.showRedHint('bag is full — make room 🎒'); return; }
+    if (!grantReward(ps, def)) { this.showRedHint(BAG_FULL_HINT); return; }
     row.turnedIn = true;
     if (def.repeatable === 'daily') row.resetAt = Date.now() + DAILY_MS;
     if (this.tdMode === 'live') ps.save();
@@ -1148,7 +1148,7 @@ export class TdWorldScene extends Phaser.Scene {
     // Kaynak node'larıyla aynı sözleşme: kalıcı değil, save şemasına girmez.
     const ground = this.chunkGround.get(key);
     if (ground) {
-      ground.forEach(g => g.objs.forEach(o => o.destroy()));
+      ground.forEach(g => this.destroyGround(g));
       this.chunkGround.delete(key);
     }
   }
@@ -1603,9 +1603,9 @@ export class TdWorldScene extends Phaser.Scene {
    * Geçici kırmızı ipucu (ör. 'Not enough energy ⚡') — 1.2sn kilit; süre dolunca
    * update()'teki yakınlık istemi gatherHint'i devralır/gizler (Faz 5.5).
    */
-  private showRedHint(msg: string): void {
+  private showRedHint(msg: string, holdMs = 1200): void {
     this.gatherHint.setText(msg).setColor('#ff5c5c').setVisible(true);
-    this.redHintUntil = this.time.now + 1200;
+    this.redHintUntil = this.time.now + holdMs;
   }
 
   /**
@@ -1878,9 +1878,16 @@ export class TdWorldScene extends Phaser.Scene {
    * Ölüm noktasına loot serper. Görseller RAM'de + chunk-yerel (save şeması değişmez).
    * Kapasite aşımında EN ESKİ eşyalar silinir (groundOverflow) — yeni düşen asla kurban
    * değil. Sprite `item.sprite`'a göre seçilir (Record çapası: sprites/groundItems.ts).
+   *
+   * 🔒 ANAHTAR ÖLÜM NOKTASINDAN (9A.1 review'ı): eşyalar eskiden KENDİ serpilmiş
+   * konumlarıyla anahtarlanıyordu. dropOffset 9px'e kadar kaydırdığı için ±1 halkasının
+   * dış kenarında ölen bir mob, komşu (±2) chunk'ın anahtarına düşebiliyordu; o anahtar
+   * `this.chunks`'ta hiç oluşmadığından evictChunk oraya ASLA uğramaz → kalıcı sızıntı.
+   * Artık tek anahtar var: ölümün chunk'ı. Görsel serpme aynen korunuyor.
    */
   private dropGroundLoot(x: number, y: number, drops: LootResult[]): void {
     if (!drops.length) return;
+    const key = `${Math.floor(x / (CHUNK * TILE))},${Math.floor(y / (CHUNK * TILE))}`;
     drops.forEach((drop, i) => {
       const { dx, dy } = dropOffset(i);
       const gx = x + dx, gy = y + dy;
@@ -1912,12 +1919,24 @@ export class TdWorldScene extends Phaser.Scene {
       }
       // düşüş juice'ı: kısa yükselen isim (rarity renginde)
       this.floatText(gx, gy - 14, drop.item.name, rarityHex(drop.rarity));
-      const key = `${Math.floor(gx / (CHUNK * TILE))},${Math.floor(gy / (CHUNK * TILE))}`;
       const list = this.chunkGround.get(key) ?? [];
       list.push({ item: drop.item, rarity: drop.rarity, x: gx, y: gy, bornAt: this.time.now, objs });
       this.chunkGround.set(key, list);
     });
     this.trimGround();
+  }
+
+  /**
+   * 🔒 YER EŞYASI YOK ETMENİN TEK YOLU (9A.1 review'ı — HIGH sızıntı).
+   * Phaser'ın `GameObject.destroy()`'u o objeyi hedefleyen TWEEN'leri öldürmez; tween'ler
+   * yalnız SAHNE yok edilince temizlenir. TdWorldScene bir oturum boyunca hiç durmaz
+   * (dünya→zindan/hub `scene.pause()` kullanır), üstelik her düşüşte `repeat: -1` tween'ler
+   * kuruluyor → sadece destroy etmek, ölü objelere çakılı SONSUZ tween'ler biriktirirdi
+   * (~1 saat farm ≈ yüzlerce). GROUND_CAP eşya sayısını sınırlar, tween'i sınırlamaz.
+   * Üç silme yolu da (evictChunk / trimGround / scanGroundPickup) buradan geçmeli.
+   */
+  private destroyGround(g: GroundItem): void {
+    g.objs.forEach(o => { this.tweens.killTweensOf(o); o.destroy(); });
   }
 
   /** Kapasite bekçisi: GROUND_CAP üstündeki EN ESKİ eşyaları sahneden düşür. */
@@ -1928,7 +1947,7 @@ export class TdWorldScene extends Phaser.Scene {
     const all: GroundItem[] = [];
     for (const list of this.chunkGround.values()) all.push(...list);
     for (const victim of groundOverflow(all, GROUND_CAP)) {
-      victim.objs.forEach(o => o.destroy());
+      this.destroyGround(victim);
       for (const list of this.chunkGround.values()) {
         const i = list.indexOf(victim);
         if (i >= 0) { list.splice(i, 1); break; }
@@ -1941,6 +1960,7 @@ export class TdWorldScene extends Phaser.Scene {
    * Çanta doluysa eşya YERDE KALIR — kırmızı ipucu, sessiz yok etme yok (takeGround çapası).
    */
   private scanGroundPickup(): void {
+    if (!this.chunkGround.size) return; // sıcak yol: yerde hiç eşya yokken 9 anahtar kurma
     const hcx = Math.floor(this.heroPos.x / (CHUNK * TILE)), hcy = Math.floor(this.heroPos.y / (CHUNK * TILE));
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
       const list = this.chunkGround.get(`${hcx + dx},${hcy + dy}`);
@@ -1949,13 +1969,16 @@ export class TdWorldScene extends Phaser.Scene {
       if (!g) continue;
       const ps = PlayerState.get();
       if (!takeGround(ps, g, list)) {
-        if (this.time.now > this.bagHintUntil) {
-          this.bagHintUntil = this.time.now + BAG_HINT_COOLDOWN_MS;
-          this.showRedHint('bag is full — make room 🎒');
+        // Kilit sırası (9A.1 review'ı): kilitli BAŞKA bir kırmızı uyarı varsa onu ezme;
+        // bastığımızda gösterim kilidi = yeniden-gösterim beklemesi → uyarı yanıp sönmez.
+        const t = this.time.now;
+        if (t > this.bagHintUntil && t > this.redHintUntil) {
+          this.bagHintUntil = t + BAG_HINT_COOLDOWN_MS;
+          this.showRedHint(BAG_FULL_HINT, BAG_HINT_COOLDOWN_MS);
         }
         return; // eşya yerde kalır; oyuncu yer açıp geri gelir
       }
-      g.objs.forEach(o => o.destroy());
+      this.destroyGround(g);
       this.floatText(g.x, g.y - 10, pickupLabel(g.item), rarityHex(g.rarity));
       if (this.tdMode === 'live') ps.save();
       return; // kare başına bir toplama — juice okunabilir kalsın

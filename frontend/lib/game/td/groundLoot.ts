@@ -14,8 +14,15 @@ import type { InventoryItem } from '../PlayerState';
 export const GROUND_CAP = 32;
 /** Toplama yarıçapı (px): üstüne yürümek yeter — SPACE zincirine dokunulmaz. */
 export const PICKUP_RADIUS = 13;
-/** "bag is full" ipucu kilidi (ms): dolu çantayla eşyanın üstünde durmak spam etmesin. */
+/**
+ * "bag is full" ipucunun HEM yeniden-gösterim beklemesi HEM de ekranda kalma süresi (ms).
+ * 🔒 İkisi AYNI sayı olmak zorunda: gösterim kilidi daha kısa olursa uyarı kaybolur,
+ * bekleme dolunca geri gelir → oyuncu durumu hiç değişmemişken YANIP SÖNER (9A.1 review'ı).
+ */
 export const BAG_HINT_COOLDOWN_MS = 2500;
+
+/** Çanta dolu uyarısının TEK evi (UI dili İngilizce) — iki sahne de bunu basar. */
+export const BAG_FULL_HINT = 'bag is full — make room 🎒';
 
 /**
  * `InventoryItem.sprite` alanının bilinen değerleri. Bu alan 9A.1'e kadar repoda
@@ -62,12 +69,18 @@ export const RARITY_FX: Record<Rarity, RarityFx> = {
 };
 
 /**
- * Tek loot boğazı: elit canavarlar `elite_<tip>` anahtarıyla + isElite=true gider
- * (rollLoot chance'ı ×2'ler, rarity'yi +1 tier yükseltir). Bu kuralın İKİ sahnede
- * kopyalanmaması için burada tek yerde duruyor.
+ * Tek loot boğazı: iki sahne de öldürmeyi buradan geçirir.
+ *
+ * ⚠️ DÜZELTME (9A.1 review'ı): burada eskiden `elite_<tip>` anahtarı kuruluyordu ve
+ * commit mesajı burayı "elite_ öneki kuralının tek evi" diye tanıtıyordu — YANLIŞTI.
+ * lootTables.lookupTable ilk iş `monsterType.replace(/^elite_/, '')` yapıp SOYULMUŞ
+ * anahtarı tercih ediyor ve LOOT_TABLES'ta HİÇ `elite_*` anahtarı yok → önek tam bir
+ * no-op'tu. Elitlerin tabloya etkisi YALNIZ `isElite` boolean'ı üzerinden: rollLoot
+ * chance'ı ×2'ler ve rarity'yi +1 tier yükseltir. Ölü önek kaldırıldı.
+ * (Elit quest anahtarı `elite_<tip>` AYRI bir sözleşme — o objectiveKey tarafında.)
  */
 export function rollGroundLoot(baseType: string, isElite: boolean): LootResult[] {
-  return rollLoot(isElite ? `elite_${baseType}` : baseType, isElite);
+  return rollLoot(baseType, isElite);
 }
 
 /** i. düşüşün ölüm noktasından px sapması — deterministik (test edilebilir), altın-açı serpme. */
