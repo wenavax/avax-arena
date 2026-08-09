@@ -11,6 +11,14 @@ import { atmoForRegion } from './atmosphere';
 import { chibiHumanoid, CHIBI_H } from './sprites/chibi';
 import { mkMonsterChibi } from './sprites/monsterChibi';
 import { mkOreVein } from './sprites/props';
+import { mkGroundItem } from './sprites/groundItems';
+import {
+  rollGroundLoot, groundSpriteKind, nearestGround, takeGround, groundOverflow, dropOffset,
+  rarityHex, pickupLabel, RARITY_FX, GROUND_SPRITE_KINDS, GROUND_CAP, PICKUP_RADIUS,
+  BAG_HINT_COOLDOWN_MS,
+} from './groundLoot';
+import { RARITY_COLORS, type LootResult, type Rarity } from '../lootTables';
+import type { InventoryItem } from '../PlayerState';
 import { DUNGEON_ROSTERS, type MonsterEntry } from './monsterData';
 import { genDungeon, type DungeonGen } from './dungeonGen';
 import { PER_HIT } from './cozy/rules';
@@ -20,6 +28,9 @@ import { pushQuestEvent, objectiveKey } from './quests';
 import { heroHit, mobHit, killRewards, ATTACK_RANGE, ATTACK_CD_MS, AGGRO_RANGE, CHASE_SPEED, CONTACT_RANGE, HERO_IFRAME_MS } from './combat';
 
 const WALK_FRAMES = [0, 1, 0, 2] as const;
+
+/** Faz 9A.1: çanta dolu uyarısı (UI dili İngilizce) — hintText temizliğinde de eşleşir. */
+const BAG_FULL_HINT = 'bag is full — make room 🎒';
 
 interface DungeonInitData { dungeonId: string; exitPos: { x: number; y: number } }
 
@@ -37,6 +48,15 @@ interface DMonRef {
   // Faz 5.7: trash moblar haritada dövüşülür (boss TdBattle'da kalır)
   hp: number; maxHp: number;
   hpBg?: Phaser.GameObjects.Rectangle; hpFill?: Phaser.GameObjects.Rectangle;
+}
+
+/** Faz 9A.1: zindanda yerde duran loot (TdWorldScene.GroundItem'in zindan eşleniği; RAM-yerel). */
+interface DGroundItem {
+  item: InventoryItem;
+  rarity: Rarity;
+  x: number; y: number;
+  bornAt: number;
+  objs: Phaser.GameObjects.GameObject[];
 }
 
 export class TdDungeonScene extends Phaser.Scene {
@@ -62,6 +82,9 @@ export class TdDungeonScene extends Phaser.Scene {
   private veins: { x: number; y: number; img: Phaser.GameObjects.Image; hits: number; alive: boolean }[] = [];
   private touchSpacePrev = false;
   private hintLockUntil = 0; // '👑 Dungeon cleared!' gibi mesajlar kazı istemiyle ezilmesin
+  // Faz 9A.1: yerdeki loot — zindan küçük, tek düz liste yeter (sahne kapanınca yok olur)
+  private ground: DGroundItem[] = [];
+  private bagHintUntil = 0;
 
   constructor() { super({ key: 'TdDungeon' }); }
 
@@ -75,6 +98,9 @@ export class TdDungeonScene extends Phaser.Scene {
     this.boss = null;
     this.veins = [];
     this.touchSpacePrev = false;
+    // Faz 9A.1: yeni girişte taze başla (görseller sahne stop'unda zaten yok edildi)
+    this.ground = [];
+    this.bagHintUntil = 0;
   }
 
   create(): void {
@@ -178,6 +204,12 @@ export class TdDungeonScene extends Phaser.Scene {
     if (!this.textures.exists('td-orevein')) {
       const m = mkOreVein();
       this.textures.addCanvas('td-orevein', m.img);
+    }
+    // Faz 9A.1: yer-eşyası texture'ları — dünya sahnesi de aynı anahtarları kurar,
+    // exists guard'ı ikisini de güvenli kılar (hero kareleriyle aynı kalıp).
+    for (const k of GROUND_SPRITE_KINDS) {
+      const key = `td-item-${k}`;
+      if (!this.textures.exists(key)) this.textures.addCanvas(key, mkGroundItem(k).img);
     }
     const veinTarget = 6 + hash2d(w, h, 10) % 4;
     for (let ty = 2; ty < h - 2 && this.veins.length < veinTarget; ty++) {
@@ -290,12 +322,78 @@ export class TdDungeonScene extends Phaser.Scene {
     if (m.hp <= 0) {
       const { xp, gold } = killRewards(m.entry.level ?? 1, false);
       ps.addXp(xp); ps.gold += gold;
+      // Faz 9A.1: ZİNDAN TRASH loot boğazı — bu sahnedeki TEK rollGroundLoot çağrısı.
+      // 🔒 despawnMonster'a KOYMA: orası çoklu-giriş (haritada dövülen trash + TdBattle'da
+      // yenilen BOSS ikisi de düşer). TdBattleScene boss loot'unu kendi rollLoot'uyla
+      // veriyor → oraya koymak boss'ta ÇİFT LOOT olurdu. Trash asla elit değil (elit
+      // ayrımı overworld'e ait; boss ayrı funnel'da).
+      this.dropGroundLoot(m.x, m.y, rollGroundLoot(m.entry.type, false));
       if ((this.registry.get('tdMode') as string) === 'live') ps.save();
       this.veinFloat(m.x, m.y - 16, `+${xp} XP`, '#7f7fff');
       this.veinFloat(m.x, m.y - 6, `+${gold}g 💰`, '#ffd23f');
       m.hpBg?.destroy(); m.hpFill?.destroy(); m.hpBg = undefined; m.hpFill = undefined;
       this.despawnMonster(m);
     }
+  }
+
+  // ── Faz 9A.1: yerdeki loot (dünya sahnesinin zindan eşleniği; görsel dil birebir) ──
+  /** Ölüm noktasına loot serper; kapasite aşımında en eski eşyalar silinir. */
+  private dropGroundLoot(x: number, y: number, drops: LootResult[]): void {
+    if (!drops.length) return;
+    drops.forEach((drop, i) => {
+      const { dx, dy } = dropOffset(i);
+      const gx = x + dx, gy = y + dy;
+      const fx = RARITY_FX[drop.rarity];
+      const color = RARITY_COLORS[drop.rarity];
+      const d = depth(gx, gy);
+      const objs: Phaser.GameObjects.GameObject[] = [];
+      const glow = this.add.ellipse(gx, gy - 1, fx.glowR * 2.4, fx.glowR * 1.4, color, fx.glowAlpha).setDepth(d - 1);
+      this.tweens.add({ targets: glow, alpha: fx.glowAlpha * 0.45, scale: 1.18, duration: fx.bobMs, yoyo: true, repeat: -1 });
+      objs.push(glow);
+      if (fx.beam) {
+        const beam = this.add.rectangle(gx, gy - 1, 3, 26, color, 0.32).setOrigin(0.5, 1).setDepth(d - 1);
+        this.tweens.add({ targets: beam, alpha: 0.12, scaleX: 1.8, duration: 620, yoyo: true, repeat: -1 });
+        objs.push(beam);
+      }
+      const img = this.add.image(gx, gy, `td-item-${groundSpriteKind(drop.item.sprite)}`)
+        .setOrigin(0.5, 1).setDepth(d);
+      this.tweens.add({ targets: img, y: gy - 2, duration: fx.bobMs, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      objs.push(img);
+      for (let s = 0; s < fx.sparkles; s++) {
+        const sp = this.add.rectangle(gx, gy - 6, 1, 1, 0xffffff, 0.9).setDepth(d + 1);
+        this.tweens.add({
+          targets: sp, x: gx + (s % 2 ? 5 : -5), y: gy - 12, alpha: 0,
+          duration: 700 + s * 160, repeat: -1, delay: s * 220,
+        });
+        objs.push(sp);
+      }
+      this.veinFloat(gx, gy - 2, drop.item.name, rarityHex(drop.rarity));
+      this.ground.push({ item: drop.item, rarity: drop.rarity, x: gx, y: gy, bornAt: this.time.now, objs });
+    });
+    for (const victim of groundOverflow(this.ground, GROUND_CAP)) {
+      victim.objs.forEach(o => o.destroy());
+      const i = this.ground.indexOf(victim);
+      if (i >= 0) this.ground.splice(i, 1);
+    }
+  }
+
+  /** Otomatik toplama: üstüne yürü. Çanta doluysa eşya YERDE KALIR + kırmızı ipucu. */
+  private scanGroundPickup(): void {
+    if (!this.ground.length) return;
+    const g = nearestGround(this.ground, this.heroPos.x, this.heroPos.y, PICKUP_RADIUS);
+    if (!g) return;
+    const ps = PlayerState.get();
+    if (!takeGround(ps, g, this.ground)) {
+      if (this.time.now > this.bagHintUntil) {
+        this.bagHintUntil = this.time.now + BAG_HINT_COOLDOWN_MS;
+        this.hintText.setText(BAG_FULL_HINT).setVisible(true);
+        this.hintLockUntil = this.time.now + 1200; // kazı/savaş istemi hemen ezmesin
+      }
+      return; // eşya yerde kalır
+    }
+    g.objs.forEach(o => o.destroy());
+    this.veinFloat(g.x, g.y + 4, pickupLabel(g.item), rarityHex(g.rarity));
+    if ((this.registry.get('tdMode') as string) === 'live') ps.save();
   }
 
   private updateMobHpBar(m: DMonRef): void {
@@ -531,6 +629,9 @@ export class TdDungeonScene extends Phaser.Scene {
       }
     }
 
+    // Faz 9A.1: yerdeki loot otomatik toplama (üstüne yürü; SPACE zinciri değişmedi)
+    if (!this.battleActive && !this.leaving) this.scanGroundPickup();
+
     // Faz 5.6/5.7: istem — önce savaş (menzilde trash), sonra kazı (kilitli mesajı ezme)
     if (!this.battleActive && t > this.hintLockUntil) {
       let nearMob = false;
@@ -543,7 +644,10 @@ export class TdDungeonScene extends Phaser.Scene {
       }
       if (nearMob) this.hintText.setText('[SPACE] attack ⚔️').setVisible(true);
       else if (nearVein) this.hintText.setText('[SPACE] mine ⛏️').setVisible(true);
-      else if (this.hintText.text === '[SPACE] mine ⛏️' || this.hintText.text === '[SPACE] attack ⚔️') this.hintText.setVisible(false);
+      // Faz 9A.1: 'bag is full' uyarısı da bu blokta temizlenir — yoksa kilidi dolunca
+      // ekranda kalıcı olarak asılı kalırdı (istem yalnız kendi metinlerini gizliyordu).
+      else if (this.hintText.text === '[SPACE] mine ⛏️' || this.hintText.text === '[SPACE] attack ⚔️'
+        || this.hintText.text === BAG_FULL_HINT) this.hintText.setVisible(false);
     }
 
     // atmosfer lerp

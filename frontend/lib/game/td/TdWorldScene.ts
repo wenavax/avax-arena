@@ -14,6 +14,14 @@ import {
 } from './quests';
 import { mkTree, mkRock, mkBush, mkFireFrames, mkBuilding, mkDungeonDoor, mkStump, mkFarmPlot, mkPortal, mkSignpost } from './sprites/props';
 import { mkDeco } from './sprites/decoProps';
+import { mkGroundItem } from './sprites/groundItems';
+import {
+  rollGroundLoot, groundSpriteKind, nearestGround, takeGround, groundOverflow, dropOffset,
+  rarityHex, pickupLabel, RARITY_FX, GROUND_SPRITE_KINDS, GROUND_CAP, PICKUP_RADIUS,
+  BAG_HINT_COOLDOWN_MS,
+} from './groundLoot';
+import type { InventoryItem } from '../PlayerState';
+import { RARITY_COLORS, type LootResult, type Rarity } from '../lootTables';
 import { atmoForRegion } from './atmosphere';
 import { REGION_MONSTERS, type MonsterEntry } from './monsterData';
 import { mkMonsterChibi } from './sprites/monsterChibi';
@@ -55,6 +63,18 @@ interface Gatherable {
   respawnAt: number;            // this.time.now bazlı; alive=false iken geçerli
   origTexKey: string;           // respawn'da geri dönülecek texture
   bushVariant?: number;         // bush ise orijinal v (0/1)
+}
+
+/**
+ * Faz 9A.1: yerde duran loot. Kaynak node'ları gibi TAMAMEN RAM'de (chunk-yerel) —
+ * save şeması DEĞİŞMEZ (`frostbite_save` v1 kalır). Chunk cull'ında temizlenir.
+ */
+interface GroundItem {
+  item: InventoryItem;
+  rarity: Rarity;
+  x: number; y: number;
+  bornAt: number;                                   // this.time.now — kapasite aşımında en eski gider
+  objs: Phaser.GameObjects.GameObject[];            // sprite + ışıma + huzme + kıvılcımlar
 }
 
 /** MP presence (Faz 5 Task 2): iso'daki RemotePlayer'ın TD-sadeleştirilmiş karşılığı —
@@ -151,6 +171,9 @@ export class TdWorldScene extends Phaser.Scene {
   uiZoom = 3; // MP remote label / prop label setResolution'ı da okur
   // ── Faz 3: overworld canavarları ──
   private chunkMonsters = new Map<string, MonRef[]>();
+  // ── Faz 9A.1: yerdeki loot (chunk-yerel RAM; evictChunk temizler) ──
+  private chunkGround = new Map<string, GroundItem[]>();
+  private bagHintUntil = 0; // dolu çantayla eşyanın üstünde beklemek ipucu spam etmesin
   private battleActive = false;
   // Faz 5.7: gerçek-zamanlı savaş durumu
   private atkCdUntil = 0;
@@ -274,6 +297,9 @@ export class TdWorldScene extends Phaser.Scene {
     // alt-tip data.deco'da; texture anahtarı `td-deco-<tip>`. Toplanabilir DEĞİL
     // (gatherable kaydı yalnız tree/rock/bush'a bakar) → enerji/kaynak dengesi değişmez.
     for (const k of DECO_KINDS) { const m = mkDeco(k); reg(`td-deco-${k}`, m); this.propMeta.set(`deco-${k}`, { ox: m.ox, oy: m.oy }); }
+    // Faz 9A.1: yerdeki loot sprite'ları — 6 texture (rarity ışıması sahnede basılır,
+    // sprite başına varyant YOK). Zindan sahnesi de aynı anahtarları kullanır.
+    for (const k of GROUND_SPRITE_KINDS) reg(`td-item-${k}`, mkGroundItem(k));
 
     // etkileşim ipucu (alt-orta, HUD) — konumlar layoutHud()'da (adaptif çözünürlük)
     this.hintText = this.add.text(0, 0, '', {
@@ -1004,6 +1030,13 @@ export class TdWorldScene extends Phaser.Scene {
       mons.forEach(m => m.img.destroy());
       this.chunkMonsters.delete(key);
     }
+    // Faz 9A.1: yerdeki loot da chunk-yerel — cull'da görselleri yok et (sızıntı önleyici).
+    // Kaynak node'larıyla aynı sözleşme: kalıcı değil, save şemasına girmez.
+    const ground = this.chunkGround.get(key);
+    if (ground) {
+      ground.forEach(g => g.objs.forEach(o => o.destroy()));
+      this.chunkGround.delete(key);
+    }
   }
 
   /** refreshWater: true → görünür SU chunk'larını aktif frame ile yeniden bas. */
@@ -1298,6 +1331,9 @@ export class TdWorldScene extends Phaser.Scene {
         if (hd < CONTACT_RANGE && t > this.heroInvulnUntil) this.mobHitsHero(m);
       }
     }
+    // Faz 9A.1: yerdeki loot otomatik toplama (üstüne yürü) — tarama hero chunk'ı ±1 ile
+    // sınırlı; SPACE zincirine dokunulmaz (savaş>toplama önceliği aynı kaldı).
+    this.scanGroundPickup();
     // etkileşim: en yakın interaktif ≤ 28px
     let near: TdProp | null = null; let nd = 28;
     for (const cp of this.chunkProps.values()) for (const p of cp.interactives) {
@@ -1581,13 +1617,16 @@ export class TdWorldScene extends Phaser.Scene {
     if (m.hp <= 0) this.killMob(m);
   }
 
-  /** Ölüm: ödül (TdBattle formül paritesi) + poof; live modda PlayerState kaydedilir. */
+  /** Ölüm: ödül (TdBattle formül paritesi) + loot + poof; live modda PlayerState kaydedilir. */
   private killMob(m: MonRef): void {
     const ps = PlayerState.get();
     const { xp, gold } = killRewards(m.entry.level ?? 1, m.isElite);
     ps.addXp(xp); ps.gold += gold;
     // Faz 7: elit'ler `elite_<tip>` anahtarıyla gider — matchEvent taban tipi de ilerletir
     this.questEvent(objectiveKey('kill', m.isElite ? `elite_${m.entry.type}` : m.entry.type));
+    // Faz 9A.1: DÜNYA loot boğazı — bu sahnedeki TEK rollGroundLoot çağrısı burada.
+    // (despawnMonster'a KOYMA: orası ölüm dışı yollarla da çağrılabilecek ortak temizlik.)
+    this.dropGroundLoot(m.x, m.y, rollGroundLoot(m.entry.type, m.isElite));
     if (this.tdMode === 'live') ps.save();
     this.floatText(m.x, m.y - 24, `+${xp} XP`, '#7f7fff');
     this.floatText(m.x, m.y - 12, `+${gold}g 💰`, '#ffd23f');
@@ -1597,6 +1636,97 @@ export class TdWorldScene extends Phaser.Scene {
       .setFlipX(m.img.flipX).setScale(m.img.scaleX).setDepth(depth(m.x, m.y));
     this.tweens.add({ targets: ghost, alpha: 0, scale: m.img.scaleX * 1.5, duration: 200, onComplete: () => ghost.destroy() });
     this.despawnMonster(m);
+  }
+
+  // -----------------------------------------------------------------------
+  // Faz 9A.1: yerdeki loot — düşür / çiz / otomatik topla
+  // -----------------------------------------------------------------------
+  /**
+   * Ölüm noktasına loot serper. Görseller RAM'de + chunk-yerel (save şeması değişmez).
+   * Kapasite aşımında EN ESKİ eşyalar silinir (groundOverflow) — yeni düşen asla kurban
+   * değil. Sprite `item.sprite`'a göre seçilir (Record çapası: sprites/groundItems.ts).
+   */
+  private dropGroundLoot(x: number, y: number, drops: LootResult[]): void {
+    if (!drops.length) return;
+    drops.forEach((drop, i) => {
+      const { dx, dy } = dropOffset(i);
+      const gx = x + dx, gy = y + dy;
+      const fx = RARITY_FX[drop.rarity];
+      const color = RARITY_COLORS[drop.rarity];
+      const d = depth(gx, gy);
+      const objs: Phaser.GameObjects.GameObject[] = [];
+      // ışıma: rarity renginde yumuşak halka (zeminde, sprite'ın ALTINDA)
+      const glow = this.add.ellipse(gx, gy - 1, fx.glowR * 2.4, fx.glowR * 1.4, color, fx.glowAlpha).setDepth(d - 1);
+      this.tweens.add({ targets: glow, alpha: fx.glowAlpha * 0.45, scale: 1.18, duration: fx.bobMs, yoyo: true, repeat: -1 });
+      objs.push(glow);
+      // legendary: dikey ışık huzmesi — uzaktan "efsane var" sinyali
+      if (fx.beam) {
+        const beam = this.add.rectangle(gx, gy - 1, 3, 26, color, 0.32).setOrigin(0.5, 1).setDepth(d - 1);
+        this.tweens.add({ targets: beam, alpha: 0.12, scaleX: 1.8, duration: 620, yoyo: true, repeat: -1 });
+        objs.push(beam);
+      }
+      const img = this.add.image(gx, gy, `td-item-${groundSpriteKind(drop.item.sprite)}`)
+        .setOrigin(0.5, 1).setDepth(d);
+      this.tweens.add({ targets: img, y: gy - 2, duration: fx.bobMs, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      objs.push(img);
+      for (let s = 0; s < fx.sparkles; s++) {
+        const sp = this.add.rectangle(gx, gy - 6, 1, 1, 0xffffff, 0.9).setDepth(d + 1);
+        this.tweens.add({
+          targets: sp, x: gx + (s % 2 ? 5 : -5), y: gy - 12, alpha: 0,
+          duration: 700 + s * 160, repeat: -1, delay: s * 220,
+        });
+        objs.push(sp);
+      }
+      // düşüş juice'ı: kısa yükselen isim (rarity renginde)
+      this.floatText(gx, gy - 14, drop.item.name, rarityHex(drop.rarity));
+      const key = `${Math.floor(gx / (CHUNK * TILE))},${Math.floor(gy / (CHUNK * TILE))}`;
+      const list = this.chunkGround.get(key) ?? [];
+      list.push({ item: drop.item, rarity: drop.rarity, x: gx, y: gy, bornAt: this.time.now, objs });
+      this.chunkGround.set(key, list);
+    });
+    this.trimGround();
+  }
+
+  /** Kapasite bekçisi: GROUND_CAP üstündeki EN ESKİ eşyaları sahneden düşür. */
+  private trimGround(): void {
+    let total = 0;
+    for (const list of this.chunkGround.values()) total += list.length;
+    if (total <= GROUND_CAP) return;
+    const all: GroundItem[] = [];
+    for (const list of this.chunkGround.values()) all.push(...list);
+    for (const victim of groundOverflow(all, GROUND_CAP)) {
+      victim.objs.forEach(o => o.destroy());
+      for (const list of this.chunkGround.values()) {
+        const i = list.indexOf(victim);
+        if (i >= 0) { list.splice(i, 1); break; }
+      }
+    }
+  }
+
+  /**
+   * Otomatik toplama: üstüne yürü. SPACE'e DAL EKLENMEZ (savaş>toplama zinciri bozulmasın).
+   * Çanta doluysa eşya YERDE KALIR — kırmızı ipucu, sessiz yok etme yok (takeGround çapası).
+   */
+  private scanGroundPickup(): void {
+    const hcx = Math.floor(this.heroPos.x / (CHUNK * TILE)), hcy = Math.floor(this.heroPos.y / (CHUNK * TILE));
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const list = this.chunkGround.get(`${hcx + dx},${hcy + dy}`);
+      if (!list || !list.length) continue;
+      const g = nearestGround(list, this.heroPos.x, this.heroPos.y, PICKUP_RADIUS);
+      if (!g) continue;
+      const ps = PlayerState.get();
+      if (!takeGround(ps, g, list)) {
+        if (this.time.now > this.bagHintUntil) {
+          this.bagHintUntil = this.time.now + BAG_HINT_COOLDOWN_MS;
+          this.showRedHint('bag is full — make room 🎒');
+        }
+        return; // eşya yerde kalır; oyuncu yer açıp geri gelir
+      }
+      g.objs.forEach(o => o.destroy());
+      this.floatText(g.x, g.y - 10, pickupLabel(g.item), rarityHex(g.rarity));
+      if (this.tdMode === 'live') ps.save();
+      return; // kare başına bir toplama — juice okunabilir kalsın
+    }
   }
 
   /** Canavarın temas vuruşu: kahraman hasarı + i-frame + geri tepme + kırmızı flaş. */
