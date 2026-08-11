@@ -1050,14 +1050,26 @@ export class TdWorldScene extends Phaser.Scene {
       if (!best || rank[st] < rank[bestState]) { best = q; bestState = st; }
     }
 
-    const W = 236, H = 150;
+    // ── Faz 9B.3 (10 Ağu revizyonu) ──────────────────────────────────────────
+    // İlk hâlinde gece repliği YALNIZ boş-sohbet dalında çiziliyordu. Ölçtük: taze
+    // kayıtta 8 NPC'nin 8'i de görev sunuyor (selam dalı ancak bir vericinin TÜM
+    // görevleri done/locked olunca açılıyor) → 8 gece repliğinin hiçbiri erken
+    // oyunda GÖRÜNMÜYORDU. Artık görev dalında da, görevin ÜSTÜNE değil ALTINA,
+    // soluk bir yan-satır olarak çıkıyor: görev metni/butonları birebir korunuyor.
+    const night = isNight(this.tdState.dayTime);
+    const chatBranch = !best || bestState === 'done' || bestState === 'locked';
+    const nightAside = night && !chatBranch;
+    // Panel gece 26px uzar: üst satırlar -H/2'den, alt satırlar +H/2'den
+    // konumlandığı için açılan boşluk tam ORTAYA (açıklama ↔ ödül arasına) düşer;
+    // mevcut hiçbir satırın ofseti değişmez.
+    const W = 236, H = 150 + (nightAside ? 26 : 0);
     const { items, T } = this.buildPanel(W, H, npc.name);
     const x0 = -W / 2 + 12, wrapW = W - 24;
 
-    if (!best || bestState === 'done' || bestState === 'locked') {
-      // Faz 9B.3: yalnız BOŞ SOHBET dalı gece metnine döner. Görev kabul/teslim dalları
-      // (aşağıdaki else) gece de birebir aynı — teslim asla kilitlenmez.
-      items.push(T(x0, -H / 2 + 26, greetingFor(npc, isNight(this.tdState.dayTime)), '#cfe3f2', 8)
+    // `|| !best` semantik olarak fazlalık (chatBranch onu zaten içeriyor) ama TS'in
+    // else dalında `best`'i non-null daraltması için ŞART — yoksa 10 yerde `best!` gerekirdi.
+    if (chatBranch || !best) {
+      items.push(T(x0, -H / 2 + 26, greetingFor(npc, night), '#cfe3f2', 8)
         .setWordWrapWidth(wrapW));
       const pre = best?.requires ? QUEST_BY_ID[best.requires] : undefined;
       items.push(T(x0, H / 2 - 38, pre
@@ -1071,6 +1083,11 @@ export class TdWorldScene extends Phaser.Scene {
         T(x0, -H / 2 + 40, best.description, '#cfe3f2', 8).setWordWrapWidth(wrapW),
         T(x0, H / 2 - 52, `Reward: ${this.rewardLabel(best)}${best.repeatable === 'daily' ? '   ⟳ daily' : ''}`, '#9fe8ff', 8),
       );
+      // Gece yan-satırı: ödülün 22px üstünde, soluk ve küçük — görev bilgisiyle
+      // yarışmasın diye. `greetingFor` TEK erişimci olarak korunuyor (npcs.ts saf).
+      if (nightAside) {
+        items.push(T(x0, H / 2 - 74, greetingFor(npc, true), '#7f93a8', 7).setWordWrapWidth(wrapW));
+      }
       if (bestState === 'available') {
         items.push(
           T(x0, H / 2 - 38, `Objective: ${best.count}× ${best.target === 'any' ? best.kind : best.target}`, '#8fa6bd', 7),

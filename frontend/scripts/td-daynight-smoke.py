@@ -51,22 +51,28 @@ with sync_playwright() as p:
           str(nt['npcA'][:3]))
     check('gece: perde gündüzden KOYU', nt['alpha'] > day['alpha'] + 0.25)
 
-    # ── 3. Gece diyaloğu: 9B.3'ün SÖZLEŞMESİ görev akışının değişmemesi ──────
-    # ⚠️ Gece SELAMI burada doğrulanamaz: selam dalı yalnız NPC'nin görevi
-    # done/locked iken çizilir, önizleme modunda (`/tddev`) `frostbite_save` HİÇ
-    # yazılmaz → taze durumda 8 NPC'nin 8'i de görev sunar. `greetingFor` saf
-    # fonksiyonu birim testlerde kapsanıyor; buradaki çapa asıl riski kovalıyor:
-    # gece metninin görev dalına SIZMAMASI (teslim kilitlenirse oyuncu mahsur kalır).
-    PANEL = "s.questPanel.list.filter(o=>o.text!==undefined).map(o=>o.text).join(' | ')"
+    # ── 3. Gece diyaloğu: replik GÖRÜNÜR + görev akışı BOZULMAZ ─────────────
+    # 9B.3'ün ilk hâlinde gece repliği yalnız boş-sohbet dalında çiziliyordu; taze
+    # kayıtta 8 NPC'nin 8'i de görev sunduğu için replikler erken oyunda GÖRÜNMÜYORDU.
+    # Revizyondan sonra görev dalında da soluk bir yan-satır olarak çıkıyor. Çapa iki
+    # yönlü: (1) replik gerçekten ekranda, (2) görev satırlarının HİÇBİRİ kaybolmuyor
+    # (teslim kilitlenirse oyuncu görevde mahsur kalır).
+    LST = "s.questPanel.list.filter(o=>o.text!==undefined).map(o=>o.text)"
     setday(504)
     pg.evaluate(S % "(s.openDialog('elder'), 0)"); time.sleep(0.6)
-    q_night = ev(PANEL)
-    check('gece: görev dalı açık (ACCEPT var)', 'ACCEPT' in q_night, q_night[:80])
-    check('gece: selam metni görev dalına sızmıyor', 'cold nights' not in q_night)
+    q_night = ev(LST)
     setday(158)
     pg.evaluate(S % "(s.openDialog('elder'), 0)"); time.sleep(0.6)
-    q_day = ev(PANEL)
-    check('görev dalı gece/gündüz BİREBİR aynı', q_day == q_night, 'metin eşit')
+    q_day = ev(LST)
+    check('gece: görev dalı hâlâ açık (ACCEPT var)', any('ACCEPT' in t for t in q_night))
+    check('gece: replik GÖRÜNÜYOR (görev sunan NPC'"'"'de bile)',
+          any('cold nights' in t for t in q_night),
+          next((t[:60] for t in q_night if 'cold nights' in t), 'YOK'))
+    check('gündüz: gece repliği YOK', not any('cold nights' in t for t in q_day))
+    missing = [t for t in q_day if t not in q_night]
+    check('gece: gündüzdeki görev satırlarının hepsi duruyor', not missing, str(missing))
+    check('gece: tam olarak BİR satır eklendi', len(q_night) == len(q_day) + 1,
+          f"gece={len(q_night)} gündüz={len(q_day)}")
     pg.evaluate(S % "(s.closeQuestPanel(), 0)"); time.sleep(0.3)
 
     # ── 4. Hava parçacıkları (kasaba = snow) ─────────────────────────────────
