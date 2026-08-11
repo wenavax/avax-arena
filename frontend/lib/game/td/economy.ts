@@ -40,6 +40,11 @@ export const UPGRADE_SELL_BONUS = 0.4;
 
 /** Kuşanılabilir (dolayısıyla yükseltilebilir) tipler. */
 const EQUIP_TYPES = new Set<InventoryItem['type']>(['weapon', 'armor', 'accessory', 'ring']);
+
+/** Çanta UI'ı "wear" butonunu buna göre çizer — slot listesi TEK yerde kalsın. */
+export function isEquippable(item: { type: InventoryItem['type'] }): boolean {
+  return EQUIP_TYPES.has(item.type);
+}
 /** recalcStats() yalnız bunları sayar — hp/mp bonusları fiilen ölü (PlayerState.ts). */
 const COMBAT_STATS = ['atk', 'def', 'spd'] as const;
 

@@ -14,6 +14,7 @@ import {
 import {
   SHOP_STOCK, itemTemplate, buyPrice, isSellable, unitSellValue, displayName,
   canUpgrade, upgradeCost, upgradedStat, applyUpgrade, statLabel, upLevel,
+  isEquippable, FIELD_SELL_MULT,
 } from './economy';
 import {
   QUEST_BY_ID, questsForGiver, offerState, makeRow, grantReward, rolloverRepeatables,
@@ -242,6 +243,9 @@ export class TdWorldScene extends Phaser.Scene {
   private hpIcon!: Phaser.GameObjects.Text;
   private hpText!: Phaser.GameObjects.Text;
   private bagPanel!: Phaser.GameObjects.Container;
+  // Faz 10 Adım 5: çanta sekmesi — 'summary' eski ızgara, 'items' kuşan/sat listesi.
+  private bagTab: 'summary' | 'items' = 'summary';
+  private bagPage = 0;
   // Faz 7: NPC diyaloğu + görev günlüğü. İkisi de bagPanel emsali (removeAll(true) ile
   // her açılışta taze kurulur — panel içi state tutulmaz, tek doğruluk kaynağı ps.quests).
   private questPanel!: Phaser.GameObjects.Container;
@@ -874,6 +878,12 @@ export class TdWorldScene extends Phaser.Scene {
    */
   private toggleBag(): void {
     if (this.bagPanel.visible) { this.bagPanel.setVisible(false); return; }
+    this.renderBag();
+  }
+
+  /** Faz 10 Adım 5: çanta iki sekmeli — özet ızgarası (eski hâl) + eşya listesi. */
+  private renderBag(): void {
+    if (this.bagTab === 'items') { this.renderBagItems(); return; }
     const k = this.uiZoom;
     const ps = PlayerState.get();
     const res = this.tdState.resources;
@@ -899,6 +909,8 @@ export class TdWorldScene extends Phaser.Scene {
         .setOrigin(originX, originY).setResolution(k).setScrollFactor(0);
     const items: Phaser.GameObjects.GameObject[] = [g,
       T(0, -H2 / 2 + 7, 'BAG', '#9fe8ff', 11, 0.5),
+      this.panelBtn(T(-W2 / 2 + 10, -H2 / 2 + 8, '[ ITEMS ]', '#8fa6bd', 8),
+        () => { this.bagTab = 'items'; this.renderBag(); }),
       T(W2 / 2 - 14, -H2 / 2 + 6, '✕', '#8fa6bd', 11)
         .setInteractive({ useHandCursor: true }).on('pointerdown', () => this.toggleBag()),
     ];
@@ -945,6 +957,112 @@ export class TdWorldScene extends Phaser.Scene {
     }
     this.bagPanel.add(items);
     this.bagPanel.setVisible(true);
+  }
+
+  /**
+   * Faz 10 Adım 5: eşya listesi — kuşan/çıkar + tarla satışı.
+   *
+   * Bugüne dek çantada TEK TEK eşya hiç görünmüyordu: özet ızgarası yalnız "silah
+   * var/yok" diyordu, dolayısıyla düşen loot'u kuşanmanın oyun içi yolu yoktu
+   * (yalnız nft/onchain.ts programatik olarak equip çağırıyordu). Adım 2'de
+   * düzeltilen equip duplikasyon bug'ı asıl burada tetiklenecekti.
+   *
+   * Tarla satışı tam değerin %60'ı (economy.FIELD_SELL_MULT) — Vess'e yürümek
+   * ödüllü kalsın diye. Yine de `sell:gold` görevini besler: satış satıştır.
+   */
+  private renderBagItems(): void {
+    const k = this.uiZoom;
+    const ps = PlayerState.get();
+    const SLOTS = ['weapon', 'armor', 'accessory', 'ring'] as const;
+    // Kuşanılmışlar üstte ve slot ikonuyla: "neyi çıkarırsam ne olur" tek bakışta.
+    type Row = { it: InventoryItem; slot: typeof SLOTS[number] | null };
+    const rowsAll: Row[] = [
+      ...SLOTS.filter(s => ps.equipped[s]).map(s => ({ it: ps.equipped[s]!, slot: s })),
+      ...ps.inventory.map(it => ({ it, slot: null })),
+    ];
+    const cap = this.serviceRowCap();
+    const pages = Math.max(1, Math.ceil(rowsAll.length / cap));
+    this.bagPage = Phaser.Math.Clamp(this.bagPage, 0, pages - 1);
+    const from = this.bagPage * cap;
+    const n = Math.max(1, Math.min(cap, rowsAll.length - from));
+
+    const W = 214, x0 = -W / 2 + 10, xR = W / 2 - 10;
+    const H = 40 + n * SERVICE_ROW_H + 20;
+    this.bagPanel.removeAll(true);
+    const g = this.add.graphics();
+    g.fillStyle(0x000000, 0.3); g.fillRoundedRect(-W / 2 + 1, -H / 2 + 2, W, H, 8);
+    g.fillStyle(0x121a23, 0.97); g.fillRoundedRect(-W / 2, -H / 2, W, H, 8);
+    g.lineStyle(1, 0x3a4e63, 1); g.strokeRoundedRect(-W / 2, -H / 2, W, H, 8);
+    g.fillStyle(0xffffff, 0.05); g.fillRect(-W / 2 + 3, -H / 2 + 1, W - 6, 1);
+    const T = (x: number, y: number, msg: string, color: string, size = 8, ox = 0, oy = 0) =>
+      this.add.text(x, y, msg, { fontSize: `${size}px`, fontFamily: TD_FONT, color })
+        .setOrigin(ox, oy).setResolution(k).setScrollFactor(0);
+    const items: Phaser.GameObjects.GameObject[] = [g,
+      T(0, -H / 2 + 7, 'ITEMS', '#9fe8ff', 11, 0.5),
+      this.panelBtn(T(x0, -H / 2 + 8, '[ BAG ]', '#8fa6bd', 8),
+        () => { this.bagTab = 'summary'; this.renderBag(); }),
+      T(W / 2 - 14, -H / 2 + 6, '✕', '#8fa6bd', 11)
+        .setInteractive({ useHandCursor: true }).on('pointerdown', () => this.toggleBag()),
+    ];
+
+    if (!rowsAll.length) {
+      items.push(T(x0, -H / 2 + 30, 'Bag is empty. Monsters drop what they carry.', '#8fa6bd', 8)
+        .setWordWrapWidth(W - 20));
+    }
+    for (let i = 0; i < Math.min(n, rowsAll.length); i++) {
+      const { it, slot } = rowsAll[from + i], y = -H / 2 + 30 + i * SERVICE_ROW_H;
+      const icon = slot === 'weapon' ? '⚔' : slot === 'armor' ? '🛡' : slot === 'accessory' ? '◆' : slot === 'ring' ? '○' : ' ';
+      const cnt = it.count > 1 ? ` x${it.count}` : '';
+      items.push(T(x0, y, `${icon} ${displayName(it)}${cnt}`, slot ? '#9fe8ff' : '#e8eef4', 8));
+      if (slot) {
+        items.push(this.panelBtn(T(xR, y, '[ take off ]', '#8fa6bd', 8, 1, 0), () => {
+          if (!ps.unequip(slot)) { this.showRedHint(BAG_FULL_HINT); return; }
+          ps.recalcStats();
+          if (this.tdMode === 'live') ps.save();
+          this.renderBag();
+        }));
+      } else {
+        // Satış butonu SAĞDA sabit, kuşan butonu solunda: satır uzunluğu değişse de
+        // "sat" hep aynı yerde — yanlış tıkla eşya satmak istemiyoruz.
+        if (isSellable(it)) {
+          items.push(this.panelBtn(T(xR, y, `[ +${unitSellValue(it, FIELD_SELL_MULT)}g ]`, '#ffd23f', 8, 1, 0),
+            () => this.fieldSell(it)));
+        }
+        if (isEquippable(it)) {
+          items.push(this.panelBtn(T(xR - 46, y, '[ wear ]', '#6ee87a', 8, 1, 0), () => {
+            if (!ps.equip(it)) { this.showRedHint('cannot equip'); return; }
+            ps.recalcStats();
+            if (this.tdMode === 'live') ps.save();
+            this.renderBag();
+          }));
+        }
+      }
+    }
+
+    if (pages > 1) {
+      items.push(
+        this.panelBtn(T(x0, H / 2 - 12, '[ < ]', '#9fe8ff', 8), () => { this.bagPage--; this.renderBag(); }),
+        T(0, H / 2 - 12, `${this.bagPage + 1}/${pages}`, '#8fa6bd', 7, 0.5),
+        this.panelBtn(T(xR, H / 2 - 12, '[ > ]', '#9fe8ff', 8, 1, 0), () => { this.bagPage++; this.renderBag(); }),
+      );
+    } else {
+      items.push(T(0, H / 2 - 12, 'Field price is 60%. Trader Vess pays full.', '#8fa6bd', 7, 0.5));
+    }
+    this.bagPanel.add(items);
+    this.bagPanel.setVisible(true);
+  }
+
+  /** Çantadan satış (%60). Vess'teki sellOne'un tarla kardeşi. */
+  private fieldSell(item: InventoryItem): void {
+    const ps = PlayerState.get();
+    if (!isSellable(item)) return;
+    const value = unitSellValue(item, FIELD_SELL_MULT);
+    if (!ps.removeItemRef(item)) return;
+    ps.gold += value;
+    this.questEvent(objectiveKey('sell', 'gold'), value);
+    if (this.tdMode === 'live') ps.save();
+    this.floatText(this.heroPos.x, this.heroPos.y - 16, `+${value}g 💰`, '#ffd23f');
+    this.renderBag();
   }
 
   // ───────────────────────────────────────────────────────────────────────
