@@ -96,6 +96,34 @@ export function greetingFor(npc: NpcDef, night: boolean): string {
   return night ? npc.nightGreeting : npc.greeting;
 }
 
+// ─── Faz 10: hizmet veren NPC'ler ────────────────────────────────────────────
+// Hizmet GÖREV AKIŞINDAN BAĞIMSIZ: 9B.3'ün dersi gereği kabul/teslim gece de açık
+// kalır, kapanan yalnız tezgâh/ocak. Böylece oyuncu gece bir görevde mahsur kalmaz,
+// ama gündüz/gece döngüsü ilk kez kozmetik olmaktan çıkıp bir sonuç doğurur.
+
+export type NpcService = 'shop' | 'forge';
+
+/**
+ * npcId → hizmet. Panelde hizmet çipi YALNIZ buradaki NPC'lerde çıkar.
+ * `blacksmith: 'forge'` Adım 4'te eklenecek — sahne henüz ocağı çizmiyor, şimdi
+ * kaydetmek ölü bir butona yol açardı.
+ */
+export const NPC_SERVICE: Record<string, NpcService> = {
+  merchant: 'shop',
+};
+
+export const SERVICE_LABEL: Record<NpcService, string> = { shop: 'SHOP', forge: 'FORGE' };
+
+/**
+ * Gece kapalı repliği. `nightGreeting`'ten AYRI yazıldı: selam "gece neden buradayım"ı,
+ * bu satır "hizmet neden şimdi olmaz"ı anlatır — ikisi arka arkaya okununca (selam
+ * panelde, bu satır çipe basınca) tekrar etmesinler diye.
+ */
+export const SERVICE_NIGHT_LINE: Record<NpcService, string> = {
+  shop: 'Ledger is shut and the crates are roped down for the night. Bring your coin back at first light.',
+  forge: 'Coals are banked. Steel worked by lantern light comes out brittle, and I do not sell brittle. Dawn, then.',
+};
+
 /** Gece NPC opaklığı — kaybolmazlar (görev teslimi için hâlâ tıklanabilir), soluklaşırlar. */
 export const NIGHT_NPC_ALPHA = 0.42;
 

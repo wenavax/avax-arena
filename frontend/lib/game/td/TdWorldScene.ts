@@ -7,7 +7,13 @@ import { getTile, regionAt, TOWN_SPAWN } from './worldMap';
 import { renderChunk, chunkHasWater, biomeTopColor } from './tiles';
 import { chibiHumanoid, CHIBI_H, paletteForId, hashId } from './sprites/chibi';
 import { propsForChunk, dungeonDoors, townPortals, TOWN_ORIGIN, DECO_KINDS, type TdProp } from './worldProps';
-import { NPCS, NPC_BY_ID, greetingFor, NIGHT_NPC_ALPHA } from './npcs';
+import {
+  NPCS, NPC_BY_ID, greetingFor, NIGHT_NPC_ALPHA,
+  NPC_SERVICE, SERVICE_LABEL, SERVICE_NIGHT_LINE, type NpcService,
+} from './npcs';
+import {
+  SHOP_STOCK, itemTemplate, buyPrice, isSellable, unitSellValue, displayName,
+} from './economy';
 import {
   QUEST_BY_ID, questsForGiver, offerState, makeRow, grantReward, rolloverRepeatables,
   pushQuestEvent, objectiveKey, REWARD_ITEMS, DAILY_MS, type QuestDef, type OfferState,
@@ -54,6 +60,9 @@ import type { Element } from '../elements';
 interface TdTouchInput { dx: number; dy: number; e: boolean; space: boolean }
 
 const WALK_FRAMES = [0, 1, 0, 2] as const; // faz dizisi (spec §4)
+
+/** Faz 10: hizmet panellerinde (dükkân/demirhane) satır yüksekliği — sayfalama bundan türer. */
+const SERVICE_ROW_H = 15;
 
 /** Dünyada gezinen tek bir canavar referansı (chunk başına Map'te tutulur). */
 interface MonRef {
@@ -236,6 +245,12 @@ export class TdWorldScene extends Phaser.Scene {
   // her açılışta taze kurulur — panel içi state tutulmaz, tek doğruluk kaynağı ps.quests).
   private questPanel!: Phaser.GameObjects.Container;
   private dialogNpc: string | null = null;
+  // Faz 10: hizmet paneli (dükkân/demirhane) questPanel'i PAYLAŞIR — diyalog/günlükle
+  // aynı kap, aynı ESC/E kapanışı, aynı "her aksiyondan sonra yeniden çiz" kuralı.
+  // Açıkken dialogNpc null'dır; hangi ekranın çizili olduğunu bu üçlü belirler.
+  private shopNpc: string | null = null;
+  private shopTab: 'buy' | 'sell' = 'buy';
+  private shopPage = 0;
   private npcMarkers = new Map<string, Phaser.GameObjects.Text>(); // npcId → baş üstü ! / ? / …
   private markersDirty = true;                                     // true → update() işaretçi metinlerini tazeler
   private keysHint!: Phaser.GameObjects.Text;
@@ -999,6 +1014,7 @@ export class TdWorldScene extends Phaser.Scene {
     this.questPanel.removeAll(true);
     this.questPanel.setVisible(false);
     this.dialogNpc = null;
+    this.shopNpc = null;
   }
 
   /**
@@ -1059,6 +1075,7 @@ export class TdWorldScene extends Phaser.Scene {
     this.bagPanel.setVisible(false);
     this.questPanel.removeAll(true);
     this.dialogNpc = npcId;
+    this.shopNpc = null;
     const rows = PlayerState.get().quests;
     const rank: Record<OfferState, number> = { ready: 0, available: 1, active: 2, locked: 3, done: 4 };
     let best: QuestDef | null = null, bestState: OfferState = 'done';
@@ -1093,6 +1110,19 @@ export class TdWorldScene extends Phaser.Scene {
     // Alt sınır: tek satırlık gövdede panel gülünç derecede basıklaşmasın.
     const H = Math.max(104, bodyTop + this.textH(bodyMsg, 8, wrapW) + 12 + bottom);
     const { items, T } = this.buildPanel(W, H, npc.name);
+
+    // Faz 10: hizmet çipi. Başlık ŞERİDİNE konuldu (gövdeye değil) — çünkü diyalogda
+    // 4 farklı alt-buton düzeni var (OK / ACCEPT+later / TURN IN / OK) ve gövdeye
+    // eklemek dördünü de yeniden hizalamayı gerektirirdi. Başlıkta tek yer, tek
+    // konum, her dalda aynı: keşfedilebilirlik de artıyor. ✕ W/2-14'te; çip origin
+    // (1,0) ile W/2-28'e yaslanıyor, ortalanmış başlıkla çakışmıyor (W=236).
+    const svc = NPC_SERVICE[npcId] as NpcService | undefined;
+    if (svc) {
+      items.push(this.panelBtn(
+        T(W / 2 - 28, -H / 2 + 8, `[ ${SERVICE_LABEL[svc]} ]`, night ? '#7f93a8' : '#ffd23f', 8, 1, 0),
+        () => this.openService(npcId),
+      ));
+    }
 
     // `|| !best` semantik olarak fazlalık (chatBranch onu zaten içeriyor) ama TS'in
     // else dalında `best`'i non-null daraltması için ŞART — yoksa 10 yerde `best!` gerekirdi.
@@ -1164,12 +1194,155 @@ export class TdWorldScene extends Phaser.Scene {
     if (this.dialogNpc) this.openDialog(this.dialogNpc); // sıradaki görev varsa hemen görünsün
   }
 
+  // ───────────────────────────────────────────────────────────────────────
+  // Faz 10 Adım 3: Trader Vess dükkânı
+  //
+  // Marketplace BİNASIYLA iş bölümü (ikisi de kasabada, ikisi de [E]):
+  //   bina → HAM MADDE toptan satışı (odun/taş/cevher/balık/frostberry, cozy/rules)
+  //   Vess → EŞYA alım-satımı (loot + dükkân stoğu, economy.ts)
+  // İkisi de aynı `sell:gold` görev olayını besler, yani q_market_day/q_trade_route
+  // her iki yoldan da ilerler.
+  //
+  // Panel questPanel'i paylaşır ve HİÇ state tutmaz: her aksiyondan sonra
+  // openService() yeniden çizer (openDialog emsali) — tek doğruluk kaynağı
+  // PlayerState.inventory/gold kalır.
+  // ───────────────────────────────────────────────────────────────────────
+
+  /** Bir listenin panele sığan satır sayısı — dar/mobil viewport'ta panel taşmasın. */
+  private serviceRowCap(): number {
+    const availH = this.scale.height / this.uiZoom;      // mantıksal görünür yükseklik
+    return Phaser.Math.Clamp(Math.floor((availH - 16 - 62) / SERVICE_ROW_H), 3, 9);
+  }
+
+  private openService(npcId: string, tab?: 'buy' | 'sell'): void {
+    const npc = NPC_BY_ID[npcId];
+    const svc = NPC_SERVICE[npcId] as NpcService | undefined;
+    if (!npc || !svc) return;
+    this.bagPanel.setVisible(false);
+    this.questPanel.removeAll(true);
+    this.dialogNpc = null;    // hizmet ekranı diyalogun YERİNE geçer (geri dönüş: ✕ sonra tekrar E)
+    this.shopNpc = npcId;
+    if (tab && tab !== this.shopTab) { this.shopTab = tab; this.shopPage = 0; }
+    if (isNight(this.tdState.dayTime)) this.renderServiceClosed(npc.name, svc);
+    else this.renderShop(npc.name);
+    this.questPanel.setVisible(true);
+    this.layoutHud();
+  }
+
+  /** Gece: tezgâh kapalı. Görev kabul/teslim ETKİLENMEZ (bkz. npcs.ts notu). */
+  private renderServiceClosed(title: string, svc: NpcService): void {
+    const line = SERVICE_NIGHT_LINE[svc];
+    const W = 236, wrapW = W - 24;
+    const H = Math.max(104, 26 + this.textH(line, 8, wrapW) + 12 + 38);
+    const { items, T } = this.buildPanel(W, H, title);
+    items.push(
+      T(-W / 2 + 12, -H / 2 + 26, line, '#cfe3f2', 8).setWordWrapWidth(wrapW),
+      T(-W / 2 + 12, H / 2 - 38, 'Opens at dawn.', '#8fa6bd', 7),
+      this.panelBtn(T(0, H / 2 - 16, '[ OK ]', '#9fe8ff', 9, 0.5), () => this.closeQuestPanel()),
+    );
+    this.questPanel.add(items);
+  }
+
+  private renderShop(title: string): void {
+    const ps = PlayerState.get();
+    const buying = this.shopTab === 'buy';
+    // SELL listesi: kuşanılmışlar DIŞARIDA (yanlışlıkla silahını satmayı imkânsız kılar —
+    // önce çantaya al). NFT/anahtar/fiyatsız eşyaları isSellable zaten eliyor.
+    const sellables = ps.inventory.filter(isSellable);
+    const all: string[] = buying ? [...SHOP_STOCK] : sellables.map(i => i.id);
+    const cap = this.serviceRowCap();
+    const pages = Math.max(1, Math.ceil(all.length / cap));
+    // Sayfa sınırlarını her çizimde toparla: son satırı satınca sayfa boşta kalabilir.
+    this.shopPage = Phaser.Math.Clamp(this.shopPage, 0, pages - 1);
+    const from = this.shopPage * cap;
+    const rows = Math.max(1, Math.min(cap, all.length - from));
+
+    const W = 236, x0 = -W / 2 + 12, xR = W / 2 - 12;
+    const H = 42 + rows * SERVICE_ROW_H + 22;
+    const { items, T } = this.buildPanel(W, H, title);
+    const tabBtn = (x: number, label: string, on: boolean, tab: 'buy' | 'sell') =>
+      this.panelBtn(T(x, -H / 2 + 22, on ? `[ ${label} ]` : `  ${label}  `, on ? '#9fe8ff' : '#7f93a8', 8),
+        () => this.openService(this.shopNpc!, tab));
+    items.push(
+      tabBtn(x0, 'BUY', buying, 'buy'),
+      tabBtn(x0 + 52, 'SELL', !buying, 'sell'),
+      T(xR, -H / 2 + 22, `${ps.gold}g`, '#ffd23f', 8, 1, 0),
+    );
+
+    if (!all.length) {
+      items.push(T(x0, -H / 2 + 44, 'Nothing here worth coin. Bring me loot from the wild.', '#8fa6bd', 8)
+        .setWordWrapWidth(W - 24));
+    } else if (buying) {
+      for (let i = 0; i < rows; i++) {
+        const id = all[from + i], y = -H / 2 + 42 + i * SERVICE_ROW_H;
+        const price = buyPrice(id), afford = ps.gold >= price;
+        items.push(
+          T(x0, y, itemTemplate(id)?.name ?? id, afford ? '#e8eef4' : '#7f93a8', 8),
+          this.panelBtn(T(xR, y, `[ ${price}g ]`, afford ? '#6ee87a' : '#8a5a5a', 8, 1, 0),
+            () => this.buyItem(id)),
+        );
+      }
+    } else {
+      for (let i = 0; i < rows; i++) {
+        const it = sellables[from + i], y = -H / 2 + 42 + i * SERVICE_ROW_H;
+        const n = it.count > 1 ? ` x${it.count}` : '';
+        items.push(
+          T(x0, y, `${displayName(it)}${n}`, '#e8eef4', 8),
+          this.panelBtn(T(xR, y, `[ +${unitSellValue(it)}g ]`, '#ffd23f', 8, 1, 0), () => this.sellOne(it)),
+        );
+      }
+    }
+
+    if (pages > 1) {
+      items.push(
+        this.panelBtn(T(x0, H / 2 - 14, '[ < ]', '#9fe8ff', 8), () => { this.shopPage--; this.openService(this.shopNpc!); }),
+        T(0, H / 2 - 14, `${this.shopPage + 1}/${pages}`, '#8fa6bd', 7, 0.5),
+        this.panelBtn(T(xR, H / 2 - 14, '[ > ]', '#9fe8ff', 8, 1, 0), () => { this.shopPage++; this.openService(this.shopNpc!); }),
+      );
+    } else {
+      items.push(T(0, H / 2 - 14, buying ? 'Buy price is triple the trade value.' : 'Full value here; the field fetches less.',
+        '#8fa6bd', 7, 0.5));
+    }
+    this.questPanel.add(items);
+  }
+
+  private buyItem(id: string): void {
+    const ps = PlayerState.get();
+    const tpl = itemTemplate(id), price = buyPrice(id);
+    if (!tpl || price <= 0) return;
+    if (ps.gold < price) { this.showRedHint('not enough gold'); return; }
+    // ŞABLONU ASLA PAYLAŞMA: yükseltme item.stat'ı yerinde yazar (economy.applyUpgrade),
+    // referans paylaşılsa dükkân katalogu de yükselirdi. stat da kopyalanıyor.
+    if (!ps.addItem({ ...tpl, stat: tpl.stat ? { ...tpl.stat } : undefined, count: 1, up: 0 })) {
+      this.showRedHint(BAG_FULL_HINT); return;
+    }
+    ps.gold -= price;
+    if (this.tdMode === 'live') ps.save();
+    this.floatText(this.heroPos.x, this.heroPos.y - 16, `-${price}g`, '#ff9f6e');
+    this.openService(this.shopNpc!);
+  }
+
+  /** Yığından TEK adet satar (yanlış tıkta tüm yığın gitmesin). */
+  private sellOne(item: InventoryItem): void {
+    const ps = PlayerState.get();
+    if (!isSellable(item)) return;
+    const value = unitSellValue(item);
+    if (!ps.removeItemRef(item)) return;   // referansla sil: aynı id'nin +0/+3 kopyaları karışmasın
+    ps.gold += value;
+    this.questEvent(objectiveKey('sell', 'gold'), value);
+    if (this.tdMode === 'live') ps.save();
+    window.dispatchEvent(new CustomEvent('td-sell', { detail: { gold: value, total: value } }));
+    this.floatText(this.heroPos.x, this.heroPos.y - 16, `+${value}g 💰`, '#ffd23f');
+    this.openService(this.shopNpc!);
+  }
+
   /** J: görev günlüğü — kabul edilmiş, teslim edilmemiş satırlar (hazır olanlar üstte). */
   private toggleQuestLog(): void {
-    if (this.questPanel.visible && this.dialogNpc === null) { this.closeQuestPanel(); return; }
+    if (this.questPanel.visible && this.dialogNpc === null && this.shopNpc === null) { this.closeQuestPanel(); return; }
     this.bagPanel.setVisible(false);
     this.questPanel.removeAll(true);
     this.dialogNpc = null;
+    this.shopNpc = null;
     const rows = PlayerState.get().quests
       .filter(r => !r.turnedIn)
       .sort((a, b) => Number(b.completed) - Number(a.completed));
@@ -2143,6 +2316,9 @@ export class TdWorldScene extends Phaser.Scene {
       this.nightCache = night;
       for (const img of this.npcImgs.values()) img.setAlpha(night ? NIGHT_NPC_ALPHA : 1);
       if (this.dialogNpc) this.openDialog(this.dialogNpc); // açık diyalog gece metnine dönsün
+      // Faz 10: tezgâh başındayken gece basarsa panel "kapalı" ekranına döner — aksi
+      // hâlde oyuncu kapanmış dükkândan alışverişe devam ederdi.
+      if (this.shopNpc) this.openService(this.shopNpc);
     }
 
     // ── bölge ziyareti → achievements.zonesVisited (9A.5'te bilinçli boş bırakılmıştı) ──

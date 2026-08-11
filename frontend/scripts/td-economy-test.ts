@@ -15,6 +15,7 @@ import {
   upgradeState, canUpgrade, upgradeCost, statAt, upgradedStat, applyUpgrade,
   displayName, statLabel, isNftItem,
 } from '../lib/game/td/economy';
+import { NPC_BY_ID, NPC_SERVICE, SERVICE_LABEL, SERVICE_NIGHT_LINE } from '../lib/game/td/npcs';
 import { ITEMS, SELL_PRICES } from '../lib/game/lootTables';
 import { PlayerState, type InventoryItem } from '../lib/game/PlayerState';
 
@@ -167,6 +168,21 @@ eq('equip-recalc-uses-upgraded-stat', (() => {
   ps.equip(ps.inventory[0]);
   return ps.atk - before;
 })(), statAt('iron_sword', 3)!.atk);
+
+// ─── (10) Adım 3: hizmet verisi (npcs.ts) ───
+// Sahne kodu Node'da koşmuyor; buradaki çapa, dükkânı BESLEYEN saf veriyi tutuyor.
+ok('service-npcs-exist', Object.keys(NPC_SERVICE).every(id => !!NPC_BY_ID[id]));
+ok('service-has-label', Object.values(NPC_SERVICE).every(s => !!SERVICE_LABEL[s]));
+ok('service-has-night-line', Object.values(NPC_SERVICE).every(s => !!SERVICE_NIGHT_LINE[s]));
+eq('service-text-ascii',
+  [...Object.values(SERVICE_LABEL), ...Object.values(SERVICE_NIGHT_LINE)].filter(t => !ASCII.test(t)), []);
+// Gece repliği ile gece selamı AYRI olmalı: çipe basınca aynı cümleyi ikinci kez
+// okumak "kapalı" bilgisini değil, bir hata hissi verir.
+ok('night-line-differs-from-greeting', Object.entries(NPC_SERVICE)
+  .every(([id, s]) => SERVICE_NIGHT_LINE[s] !== NPC_BY_ID[id].nightGreeting));
+// Dükkânda satılabilecek hiçbir kalem alışta zararına gitmesin diye stok fiyatlı olmalı
+// (yukarıda çapalı) — burada da: stoktaki hiçbir eşya NFT/anahtar olmasın.
+ok('stock-is-sellable-back', SHOP_STOCK.every(id => isSellable({ ...itemTemplate(id)!, count: 1 })));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
