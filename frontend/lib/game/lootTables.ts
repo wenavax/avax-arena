@@ -18,7 +18,9 @@ export interface LootEntry {
 }
 
 // All droppable items
-const ITEMS = {
+// Faz 10: export edildi — economy.ts yükseltme statını KATALOG TABANINDAN
+// hesaplıyor (drift olmasın diye), td-economy-test.ts da aynı tablodan doğruluyor.
+export const ITEMS = {
   // Materials
   bone_shard: { id: 'bone_shard', name: 'Bone Shard', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },
   slime_gel: { id: 'slime_gel', name: 'Slime Gel', sprite: 'material', type: 'quest' as const, stackable: true, count: 1 },

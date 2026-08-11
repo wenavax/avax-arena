@@ -26,6 +26,13 @@ export interface InventoryItem {
   stat?: { atk?: number; def?: number; hp?: number; mp?: number; spd?: number };
   stackable: boolean;
   count: number;
+  // Faz 10 (economy.ts): yükseltme seviyesi 0-3. Yalnız tip genişletmesi — yeni
+  // ÜST-SEVİYE save alanı yok, `v` 1'de kalır (inventory/equipped toptan JSON'a
+  // yazılıp toptan okunuyor, bkz. save/load). Eski satırlarda undefined; tüm
+  // tüketiciler `up ?? 0` okur, yani eski kayıt = +0 = bugünkü davranış.
+  // `stat` HER ZAMAN efektif stat'tır (yükseltme yerinde yazılır), bu yüzden
+  // recalcStats/statTotal/equipTier bu alandan habersiz çalışmaya devam eder.
+  up?: number;
 }
 
 export class PlayerState {
@@ -88,8 +95,13 @@ export class PlayerState {
     const slot = slotMap[item.type] as keyof typeof this.equipped | undefined;
     if (!slot) return null;
 
-    // Remove the incoming item from inventory first — frees a slot for the swap
-    this.removeItem(item.id, 1);
+    // Remove the incoming item from inventory first — frees a slot for the swap.
+    // Faz 10: id ile DEĞİL, referansla siliyoruz. Aynı id'den birden çok satır
+    // olabildiği için (addItem non-stackable'ı dedupe etmez) id'ye göre silmek
+    // "ilk" satırı vururdu: çantada iron_sword +0 ve +3 varken +3'ü kuşanmak
+    // +0'ı silip +3'ün kopyasını kuşanır, yani +3 hem çantada hem sırtında
+    // kalırdı — eşya duplikasyonu.
+    this.removeItemRef(item);
 
     // Put the currently equipped item back; if inventory is somehow still full,
     // revert instead of silently destroying the equipped item
@@ -180,6 +192,19 @@ export class PlayerState {
     }
     if (this.inventory.length >= 12) return false;
     this.inventory.push({ ...item });
+    return true;
+  }
+
+  /**
+   * Faz 10: kimliğe göre değil REFERANSA göre siler — aynı id'den iki farklı
+   * kopya (+0 / +3) varken doğru satırı hedefler. Kopya nesne geçilirse eski
+   * id-tabanlı davranışa düşer (çağıran hiçbir zaman elleri boş kalmaz).
+   */
+  removeItemRef(item: InventoryItem): boolean {
+    const i = this.inventory.indexOf(item);
+    if (i === -1) return this.removeItem(item.id, 1);
+    this.inventory[i].count -= 1;
+    if (this.inventory[i].count <= 0) this.inventory.splice(i, 1);
     return true;
   }
 
