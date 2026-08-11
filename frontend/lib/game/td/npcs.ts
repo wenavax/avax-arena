@@ -103,13 +103,10 @@ export function greetingFor(npc: NpcDef, night: boolean): string {
 
 export type NpcService = 'shop' | 'forge';
 
-/**
- * npcId → hizmet. Panelde hizmet çipi YALNIZ buradaki NPC'lerde çıkar.
- * `blacksmith: 'forge'` Adım 4'te eklenecek — sahne henüz ocağı çizmiyor, şimdi
- * kaydetmek ölü bir butona yol açardı.
- */
+/** npcId → hizmet. Panelde hizmet çipi YALNIZ buradaki NPC'lerde çıkar. */
 export const NPC_SERVICE: Record<string, NpcService> = {
   merchant: 'shop',
+  blacksmith: 'forge',
 };
 
 export const SERVICE_LABEL: Record<NpcService, string> = { shop: 'SHOP', forge: 'FORGE' };

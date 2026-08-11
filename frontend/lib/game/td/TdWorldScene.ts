@@ -13,6 +13,7 @@ import {
 } from './npcs';
 import {
   SHOP_STOCK, itemTemplate, buyPrice, isSellable, unitSellValue, displayName,
+  canUpgrade, upgradeCost, upgradedStat, applyUpgrade, statLabel, upLevel,
 } from './economy';
 import {
   QUEST_BY_ID, questsForGiver, offerState, makeRow, grantReward, rolloverRepeatables,
@@ -251,6 +252,7 @@ export class TdWorldScene extends Phaser.Scene {
   private shopNpc: string | null = null;
   private shopTab: 'buy' | 'sell' = 'buy';
   private shopPage = 0;
+  private forgeSel = 0;   // demirhane listesinde seçili satır (liste kısaldıkça kırpılır)
   private npcMarkers = new Map<string, Phaser.GameObjects.Text>(); // npcId → baş üstü ! / ? / …
   private markersDirty = true;                                     // true → update() işaretçi metinlerini tazeler
   private keysHint!: Phaser.GameObjects.Text;
@@ -1224,6 +1226,7 @@ export class TdWorldScene extends Phaser.Scene {
     this.shopNpc = npcId;
     if (tab && tab !== this.shopTab) { this.shopTab = tab; this.shopPage = 0; }
     if (isNight(this.tdState.dayTime)) this.renderServiceClosed(npc.name, svc);
+    else if (svc === 'forge') this.renderForge(npc.name);
     else this.renderShop(npc.name);
     this.questPanel.setVisible(true);
     this.layoutHud();
@@ -1304,6 +1307,94 @@ export class TdWorldScene extends Phaser.Scene {
         '#8fa6bd', 7, 0.5));
     }
     this.questPanel.add(items);
+  }
+
+  /**
+   * Faz 10 Adım 4: Smith Hilda'nın ocağı — cevher/taşın ilk gerçek kullanımı.
+   * Bugüne dek ⛏/🪨 yalnız marketplace'te toptan satılıyordu; artık ekipmanı
+   * +3'e kadar yükseltmenin girdisi. Altın sink'ine ek olarak HAM MADDE sink'i.
+   *
+   * Kuşanılmış eşyalar da listede: oyuncunun umursadığı ekipman zaten üstünde.
+   * applyUpgrade nesneyi YERİNDE günceller, ps.equipped[slot] o nesnenin ta kendisi
+   * olduğu için recalcStats() efektif statı aynı karede yansıtır.
+   *
+   * Seçim modeli (dükkândan farklı): satır başına ad + maliyet + stat önizlemesi
+   * 236px'e sığmıyor. Liste seçtirir, alttaki şerit seçili eşyanın detayını gösterir.
+   */
+  private forgeList(): InventoryItem[] {
+    const ps = PlayerState.get();
+    const eq = [ps.equipped.weapon, ps.equipped.armor, ps.equipped.accessory, ps.equipped.ring];
+    // Kuşanılmışlar üstte: yükseltme kararı çoğunlukla onlar için veriliyor.
+    return [...eq.filter((i): i is InventoryItem => !!i), ...ps.inventory].filter(canUpgrade);
+  }
+
+  private renderForge(title: string): void {
+    const ps = PlayerState.get();
+    const res = this.tdState.resources;
+    const list = this.forgeList();
+    const cap = this.serviceRowCap();
+    this.forgeSel = Phaser.Math.Clamp(this.forgeSel, 0, Math.max(0, list.length - 1));
+    // Seçili satır her zaman görünür pencerede kalsın (sayfa yerine kayan pencere:
+    // yükseltince liste kısalabilir, sabit sayfa indeksi seçimi ekran dışında bırakırdı).
+    const from = Math.min(Math.max(0, this.forgeSel - cap + 1), Math.max(0, list.length - cap));
+    const rows = Math.max(1, Math.min(cap, list.length - from));
+
+    const W = 236, x0 = -W / 2 + 12, xR = W / 2 - 12;
+    const FOOT = list.length ? 52 : 0;
+    const H = 42 + rows * SERVICE_ROW_H + FOOT + 14;
+    const { items, T } = this.buildPanel(W, H, title);
+    items.push(T(xR, -H / 2 + 22, `${ps.gold}g  ${res.ore} ore  ${res.stone} stone`, '#ffd23f', 8, 1, 0));
+
+    if (!list.length) {
+      items.push(T(x0, -H / 2 + 44,
+        'Bring me a blade or a plate with some fight left in it. I do not work bare hands.', '#8fa6bd', 8)
+        .setWordWrapWidth(W - 24));
+      items.push(this.panelBtn(T(0, H / 2 - 16, '[ OK ]', '#9fe8ff', 9, 0.5), () => this.closeQuestPanel()));
+      this.questPanel.add(items);
+      return;
+    }
+
+    for (let i = 0; i < rows; i++) {
+      const idx = from + i, it = list[idx], y = -H / 2 + 42 + i * SERVICE_ROW_H;
+      const on = idx === this.forgeSel;
+      items.push(
+        this.panelBtn(T(x0, y, `${on ? '>' : ' '} ${displayName(it)}`, on ? '#9fe8ff' : '#e8eef4', 8),
+          () => { this.forgeSel = idx; this.openService(this.shopNpc!); }),
+        T(xR, y, statLabel(it.stat), '#8fa6bd', 7, 1, 0),
+      );
+    }
+
+    // ── seçili eşyanın şeridi ──
+    const sel = list[this.forgeSel], cost = upgradeCost(sel)!;
+    const fy = H / 2 - FOOT - 6;
+    const short = ps.gold < cost.gold || res.ore < cost.ore || res.stone < cost.stone;
+    items.push(
+      T(x0, fy, `${displayName(sel)}  ->  +${upLevel(sel) + 1}`, '#ffd23f', 8),
+      T(x0, fy + 13, `${statLabel(sel.stat)}   ->   ${statLabel(upgradedStat(sel))}`, '#cfe3f2', 8),
+      T(x0, fy + 26, `${cost.gold}g  ${cost.ore} ore  ${cost.stone} stone`, short ? '#e08a6e' : '#8fa6bd', 7),
+      this.panelBtn(T(xR, fy + 24, short ? '[ short ]' : '[ FORGE ]', short ? '#8a5a5a' : '#6ee87a', 9, 1, 0),
+        () => this.forgeUpgrade(sel)),
+    );
+    this.questPanel.add(items);
+  }
+
+  private forgeUpgrade(item: InventoryItem): void {
+    const ps = PlayerState.get();
+    const res = this.tdState.resources;
+    const cost = upgradeCost(item);
+    if (!cost) return;
+    if (ps.gold < cost.gold || res.ore < cost.ore || res.stone < cost.stone) {
+      this.showRedHint('not enough gold or materials'); return;
+    }
+    // Önce statı yaz: applyUpgrade ön koşulu tutmazsa hiçbir şeye dokunmadan false döner,
+    // yani ücreti boşuna kesmiş olmayız.
+    if (!applyUpgrade(item)) return;
+    ps.gold -= cost.gold; res.ore -= cost.ore; res.stone -= cost.stone;
+    ps.recalcStats();                 // kuşanılı eşya yükseldiyse ATK/DEF/SPD aynı karede
+    this.tdState.save();              // kaynaklar tdState'te, altın PlayerState'te — ikisi de yazılmalı
+    if (this.tdMode === 'live') ps.save();
+    this.floatText(this.heroPos.x, this.heroPos.y - 16, `${displayName(item)} 🔨`, '#6ee87a');
+    this.openService(this.shopNpc!);
   }
 
   private buyItem(id: string): void {
