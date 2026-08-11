@@ -528,7 +528,11 @@ export class TdWorldScene extends Phaser.Scene {
     const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true;
     this.keysHint = this.add.text(0, 0, '[E] interact · [SPACE] gather · [1-4] skills · [Q] potion · [B] bag · [J] quests · [M] map · [-/+] zoom', {
       fontSize: '8px', fontFamily: TD_FONT, color: '#cfe3f2',
-    }).setOrigin(1, 1).setScrollFactor(0).setDepth(1e9).setAlpha(0.55).setVisible(!isTouch);
+      // Koyu kontur ŞART: ipucu ekranın en altında, ZEMİNİN üstünde duruyor ve kar/kum
+      // gibi açık biyomlarda alfa 0.55'lik açık gri metin fiilen görünmez oluyordu
+      // (gece perdesi inince okunur hâle geliyordu — kontrast biyoma bağlıydı).
+      stroke: '#0b1119', strokeThickness: 3,
+    }).setOrigin(1, 1).setScrollFactor(0).setDepth(1e9).setAlpha(0.7).setVisible(!isTouch);
 
     // Faz 5.4: minimap keşfedilebilir olsun — masaüstünde default AÇIK (M yine kapatır);
     // dokunmatikte kapalı başlar (sağ-üst 🗺 butonu açar — DOM butonlarıyla çakışmasın)
@@ -1023,6 +1027,19 @@ export class TdWorldScene extends Phaser.Scene {
     return { items, T };
   }
 
+  /**
+   * Word-wrap sonrası metin yüksekliği — panel içeriğe göre boyutlansın diye.
+   * Ölçüm nesnesi aynı karede yok edilir, sahnede iz bırakmaz (diyalog seyrek açılır,
+   * ölçüm maliyeti göz ardı edilebilir).
+   */
+  private textH(msg: string, size: number, wrapW: number): number {
+    const t = this.add.text(0, 0, msg, { fontSize: `${size}px`, fontFamily: TD_FONT, color: '#fff' })
+      .setWordWrapWidth(wrapW);
+    const h = t.height;
+    t.destroy();
+    return h;
+  }
+
   /** Tıklanabilir buton metni (panel içi ortak stil). */
   private panelBtn(t: Phaser.GameObjects.Text, onClick: () => void): Phaser.GameObjects.Text {
     return t.setInteractive({ useHandCursor: true })
@@ -1059,12 +1076,23 @@ export class TdWorldScene extends Phaser.Scene {
     const night = isNight(this.tdState.dayTime);
     const chatBranch = !best || bestState === 'done' || bestState === 'locked';
     const nightAside = night && !chatBranch;
-    // Panel gece 26px uzar: üst satırlar -H/2'den, alt satırlar +H/2'den
-    // konumlandığı için açılan boşluk tam ORTAYA (açıklama ↔ ödül arasına) düşer;
-    // mevcut hiçbir satırın ofseti değişmez.
-    const W = 236, H = 150 + (nightAside ? 26 : 0);
+
+    // ── Panel İÇERİĞE göre boyutlanır ────────────────────────────────────────
+    // Önce sabit H=150 idi. Üst satırlar -H/2'den, alt satırlar +H/2'den
+    // konumlandığından artan boşluğun tamamı ORTAYA düşüyordu: kısa açıklamalı
+    // görevlerde açıklama ile "Reward" arası ~40px boş bant kalıyordu (ekran
+    // görüntüsünde göze çarpıyor). Artık gövde metninin word-wrap yüksekliği
+    // ölçülüp üst ofset + alt bant ile toplanıyor; satır ofsetleri aynı kaldığı
+    // için hizalama mantığı değişmedi, yalnız boşluk kapandı.
+    const W = 236, wrapW = W - 24, x0 = -W / 2 + 12;
+    const bodyMsg = chatBranch || !best ? greetingFor(npc, night) : best.description;
+    const bodyTop = chatBranch || !best ? 26 : 40;   // gövde metninin üst ofseti
+    // Gece yan-satırı ödül bandının ÜSTÜNE ek yer açar (kendi wrap yüksekliği + nefes payı).
+    const asideH = nightAside ? this.textH(greetingFor(npc, true), 7, wrapW) + 8 : 0;
+    const bottom = (chatBranch || !best ? 38 : 52) + asideH;  // alta ayrılan bant
+    // Alt sınır: tek satırlık gövdede panel gülünç derecede basıklaşmasın.
+    const H = Math.max(104, bodyTop + this.textH(bodyMsg, 8, wrapW) + 12 + bottom);
     const { items, T } = this.buildPanel(W, H, npc.name);
-    const x0 = -W / 2 + 12, wrapW = W - 24;
 
     // `|| !best` semantik olarak fazlalık (chatBranch onu zaten içeriyor) ama TS'in
     // else dalında `best`'i non-null daraltması için ŞART — yoksa 10 yerde `best!` gerekirdi.
@@ -1083,10 +1111,10 @@ export class TdWorldScene extends Phaser.Scene {
         T(x0, -H / 2 + 40, best.description, '#cfe3f2', 8).setWordWrapWidth(wrapW),
         T(x0, H / 2 - 52, `Reward: ${this.rewardLabel(best)}${best.repeatable === 'daily' ? '   ⟳ daily' : ''}`, '#9fe8ff', 8),
       );
-      // Gece yan-satırı: ödülün 22px üstünde, soluk ve küçük — görev bilgisiyle
-      // yarışmasın diye. `greetingFor` TEK erişimci olarak korunuyor (npcs.ts saf).
+      // Gece yan-satırı: ödül bandının hemen üstünde, soluk ve küçük — görev
+      // bilgisiyle yarışmasın diye. `greetingFor` TEK erişimci olarak korunuyor.
       if (nightAside) {
-        items.push(T(x0, H / 2 - 74, greetingFor(npc, true), '#7f93a8', 7).setWordWrapWidth(wrapW));
+        items.push(T(x0, H / 2 - 52 - asideH, greetingFor(npc, true), '#7f93a8', 7).setWordWrapWidth(wrapW));
       }
       if (bestState === 'available') {
         items.push(
