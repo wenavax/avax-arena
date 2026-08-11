@@ -1440,7 +1440,7 @@ export class TdWorldScene extends Phaser.Scene {
           } else if (p.kind === 'building') {
             const bk = `td-bld-${p.data!.id}`;
             if (!this.textures.exists(bk)) {
-              const bm = mkBuilding(p.data!.wTiles!, p.data!.hTiles!, p.data!.accent!, p.data!.icon!);
+              const bm = mkBuilding(p.data!.wTiles!, p.data!.hTiles!, p.data!.accent!, p.data!.icon!, p.data!.id!);
               this.textures.addCanvas(bk, bm.img);
             }
             const bimg = this.add.image(p.x, p.y, bk).setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
