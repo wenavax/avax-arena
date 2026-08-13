@@ -9,6 +9,7 @@ import {
 import { INTERIOR_FURN_SPEC } from '../lib/game/td/sprites/interiorProps';
 import { TD_HOUSES } from '../lib/game/td/worldProps';
 import { DEFAULT_DAY_TIME } from '../lib/game/td/dayNight';
+import { LORE_ENTRIES } from '../lib/game/lore';
 
 let pass = 0, fail = 0;
 const ok = (n: string, c: boolean) => { if (c) pass++; else { fail++; console.error('FAIL ' + n); } };
@@ -122,6 +123,35 @@ ok('sleep-ok-no-input-mutation', JSON.stringify(rich) === richSnapshot);
 // tam eşik: gold === COST yeterlidir (sınır hatası olmasın)
 const exact = applySleep({ gold: INN_SLEEP_COST, hp: 1, maxHp: 50, energy: 0, dayTime: 0 }, 777);
 ok('sleep-exact-cost-ok', exact !== null && exact.gold === 0 && exact.hp === 50 && exact.energy === 777);
+
+// ─── Faz 11.3: arşiv — okunabilir lore kitapları ───
+// Anahtar kırıksa DERLEME değil runtime hatası olurdu (find → undefined) — burada yakalanır.
+
+const archive = INTERIORS.archive;
+const books = archive.books ?? [];
+ok('archive-books-count', books.length >= 5 && books.length <= 6);
+
+const loreIds = new Set(LORE_ENTRIES.map(e => e.id));
+ok('book-lorekeys-exist-in-lore', books.every(b => loreIds.has(b.loreKey)));
+ok('book-lorekeys-unique', new Set(books.map(b => b.loreKey)).size === books.length);
+ok('book-titles-nonempty', books.every(b => b.title.trim().length > 0));
+ok('book-titles-unique', new Set(books.map(b => b.title)).size === books.length);
+// bağlanan lore metinleri gerçek içerik (boş/kırpık girdi kitaba bağlanmasın)
+ok('book-lore-texts-substantial', books.every(b =>
+  (LORE_ENTRIES.find(e => e.id === b.loreKey)?.text ?? '').trim().length > 40));
+
+// spot: oda içinde + benzersiz; yürünebilirlik GEREKMEZ (ikon mobilya üstünde durur)
+// ama ≥1 yürünebilir 4-komşu ŞART — oyuncu yanına gelip [E] ile okuyabilmeli.
+// (all-walkable-reachable çapası her yürünebilir hücrenin kapıdan erişilebilir olduğunu
+// zaten kanıtlıyor → komşu yeterli, ayrı flood-fill gerekmez.)
+ok('book-spots-in-room', books.every(b =>
+  b.spot.tx >= 0 && b.spot.ty >= 0 && b.spot.tx < archive.room.w && b.spot.ty < archive.room.h));
+ok('book-spots-unique', new Set(books.map(b => `${b.spot.tx},${b.spot.ty}`)).size === books.length);
+ok('book-spots-have-walkable-neighbor', books.every(b =>
+  ([[1, 0], [-1, 0], [0, 1], [0, -1]] as const).some(([dx, dy]) =>
+    interiorWalkable(archive, b.spot.tx + dx, b.spot.ty + dy))));
+
+console.log(`archive books: ${books.map(b => `"${b.title}"→${b.loreKey}`).join(', ')}`);
 
 console.log(`td-interior: ${pass} pass, ${fail} fail`);
 if (fail) process.exit(1);

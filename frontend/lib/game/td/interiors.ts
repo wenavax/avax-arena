@@ -14,6 +14,20 @@ export type FurnKind =
 
 export interface InteriorFurn { kind: FurnKind; tx: number; ty: number }
 
+/**
+ * Faz 11.3: okunabilir lore kitabı. Metin lore.ts'te KALIR (LORE_ENTRIES id'siyle
+ * bağlanır — kopya metin yok, TdBattleScene ile paylaşılan API'ye dokunulmaz).
+ * `title` arşivcinin cilt başlığıdır (lore girdisinin başlığından bilerek farklı:
+ * girdiler ganimet-dili "Fragment of X", kitaplar kronik-dili taşır).
+ * `spot` ikonun durduğu mobilya hücresi (lectern/masa/raf ÜSTÜ — yürünebilir olması
+ * gerekmez; test ≥1 yürünebilir 4-komşu ister ki oyuncu yanına gelip okuyabilsin).
+ */
+export interface InteriorBook {
+  loreKey: string;
+  title: string;
+  spot: { tx: number; ty: number };
+}
+
 export interface InteriorDef {
   id: string;
   name: string;
@@ -23,8 +37,8 @@ export interface InteriorDef {
   exitPad: { tx: number; ty: number };
   /** 11.2'de sahneye bağlanacak iç-mekân NPC'si (dünya NPC listesine GİRMEZ). */
   npc?: { id: string; name: string; tx: number; ty: number; palette: number };
-  /** 11.3'te lore.ts anahtarlarıyla dolacak. */
-  books?: string[];
+  /** Faz 11.3: okunabilir lore kitapları (yalnız arşivde). */
+  books?: InteriorBook[];
 }
 
 /** Mobilya taban alanı (TILE cinsinden) — çarpışma + testler bunu okur.
@@ -86,7 +100,17 @@ export const INTERIORS: Record<string, InteriorDef> = {
       { kind: 'plant', tx: 0, ty: 7 }, { kind: 'plant', tx: 11, ty: 7 },
     ],
     exitPad: { tx: 6, ty: 8 },
-    books: [],
+    // Kitap seçimi (Faz 11.3): erken/orta-oyun dünya efsanesi + bölge kronikleri.
+    // Ch3 "Crown'un gerçek doğası" (lore_void) ve Ch4 final girdileri BİLEREK dışarıda —
+    // savaş sonu büyük ifşalar boss ödülü olarak kalsın, arşiv spoiler dükkânı olmasın.
+    books: [
+      { loreKey: 'lore_frost_dragon',    title: 'On the Frost Dragon',            spot: { tx: 2, ty: 4 } },   // lectern B
+      { loreKey: 'lore_crystal_colossus', title: 'The Seven Guardians',           spot: { tx: 9, ty: 4 } },   // lectern D
+      { loreKey: 'lore_shadow_lord',     title: 'The Guardian Who Fell to Shadow', spot: { tx: 5, ty: 3 } },  // masa, sol yaprak
+      { loreKey: 'lore_swamp_hag',       title: 'Why the Marsh Went Sour',        spot: { tx: 6, ty: 3 } },   // masa, sağ yaprak
+      { loreKey: 'lore_leviathan',       title: 'The Sleeper Beneath the Waves',  spot: { tx: 0, ty: 2 } },   // batı rafı
+      { loreKey: 'lore_guardian',        title: 'Where Crowns Are Unmade',        spot: { tx: 11, ty: 2 } },  // doğu rafı
+    ],
   },
 };
 

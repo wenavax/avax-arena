@@ -9,8 +9,9 @@ import { TILE, computeTdView, userTdZoom, depth, TD_FONT } from './tdCore';
 import { chibiHumanoid, CHIBI_H, REMOTE_PALETTE_VARIANTS } from './sprites/chibi';
 import {
   INTERIORS, interiorWalkable, INN_SLEEP_COST, applySleep, innkeeperGreeting,
-  type InteriorDef,
+  type InteriorDef, type InteriorBook,
 } from './interiors';
+import { LORE_ENTRIES } from '../lore';
 import { INTERIOR_FURN_SPEC } from './sprites/interiorProps';
 import { isNight, DEFAULT_DAY_TIME } from './dayNight';
 import { TdState } from './tdState';
@@ -44,7 +45,9 @@ export class TdInteriorScene extends Phaser.Scene {
   private panelC: Phaser.GameObjects.Container | null = null;
   private panelErr: Phaser.GameObjects.Text | null = null;
   private sleeping = false;
-  private hintMode: 'exit' | 'talk' = 'exit';
+  private hintMode: 'exit' | 'talk' | 'read' = 'exit';
+  // ── Faz 11.3: okunabilir lore kitapları (arşiv) ──
+  private bookIcons: { book: InteriorBook; icon: Phaser.GameObjects.Image; x: number; y: number }[] = [];
 
   constructor() { super({ key: 'TdInterior' }); }
 
@@ -60,6 +63,7 @@ export class TdInteriorScene extends Phaser.Scene {
     this.npcLabel = null; this.panelC = null; this.panelErr = null;
     this.sleeping = false;                      // 🔴 fade yarıda kalırsa bile kilit taşınmasın
     this.hintMode = 'exit';
+    this.bookIcons = [];                        // sahne örneği yeniden kullanılır (Dungeon dersi)
   }
 
   create(): void {
@@ -143,6 +147,22 @@ export class TdInteriorScene extends Phaser.Scene {
       }).setOrigin(0.5, 1).setDepth(depth(nx, ny) + 1);
     }
 
+    // ── Faz 11.3: kitap ikonları — ODA VERİSİNDEN (def.books), mobilya hücresine
+    // sabitlenmez: spot lectern/masa/raf ÜSTÜ bir hücredir (td-interior-test yürünebilir
+    // komşuluğunu çapalar). Okunmuş kitap soluk + nabızsız (flags: lore_read_<key>).
+    if (this.def.books?.length) {
+      const bKey = 'td-int-book';
+      if (!this.textures.exists(bKey)) this.textures.addCanvas(bKey, bookIconCanvas());
+      const flags = PlayerState.get().flags;
+      for (const book of this.def.books) {
+        const bx = (book.spot.tx + 1) * TILE + 8, by = (book.spot.ty + 1) * TILE + 6;  // +1: duvar halkası
+        const icon = this.add.image(bx, by, bKey).setDepth(depth(bx, by));
+        if (flags.has(`lore_read_${book.loreKey}`)) icon.setAlpha(0.5);
+        else this.tweens.add({ targets: icon, alpha: 0.6, duration: 700, yoyo: true, repeat: -1 });
+        this.bookIcons.push({ book, icon, x: bx, y: by });
+      }
+    }
+
     const kb = this.input.keyboard!;
     this.keys = kb.addKeys('W,A,S,D') as typeof this.keys;
     this.cursors = kb.createCursorKeys();
@@ -208,14 +228,28 @@ export class TdInteriorScene extends Phaser.Scene {
     if (Math.hypot(this.heroPos.x - px, this.heroPos.y - py) < 20) this.leave();
   }
 
-  /** E tuşu yönlendirici: pad = çıkış ÖNCELİĞİ (mevcut davranış), değilse yakın NPC = diyalog. */
+  /** E tuşu yönlendirici: pad = çıkış ÖNCELİĞİ (mevcut davranış), sonra NPC, sonra kitap. */
   private onE(): void {
     if (this.sleeping || this.panelC) return;    // panel açıkken ikinci E diyalog tetiklemez
     this.tryExit();
     if (this.leaving) return;
     if (this.npcPos && Math.hypot(this.heroPos.x - this.npcPos.x, this.heroPos.y - this.npcPos.y) <= 24) {
       this.openInnPanel();
+      return;
     }
+    const near = this.nearestBook();
+    if (near) this.openBookPanel(near);
+  }
+
+  /** Menzildeki (≤24px) en yakın kitap — hint + E yönlendirmesi aynı ölçütü okur. */
+  private nearestBook(): { book: InteriorBook; icon: Phaser.GameObjects.Image } | null {
+    let best: { book: InteriorBook; icon: Phaser.GameObjects.Image } | null = null;
+    let bestD = 24;
+    for (const b of this.bookIcons) {
+      const d = Math.hypot(this.heroPos.x - b.x, this.heroPos.y - b.y);
+      if (d <= bestD) { bestD = d; best = b; }
+    }
+    return best;
   }
 
   /** Dünya sahnesinin tdState'i — enerji/saat TEK doğruluk kaynağı (TdDungeonScene emsali). */
@@ -267,6 +301,61 @@ export class TdInteriorScene extends Phaser.Scene {
     this.panelC?.destroy();                            // Container.destroy çocukları da yok eder
     this.panelC = null;
     this.panelErr = null;
+  }
+
+  /** Word-wrap sonrası metin yüksekliği — TdWorldScene.textH'nin sahne-yerel ikizi
+   * (ölçüm nesnesi aynı karede yok edilir; panel içeriğe göre boyutlanır, '…' kesme YOK). */
+  private textH(msg: string, size: number, wrapW: number): number {
+    const t = this.add.text(0, 0, msg, { fontSize: `${size}px`, fontFamily: TD_FONT, color: '#fff' })
+      .setWordWrapWidth(wrapW);
+    const h = t.height;
+    t.destroy();
+    return h;
+  }
+
+  /**
+   * Faz 11.3: kitap paneli — openInnPanel'in görsel dili (gölge+gövde+kenar+parlama),
+   * yükseklik lore metnine göre ölçülür (textH; uzun metinde panel BÜYÜR, metin kesilmez;
+   * gövde fontu 8px — en uzun girdi bile varsayılan zoom viewport'una sığar).
+   * Açmak = okumak: flags'e lore_read_<key> yazılır (markVisit deseni; live'da ps.save()).
+   */
+  private openBookPanel(near: { book: InteriorBook; icon: Phaser.GameObjects.Image }): void {
+    const entry = LORE_ENTRIES.find(e => e.id === near.book.loreKey);
+    if (!entry) return;                                // test kırık anahtarı zaten yakalar
+    this.closePanel();
+    // ── okundu işareti (bir kez): flag + ikon soluk + nabız durur ──
+    const ps = PlayerState.get();
+    const flag = `lore_read_${near.book.loreKey}`;
+    if (!ps.flags.has(flag)) {
+      ps.flags.add(flag);
+      // 🔴 sandbox kuralı (Faz 3 Critical): canlı save YALNIZ live modda yazılır.
+      if ((this.registry.get('tdMode') as string) === 'live') ps.save();
+      this.tweens.killTweensOf(near.icon);
+      near.icon.setAlpha(0.5);
+    }
+    // ── panel: genişlik sabit, yükseklik içerikten ──
+    const k = this.uiZoom, w = 200, r = 8;             // r << h/2 (Faz 5.10 kıskacı)
+    const wrapW = w - 24;
+    const bodyH = this.textH(entry.text, 8, wrapW);
+    const headH = 34;                                  // başlık + lore alt-başlığı
+    const h = headH + bodyH + 26;                      // 26: alt boşluk + [ CLOSE ]
+    const g = this.add.graphics().setScrollFactor(0);
+    g.fillStyle(0x000000, 0.3); g.fillRoundedRect(-w / 2 + 1, -h / 2 + 2, w, h, r);
+    g.fillStyle(0x121a23, 0.97); g.fillRoundedRect(-w / 2, -h / 2, w, h, r);
+    g.lineStyle(1, 0x3a4e63, 1); g.strokeRoundedRect(-w / 2, -h / 2, w, h, r);
+    g.fillStyle(0xffffff, 0.05); g.fillRect(-w / 2 + 3, -h / 2 + 1, w - 6, 1);
+    const T = (x: number, y: number, msg: string, color: string, size = 8, ox = 0, oy = 0) =>
+      this.add.text(x, y, msg, { fontSize: `${size}px`, fontFamily: TD_FONT, color })
+        .setOrigin(ox, oy).setResolution(k).setScrollFactor(0);
+    this.panelC = this.add.container(0, 0, [g,
+      T(0, -h / 2 + 7, near.book.title, '#ffd23f', 10, 0.5),
+      this.btn(T(w / 2 - 14, -h / 2 + 6, '✕', '#8fa6bd', 11), () => this.closePanel()),
+      T(0, -h / 2 + 21, `— ${entry.title} —`, '#8fa6bd', 7, 0.5),
+      T(-w / 2 + 12, -h / 2 + headH, entry.text, '#e9f4ff', 8)
+        .setWordWrapWidth(wrapW),                      // lineSpacing YOK — textH ölçümüyle birebir
+      this.btn(T(0, h / 2 - 11, '[ CLOSE ]', '#8fa6bd', 9, 0.5, 0.5), () => this.closePanel()),
+    ]).setScrollFactor(0).setDepth(1e9 + 3);
+    this.layoutHud();                                  // konumla (ekran merkezi)
   }
 
   /**
@@ -364,13 +453,18 @@ export class TdInteriorScene extends Phaser.Scene {
       .setDepth(depth(this.heroPos.x, this.heroPos.y) - 1);
     this.hero.setDepth(depth(this.heroPos.x, this.heroPos.y));
 
-    // Faz 11.2: NPC yakınında hint '[E] talk to <isim>' olur; uzaklaşınca eski metin döner.
+    // Faz 11.2/11.3: yakın NPC → '[E] talk', yakın kitap → '[E] read'; uzakta eski metin.
+    // (NPC yalnız handa, kitaplar yalnız arşivde — öncelik çatışması pratikte yok.)
     const nearNpc = !uiLock && !!this.npcPos &&
       Math.hypot(this.heroPos.x - this.npcPos.x, this.heroPos.y - this.npcPos.y) <= 24;
-    const mode: 'exit' | 'talk' = nearNpc ? 'talk' : 'exit';
+    const nearBook = !uiLock && !nearNpc && this.nearestBook();
+    const mode: 'exit' | 'talk' | 'read' = nearNpc ? 'talk' : nearBook ? 'read' : 'exit';
     if (mode !== this.hintMode) {
       this.hintMode = mode;
-      this.hintText.setText(mode === 'talk' ? `[E] talk to ${this.npcName}` : '[E] exit · [ESC] leave');
+      this.hintText.setText(
+        mode === 'talk' ? `[E] talk to ${this.npcName}`
+        : mode === 'read' ? '[E] read'
+        : '[E] exit · [ESC] leave');
     }
 
     // pad'e basınca çık (zindan giriş-pad deseni; spawn pad'in 1 tile üstünde → kaza yok)
@@ -378,6 +472,24 @@ export class TdInteriorScene extends Phaser.Scene {
     const px = (pad.tx + 1) * TILE + 8, py = (pad.ty + 1) * TILE + 8;
     if (!this.leaving && !uiLock && this.timeIn > 1 && Math.hypot(this.heroPos.x - px, this.heroPos.y - py) < 10) this.leave();
   }
+}
+
+/** Faz 11.3: küçük açık-kitap ikonu (10×8) — parşömen yapraklar + sırt + altın parıltı. */
+function bookIconCanvas(): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = 10; c.height = 8;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#3a2a18'; g.fillRect(0, 5, 10, 3);        // koyu cilt kapağı
+  g.fillStyle = '#f0e6c8'; g.fillRect(0, 1, 4, 5);          // sol yaprak
+  g.fillRect(6, 1, 4, 5);                                   // sağ yaprak
+  g.fillStyle = '#d8cba6'; g.fillRect(4, 2, 2, 5);          // sırt gölgesi
+  g.fillStyle = '#b9a97f';                                  // satır çizgileri
+  g.fillRect(1, 2, 2, 1); g.fillRect(7, 2, 2, 1);
+  g.fillRect(1, 4, 2, 1); g.fillRect(7, 4, 2, 1);
+  g.fillStyle = '#ffd23f'; g.globalAlpha = 0.9;             // parıltı noktası
+  g.fillRect(4, 0, 2, 1);
+  g.globalAlpha = 1;
+  return c;
 }
 
 function cssHex(n: number): string {
