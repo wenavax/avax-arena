@@ -63,6 +63,7 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
       const { TdWorldScene } = await import('./TdWorldScene');
       const { TdBattleScene } = await import('./TdBattleScene');
       const { TdDungeonScene } = await import('./TdDungeonScene');
+      const { TdInteriorScene } = await import('./TdInteriorScene');
       if (cancelled || !ref.current) return;
       // ── Faz 5.2 Netlik (Larvy paritesi — play.larvy.fun game.js incelemesi):
       // canvas TAM viewport çözünürlüğünde (Scale.RESIZE; CSS ölçekleme YOK → tarayıcı
@@ -81,7 +82,9 @@ export function TdPhaserGame({ mode }: { mode: 'preview' | 'live' }) {
         pixelArt: true, roundPixels: true,
         backgroundColor: '#0d1319',
         scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH, width: '100%', height: '100%' },
-        scene: [TdWorldScene, TdBattleScene, TdDungeonScene],
+        // Faz 11.1: TdInteriorScene SONDA (sahne dizisi sırası ≠ render sırası olsa da
+        // launch+bringToTop sözleşmesi tüm alt sahnelerde aynı kalsın)
+        scene: [TdWorldScene, TdBattleScene, TdDungeonScene, TdInteriorScene],
       });
       // Sahneler create()'te registry.get('tdMode') okur — scene başlamadan hemen önce set edilir.
       game.registry.set('tdMode', mode);

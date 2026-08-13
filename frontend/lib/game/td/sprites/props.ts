@@ -99,6 +99,8 @@ const BUILDING_STYLE: Record<string, BuildingStyle> = {
   cardgame: 'plaster', marketplace: 'plaster', nftscore: 'plaster', // çarşı hissi
   expeditions: 'lodge', adventures: 'lodge',                  // vahşi doğa/macera
   battleroyale: 'tower', launchpad: 'tower',                  // taçlı/fırlatma → sivri kule
+  // Faz 11.1: iç mekânlı evler (worldProps.TD_HOUSES) — han sıcak kütük, arşiv resmi taş
+  inn: 'lodge', archive: 'stone',
 };
 const STYLE_ORDER: BuildingStyle[] = ['lodge', 'stone', 'plaster', 'tower'];
 function styleForId(id: string): BuildingStyle {

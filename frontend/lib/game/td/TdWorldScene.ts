@@ -473,7 +473,7 @@ export class TdWorldScene extends Phaser.Scene {
     // Faz 5.11: Q — hızlı iksir iç (savaş ekranına girmeden; mobil 🧪 aynı yol)
     kb.on('keydown-Q', () => this.drinkPotion());
     // zindan/battle aktifken dünya dinleyicisi tüketmesin (çift iksir tuzağı)
-    const onUiPotion = () => { if (!this.scene.isActive('TdDungeon') && !this.scene.isActive('TdBattle')) this.drinkPotion(); };
+    const onUiPotion = () => { if (!this.scene.isActive('TdDungeon') && !this.scene.isActive('TdBattle') && !this.scene.isActive('TdInterior')) this.drinkPotion(); };
     window.addEventListener('td-ui-potion', onUiPotion);
     this.events.once('shutdown', () => window.removeEventListener('td-ui-potion', onUiPotion));
     this.events.once('destroy', () => window.removeEventListener('td-ui-potion', onUiPotion));
@@ -486,7 +486,7 @@ export class TdWorldScene extends Phaser.Scene {
     const SLOT_KEYS = ['ONE', 'TWO', 'THREE', 'FOUR'] as const;
     SLOT_KEYS.forEach((k, i) => kb.on(`keydown-${k}`, () => this.useSkillSlot(i)));
     const onUiSkill = (ev: Event) => {
-      if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
+      if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle') || this.scene.isActive('TdInterior')) return;
       const slot = Number((ev as CustomEvent<{ slot?: number }>).detail?.slot ?? 0) - 1;
       if (slot >= 0) this.useSkillSlot(slot);
     };
@@ -495,7 +495,7 @@ export class TdWorldScene extends Phaser.Scene {
     // Alt sahne açıkken dünya dinleyicisi tüketmesin: zindan da dinliyor, ikisi birden
     // tepki verse tek tıkta iki toggle = net değişim SIFIR (çift-iksir tuzağının ikizi).
     const onUiMusic = () => {
-      if (!this.scene.isActive('TdDungeon') && !this.scene.isActive('TdBattle')) this.toggleMusicMute();
+      if (!this.scene.isActive('TdDungeon') && !this.scene.isActive('TdBattle') && !this.scene.isActive('TdInterior')) this.toggleMusicMute();
     };
     window.addEventListener('td-ui-music', onUiMusic);
     const offUi = () => {
@@ -796,7 +796,7 @@ export class TdWorldScene extends Phaser.Scene {
     const p = this.nearProp;
     if (this.battleActive) return;
     // paused-input sızıntısına karşı savunma: alt sahne aktifken yeniden-launch yok
-    if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
+    if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle') || this.scene.isActive('TdInterior')) return;
     // Faz 7: açık diyalog varsa E onu kapatır (aynı tuşla girip çıkma — panel arkasından
     // ikinci bir etkileşim tetiklenmesin)
     if (this.questPanel.visible) { this.closeQuestPanel(); return; }
@@ -846,6 +846,11 @@ export class TdWorldScene extends Phaser.Scene {
       this.questEvent(objectiveKey('enter', p.data!.id!));
       this.scene.pause();
       this.scene.launch('TdDungeon', { dungeonId: p.data!.id, exitPos: { x: this.heroPos.x, y: this.heroPos.y } });
+    } else if (p?.kind === 'house') {
+      // Faz 11.1: iç mekân — door_dungeon kalıbıyla birebir (pause+launch, dönüş
+      // TdInteriorScene.leave() → stop+resume). questEvent YOK (ev girişi görev değil).
+      this.scene.pause();
+      this.scene.launch('TdInterior', { interiorId: p.data!.interiorId! });
     } else if (p?.kind === 'portal') {
       // Faz 5.6: kasabaya ışınlan — pozisyonu hemen kaydet (yenilemede portalda doğmasın)
       this.heroPos = { x: TOWN_SPAWN.tx * 16 + 8, y: TOWN_SPAWN.ty * 16 + 8 };
@@ -1758,7 +1763,7 @@ export class TdWorldScene extends Phaser.Scene {
         const gatherables = new Map<string, Gatherable>();
         for (const p of list) {
           if (p.solid) solids.push(p.solid);
-          if (p.kind === 'building' || p.kind === 'door_dungeon' || p.kind === 'farm_plot' || p.kind === 'portal' || p.kind === 'npc') interactives.push(p);
+          if (p.kind === 'building' || p.kind === 'house' || p.kind === 'door_dungeon' || p.kind === 'farm_plot' || p.kind === 'portal' || p.kind === 'npc') interactives.push(p);
           if (p.kind === 'npc') {
             // Kahramanla aynı origin (ayak hizası) — NPC'ler statik, yürüme fazı yok.
             const nimg = this.add.image(p.x, p.y, `td-npc-${p.data!.id}`)
@@ -1819,7 +1824,9 @@ export class TdWorldScene extends Phaser.Scene {
           else if (p.kind === 'campfire') {
             const fimg = this.add.image(p.x, p.y, 'td-fire-0').setOrigin(0.5, 0.9).setDepth(depth(p.x, p.y));
             this.fires.push({ img: fimg, x: p.x, y: p.y }); objs.push(fimg); continue;
-          } else if (p.kind === 'building') {
+          } else if (p.kind === 'building' || p.kind === 'house') {
+            // Faz 11.1: 'house' aynı çizim yolunu paylaşır — mkBuilding stil fabrikaları
+            // (styleForId'e inn/archive eklendi), W/H/kapı sözleşmesi AYNEN.
             const bk = `td-bld-${p.data!.id}`;
             if (!this.textures.exists(bk)) {
               const bm = mkBuilding(p.data!.wTiles!, p.data!.hTiles!, p.data!.accent!, p.data!.icon!, p.data!.id!);
@@ -2221,7 +2228,7 @@ export class TdWorldScene extends Phaser.Scene {
    */
   private onSpaceGather(): void {
     if (this.battleActive) return;
-    if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
+    if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle') || this.scene.isActive('TdInterior')) return;
     if (this.fishing) return;
 
     // Faz 5.7: SPACE önceliği SAVAŞ — menzilde canavar varsa saldır (toplama ikincil)
@@ -2328,7 +2335,7 @@ export class TdWorldScene extends Phaser.Scene {
   private useSkillSlot(i: number): void {
     const sk = this.skills[i];
     if (!sk || this.battleActive) return;
-    if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle')) return;
+    if (this.scene.isActive('TdDungeon') || this.scene.isActive('TdBattle') || this.scene.isActive('TdInterior')) return;
     if (this.bagPanel?.visible || this.questPanel?.visible) return; // panel açıkken yazı/tuş çakışması
     const ps = PlayerState.get();
     const now = this.time.now;

@@ -8,7 +8,7 @@ import { getTile, regionAt, REGIONS, TOWN_SPAWN, ROAD_Y } from './worldMap';
 import { HUB_GAMES } from '../hub/hubGames';
 import { NPCS } from './npcs';
 
-export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'door_dungeon' | 'farm_plot' | 'portal' | 'sign' | 'npc' | 'deco';
+export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'house' | 'door_dungeon' | 'farm_plot' | 'portal' | 'sign' | 'npc' | 'deco';
 
 export const DECO_KINDS = ['mushroom', 'fallen_log', 'flowers', 'tall_grass', 'reeds', 'ice_crystal', 'frozen_bones', 'gravestone', 'bone_pile', 'broken_pillar', 'rubble', 'mine_cart', 'timber_support', 'obsidian_shard', 'lava_crack', 'void_spike', 'rune_stone', 'brazier', 'lamp_post', 'well', 'barrel', 'crate', 'bench', 'fence', 'snowman', 'stall'] as const;
 export type DecoKind = typeof DECO_KINDS[number];
@@ -17,7 +17,7 @@ export interface TdProp {
   x: number; y: number;                    // dünya px (taban/ayak noktası)
   v?: number;                              // sprite varyantı
   solid?: { x: number; y: number; w: number; h: number };
-  data?: { id?: string; name?: string; icon?: string; url?: string; accent?: string; wTiles?: number; hTiles?: number; region?: string; plotIndex?: number; deco?: DecoKind };
+  data?: { id?: string; name?: string; icon?: string; url?: string; accent?: string; wTiles?: number; hTiles?: number; region?: string; plotIndex?: number; deco?: DecoKind; interiorId?: string };
 }
 
 /** Tarla parseli grid'i — kasaba güneybatısında, TOWN_SPAWN'ın ~6-11 tile güneyi.
@@ -109,6 +109,25 @@ const TD_TOWN_DOORS: Record<string, { tx: number; ty: number }> = {
   adventures: { tx: 3, ty: 10 }, launchpad: { tx: 9, ty: 10 },
 };
 
+// ── Faz 11.1: İÇ MEKÂNLI EVLER — kind 'house' (BİLEREK 'building' DEĞİL: td-props-test
+// `buildings-count === HUB_GAMES.length` çapası kırılmasın). Geometri sözleşmesi building
+// ile birebir: kapı = alt-orta tile, solid rect kapıdan türetilir. `id` aynı zamanda
+// interiors.ts INTERIORS anahtarıdır (td-interior-test eşleşmeyi assert eder).
+// KONUM: kuzey sıranın batı/doğu kanadı, kapılar ana cadde bandına (ty:-2) bakar.
+// inn -19: batı kanat — c0 rel -21 (abs 171..175), arena (abs 178..181) ile 2-tile boşluk
+//   (kuzey sıranın kendi bina aralığıyla aynı ritim); flood-fill kutusu x≥170 içinde kalır.
+// archive 18: doğu kanat — c0 rel 16 (abs 208..211), nftscore (abs 203..205) ile 2-tile
+//   boşluk; town bölge yarıçapı (r=28, merkez 192) içinde → zemin kasaba biyomu.
+export interface TdHouse {
+  id: string; name: string; icon: string; accent: string;
+  door: { tx: number; ty: number };            // TOWN_ORIGIN'e göre rel (TD_TOWN_DOORS dili)
+  size: { w: number; h: number };
+}
+export const TD_HOUSES: TdHouse[] = [
+  { id: 'inn', name: 'The Frosted Hearth', icon: '🍺', accent: '#e8944a', door: { tx: -19, ty: -2 }, size: { w: 5, h: 5 } },
+  { id: 'archive', name: "Scribe's Archive", icon: '📜', accent: '#8fb8d8', door: { tx: 18, ty: -2 }, size: { w: 4, h: 5 } },
+];
+
 function townProps(): TdProp[] {
   const out: TdProp[] = [];
   for (const g of HUB_GAMES) {
@@ -119,6 +138,17 @@ function townProps(): TdProp[] {
       kind: 'building', x: doorTx * 16 + 8, y: doorTy * 16 + 15,
       solid: { x: c0 * 16, y: r0 * 16, w: g.size.w * 16, h: g.size.h * 16 - 6 },
       data: { id: g.id, name: g.name, icon: g.icon, url: g.url, accent: g.accent, wTiles: g.size.w, hTiles: g.size.h },
+    });
+  }
+  // Faz 11.1: evler — building döngüsüyle aynı geometri (kapı alt-orta, solid rect).
+  // Solid'leri reserved()'a otomatik girer → çevrelerine rastgele ağaç/kaya serpilmez.
+  for (const hDef of TD_HOUSES) {
+    const doorTx = TOWN_ORIGIN.tx + hDef.door.tx, doorTy = TOWN_ORIGIN.ty + hDef.door.ty;
+    const c0 = doorTx - Math.floor(hDef.size.w / 2), r0 = doorTy - hDef.size.h + 1;
+    out.push({
+      kind: 'house', x: doorTx * 16 + 8, y: doorTy * 16 + 15,
+      solid: { x: c0 * 16, y: r0 * 16, w: hDef.size.w * 16, h: hDef.size.h * 16 - 6 },
+      data: { id: hDef.id, name: hDef.name, icon: hDef.icon, accent: hDef.accent, interiorId: hDef.id, wTiles: hDef.size.w, hTiles: hDef.size.h },
     });
   }
   // meydan kamp ateşi (spawn'ın 3 tile kuzeyi)

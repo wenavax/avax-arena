@@ -1,4 +1,5 @@
-import { propsForChunk, allTownProps, dungeonDoors, npcProps, TOWN_ORIGIN, DECO_KINDS, DECO_BY_BIOME as DECO_BY_BIOME_TEST, type TdProp } from '../lib/game/td/worldProps';
+import { propsForChunk, allTownProps, dungeonDoors, npcProps, TOWN_ORIGIN, DECO_KINDS, DECO_BY_BIOME as DECO_BY_BIOME_TEST, TD_HOUSES, type TdProp } from '../lib/game/td/worldProps';
+import { INTERIORS } from '../lib/game/td/interiors';
 import { NPCS, NPC_BY_ID } from '../lib/game/td/npcs';
 import { getTile, TOWN_SPAWN, ROAD_Y } from '../lib/game/td/worldMap';
 import { HUB_GAMES } from '../lib/game/hub/hubGames';
@@ -138,6 +139,43 @@ ok('reachable-all-building-doors', doorTiles.every(k => seen.has(k)));
 ok('reachable-all-npcs', NPCS.every(n => seen.has(`${n.tx},${n.ty + 1}`) || seen.has(`${n.tx + 1},${n.ty}`) || seen.has(`${n.tx - 1},${n.ty}`)));
 ok('reachable-all-farm-plots', town.filter(p => p.kind === 'farm_plot').every(p => seen.has(tileKey(p))));
 ok('reachable-campfire-plaza', seen.has('192,196') && seen.has('187,197') && seen.has('197,197'));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Faz 11.1: İÇ MEKÂNLI EVLER (kind 'house' — buildings-count çapası bilerek AYRI)
+// ─────────────────────────────────────────────────────────────────────────────
+const houses = town.filter(p => p.kind === 'house');
+console.log('evler:', houses.map(p => `${p.data!.id}@${tileKey(p)}`).join(' · '));
+ok('house-count', houses.length === TD_HOUSES.length);
+ok('house-data', houses.every(p => !!p.data?.id && !!p.data?.interiorId && !!p.data?.name && !!p.solid));
+ok('house-interior-resolves', houses.every(p => !!INTERIORS[p.data!.interiorId!]));
+// evler kasaba chunk'larında ve building sözleşmesiyle aynı geometri (anchor = kapı tile'ı)
+ok('houses-in-town-chunks', townChunks.reduce((n, c) => n + c.filter(p => p.kind === 'house').length, 0) === TD_HOUSES.length);
+ok('house-door-on-north-row-band', houses.every(p => Math.floor(p.y / 16) === TOWN_ORIGIN.ty - 2));
+// ev solid'i başka hiçbir solid'le (bina/ateş/ağaç/NPC/kuyu…) kesişmez
+const rectsOverlap = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+const nonHouseSolids = town.filter(p => p.solid && p.kind !== 'house').map(p => p.solid!);
+ok('house-no-solid-overlap', houses.every(hp => nonHouseSolids.every(s => !rectsOverlap(hp.solid!, s))));
+// ev rect'inin içine NPC/sokak mobilyası/tarla/kapı düşmez (anchor kontrolü)
+const inHouse = (x: number, y: number) => houses.some(hp => {
+  const s = hp.solid!;
+  return x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h;
+});
+ok('house-not-on-npc', NPCS.every(n => !inHouse(n.tx * 16 + 8, n.ty * 16 + 8)));
+ok('house-not-on-street/farm', town.filter(p => p.kind === 'deco' || p.kind === 'farm_plot').every(p => !inHouse(p.x, p.y)));
+// ev tabanı collision/su terrain'ine oturmaz (kapı önü dahil)
+ok('house-ground-clear', houses.every(p => {
+  const s = p.solid!;
+  for (let ty = Math.floor(s.y / 16); ty <= Math.floor((s.y + s.h - 1) / 16) + 1; ty++)
+    for (let tx = Math.floor(s.x / 16); tx <= Math.floor((s.x + s.w - 1) / 16); tx++) {
+      const g = getTile(tx, ty);
+      if (g.collision || g.biome === 'water') return false;
+    }
+  return true;
+}));
+// 🔒 spawn flood-fill'i ev kapılarına da ulaşır (kapı önü tile'ı — building'lerle aynı kural)
+const houseDoorTiles = houses.map(p => `${Math.floor(p.x / 16)},${Math.floor(p.y / 16) + 1}`);
+ok('reachable-all-house-doors', houseDoorTiles.every(k => seen.has(k)));
 
 console.log(`td-props: ${pass} pass, ${fail} fail`);
 if (fail) process.exit(1);
