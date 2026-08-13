@@ -6,6 +6,8 @@
 // Oda koordinatları: (0,0) sol-üst İÇ köşe; duvar halkası SAHNE çiziminde eklenir
 // (oda dışı her tile duvar sayılır — interiorWalkable sınır dışını false döner).
 
+import { DEFAULT_DAY_TIME } from './dayNight';
+
 export type FurnKind =
   | 'bed' | 'table' | 'chair' | 'rug' | 'shelf'
   | 'hearth' | 'counter' | 'lectern' | 'plant' | 'crate';
@@ -87,6 +89,39 @@ export const INTERIORS: Record<string, InteriorDef> = {
     books: [],
   },
 };
+
+// ─── Faz 11.2: han — uyku mekaniği (SAF: sahne + test AYNI sabit/fonksiyonu okur) ───
+
+/** Bir gecelik konaklama (gold). Dünyadaki ikinci gold sink (Faz 10 ruhu: ucuz tutuldu). */
+export const INN_SLEEP_COST = 5;
+
+/** Hancı selamı — gündüz/gece ayrımı sahnede isNight(tdState.dayTime) ile seçilir. */
+export function innkeeperGreeting(night: boolean): string {
+  return night
+    ? 'Half the town is asleep. The other half is here.'
+    : 'Warm beds, warmer stew. What do you need?';
+}
+
+export interface SleepState {
+  gold: number; hp: number; maxHp: number; energy: number; dayTime: number;
+}
+
+/**
+ * Uyku geçişi — SAF: yetersiz altında `null` (çağıran HİÇBİR alanı yazmaz),
+ * yeterlide yeni state döner: gold −INN_SLEEP_COST, HP/enerji FULL, saat sabaha
+ * (DEFAULT_DAY_TIME) çekilir. Gün sayacı YOK — gündüz uyumak da sadece saati sarar
+ * (plan §11.2: "ertesi sabaha atlamaz"). Girdi NESNESİ mutate edilmez.
+ */
+export function applySleep(s: SleepState, energyMax: number): SleepState | null {
+  if (s.gold < INN_SLEEP_COST) return null;
+  return {
+    gold: s.gold - INN_SLEEP_COST,
+    hp: s.maxHp,
+    maxHp: s.maxHp,
+    energy: energyMax,
+    dayTime: DEFAULT_DAY_TIME,
+  };
+}
 
 /**
  * Oda İÇİ yürünebilirlik: sınır dışı = duvar, solid mobilya taban alanı = kapalı.

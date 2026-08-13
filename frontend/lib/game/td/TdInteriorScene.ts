@@ -6,9 +6,16 @@
 // save/achievements YAZILMAZ (11.1'de kalıcı state yok).
 import * as Phaser from 'phaser';
 import { TILE, computeTdView, userTdZoom, depth, TD_FONT } from './tdCore';
-import { chibiHumanoid, CHIBI_H } from './sprites/chibi';
-import { INTERIORS, interiorWalkable, type InteriorDef } from './interiors';
+import { chibiHumanoid, CHIBI_H, REMOTE_PALETTE_VARIANTS } from './sprites/chibi';
+import {
+  INTERIORS, interiorWalkable, INN_SLEEP_COST, applySleep, innkeeperGreeting,
+  type InteriorDef,
+} from './interiors';
 import { INTERIOR_FURN_SPEC } from './sprites/interiorProps';
+import { isNight, DEFAULT_DAY_TIME } from './dayNight';
+import { TdState } from './tdState';
+import { PlayerState } from '../PlayerState';
+import type { TdWorldScene } from './TdWorldScene';
 
 const WALK_FRAMES = [0, 1, 0, 2] as const;
 
@@ -30,6 +37,14 @@ export class TdInteriorScene extends Phaser.Scene {
   private timeIn = 0;
   private uiZoom = 3;
   private touchEPrev = false;
+  // ── Faz 11.2: iç-mekân NPC + diyalog paneli + uyku ──
+  private npcPos: { x: number; y: number } | null = null;
+  private npcName = '';
+  private npcLabel: Phaser.GameObjects.Text | null = null;
+  private panelC: Phaser.GameObjects.Container | null = null;
+  private panelErr: Phaser.GameObjects.Text | null = null;
+  private sleeping = false;
+  private hintMode: 'exit' | 'talk' = 'exit';
 
   constructor() { super({ key: 'TdInterior' }); }
 
@@ -41,6 +56,10 @@ export class TdInteriorScene extends Phaser.Scene {
     this.touchEPrev = false;
     this.heroDir = 0; this.heroFlip = false;
     this.walkIdx = 0; this.walkT = 0;
+    this.npcPos = null; this.npcName = '';
+    this.npcLabel = null; this.panelC = null; this.panelErr = null;
+    this.sleeping = false;                      // 🔴 fade yarıda kalırsa bile kilit taşınmasın
+    this.hintMode = 'exit';
   }
 
   create(): void {
@@ -104,11 +123,36 @@ export class TdInteriorScene extends Phaser.Scene {
     // Phaser clamp'inde odayı köşeye yapıştırırdı).
     this.cameras.main.startFollow(this.hero, true, 1, 1);
 
+    // ── Faz 11.2: iç-mekân NPC (dünya NPC listesine GİRMEZ — npcs.ts'e dokunulmaz).
+    // Dünya emsalinin çizim dili: ayak-hizası origin + gölge + isim etiketi. Çarpışma
+    // YOK (dekoratif duruş, counter arkasında) — hücresi interiorWalkable'da açık kalır.
+    const npcDef = this.def.npc;
+    if (npcDef) {
+      const nKey = `td-int-npc-${npcDef.id}`;
+      if (!this.textures.exists(nKey)) {
+        const pal = REMOTE_PALETTE_VARIANTS[npcDef.palette % REMOTE_PALETTE_VARIANTS.length];
+        this.textures.addCanvas(nKey, chibiHumanoid(0, 0, pal));
+      }
+      const nx = (npcDef.tx + 1) * TILE + 8, ny = (npcDef.ty + 1) * TILE + 8;  // +1: duvar halkası
+      this.npcPos = { x: nx, y: ny };
+      this.npcName = npcDef.name;
+      this.add.ellipse(nx, ny + 1, 14, 4, 0x000000, 0.28).setDepth(depth(nx, ny) - 1);
+      this.add.image(nx, ny, nKey).setOrigin(0.5, (CHIBI_H - 3) / CHIBI_H).setDepth(depth(nx, ny));
+      this.npcLabel = this.add.text(nx, ny - CHIBI_H + 1, npcDef.name, {
+        fontSize: '7px', fontFamily: TD_FONT, color: '#e9f4ff', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
+      }).setOrigin(0.5, 1).setDepth(depth(nx, ny) + 1);
+    }
+
     const kb = this.input.keyboard!;
     this.keys = kb.addKeys('W,A,S,D') as typeof this.keys;
     this.cursors = kb.createCursorKeys();
-    kb.on('keydown-ESC', () => this.leave());
-    kb.on('keydown-E', () => this.tryExit());
+    // ESC: panel açıksa paneli kapat (dünya questPanel deseni), değilse sahneden çık.
+    kb.on('keydown-ESC', () => {
+      if (this.sleeping) return;
+      if (this.panelC) { this.closePanel(); return; }
+      this.leave();
+    });
+    kb.on('keydown-E', () => this.onE());
 
     // ── HUD: oda adı + çıkış ipucu (layoutHud konumlar; Faz 5.2 setResolution kuralı) ──
     this.titleText = this.add.text(0, 0, this.def.name, {
@@ -142,6 +186,8 @@ export class TdInteriorScene extends Phaser.Scene {
     this.hintText.setPosition(x0 + w / 2, y0 + h - 16);
     if (this.titleText.style.resolution !== k) this.titleText.setResolution(k);
     if (this.hintText.style.resolution !== k) this.hintText.setResolution(k);
+    if (this.npcLabel && this.npcLabel.style.resolution !== k) this.npcLabel.setResolution(k);
+    this.panelC?.setPosition(x0 + w / 2, y0 + h / 2);   // panel ekran-merkezli kalır (resize dahil)
   }
 
   /** Ayak-noktası çarpışması — interiorWalkable testle AYNI sözleşme (tek doğruluk kaynağı). */
@@ -162,6 +208,111 @@ export class TdInteriorScene extends Phaser.Scene {
     if (Math.hypot(this.heroPos.x - px, this.heroPos.y - py) < 20) this.leave();
   }
 
+  /** E tuşu yönlendirici: pad = çıkış ÖNCELİĞİ (mevcut davranış), değilse yakın NPC = diyalog. */
+  private onE(): void {
+    if (this.sleeping || this.panelC) return;    // panel açıkken ikinci E diyalog tetiklemez
+    this.tryExit();
+    if (this.leaving) return;
+    if (this.npcPos && Math.hypot(this.heroPos.x - this.npcPos.x, this.heroPos.y - this.npcPos.y) <= 24) {
+      this.openInnPanel();
+    }
+  }
+
+  /** Dünya sahnesinin tdState'i — enerji/saat TEK doğruluk kaynağı (TdDungeonScene emsali). */
+  private worldTd(): TdState | null {
+    return (this.scene.get('TdWorld') as TdWorldScene | null)?.tdState ?? null;
+  }
+
+  /**
+   * Hancı diyaloğu — TdWorldScene.buildPanel görsel dilinin sahne-yerel kopyası
+   * (gölge + gövde 0x121a23@0.97 + kenar 0x3a4e63 + üst parlama). Dünya panel koduna
+   * DOKUNULMAZ (plan kısıtı). 🔴 Faz 7 dersi: container ÇOCUKLARINA da setScrollFactor(0).
+   */
+  private openInnPanel(): void {
+    this.closePanel();
+    const k = this.uiZoom, w = 168, h = 96, r = 8;   // r << h/2 (Faz 5.10 kıskacı)
+    const g = this.add.graphics().setScrollFactor(0);
+    g.fillStyle(0x000000, 0.3); g.fillRoundedRect(-w / 2 + 1, -h / 2 + 2, w, h, r);
+    g.fillStyle(0x121a23, 0.97); g.fillRoundedRect(-w / 2, -h / 2, w, h, r);
+    g.lineStyle(1, 0x3a4e63, 1); g.strokeRoundedRect(-w / 2, -h / 2, w, h, r);
+    g.fillStyle(0xffffff, 0.05); g.fillRect(-w / 2 + 3, -h / 2 + 1, w - 6, 1);
+    const T = (x: number, y: number, msg: string, color: string, size = 8, ox = 0, oy = 0) =>
+      this.add.text(x, y, msg, { fontSize: `${size}px`, fontFamily: TD_FONT, color })
+        .setOrigin(ox, oy).setResolution(k).setScrollFactor(0);
+    const night = isNight(this.worldTd()?.dayTime ?? DEFAULT_DAY_TIME);
+    const sleepBtn = this.btn(T(0, 6, `[ SLEEP — ${INN_SLEEP_COST}g ]`, '#ffd23f', 10, 0.5, 0.5), () => this.doSleep());
+    this.panelErr = T(0, 27, 'Not enough coin.', '#ff7a6e', 8, 0.5, 0.5).setVisible(false);
+    this.panelC = this.add.container(0, 0, [g,
+      T(0, -h / 2 + 7, this.npcName, '#9fe8ff', 11, 0.5),
+      this.btn(T(w / 2 - 14, -h / 2 + 6, '✕', '#8fa6bd', 11), () => this.closePanel()),
+      T(0, -h / 2 + 24, innkeeperGreeting(night), '#e9f4ff', 8, 0.5)
+        .setWordWrapWidth(w - 20).setAlign('center'),
+      sleepBtn,
+      T(0, 17, 'until morning · full HP & energy', '#8fa6bd', 7, 0.5, 0.5),
+      this.panelErr,
+      this.btn(T(0, h / 2 - 11, '[ LEAVE ]', '#8fa6bd', 9, 0.5, 0.5), () => this.closePanel()),
+    ]).setScrollFactor(0).setDepth(1e9 + 3);
+    this.layoutHud();                                  // konumla (ekran merkezi)
+  }
+
+  /** Tıklanabilir buton metni — TdWorldScene.panelBtn'in yerel ikizi. */
+  private btn(t: Phaser.GameObjects.Text, onClick: () => void): Phaser.GameObjects.Text {
+    return t.setInteractive({ useHandCursor: true })
+      .on('pointerover', () => t.setAlpha(0.75))
+      .on('pointerout', () => t.setAlpha(1))
+      .on('pointerdown', onClick);
+  }
+
+  private closePanel(): void {
+    this.panelC?.destroy();                            // Container.destroy çocukları da yok eder
+    this.panelC = null;
+    this.panelErr = null;
+  }
+
+  /**
+   * Uyku: applySleep SAF fonksiyonu karar verir (test aynı fonksiyonu çapalar).
+   * Yetersiz altın → panel içi kızıl satır, HİÇBİR state yazılmaz. Yeterliyse
+   * siyah fade (~600ms) → tam karanlıkta state BİR KEZ yazılır → "☀ morning" → fade-out.
+   */
+  private doSleep(): void {
+    if (this.sleeping) return;                         // 🔴 kısa devre: fade sırasında ikinci tık
+    const ps = PlayerState.get();
+    const st = this.worldTd();
+    const next = applySleep(
+      { gold: ps.gold, hp: ps.hp, maxHp: ps.maxHp, energy: st?.energy ?? TdState.ENERGY_MAX, dayTime: st?.dayTime ?? DEFAULT_DAY_TIME },
+      TdState.ENERGY_MAX,
+    );
+    if (!next) { this.panelErr?.setVisible(true); return; }
+    this.closePanel();
+    this.sleeping = true;                              // hareket + E/ESC + pad-çıkışı kilitli
+    const k = this.uiZoom, sw = this.scale.width, sh = this.scale.height;
+    const x0 = sw / 2 - (sw / 2) / k, y0 = sh / 2 - (sh / 2) / k;
+    const vw = sw / k, vh = sh / k;
+    const fade = this.add.rectangle(x0 + vw / 2, y0 + vh / 2, vw + 16, vh + 16, 0x000000)
+      .setScrollFactor(0).setDepth(1e9 + 8).setAlpha(0);
+    const sun = this.add.text(x0 + vw / 2, y0 + vh / 2, '☀ morning', {
+      fontSize: '12px', fontFamily: TD_FONT, color: '#ffe9c9',
+    }).setOrigin(0.5).setResolution(k).setScrollFactor(0).setDepth(1e9 + 9).setAlpha(0);
+    this.tweens.add({
+      targets: fade, alpha: 1, duration: 600,
+      onComplete: () => {
+        // ── state, tam karanlıkta BİR kez ──
+        ps.gold = next.gold;
+        ps.hp = next.hp;
+        if (st) { st.energy = next.energy; st.dayTime = next.dayTime; st.save(); }
+        // 🔴 sandbox kuralı (Faz 3 Critical): canlı save YALNIZ live modda yazılır.
+        if ((this.registry.get('tdMode') as string) === 'live') ps.save();
+        this.tweens.add({ targets: sun, alpha: 1, duration: 250 });
+        this.time.delayedCall(650, () => {
+          this.tweens.add({
+            targets: [fade, sun], alpha: 0, duration: 300,
+            onComplete: () => { fade.destroy(); sun.destroy(); this.sleeping = false; },
+          });
+        });
+      },
+    });
+  }
+
   /** Çıkış: bu sahne durur, TdWorld devam eder (zindan/kapı akışıyla simetrik). */
   private leave(): void {
     if (this.leaving) return;
@@ -174,15 +325,20 @@ export class TdInteriorScene extends Phaser.Scene {
     const dt = Math.min(dtMs, 50) / 1000;
     this.timeIn += dt;
     const touch = this.registry.get('tdTouch') as { dx: number; dy: number; e: boolean; space: boolean } | undefined;
+    // Faz 11.2: panel açıkken/uyurken hareket kilitli (visible guard) — E yönlendirmesi
+    // onE()'nin kendi guard'ında (kenar tetiği burada canlı kalır, stale edge kalmaz).
+    const uiLock = this.sleeping || !!this.panelC;
     let dx = 0, dy = 0;
-    if (this.keys.W.isDown || this.cursors.up.isDown) dy -= 1;
-    if (this.keys.S.isDown || this.cursors.down.isDown) dy += 1;
-    if (this.keys.A.isDown || this.cursors.left.isDown) dx -= 1;
-    if (this.keys.D.isDown || this.cursors.right.isDown) dx += 1;
+    if (!uiLock) {
+      if (this.keys.W.isDown || this.cursors.up.isDown) dy -= 1;
+      if (this.keys.S.isDown || this.cursors.down.isDown) dy += 1;
+      if (this.keys.A.isDown || this.cursors.left.isDown) dx -= 1;
+      if (this.keys.D.isDown || this.cursors.right.isDown) dx += 1;
+    }
     if (touch) {
-      if (dx === 0 && touch.dx) dx = touch.dx;
-      if (dy === 0 && touch.dy) dy = touch.dy;
-      if (touch.e && !this.touchEPrev) this.tryExit();   // mobil E — one-shot (kenar tetik)
+      if (!uiLock && dx === 0 && touch.dx) dx = touch.dx;
+      if (!uiLock && dy === 0 && touch.dy) dy = touch.dy;
+      if (touch.e && !this.touchEPrev) this.onE();   // mobil E — one-shot (kenar tetik)
       this.touchEPrev = !!touch.e;
     }
     const moving = !!(dx || dy);
@@ -208,10 +364,19 @@ export class TdInteriorScene extends Phaser.Scene {
       .setDepth(depth(this.heroPos.x, this.heroPos.y) - 1);
     this.hero.setDepth(depth(this.heroPos.x, this.heroPos.y));
 
+    // Faz 11.2: NPC yakınında hint '[E] talk to <isim>' olur; uzaklaşınca eski metin döner.
+    const nearNpc = !uiLock && !!this.npcPos &&
+      Math.hypot(this.heroPos.x - this.npcPos.x, this.heroPos.y - this.npcPos.y) <= 24;
+    const mode: 'exit' | 'talk' = nearNpc ? 'talk' : 'exit';
+    if (mode !== this.hintMode) {
+      this.hintMode = mode;
+      this.hintText.setText(mode === 'talk' ? `[E] talk to ${this.npcName}` : '[E] exit · [ESC] leave');
+    }
+
     // pad'e basınca çık (zindan giriş-pad deseni; spawn pad'in 1 tile üstünde → kaza yok)
     const pad = this.def.exitPad;
     const px = (pad.tx + 1) * TILE + 8, py = (pad.ty + 1) * TILE + 8;
-    if (!this.leaving && this.timeIn > 1 && Math.hypot(this.heroPos.x - px, this.heroPos.y - py) < 10) this.leave();
+    if (!this.leaving && !uiLock && this.timeIn > 1 && Math.hypot(this.heroPos.x - px, this.heroPos.y - py) < 10) this.leave();
   }
 }
 
