@@ -29,9 +29,11 @@ SEED_GOLD = 600
 with sync_playwright() as p:
     b = p.chromium.launch(headless=True, args=['--enable-gpu', '--use-angle=metal'])
     ctx = b.new_context(viewport={'width': 1200, 'height': 800})
+    # try/catch: init script HER belgede koşar (reload ara-belgeleri dahil) — erişilemeyen
+    # belgede localStorage throw eder ve konsol-temizliği çapasını flake'ler.
     ctx.add_init_script(
-        f"if (!localStorage.getItem('frostbite_save')) "
-        f"localStorage.setItem('frostbite_save', JSON.stringify({{ v: 1, gold: {SEED_GOLD} }}))")
+        f"try {{ if (!localStorage.getItem('frostbite_save')) "
+        f"localStorage.setItem('frostbite_save', JSON.stringify({{ v: 1, gold: {SEED_GOLD} }})) }} catch {{}}")
     pg = ctx.new_page()
     errors = []
     pg.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
