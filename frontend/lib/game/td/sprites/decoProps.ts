@@ -383,6 +383,53 @@ export const DECO_SPEC: Record<DecoKind, DecoSpec> = {
       px(7, 17, 1, 5, BEAM_D); px(13, 17, 1, 5, BEAM_D); px(19, 17, 1, 5, BEAM_D);
     },
   },
+
+  // ─────────────── Faz 11.5: Bina çevresi süsleri ───────────────
+
+  /** İstiflenmiş kütük yığını — halka kesitleri öne bakar, üstü karlı. */
+  firewood: {
+    w: 15, h: 10,
+    draw: (px) => {
+      const log = (x: number, y: number) => {
+        px(x, y, 5, 5, WOOD_D); px(x + 1, y + 1, 3, 3, WOOD); px(x + 2, y + 2, 1, 1, WOOD_H);
+      };
+      log(0, 5); log(5, 5); log(10, 5);                             // alt sıra 3 kütük
+      log(3, 1); log(8, 1);                                          // üst sıra 2 kütük
+      px(3, 0, 10, 1, SNOW); px(4, 1, 3, 1, SNOW);                   // kar
+    },
+  },
+
+  /** Sancak direği — taş kaide + ahşap direk + altın topuz, kızıl kırlangıç-kuyruk sancak. */
+  banner_pole: {
+    w: 13, h: 24,
+    draw: (px) => {
+      px(1, 22, 5, 2, STONE_D); px(1, 22, 5, 1, STONE);              // taban taşı
+      px(3, 2, 2, 20, '#4a3a2c'); px(3, 2, 1, 20, BEAM);             // direk
+      px(2, 0, 4, 2, GOLD); px(3, 0, 2, 1, '#ffd884');               // tepe topuzu
+      px(5, 3, 7, 1, BEAM_D); px(5, 2, 7, 1, SNOW);                  // çapraz kol + kar
+      px(6, 4, 6, 10, RED); px(6, 4, 1, 10, '#ff7a6a');              // sancak + ışık kenarı
+      px(11, 4, 1, 10, '#b32b2c');                                    // gölge kenarı
+      px(6, 14, 2, 3, RED); px(10, 14, 2, 3, RED);                    // kırlangıç kuyruk
+      px(6, 16, 2, 1, '#b32b2c'); px(10, 16, 2, 1, '#b32b2c');
+      px(8, 6, 2, 2, GOLD);                                           // arma noktası
+    },
+  },
+
+  /** İlan panosu — iki direk + ahşap pano, iğnelenmiş kâğıtlar (biri kızıl mühürlü). */
+  noticeboard: {
+    w: 16, h: 15,
+    draw: (px) => {
+      px(2, 3, 2, 12, BEAM); px(12, 3, 2, 12, BEAM);                 // direkler
+      px(2, 3, 1, 12, BEAM_L); px(12, 3, 1, 12, BEAM_L);
+      px(0, 2, 16, 9, WOOD); px(0, 2, 16, 1, WOOD_H); px(0, 10, 16, 1, WOOD_D); // pano
+      px(0, 2, 1, 9, WOOD_L); px(15, 2, 1, 9, WOOD_D);
+      px(2, 4, 4, 5, '#f0ead8'); px(3, 5, 2, 1, '#8a7a5c'); px(3, 7, 2, 1, '#8a7a5c'); // kâğıt 1
+      px(7, 4, 3, 4, '#e8dcc0'); px(8, 6, 1, 1, RED);                // kâğıt 2 (mühürlü)
+      px(11, 5, 3, 4, '#f0ead8'); px(12, 6, 1, 1, '#8a7a5c');        // kâğıt 3
+      px(3, 4, 1, 1, IRON_D); px(8, 4, 1, 1, IRON_D); px(12, 5, 1, 1, IRON_D); // iğneler
+      px(0, 1, 7, 1, SNOW); px(9, 1, 6, 1, SNOW);                    // üst kar
+    },
+  },
 };
 
 /** Kontur ÖNCESİ boyut tablosu (final sprite = [w+2, h+2]) — yerleşim matematiği için. */

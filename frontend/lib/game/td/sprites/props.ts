@@ -117,96 +117,202 @@ function xBrace(px: Px, x0: number, y0: number, x1: number, y1: number, color: s
   }
 }
 
-/** lodge: ahşap kütük duvar + beşik çatı (üçgen alınlık) + taş baca. H-wallH SABİT 22px. */
-function drawLodge(px: Px, W: number, H: number, wallH: number, accent: string) {
-  px(2, H - wallH, W - 4, wallH - 2, '#8a6845');
-  for (let i = 0; i < wallH - 2; i += 4) {
-    px(2, H - wallH + i, W - 4, 3, (i / 4) % 2 === 0 ? '#96734e' : '#7a5c3c'); // kütük sırası
-    px(2, H - wallH + i + 3, W - 4, 1, '#5c4530');                              // kütük derzi
+/** Tek çapraz kiriş (xBrace'in yarısı) — Faz 11.5 plaster varyant B + kılıç arması. */
+function diagBrace(px: Px, x0: number, y0: number, x1: number, y1: number, color: string) {
+  const w = x1 - x0, h = y1 - y0, steps = Math.max(Math.abs(w), Math.abs(h), 1);
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    px(Math.round(x0 + t * w), Math.round(y0 + t * h), 1, 1, color);
   }
+}
+
+// NOT (Faz 11.5): H = hTiles*16+26, wallH = hTiles*16-8 → duvar üstü boşluk H-wallH = 34px
+// SABİT (hTiles'tan bağımsız). Aşağıdaki tüm çatı/baca/flama matematiği bu 34px paya güvenir.
+
+/** lodge: ahşap kütük duvar + beşik çatı + TAM görünür taş baca (yönü per-id) + dormer (w≥4). */
+function drawLodge(px: Px, W: number, H: number, wallH: number, accent: string, id: string) {
+  const hv = hashId(id || 'lodge');
+  const wallTop = H - wallH;
+  px(2, wallTop, W - 4, wallH - 2, '#8a6845');
+  for (let i = 0; i < wallH - 2; i += 4) {
+    px(2, wallTop + i, W - 4, 3, (i / 4) % 2 === 0 ? '#96734e' : '#7a5c3c'); // kütük sırası
+    px(2, wallTop + i + 3, W - 4, 1, '#5c4530');                              // kütük derzi
+    // Faz 11.5: kütük uçları — köşelerde açık kesit noktaları
+    px(2, wallTop + i + 1, 2, 2, '#b08a5e'); px(W - 4, wallTop + i + 1, 2, 2, '#b08a5e');
+  }
+  // Faz 11.5: accent kapı çerçevesi (kapı drawBuildingCommon'da üstüne çizilir → 2px çerçeve kalır)
+  const dw = 10, dx0 = (W - dw) >> 1;
+  px(dx0 - 2, H - 16, dw + 4, 16, accent);
   // Çatı: kiremit sıraları + tepede accent mahya bandı. (Önceki hâlde `r % 4 === 0`
   // accent veriyordu → çatı boydan boya zebra çizgiliydi; accent artık TEK bantta.)
-  const roofH = 16;
+  const roofH = 16, roofTop = wallTop - roofH;
   for (let r = 0; r < roofH; r++) {
     const inset = Math.max(0, Math.floor((roofH - r) * 0.45));
     const col = r < 2 ? SNOW : r < 4 ? accent : (r % 3 === 0 ? '#54391f' : '#6b4c31');
-    px(inset, H - wallH - roofH + r, W - inset * 2, 1, col);
+    px(inset, roofTop + r, W - inset * 2, 1, col);
   }
-  px(0, H - wallH - 2, W, 3, '#3d3126'); // üçgen alınlık gölgesi/saçak
-  px(5, H - wallH - roofH - 6, 5, 8, '#7a7167'); px(5, H - wallH - roofH - 6, 5, 2, '#948b81'); // taş baca
-  px(6, H - wallH - roofH - 10, 2, 3, 'rgba(220,225,230,.5)'); // baca dumanı
+  px(0, wallTop - 2, W, 3, '#3d3126'); // üçgen alınlık gölgesi/saçak
+  // Faz 11.5: baca artık TAM görünür (+26 pay; eski +14'te canvas dışına kırpılıyordu),
+  // yönü per-id, tepesinde şapka + kar, üstünde 3 duman lülesi.
+  const chX = hv % 2 === 0 ? 5 : W - 10;
+  px(chX, roofTop - 8, 5, 12, '#7a7167'); px(chX, roofTop - 8, 5, 2, '#948b81');
+  px(chX - 1, roofTop - 10, 7, 2, '#948b81');                   // şapka
+  px(chX - 1, roofTop - 11, 5, 1, SNOW);                        // şapka karı
+  px(chX + 2, roofTop - 13, 2, 2, 'rgba(225,230,235,.6)');      // duman lüleleri (yükseldikçe soluk)
+  px(chX + (hv % 2 === 0 ? 4 : 0), roofTop - 16, 2, 2, 'rgba(225,230,235,.42)');
+  px(chX + 2, roofTop - 18, 2, 2, 'rgba(225,230,235,.26)');
+  // Faz 11.5: geniş lodge'da (w≥4 tile) çatı penceresi (dormer) — bacanın karşı yakası
+  if (W >= 64) {
+    const dxr = hv % 2 === 0 ? W - 24 : 12;
+    px(dxr - 1, roofTop + 5, 12, 2, SNOW);                      // dormer mini çatısı
+    px(dxr - 1, roofTop + 7, 12, 1, '#54391f');
+    px(dxr, roofTop + 8, 10, 7, '#8a6845');                     // dormer gövdesi
+    px(dxr + 3, roofTop + 9, 4, 5, '#ffd98a');                  // sıcak pencere
+    px(dxr + 3, roofTop + 9, 4, 5, 'rgba(255,170,70,.28)');
+    px(dxr + 2, roofTop + 9, 1, 5, '#3a2a1c'); px(dxr + 7, roofTop + 9, 1, 5, '#3a2a1c');
+  }
+  // Faz 11.5: han (inn) — kapı iki yanında sıcak fener + ışık halesi
+  if (id === 'inn') {
+    for (const lx of [dx0 - 6, dx0 + dw + 4]) {
+      px(lx - 1, H - 13, 5, 6, 'rgba(255,217,138,.22)');        // hale
+      px(lx, H - 13, 3, 1, '#3a3a3a');                          // fener başlığı
+      px(lx, H - 12, 3, 3, '#ffd98a'); px(lx + 1, H - 11, 1, 1, '#fff3c8'); // cam + alev
+      px(lx + 1, H - 9, 1, 2, '#3a3a3a');                       // alt askı
+    }
+  }
 }
 
-/** stone: kaydırmalı derz taş blok duvar + kemerli kapı + koyu arduvaz kırma çatı. */
-function drawStone(px: Px, W: number, H: number, wallH: number, accent: string) {
+/** stone: taş blok duvar + köşe taşları (quoins) + kemerli kapı + sancak şeritleri.
+ * 'arena' → mazgallı parapet (kale), 'archive' → kapı üstü parşömen rulosu. */
+function drawStone(px: Px, W: number, H: number, wallH: number, accent: string, id: string) {
+  const wallTop = H - wallH;
   const rowH = 4;
   for (let ry = 0, row = 0; ry < wallH - 2; ry += rowH, row++) {
-    px(2, H - wallH + ry, W - 4, rowH - 1, row % 2 ? '#9a9188' : '#8a8177');
+    px(2, wallTop + ry, W - 4, rowH - 1, row % 2 ? '#9a9188' : '#8a8177');
     const off = (row % 2) * 4;
     for (let bx = 2 - off; bx < W - 2; bx += 8) {
       const x = Math.max(2, bx), w = Math.min(1, W - 2 - x);
-      if (w > 0) px(x, H - wallH + ry, w, rowH - 1, '#6c6258'); // derz kaydırma çizgisi
+      if (w > 0) px(x, wallTop + ry, w, rowH - 1, '#6c6258'); // derz kaydırma çizgisi
     }
+    // Faz 11.5: quoins — köşelerde sırayla geniş/dar açık taş bloklar
+    const qw = row % 2 ? 5 : 3;
+    px(2, wallTop + ry, qw, rowH - 1, '#b0a79c'); px(W - 2 - qw, wallTop + ry, qw, rowH - 1, '#b0a79c');
   }
   const dw = 10, dx0 = (W - dw) >> 1; // kemerli kapı bandı (accent)
   px(dx0 - 2, H - 17, dw + 4, 3, accent);
   px(dx0 - 3, H - 15, dw + 6, 1, '#3a2a1c');
-  const roofH = 12;
-  for (let r = 0; r < roofH; r++) {
-    const inset = Math.max(0, Math.floor((roofH - r) * 0.6));
-    px(inset, H - wallH - roofH + r, W - inset * 2, 1, r < 2 ? '#c7d6dc' : '#3a4148');
+  // Faz 11.5: kapı yanı çift accent sancak şeridi (yarım kırlangıç kuyruklu)
+  for (const sx of [dx0 - 6, dx0 + dw + 4]) {
+    px(sx, H - 26, 2, 10, accent);
+    px(sx, H - 26, 2, 1, '#ffffff55');
+    px(sx, H - 16, 1, 2, accent);
   }
-  px(0, H - wallH - 2, W, 3, '#242a30');
+  // Faz 11.5: archive — kapı üstü parşömen rulosu motifi
+  if (id === 'archive') {
+    px(dx0 + 1, H - 22, dw - 2, 3, '#e8dcc0');
+    px(dx0, H - 23, 2, 5, '#cfc0a0'); px(dx0 + dw - 2, H - 23, 2, 5, '#cfc0a0');
+    px(dx0 + 3, H - 21, dw - 6, 1, '#8a7a5c');                  // yazı çiziği
+  }
+  if (id === 'arena') {
+    // Faz 11.5: ARENA — çatı yerine mazgallı parapet (crenellation), kale hissi
+    px(2, wallTop - 6, W - 4, 6, '#8a8177'); px(2, wallTop - 6, W - 4, 1, '#9a9188');
+    for (let bx = 2; bx < W - 2; bx += 9) {
+      const bw = Math.min(5, W - 2 - bx);
+      px(bx, wallTop - 11, bw, 6, '#9a9188');
+      px(bx, wallTop - 11, 1, 6, '#b0a79c');
+      px(bx, wallTop - 12, bw, 1, SNOW);
+    }
+    px(0, wallTop - 2, W, 3, '#242a30');
+  } else {
+    const roofH = 12, roofTop = wallTop - roofH;
+    for (let r = 0; r < roofH; r++) {
+      const inset = Math.max(0, Math.floor((roofH - r) * 0.6));
+      px(inset, roofTop + r, W - inset * 2, 1, r < 2 ? '#c7d6dc' : '#3a4148');
+    }
+    px(0, wallTop - 2, W, 3, '#242a30');
+  }
 }
 
-/** plaster: açık sıva + koyu ahşap yarım-kirişleme (half-timber) + kapı üstü accent tente. */
-function drawPlaster(px: Px, W: number, H: number, wallH: number, accent: string) {
-  px(2, H - wallH, W - 4, wallH - 2, '#e8ddc8');
-  px(2, H - wallH, 3, wallH - 2, '#4a3420'); px(W - 5, H - wallH, 3, wallH - 2, '#4a3420'); // dış dikmeler
+/** plaster: açık sıva + yarım-kirişleme (per-id 2 varyant: X / paralel çapraz) + çizgili kapı tentesi. */
+function drawPlaster(px: Px, W: number, H: number, wallH: number, accent: string, id: string) {
+  const hv = hashId(id || 'plaster');
+  const wallTop = H - wallH;
+  px(2, wallTop, W - 4, wallH - 2, '#e8ddc8');
+  px(2, wallTop, 3, wallH - 2, '#4a3420'); px(W - 5, wallTop, 3, wallH - 2, '#4a3420'); // dış dikmeler
   const midX = (W >> 1) - 1;
-  px(midX, H - wallH, 2, wallH - 2, '#4a3420');                                             // orta dikme
-  const midY = H - wallH + Math.floor((wallH - 2) / 2);
-  px(2, midY, W - 4, 2, '#4a3420');                                                          // yatay orta kiriş
-  xBrace(px, 5, H - wallH + 2, midX - 2, midY - 1, '#4a3420');
-  xBrace(px, midX + 3, H - wallH + 2, W - 8, midY - 1, '#4a3420');
-  const dw = 10, dx0 = (W - dw) >> 1; // tente
+  px(midX, wallTop, 2, wallH - 2, '#4a3420');                                             // orta dikme
+  const midY = wallTop + Math.floor((wallH - 2) / 2);
+  px(2, midY, W - 4, 2, '#4a3420');                                                        // yatay orta kiriş
+  if (hv % 2 === 0) {                                            // varyant A: X-kirişler
+    xBrace(px, 5, wallTop + 2, midX - 2, midY - 1, '#4a3420');
+    xBrace(px, midX + 3, wallTop + 2, W - 8, midY - 1, '#4a3420');
+  } else {                                                       // varyant B: paralel çaprazlar (//)
+    diagBrace(px, 5, midY - 1, midX - 2, wallTop + 2, '#4a3420');
+    diagBrace(px, midX + 3, midY - 1, W - 8, wallTop + 2, '#4a3420');
+  }
+  const dw = 10, dx0 = (W - dw) >> 1; // kapı tentesi — Faz 11.5: accent + beyaz çizgili
   px(dx0 - 4, H - 19, dw + 8, 4, accent);
+  for (let sx = dx0 - 4; sx < dx0 + dw + 4; sx += 4) px(sx, H - 19, 2, 4, '#f2ede2');
   px(dx0 - 4, H - 19, dw + 8, 1, '#ffffff40');
   px(dx0 - 5, H - 15, 1, 3, '#3a2a1c'); px(dx0 + dw + 4, H - 15, 1, 3, '#3a2a1c'); // tente direkleri
-  const roofH = 14;
+  const roofH = 14, roofTop = wallTop - roofH;
   for (let r = 0; r < roofH; r++) {
     const inset = Math.max(0, Math.floor((roofH - r) * 0.45));
-    px(inset, H - wallH - roofH + r, W - inset * 2, 1, r < 3 ? SNOW : '#6b4c31');
+    px(inset, roofTop + r, W - inset * 2, 1, r < 3 ? SNOW : '#6b4c31');
   }
-  px(0, H - wallH - 2, W, 3, '#3d3126');
+  px(0, wallTop - 2, W, 3, '#3d3126');
 }
 
-/** tower: dar/yüksek taş kule + sivri konik çatı + tepede accent flama. Yalnız dar (≤3 tile) bina. */
-function drawTower(px: Px, W: number, H: number, wallH: number, accent: string) {
-  px(2, H - wallH, W - 4, wallH - 2, '#8b95a0');
-  for (let i = 1; i < wallH - 2; i += 6) px(2, H - wallH + i, W - 4, 1, 'rgba(20,26,32,.18)');
+/** tower: dar/yüksek taş kule + UZUN sivri çatı + büyük flama (yönü per-id). Yalnız dar (≤3 tile).
+ * 'launchpad' → tepe anten/roket ucu, 'battleroyale' → duvarda çapraz kılıç arması. */
+function drawTower(px: Px, W: number, H: number, wallH: number, accent: string, id: string) {
+  const hv = hashId(id || 'tower');
+  const wallTop = H - wallH;
+  px(2, wallTop, W - 4, wallH - 2, '#8b95a0');
+  for (let i = 1; i < wallH - 2; i += 6) px(2, wallTop + i, W - 4, 1, 'rgba(20,26,32,.18)');
+  px(2, wallTop, 2, wallH - 2, '#9aa4ae'); px(W - 4, wallTop, 2, wallH - 2, '#77818c'); // köşe bantları
   // 🔴 Konik çatı TEPEDE dar, SAÇAKTA geniş olmalı. Önceki hâlde çarpan `(roofH-r)/roofH`
   // idi → r=0'da en geniş, aşağı daralan TERS üçgen ("örs" artefaktı). Doğrusu `(r+1)/roofH`.
-  const roofH = 14, apex = W >> 1;
+  // Faz 11.5: roofH 14→20 (+26 payı) — kule silüeti belirgin sivrildi.
+  const roofH = 20, apex = W >> 1, roofTop = wallTop - roofH;
   for (let r = 0; r < roofH; r++) {
     const half = Math.max(1, Math.round(((r + 1) / roofH) * (W / 2)));
     // Sol yüz aydınlık, sağ yüz gölgede: düz siyah kütle yerine hacim okunsun.
-    px(apex - half, H - wallH - roofH + r, half, 1, '#3d4550');
-    px(apex, H - wallH - roofH + r, half, 1, '#2c3238');
-    if (r % 4 === 1) px(apex - half, H - wallH - roofH + r, half * 2, 1, '#232930'); // kiremit sırası
+    px(apex - half, roofTop + r, half, 1, '#3d4550');
+    px(apex, roofTop + r, half, 1, '#2c3238');
+    if (r % 4 === 1) px(apex - half, roofTop + r, half * 2, 1, '#232930'); // kiremit sırası
   }
-  px(apex - 2, H - wallH - roofH, 4, 2, '#c7d6dc');        // tepede kar tıkacı
-  px(0, H - wallH - 2, W, 3, '#242a30');
-  px(apex, H - wallH - roofH - 5, 1, 5, '#3a3a3a');        // flama direği
-  px(apex + 1, H - wallH - roofH - 8, 5, 3, accent);       // flama (direkten yana dalgalanır)
-  px(apex + 1, H - wallH - roofH - 8, 5, 1, '#ffffff55');
+  px(apex - 2, roofTop, 4, 2, '#c7d6dc');        // tepede kar tıkacı
+  px(0, wallTop - 2, W, 3, '#242a30');
+  // Faz 11.5: flama büyüdü (8×4, kırlangıç kuyruk), yönü per-id
+  const fdir = hv % 2 === 0 ? 1 : -1;
+  px(apex, roofTop - 7, 1, 7, '#3a3a3a');        // flama direği
+  const fx = fdir === 1 ? apex + 1 : apex - 8;
+  px(fx, roofTop - 7, 8, 2, accent);
+  px(fx + (fdir === 1 ? 0 : 3), roofTop - 5, 5, 2, accent);
+  px(fx, roofTop - 7, 8, 1, '#ffffff55');
+  if (id === 'launchpad') {                       // tepe anten + kızıl roket ucu
+    px(apex, roofTop - 11, 1, 4, '#8a9098');
+    px(apex - 1, roofTop - 13, 3, 2, '#e84142');
+    px(apex, roofTop - 14, 1, 1, '#ffd23f');
+  }
+  if (id === 'battleroyale') {                    // çapraz kılıç arması (üst duvar merkezi)
+    // Tur-1 ekran görüntüsü dersi: cy2 = H-24'te altın kabzalar sonra çizilen kapı
+    // sundurmasının (drawBuildingCommon) altında kalıyordu → 3px yukarı alındı.
+    const cx2 = W >> 1, cy2 = H - 27;
+    diagBrace(px, cx2 - 4, cy2 - 4, cx2 + 4, cy2 + 4, '#c7d6dc');
+    diagBrace(px, cx2 - 4, cy2 + 4, cx2 + 4, cy2 - 4, '#c7d6dc');
+    px(cx2 - 6, cy2 + 4, 2, 2, '#e8b23f'); px(cx2 + 4, cy2 + 4, 2, 2, '#e8b23f'); // kabzalar
+  }
 }
 
 /**
- * Ortak yükseltmeler: temel taşı sırası + kapı önü basamak, haç-çerçeveli sıcak pencereler,
- * saçakta kar/sarkıt buz, demir askıdan sarkan tabela (emoji). Tüm stillerde AYNI.
+ * Ortak yükseltmeler: temel taşı sırası + kapı önü basamak, stil-duyarlı pencereler
+ * (stone=kemer, plaster=tente+çiçek kutusu, tower=ok mazgalı; w≥5 tile'da 3. pencere),
+ * kapı sundurması, saçakta kar/sarkıt buz, BÜYÜK accent-çerçeveli tabela (emoji).
  */
-function drawBuildingCommon(px: Px, g: CanvasRenderingContext2D, W: number, H: number, wallH: number, icon: string) {
+function drawBuildingCommon(px: Px, g: CanvasRenderingContext2D, W: number, H: number, wallH: number, icon: string, style: BuildingStyle, accent: string, wTiles: number) {
+  const wallTop = H - wallH;
   // temel taşı sırası
   px(1, H - 2, W - 2, 2, '#4a4038'); px(1, H - 2, W - 2, 1, '#5c5148');
   // kapı önü basamaklar (kapı alt-orta)
@@ -215,48 +321,77 @@ function drawBuildingCommon(px: Px, g: CanvasRenderingContext2D, W: number, H: n
   // kapı
   px(dx0, H - 14, dw, 14, '#3a2a1c'); px(dx0 + 1, H - 13, dw - 2, 13, '#2c2016');
   px(dx0 + dw - 3, H - 8, 2, 2, '#e8b23f'); // tokmak
-  // pencereler: haç çerçeve + sıcak ışık parıltısı
-  const winY = H - wallH + 5;
-  const drawWindow = (wx: number) => {
+  // Faz 11.5: kapı sundurması — 3px saçak + 2 destek pikseli (plaster hariç: kendi tentesi var)
+  if (style !== 'plaster') {
+    px(dx0 - 3, H - 21, dw + 6, 1, SNOW);
+    px(dx0 - 3, H - 20, dw + 6, 2, '#54391f');
+    px(dx0 - 3, H - 18, 1, 2, '#3a2a1c'); px(dx0 + dw + 2, H - 18, 1, 2, '#3a2a1c');
+  }
+  // pencereler: haç çerçeve + sıcak ışık parıltısı; Faz 11.5: stil süsleri + w≥5'te 3. pencere
+  const winY = wallTop + 5;
+  const wxs = [5, W - 13];
+  if (wTiles >= 5) wxs.push((W >> 1) - 4);
+  for (const wx of wxs) {
+    if (style === 'tower') {
+      // ok mazgalı: dar dikey yarık + taş lento
+      px(wx + 2, winY - 2, 5, 1, '#77818c');
+      px(wx + 3, winY - 1, 3, 10, '#1a2028');
+      px(wx + 4, winY, 1, 8, '#ffd98a');
+      px(wx + 2, winY + 9, 5, 1, '#77818c');
+      continue;
+    }
     px(wx, winY, 8, 8, '#ffd98a'); px(wx, winY, 8, 8, 'rgba(255,170,70,.28)');
     px(wx + 3, winY, 2, 8, '#3a2a1c'); px(wx, winY + 3, 8, 2, '#3a2a1c');
     px(wx - 1, winY - 1, 10, 1, '#3a2a1c'); px(wx - 1, winY + 8, 10, 1, '#3a2a1c');
-  };
-  drawWindow(5); drawWindow(W - 13);
+    if (style === 'stone') {                       // kemerli pencere üstü + accent kilit taşı
+      px(wx - 1, winY - 3, 10, 2, '#6c6258');
+      px(wx + 1, winY - 4, 6, 1, '#6c6258');
+      px(wx + 3, winY - 4, 2, 1, accent);
+    } else if (style === 'plaster') {              // çizgili tente + çiçek kutusu
+      px(wx - 2, winY - 5, 12, 3, accent);
+      for (let sx = wx - 2; sx < wx + 10; sx += 4) px(sx, winY - 5, 2, 3, '#f2ede2');
+      px(wx - 2, winY - 2, 12, 1, 'rgba(0,0,0,.2)');
+      px(wx - 1, winY + 9, 10, 2, '#3f7a3f');
+      px(wx - 1, winY + 9, 10, 1, '#4f9a4f');
+      px(wx + 1, winY + 9, 1, 1, '#e84142'); px(wx + 4, winY + 9, 1, 1, '#e84142'); px(wx + 7, winY + 9, 1, 1, '#e84142');
+    }
+  }
   // Kar: taban köşelerinde YIĞIN değil, temele yaslanan ince eğimli birikinti.
   // (Önceki 6×3 opak bloklar duvardan kopuk "beyaz tuğla" gibi duruyordu.)
   px(1, H - 3, 5, 1, '#dfeaee'); px(1, H - 2, 7, 1, '#eef6f8');
   px(W - 6, H - 3, 5, 1, '#dfeaee'); px(W - 8, H - 2, 7, 1, '#eef6f8');
   // Saçak karı: opak beyaz slab yerine ince çizgi + altında gölge → hacim okunur.
-  const eaveY = H - wallH - 2;
+  const eaveY = wallTop - 2;
   px(0, eaveY, W, 1, '#f2fbff'); px(0, eaveY + 1, W, 1, 'rgba(160,190,205,.55)');
   const nIce = Math.max(2, Math.floor(W / 16));
   for (let i = 0; i < nIce; i++) {
     const ix = 6 + i * Math.floor((W - 12) / nIce);
     px(ix, eaveY + 2, 1, 3, '#dff3fb'); px(ix, eaveY + 2, 1, 1, '#ffffff');
   }
-  // demir askıdan sarkan tabela (emoji levha)
+  // Faz 11.5: BÜYÜK tabela — demir askı + accent çerçeve + ahşap zemin + 10px emoji
   const signCx = W >> 1;
-  px(signCx - 6, H - wallH - 17, 12, 2, '#2a2a2a');           // askı kolu
-  px(signCx - 1, H - wallH - 17, 1, 4, '#2a2a2a');            // zincir
-  g.font = '9px serif'; g.textAlign = 'center';
-  g.fillStyle = '#caa06a'; g.fillRect(signCx - 7, H - wallH - 12, 14, 11);
-  g.strokeStyle = '#2a2a2a'; g.lineWidth = 1; g.strokeRect(signCx - 7, H - wallH - 12, 14, 11);
-  g.fillText(icon, signCx, H - wallH - 3);
+  px(signCx - 8, wallTop - 20, 16, 2, '#2a2a2a');               // askı kolu
+  px(signCx - 1, wallTop - 19, 1, 5, '#2a2a2a');                // zincir
+  g.fillStyle = accent; g.fillRect(signCx - 8, wallTop - 15, 16, 13);   // accent çerçeve
+  g.fillStyle = '#caa06a'; g.fillRect(signCx - 7, wallTop - 14, 14, 11); // ahşap zemin
+  g.font = '10px serif'; g.textAlign = 'center';
+  g.fillText(icon, signCx, wallTop - 4);
 }
 
-/** Hub binası — wTiles×hTiles, accent + id'den seçilen mimari stil, emoji tabela. Taban = alt kenar. */
+/** Hub binası — wTiles×hTiles, accent + id'den seçilen mimari stil, emoji tabela. Taban = alt kenar.
+ * Faz 11.5: H payı +14 → +26 (baca/flama/duman/dormer sığar). Genişlik + taban çizgisi + kapı
+ * konumu SÖZLEŞMEDİR (AYNEN); origin(0.5,1) olduğundan fazladan yükseklik yalnız YUKARI büyür. */
 export function mkBuilding(wTiles: number, hTiles: number, accent: string, icon: string, id = ''): { img: HTMLCanvasElement; ox: number; oy: number } {
-  const W = wTiles * 16, H = hTiles * 16 + 14; // +14 çatı taşması — AYNEN korunur (yerleşim/solid buna bağlı)
+  const W = wTiles * 16, H = hTiles * 16 + 26;
   let style = styleForId(id);
   if (style === 'tower' && wTiles > 3) style = 'stone'; // tower yalnız dar binalarda (spec)
   const base = spr(W, H, (px, g) => {
     const wallH = hTiles * 16 - 8;
-    if (style === 'lodge') drawLodge(px, W, H, wallH, accent);
-    else if (style === 'stone') drawStone(px, W, H, wallH, accent);
-    else if (style === 'plaster') drawPlaster(px, W, H, wallH, accent);
-    else drawTower(px, W, H, wallH, accent);
-    drawBuildingCommon(px, g, W, H, wallH, icon);
+    if (style === 'lodge') drawLodge(px, W, H, wallH, accent, id);
+    else if (style === 'stone') drawStone(px, W, H, wallH, accent, id);
+    else if (style === 'plaster') drawPlaster(px, W, H, wallH, accent, id);
+    else drawTower(px, W, H, wallH, accent, id);
+    drawBuildingCommon(px, g, W, H, wallH, icon, style, accent, wTiles);
   });
   const img = outline(base);
   return { img, ox: img.width >> 1, oy: img.height - 2 };

@@ -1833,7 +1833,8 @@ export class TdWorldScene extends Phaser.Scene {
               this.textures.addCanvas(bk, bm.img);
             }
             const bimg = this.add.image(p.x, p.y, bk).setOrigin(0.5, 1).setDepth(depth(p.x, p.y));
-            const label = this.add.text(p.x, p.y - p.data!.hTiles! * 16 - 18, p.data!.name!, {
+            // Faz 11.5: -18 → -30 (mkBuilding H payı +14→+26; etiket yeni çatı süslerinin üstünde)
+            const label = this.add.text(p.x, p.y - p.data!.hTiles! * 16 - 30, p.data!.name!, {
               fontSize: '8px', fontFamily: TD_FONT, color: '#ffffff', backgroundColor: '#141c24cc', padding: { x: 3, y: 1 },
             }).setOrigin(0.5, 1).setDepth(depth(p.x, p.y) + 1)
               .setResolution(this.uiZoom); // Faz 5.2: 8px-label FIT-blur cilası da kapanır

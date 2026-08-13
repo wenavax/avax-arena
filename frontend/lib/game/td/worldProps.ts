@@ -10,7 +10,7 @@ import { NPCS } from './npcs';
 
 export type PropKind = 'tree' | 'rock' | 'bush' | 'campfire' | 'building' | 'house' | 'door_dungeon' | 'farm_plot' | 'portal' | 'sign' | 'npc' | 'deco';
 
-export const DECO_KINDS = ['mushroom', 'fallen_log', 'flowers', 'tall_grass', 'reeds', 'ice_crystal', 'frozen_bones', 'gravestone', 'bone_pile', 'broken_pillar', 'rubble', 'mine_cart', 'timber_support', 'obsidian_shard', 'lava_crack', 'void_spike', 'rune_stone', 'brazier', 'lamp_post', 'well', 'barrel', 'crate', 'bench', 'fence', 'snowman', 'stall'] as const;
+export const DECO_KINDS = ['mushroom', 'fallen_log', 'flowers', 'tall_grass', 'reeds', 'ice_crystal', 'frozen_bones', 'gravestone', 'bone_pile', 'broken_pillar', 'rubble', 'mine_cart', 'timber_support', 'obsidian_shard', 'lava_crack', 'void_spike', 'rune_stone', 'brazier', 'lamp_post', 'well', 'barrel', 'crate', 'bench', 'fence', 'snowman', 'stall', 'firewood', 'banner_pole', 'noticeboard'] as const;
 export type DecoKind = typeof DECO_KINDS[number];
 export interface TdProp {
   kind: PropKind;
@@ -200,6 +200,17 @@ function townStreetProps(): TdProp[] {
   for (let tx = 191; tx <= 199; tx++) { if (tx >= 194 && tx <= 196) continue; out.push(deco('fence', tx, 208)); }
   for (let tx = 191; tx <= 199; tx++) out.push(deco('fence', tx, 214));
   for (let ty = 209; ty <= 213; ty++) out.push(deco('fence', 190, ty), deco('fence', 200, ty));
+  // ── Faz 11.5: BİNA ÇEVRESİ SÜSLERİ — hepsi SOLID'SİZ (DECO_SOLID'e girmez → flood-fill
+  // çapaları riske girmez). Kapı önü tile'ları (kapı tx ±1) bilerek boş bırakıldı.
+  // Referans: inn 171-175 (kapı 173) · arena 178-181 (180) · marketplace 197-199 (198) ·
+  // nftscore 203-205 (204) · archive 208-211 (210) — hepsi ty 190 bandı;
+  // battleroyale 182-184 (183) · expeditions 188-190 (189) — ty 202 bandı.
+  out.push(deco('firewood', 170, 188), deco('barrel', 170, 189), deco('crate', 170, 190)); // inn batı duvarı dibi
+  out.push(deco('noticeboard', 212, 190));                                                  // archive kapı yanı (doğu)
+  out.push(deco('banner_pole', 177, 190), deco('banner_pole', 183, 190));                   // arena önü iki yan
+  out.push(deco('crate', 200, 190), deco('barrel', 201, 190), deco('crate', 201, 189));     // marketplace yanı küme
+  out.push(deco('banner_pole', 181, 202));                                                  // battleroyale önü
+  out.push(deco('firewood', 186, 202));                                                     // expeditions yanı
   return out;
 }
 // Modül-seviye cache güvenli: girdiler (HUB_GAMES/REGIONS) statik sabit.
